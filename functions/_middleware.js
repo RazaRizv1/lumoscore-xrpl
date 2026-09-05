@@ -9,223 +9,83 @@ const ROUTES = [
     "lumoscore-landing-mobile"
   ],
   [
-    "/trade/stellar/:asset",
+    "/xrpl/trade/:asset",
     "lumoscore-dex-asset",
     null
   ],
   [
-    "/trade/stellar",
+    "/xrpl/trade",
     "lumoscore-dex",
     null
   ],
   [
-    "/account/stellar/:address",
+    "/xrpl/account/:address",
     "lumoscore-account",
     null
   ],
   [
-    "/pools/stellar/id/:pool",
+    "/xrpl/pools/id/:pool",
     "lumoscore-amm-pool",
     null
   ],
   [
-    "/pools/stellar/:a/:b",
+    "/xrpl/pools/:a/:b",
     "lumoscore-amm-pool",
     null
   ],
   [
-    "/pools/stellar",
+    "/xrpl/pools",
     "lumoscore-amm",
     null
   ],
   [
-    "/launchpad/review",
+    "/xrpl/launchpad/review",
     "lumoscore-launch-review",
     null
   ],
   [
-    "/launchpad/confirm",
+    "/xrpl/launchpad/confirm",
     "lumoscore-launch-confirm",
     null
   ],
   [
-    "/launchpad",
+    "/xrpl/launchpad",
     "lumoscore-launch-token",
     null
   ],
   [
-    "/dashboard",
-    "lumoscore-home",
-    null
-  ],
-  [
-    "/bridge",
-    "lumoscore-bridge",
-    null
-  ],
-  [
-    "/wallet",
-    "lumoscore-wallet",
-    null
-  ],
-  [
-    "/rewards",
-    "lumoscore-rewards-dark",
-    null
-  ],
-  [
-    "/lumos/stellar",
-    "lumoscore-lumos-token",
-    null
-  ],
-  [
-    "/lumos",
-    "lumoscore-lumos-token",
-    null
-  ],
-  [
-    "/signin",
-    "lumoscore-signin",
-    null
-  ],
-  [
-    "/mcp",
-    "lumoscore-mcp",
-    null
-  ],
-  [
-    "/blog/:slug",
-    "lumoscore-blog-post",
-    null
-  ],
-  [
-    "/blog",
-    "lumoscore-blog",
-    null
-  ],
-  [
-    "/privacy",
-    "lumoscore-privacy",
-    null
-  ],
-  [
-    "/terms",
-    "lumoscore-terms",
-    null
-  ],
-  [
-    "/support",
-    "lumoscore-support",
-    null
-  ],
-  [
-    "/whitepaper",
-    "lumoscore-whitepaper",
-    null
-  ],
-  [
-    "/about",
-    "lumoscore-about",
-    null
-  ],
-  [
-    "/list-your-token",
+    "/xrpl/list-your-token",
     "lumoscore-list-token",
     null
   ],
   [
-    "/docs/introduction",
-    "lumoscore-docs-introduction",
+    "/xrpl/bridge",
+    "lumoscore-bridge",
     null
   ],
   [
-    "/docs/connect-a-wallet",
-    "lumoscore-docs-connect-a-wallet",
+    "/xrpl/rewards",
+    "lumoscore-rewards-dark",
     null
   ],
   [
-    "/docs/fees",
-    "lumoscore-docs-fees",
+    "/xrpl/lumos",
+    "lumoscore-lumos-token",
     null
   ],
   [
-    "/docs/swaps",
-    "lumoscore-docs-swaps",
+    "/xrpl/wallet",
+    "lumoscore-wallet",
     null
   ],
   [
-    "/docs/limit-orders",
-    "lumoscore-docs-limit-orders",
+    "/xrpl/dashboard",
+    "lumoscore-home",
     null
   ],
   [
-    "/docs/liquidity-pools",
-    "lumoscore-docs-liquidity-pools",
-    null
-  ],
-  [
-    "/docs/cross-chain",
-    "lumoscore-docs-cross-chain",
-    null
-  ],
-  [
-    "/docs/wallet",
-    "lumoscore-docs-wallet",
-    null
-  ],
-  [
-    "/docs/trustlines",
-    "lumoscore-docs-trustlines",
-    null
-  ],
-  [
-    "/docs/rewards",
-    "lumoscore-docs-rewards",
-    null
-  ],
-  [
-    "/docs/launch-a-token",
-    "lumoscore-docs-launch-a-token",
-    null
-  ],
-  [
-    "/docs/asset-metadata",
-    "lumoscore-docs-asset-metadata",
-    null
-  ],
-  [
-    "/docs/verification",
-    "lumoscore-docs-verification",
-    null
-  ],
-  [
-    "/docs/curated-listing",
-    "lumoscore-docs-curated-listing",
-    null
-  ],
-  [
-    "/docs/security",
-    "lumoscore-docs-security",
-    null
-  ],
-  [
-    "/docs/troubleshooting",
-    "lumoscore-docs-troubleshooting",
-    null
-  ],
-  [
-    "/docs/faq",
-    "lumoscore-docs-faq",
-    null
-  ],
-  [
-    "/docs",
-    "lumoscore-docs-introduction",
-    null
-  ],
-  [
-    "/faq",
-    "lumoscore-docs-faq",
+    "/xrpl",
+    "lumoscore-home",
     null
   ]
 ];

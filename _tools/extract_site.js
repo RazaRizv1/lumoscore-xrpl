@@ -388,58 +388,30 @@ function headersFile(isAdmin){
 // Placeholders (:name) match a single segment. Theme never appears in a URL — light and dark are the
 // same page — and device is resolved server-side, not by a separate URL.
 const ROUTES = [
-  // dynamic first: these carry an asset or pool identifier in the path
-  ['/trade/stellar/:asset',            'lumoscore-dex-asset.html'],
-  ['/trade/stellar',                   'lumoscore-dex.html'],
-  ['/account/stellar/:address',        'lumoscore-account.html'],
-  ['/pools/stellar/id/:pool',          'lumoscore-amm-pool.html'],   // fallback: id-only links
-  ['/pools/stellar/:a/:b',             'lumoscore-amm-pool.html'],
-  ['/pools/stellar',                   'lumoscore-amm.html'],
-  // NO /asset/stellar route. The asset-overview page was removed — it showed the same facts as
-  // Trade-asset with no way to act on them. /asset/stellar/<ASSET> is now a permanent 301 to
-  // /trade/stellar/<ASSET>, handled in the middleware so already-indexed urls keep their value.
-  // launchpad flow: /launchpad/review must precede /launchpad
-  ['/launchpad/review',                'lumoscore-launch-review.html'],
-  ['/launchpad/confirm',               'lumoscore-launch-confirm.html'],
-  ['/launchpad',                       'lumoscore-launch-token.html'],
-  // flat pages
-  ['/dashboard',                       'lumoscore-home.html'],
-  ['/bridge',                          'lumoscore-bridge.html'],
-  ['/wallet',                          'lumoscore-wallet.html'],
-  ['/rewards',                         'lumoscore-rewards-dark.html'],   // only variant that exists
-  ['/lumos/stellar',                   'lumoscore-lumos-token.html'],
-  ['/lumos',                           'lumoscore-lumos-token.html'],
-  ['/signin',                          'lumoscore-signin.html'],
-  ['/mcp',                             'lumoscore-mcp.html'],
-  ['/blog/:slug',                      'lumoscore-blog-post.html'],
-  ['/blog',                            'lumoscore-blog.html'],
-  ['/privacy',                         'lumoscore-privacy.html'],
-  ['/terms',                           'lumoscore-terms.html'],
-  ['/support',                         'lumoscore-support.html'],
-  ['/whitepaper',                      'lumoscore-whitepaper.html'],
-  ['/about',                           'lumoscore-about.html'],
-  ['/list-your-token',                 'lumoscore-list-token.html'],
-  // docs: each slug before the bare /docs, which serves the introduction
-  ['/docs/introduction',                'lumoscore-docs-introduction.html'],
-  ['/docs/connect-a-wallet',            'lumoscore-docs-connect-a-wallet.html'],
-  ['/docs/fees',                        'lumoscore-docs-fees.html'],
-  ['/docs/swaps',                       'lumoscore-docs-swaps.html'],
-  ['/docs/limit-orders',                'lumoscore-docs-limit-orders.html'],
-  ['/docs/liquidity-pools',             'lumoscore-docs-liquidity-pools.html'],
-  ['/docs/cross-chain',                 'lumoscore-docs-cross-chain.html'],
-  ['/docs/wallet',                      'lumoscore-docs-wallet.html'],
-  ['/docs/trustlines',                  'lumoscore-docs-trustlines.html'],
-  ['/docs/rewards',                     'lumoscore-docs-rewards.html'],
-  ['/docs/launch-a-token',              'lumoscore-docs-launch-a-token.html'],
-  ['/docs/asset-metadata',              'lumoscore-docs-asset-metadata.html'],
-  ['/docs/verification',                'lumoscore-docs-verification.html'],
-  ['/docs/curated-listing',             'lumoscore-docs-curated-listing.html'],
-  ['/docs/security',                    'lumoscore-docs-security.html'],
-  ['/docs/troubleshooting',             'lumoscore-docs-troubleshooting.html'],
-  ['/docs/faq',                        'lumoscore-docs-faq.html'],
-  ['/docs',                            'lumoscore-docs-introduction.html'],
-  // the footer has always called it FAQs; /faq serves the same page as /docs/faq
-  ['/faq',                             'lumoscore-docs-faq.html'],
+  // XRPL ONLY. Every route carries /xrpl/ so nothing here can collide with the live Stellar site,
+  // which keeps its own URLs untouched. Dynamic routes first: they carry an identifier in the path.
+  //
+  // The shared pages -- /docs/*, /blog, /terms, /privacy, /about, /support, /whitepaper, /faq,
+  // /signin, /mcp -- are deliberately ABSENT. They exist once for the company and are already live
+  // on lumoscore.com; publishing a second copy here would compete with the originals in search and
+  // give the same sentence two places to be edited. Their links resolve to the main site, which is
+  // correct as long as this build is served under lumoscore.com/xrpl/.
+  ['/xrpl/trade/:asset',         'lumoscore-dex-asset.html'],   // an asset, with its book and chart
+  ['/xrpl/trade',                'lumoscore-dex.html'],
+  ['/xrpl/account/:address',     'lumoscore-account.html'],
+  ['/xrpl/pools/id/:pool',       'lumoscore-amm-pool.html'],   // fallback: id-only links
+  ['/xrpl/pools/:a/:b',          'lumoscore-amm-pool.html'],
+  ['/xrpl/pools',                'lumoscore-amm.html'],
+  ['/xrpl/launchpad/review',     'lumoscore-launch-review.html'],   // review must precede /xrpl/launchpad
+  ['/xrpl/launchpad/confirm',    'lumoscore-launch-confirm.html'],
+  ['/xrpl/launchpad',            'lumoscore-launch-token.html'],
+  ['/xrpl/list-your-token',      'lumoscore-list-token.html'],
+  ['/xrpl/bridge',               'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
+  ['/xrpl/rewards',              'lumoscore-rewards-dark.html'],
+  ['/xrpl/lumos',                'lumoscore-lumos-token.html'],
+  ['/xrpl/wallet',               'lumoscore-wallet.html'],
+  ['/xrpl/dashboard',            'lumoscore-home.html'],
+  ['/xrpl',                      'lumoscore-home.html'],   // bare /xrpl lands on the dashboard
 ];
 
 // Case: fixed segments are lowercase, but an asset segment must keep its case — yUSDC and YUSDC are

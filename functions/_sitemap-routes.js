@@ -7,183 +7,63 @@ export const SITEMAP_ROUTES = [
     "daily"
   ],
   [
-    "/trade/stellar",
-    "0.9",
-    "daily"
-  ],
-  [
-    "/pools/stellar",
-    "0.9",
-    "daily"
-  ],
-  [
-    "/launchpad",
-    "0.8",
-    "weekly"
-  ],
-  [
-    "/dashboard",
+    "/xrpl/trade",
     "0.6",
     "weekly"
   ],
   [
-    "/bridge",
-    "0.8",
-    "weekly"
-  ],
-  [
-    "/wallet",
+    "/xrpl/pools",
     "0.6",
     "weekly"
   ],
   [
-    "/rewards",
+    "/xrpl/launchpad/review",
     "0.6",
     "weekly"
   ],
   [
-    "/lumos/stellar",
+    "/xrpl/launchpad/confirm",
     "0.6",
     "weekly"
   ],
   [
-    "/lumos",
-    "0.8",
-    "weekly"
-  ],
-  [
-    "/mcp",
+    "/xrpl/launchpad",
     "0.6",
     "weekly"
   ],
   [
-    "/blog",
-    "0.9",
-    "daily"
-  ],
-  [
-    "/privacy",
-    "0.3",
-    "yearly"
-  ],
-  [
-    "/terms",
-    "0.3",
-    "yearly"
-  ],
-  [
-    "/support",
+    "/xrpl/list-your-token",
     "0.6",
     "weekly"
   ],
   [
-    "/whitepaper",
-    "0.8",
-    "monthly"
-  ],
-  [
-    "/about",
-    "0.6",
-    "monthly"
-  ],
-  [
-    "/list-your-token",
-    "0.7",
-    "monthly"
-  ],
-  [
-    "/docs/introduction",
+    "/xrpl/bridge",
     "0.6",
     "weekly"
   ],
   [
-    "/docs/connect-a-wallet",
+    "/xrpl/rewards",
     "0.6",
     "weekly"
   ],
   [
-    "/docs/fees",
+    "/xrpl/lumos",
     "0.6",
     "weekly"
   ],
   [
-    "/docs/swaps",
+    "/xrpl/wallet",
     "0.6",
     "weekly"
   ],
   [
-    "/docs/limit-orders",
+    "/xrpl/dashboard",
     "0.6",
     "weekly"
   ],
   [
-    "/docs/liquidity-pools",
+    "/xrpl",
     "0.6",
     "weekly"
-  ],
-  [
-    "/docs/cross-chain",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/wallet",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/trustlines",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/rewards",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/launch-a-token",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/asset-metadata",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/verification",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/curated-listing",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/security",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/troubleshooting",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs/faq",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/docs",
-    "0.8",
-    "weekly"
-  ],
-  [
-    "/faq",
-    "0.7",
-    "monthly"
   ]
 ];
