@@ -1197,6 +1197,37 @@ async function xrplSearch(req, res, q) {
   } catch (e) { send({ ok: false, q: term, error: String((e && e.message) || e), rows: [] }); }
 }
 
+// Local mirror of functions/lxapi/xrpltoken. The order book is NOT here: it comes straight from
+// the ledger in the browser via book_offers.
+const _xtokCache = new Map();
+async function xrplToken(req, res, q) {
+  const send = (o) => { const b = Buffer.from(JSON.stringify(o));
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
+  const id = String(q.get('id') || '').trim().slice(0, 120);
+  if (!id) return send({ ok: false, error: 'no id' });
+  const c = _xtokCache.get(id);
+  if (c && Date.now() - c.at < 60000) return send(c.body);
+  const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
+  try {
+    const r = await fetch('https://api.xrpl.to/api/token/' + encodeURIComponent(id),
+      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+    if (!r.ok) throw new Error('upstream ' + r.status);
+    const j = await r.json(); const t = j && j.token;
+    if (!t) return send({ ok: false, error: 'not found', id });
+    const body = { ok: true, id, name: String(t.name||''), user: String(t.user||''),
+      issuer: String(t.issuer||''), currency: String(t.currency||''),
+      price: num(t.exch), usd: num(t.usd), p24: num(t.pro24h), p7: num(t.pro7d), p1h: num(t.pro1h),
+      vol24: num(t.vol24hxrp), trades24: num(t.vol24htx), tvl: num(t.tvl),
+      marketcap: num(t.marketcap), holders: num(t.holders), trustlines: num(t.trustlines),
+      offers: num(t.offers), issued: num(t.amount), circulating: num(t.supply),
+      verified: t.verified ? 1 : 0, domain: String(t.domain||''), origin: String(t.origin||''),
+      src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
+    _xtokCache.set(id, { at: Date.now(), body });
+    send(body);
+  } catch (e) { send({ ok: false, id, error: String((e && e.message) || e) }); }
+}
+
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/lxapi/holders') return holdersProxy(req, res, new URL(req.url, 'http://x').searchParams);
@@ -1214,6 +1245,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/xrplprices') return xrplPrices(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrpltokens') return xrplTokens(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplsearch') return xrplSearch(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrpltoken') return xrplToken(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {
