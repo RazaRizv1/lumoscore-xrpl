@@ -1,0 +1,179 @@
+// Fills the wallet's Price and 7d columns.
+//
+// Runs AFTER wallet.js has painted, and re-runs when it repaints, because the rows it writes into
+// are created by that layer -- a one-shot pass at DOMContentLoaded would find an empty container and
+// silently do nothing, which is the single most common way a "the data never showed up" bug happens
+// in this codebase.
+//
+// Prices come from /lxapi/xrplprices, never straight from the upstream: the anonymous tier there is
+// 333 requests per DAY per IP, so a browser-direct fetch would exhaust it in a few page views and
+// take out an entire CGNAT'd mobile carrier at once. See functions/lxapi/xrplprices.js.
+//
+// A missing price renders as an em dash. It never renders as 0, and never as a stale figure from a
+// previous token: on an asset list, a wrong number beside the right name is worse than no number,
+// because there is nothing on screen to tell you it is wrong.
+(function () {
+  if (window.__lxxPrices) return;
+  window.__lxxPrices = 1;
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var data = null;
+
+  function slug(issuer, currency) { return String(issuer || '') + '-' + String(currency || ''); }
+
+  function money(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v === 0) return '$0';
+    // Sub-cent tokens are the norm on this ledger; 2dp would render most of a wallet as "$0.00".
+    if (v < 0.000001) return '$' + v.toExponential(2);
+    if (v < 0.01) return '$' + v.toPrecision(3);
+    if (v < 1000) return '$' + v.toFixed(2);
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  function pct(v) {
+    if (v == null || !isFinite(v)) return null;
+    return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  }
+
+  function fetchPrices(slugs) {
+    var q = slugs.length ? ('?t=' + encodeURIComponent(slugs.slice(0, 24).join(','))) : '';
+    return fetch('/lxapi/xrplprices' + q)
+      .then(function (r) { return r.json(); })
+      .then(function (j) { return (j && j.ok) ? j : null; })
+      .catch(function () { return null; });
+  }
+
+  // The two layouts the wallet paints into. Kept in one place so a change to either cannot leave the
+  // other silently unfilled -- writing only the desktop one is the most repeated bug in this project.
+  function targets() {
+    var out = [];
+    var tb = $('#assetsTable');
+    if (tb) {
+      [].forEach.call(tb.children, function (tr) {
+        if (tr.children.length < 4) return;
+        out.push({ row: tr, price: tr.children[1], chg: tr.children[2] });
+      });
+    }
+    var cards = $('#assetList');
+    if (cards) {
+      [].forEach.call(cards.children, function (c) {
+        if (!c.classList || !c.classList.contains('asset-row')) return;
+        out.push({ row: c, price: null, chg: null, card: true });
+      });
+    }
+    return out;
+  }
+
+  function apply() {
+    if (!data) return;
+    var held = (window.__lxxData && window.__lxxData.held) || [];
+    var xrp = window.__lxxData && window.__lxxData.xrp;
+    var t = targets();
+    if (!t.length) return;
+
+    // The wallet paints XRP first (when present), then held tokens in the same order as this array,
+    // so index maps to row. Reading the name out of the DOM instead would tie this to display text.
+    var seq = [];
+    if (xrp) seq.push({ xrp: true });
+    for (var i = 0; i < held.length; i++) seq.push(held[i]);
+
+    for (var j = 0; j < t.length && j < seq.length; j++) {
+      var item = seq[j], cell = t[j];
+      var usd = null, ch7 = null;
+
+      if (item.xrp) {
+        usd = data.usd;                                   // 1 XRP, by definition
+        var x = data.t['XRP'];
+        ch7 = x ? x[2] : null;
+      } else {
+        var row = data.t[slug(item.issuer, item.currency)];
+        if (row) {
+          usd = (data.usd != null) ? row[0] * data.usd : null;
+          ch7 = row[2];
+        }
+      }
+
+      if (cell.card) {
+        paintCard(cell.row, usd, ch7);
+      } else {
+        cell.price.textContent = money(usd);
+        paintChange(cell.chg, ch7);
+      }
+    }
+    attribution();
+  }
+
+  function paintChange(el, v) {
+    var s = pct(v);
+    el.textContent = s == null ? '—' : s;
+    el.style.color = s == null ? '' : (v >= 0 ? 'var(--green,#22c55e)' : '#e5484d');
+  }
+
+  // The card layout has no price column, so one is added under the balance rather than squeezed in
+  // beside it. Idempotent: repainting replaces the node instead of stacking a second one.
+  function paintCard(card, usd, ch7) {
+    var block = card.querySelector('.asset-balance-block');
+    if (!block) return;
+    var old = block.querySelector('.lxx-px');
+    if (old) old.parentNode.removeChild(old);
+    if (usd == null && ch7 == null) return;
+    var d = document.createElement('div');
+    d.className = 'lxx-px';
+    d.style.cssText = 'font-size:12px;font-weight:600;margin-top:2px;opacity:.85';
+    d.textContent = money(usd);
+    var s = pct(ch7);
+    if (s != null) {
+      var sp = document.createElement('span');
+      sp.textContent = '  ' + s;
+      sp.style.color = ch7 >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
+      d.appendChild(sp);
+    }
+    block.appendChild(d);
+  }
+
+  // xrpl.to's terms require a visible link wherever this data is shown. Rendered from the payload's
+  // own fields so it cannot drift from what the source actually asks for, and inserted once.
+  function attribution() {
+    if (!data || !data.attribution) return;
+    if (document.getElementById('lxx-attr')) return;
+    var host = $('#assetsTable') || $('#assetList');
+    if (!host) return;
+    var anchor = host.closest('section, .card, main') || host.parentElement;
+    if (!anchor) return;
+    var p = document.createElement('p');
+    p.id = 'lxx-attr';
+    p.style.cssText = 'margin:10px 2px 0;font-size:11.5px;opacity:.6;font-weight:500';
+    p.appendChild(document.createTextNode('Prices '));
+    var a = document.createElement('a');
+    a.href = data.attributionUrl || 'https://xrpl.to';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = data.attribution;
+    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
+    p.appendChild(a);
+    anchor.appendChild(p);
+  }
+
+  function start() {
+    if (!$('#assetsTable') && !$('#assetList')) return;      // not a wallet page
+    var held = (window.__lxxData && window.__lxxData.held) || [];
+    var slugs = held.map(function (h) { return slug(h.issuer, h.currency); });
+    fetchPrices(slugs).then(function (j) {
+      if (!j) return;                                        // leave the dashes; say nothing false
+      data = j;
+      apply();
+    });
+  }
+
+  // wallet.js finishes asynchronously and can repaint. Waiting for its data rather than for the DOM
+  // is what makes this reliable; the interval gives up rather than spinning forever.
+  var tries = 0;
+  var timer = setInterval(function () {
+    tries++;
+    if (window.__lxxData) { clearInterval(timer); start(); }
+    else if (tries > 60) clearInterval(timer);               // ~30s, then stop
+  }, 500);
+
+  window.__lxxPricesApply = apply;
+})();

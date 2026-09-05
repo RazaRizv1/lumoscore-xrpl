@@ -6205,6 +6205,19 @@ html[data-theme="light"] .lx-hiw-h,html[data-theme="light"] .lx-hiw-n{color:#a84
 //    entire supply.
 'use strict';
 
+// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
+//
+// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
+// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
+// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
+// <script> block, taking the wallet layer down with it. The page then renders the design's mock
+// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
+// broken. It shipped exactly once that way.
+//
+// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
+// module.exports, both assigned at the end.
+(function () {
+
 const XRP_DROPS = 1e6;
 
 // Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
@@ -6324,6 +6337,8 @@ const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
 if (typeof window !== 'undefined') window.lxx = LXX;
+
+})();
 
 // XRP Ledger wallet connect.
 //

@@ -16,12 +16,14 @@ const B = String.fromCharCode(92);
 const ID = 'lx-xrplwallet';
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/wallet.js', 'utf8');
+// Prices fill columns the wallet layer paints, so they ship together and in this order.
+const px = fs.readFileSync(__dirname + '/browser/prices.js', 'utf8');
 
-for (const src of [core, page]) {
+for (const src of [core, page, px]) {
   if (src.indexOf('</' + 'script') >= 0) { console.error('  a source file contains a closing script tag — aborting'); process.exit(1); }
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + px + '\n</' + 'script>';
 
 let files = 0, pages = 0;
 for (const dev of ['desktop', 'mobile']) {

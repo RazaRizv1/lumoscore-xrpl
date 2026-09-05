@@ -5759,6 +5759,19 @@ function txt(s){ var e=a.querySelector(s); return e?e.textContent.trim().replace
 //    entire supply.
 'use strict';
 
+// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
+//
+// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
+// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
+// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
+// <script> block, taking the wallet layer down with it. The page then renders the design's mock
+// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
+// broken. It shipped exactly once that way.
+//
+// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
+// module.exports, both assigned at the end.
+(function () {
+
 const XRP_DROPS = 1e6;
 
 // Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
@@ -5878,6 +5891,8 @@ const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
 if (typeof window !== 'undefined') window.lxx = LXX;
+
+})();
 
 // XRP Ledger wallet connect.
 //
@@ -6407,6 +6422,19 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 //    entire supply.
 'use strict';
 
+// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
+//
+// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
+// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
+// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
+// <script> block, taking the wallet layer down with it. The page then renders the design's mock
+// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
+// broken. It shipped exactly once that way.
+//
+// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
+// module.exports, both assigned at the end.
+(function () {
+
 const XRP_DROPS = 1e6;
 
 // Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
@@ -6526,6 +6554,8 @@ const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
 if (typeof window !== 'undefined') window.lxx = LXX;
+
+})();
 
 // Wallet page: real XRP Ledger balances, on desktop AND mobile.
 //
@@ -6749,6 +6779,186 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
   window.__lxxReload = load;
+})();
+
+// Fills the wallet's Price and 7d columns.
+//
+// Runs AFTER wallet.js has painted, and re-runs when it repaints, because the rows it writes into
+// are created by that layer -- a one-shot pass at DOMContentLoaded would find an empty container and
+// silently do nothing, which is the single most common way a "the data never showed up" bug happens
+// in this codebase.
+//
+// Prices come from /lxapi/xrplprices, never straight from the upstream: the anonymous tier there is
+// 333 requests per DAY per IP, so a browser-direct fetch would exhaust it in a few page views and
+// take out an entire CGNAT'd mobile carrier at once. See functions/lxapi/xrplprices.js.
+//
+// A missing price renders as an em dash. It never renders as 0, and never as a stale figure from a
+// previous token: on an asset list, a wrong number beside the right name is worse than no number,
+// because there is nothing on screen to tell you it is wrong.
+(function () {
+  if (window.__lxxPrices) return;
+  window.__lxxPrices = 1;
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var data = null;
+
+  function slug(issuer, currency) { return String(issuer || '') + '-' + String(currency || ''); }
+
+  function money(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v === 0) return '$0';
+    // Sub-cent tokens are the norm on this ledger; 2dp would render most of a wallet as "$0.00".
+    if (v < 0.000001) return '$' + v.toExponential(2);
+    if (v < 0.01) return '$' + v.toPrecision(3);
+    if (v < 1000) return '$' + v.toFixed(2);
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  function pct(v) {
+    if (v == null || !isFinite(v)) return null;
+    return (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  }
+
+  function fetchPrices(slugs) {
+    var q = slugs.length ? ('?t=' + encodeURIComponent(slugs.slice(0, 24).join(','))) : '';
+    return fetch('/lxapi/xrplprices' + q)
+      .then(function (r) { return r.json(); })
+      .then(function (j) { return (j && j.ok) ? j : null; })
+      .catch(function () { return null; });
+  }
+
+  // The two layouts the wallet paints into. Kept in one place so a change to either cannot leave the
+  // other silently unfilled -- writing only the desktop one is the most repeated bug in this project.
+  function targets() {
+    var out = [];
+    var tb = $('#assetsTable');
+    if (tb) {
+      [].forEach.call(tb.children, function (tr) {
+        if (tr.children.length < 4) return;
+        out.push({ row: tr, price: tr.children[1], chg: tr.children[2] });
+      });
+    }
+    var cards = $('#assetList');
+    if (cards) {
+      [].forEach.call(cards.children, function (c) {
+        if (!c.classList || !c.classList.contains('asset-row')) return;
+        out.push({ row: c, price: null, chg: null, card: true });
+      });
+    }
+    return out;
+  }
+
+  function apply() {
+    if (!data) return;
+    var held = (window.__lxxData && window.__lxxData.held) || [];
+    var xrp = window.__lxxData && window.__lxxData.xrp;
+    var t = targets();
+    if (!t.length) return;
+
+    // The wallet paints XRP first (when present), then held tokens in the same order as this array,
+    // so index maps to row. Reading the name out of the DOM instead would tie this to display text.
+    var seq = [];
+    if (xrp) seq.push({ xrp: true });
+    for (var i = 0; i < held.length; i++) seq.push(held[i]);
+
+    for (var j = 0; j < t.length && j < seq.length; j++) {
+      var item = seq[j], cell = t[j];
+      var usd = null, ch7 = null;
+
+      if (item.xrp) {
+        usd = data.usd;                                   // 1 XRP, by definition
+        var x = data.t['XRP'];
+        ch7 = x ? x[2] : null;
+      } else {
+        var row = data.t[slug(item.issuer, item.currency)];
+        if (row) {
+          usd = (data.usd != null) ? row[0] * data.usd : null;
+          ch7 = row[2];
+        }
+      }
+
+      if (cell.card) {
+        paintCard(cell.row, usd, ch7);
+      } else {
+        cell.price.textContent = money(usd);
+        paintChange(cell.chg, ch7);
+      }
+    }
+    attribution();
+  }
+
+  function paintChange(el, v) {
+    var s = pct(v);
+    el.textContent = s == null ? '—' : s;
+    el.style.color = s == null ? '' : (v >= 0 ? 'var(--green,#22c55e)' : '#e5484d');
+  }
+
+  // The card layout has no price column, so one is added under the balance rather than squeezed in
+  // beside it. Idempotent: repainting replaces the node instead of stacking a second one.
+  function paintCard(card, usd, ch7) {
+    var block = card.querySelector('.asset-balance-block');
+    if (!block) return;
+    var old = block.querySelector('.lxx-px');
+    if (old) old.parentNode.removeChild(old);
+    if (usd == null && ch7 == null) return;
+    var d = document.createElement('div');
+    d.className = 'lxx-px';
+    d.style.cssText = 'font-size:12px;font-weight:600;margin-top:2px;opacity:.85';
+    d.textContent = money(usd);
+    var s = pct(ch7);
+    if (s != null) {
+      var sp = document.createElement('span');
+      sp.textContent = '  ' + s;
+      sp.style.color = ch7 >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
+      d.appendChild(sp);
+    }
+    block.appendChild(d);
+  }
+
+  // xrpl.to's terms require a visible link wherever this data is shown. Rendered from the payload's
+  // own fields so it cannot drift from what the source actually asks for, and inserted once.
+  function attribution() {
+    if (!data || !data.attribution) return;
+    if (document.getElementById('lxx-attr')) return;
+    var host = $('#assetsTable') || $('#assetList');
+    if (!host) return;
+    var anchor = host.closest('section, .card, main') || host.parentElement;
+    if (!anchor) return;
+    var p = document.createElement('p');
+    p.id = 'lxx-attr';
+    p.style.cssText = 'margin:10px 2px 0;font-size:11.5px;opacity:.6;font-weight:500';
+    p.appendChild(document.createTextNode('Prices '));
+    var a = document.createElement('a');
+    a.href = data.attributionUrl || 'https://xrpl.to';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = data.attribution;
+    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
+    p.appendChild(a);
+    anchor.appendChild(p);
+  }
+
+  function start() {
+    if (!$('#assetsTable') && !$('#assetList')) return;      // not a wallet page
+    var held = (window.__lxxData && window.__lxxData.held) || [];
+    var slugs = held.map(function (h) { return slug(h.issuer, h.currency); });
+    fetchPrices(slugs).then(function (j) {
+      if (!j) return;                                        // leave the dashes; say nothing false
+      data = j;
+      apply();
+    });
+  }
+
+  // wallet.js finishes asynchronously and can repaint. Waiting for its data rather than for the DOM
+  // is what makes this reliable; the interval gives up rather than spinning forever.
+  var tries = 0;
+  var timer = setInterval(function () {
+    tries++;
+    if (window.__lxxData) { clearInterval(timer); start(); }
+    else if (tries > 60) clearInterval(timer);               // ~30s, then stop
+  }, 500);
+
+  window.__lxxPricesApply = apply;
 })();
 
 </script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/stellar","lumoscore-account":"/account/stellar","lumoscore-asset-overview":"/trade/stellar"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>

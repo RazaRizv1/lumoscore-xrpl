@@ -37,6 +37,23 @@ eq('OLD reserves would have overstated by',
      - C.spendableXrp(375382386, 104, { base: 10, inc: 2 }).spendable).toFixed(6), 196.2);
 
 console.log('');
+console.log('=== injected twice (this file ships in TWO script blocks) ===');
+// _xrplconnect and _xrplwallet each inject this file, so a page can hold two copies in the same
+// global scope. Top-level `const` made that a redeclaration error, which killed the entire second
+// <script> -- the wallet layer with it -- and the page fell back to the design's mock table: five
+// invented rows with believable prices and no visible fault. Shipped once. This is the guard.
+{
+  const src = require('fs').readFileSync(__dirname + '/xrpl-core.js', 'utf8');
+  let err = null;
+  try {
+    // Exactly what the browser does: one scope, the source concatenated with itself.
+    new Function('window', 'module', src + '\n' + src)({}, undefined);
+  } catch (e) { err = e.message; }
+  eq('two copies in one scope do not throw', err, null);
+  eq('...and it is really the double that is tested', /XRP_DROPS/.test(src), true);
+}
+
+console.log('');
 console.log('=== addresses (real accounts, and real values of the WRONG kind) ===');
 // Accepts: every one of these is an account that exists on mainnet today.
 eq('holder account',   C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymV'), true);

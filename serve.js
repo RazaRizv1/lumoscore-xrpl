@@ -1041,6 +1041,88 @@ async function netStats(req, res) {
   } catch (e) { send({ error: String((e && e.message) || e) }, 502); }
 }
 
+// Local mirror of functions/lxapi/xrplprices — see that file for why this is a proxy at all (333
+// upstream requests per DAY per IP) and why the USD conversion is checked against a stablecoin
+// rather than trusted. Kept deliberately thin: same upstream calls, same response shape, so what is
+// tested locally is what the edge serves. The in-process cache stands in for the edge cache.
+let _xpCache = { at: 0, body: null };
+async function xrplPrices(req, res, q) {
+  const send = (obj, code) => {
+    const b = Buffer.from(JSON.stringify(obj));
+    res.writeHead(code || 200, { 'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*', 'content-length': b.length });
+    res.end(b);
+  };
+  if (Date.now() - _xpCache.at < 120000 && _xpCache.body) return send(_xpCache.body);
+
+  // 'XRP' is the upstream's literal for the native asset and is absent from the token rankings,
+  // so without it the first row of every wallet is the only one with no 24h/7d figure.
+  const ALWAYS = ['XRP', 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha-4C554D4F53000000000000000000000000000000'];
+  const LOOKUPABLE = (s) => s === 'XRP' || /^r[1-9A-HJ-NP-Za-km-z]{24,34}-[0-9A-Fa-f]{40}$/.test(s);
+  const PEGGED = ['rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De-524C555344000000000000000000000000000000'];
+  const UP = 'https://api.xrpl.to/api';
+  const get = async (path) => {
+    // UA is required upstream — without it every call is a 403. See the Function for the measurement.
+    // 429 is expected (2/sec anonymous burst cap), so one backoff retry rather than a hard failure.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(UP + path, { headers: { accept: 'application/json',
+        'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+      if (r.ok) return r.json();
+      if (r.status !== 429 || attempt === 1) throw new Error('upstream ' + r.status);
+      const ra = Number(r.headers.get('retry-after'));
+      await new Promise(x => setTimeout(x, isFinite(ra) && ra > 0 && ra <= 5 ? ra * 1000 : 1200));
+    }
+    throw new Error('upstream 429');
+  };
+  try {
+    const n = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
+    const map = {};
+    let xrpPerUsd = 0;
+    // 3 pages: measured coverage on a real 51-token wallet is 37/49/55/61/61% for 1..5 pages.
+    for (let p = 0; p < 3; p++) {
+      if (p) await new Promise(r => setTimeout(r, 300));   // burst cap applies to bulk pages too
+      const bulk = await get('/tokens?limit=100&start=' + (p * 100) + '&sort=vol24hxrp&order=desc&lightweight=true');
+      if (!xrpPerUsd) xrpPerUsd = Number(bulk && bulk.exch && bulk.exch.USD);
+      for (const t of (bulk.tokens || [])) {
+        const e = Number(t.exch);
+        if (isFinite(e)) map[String(t.issuer) + '-' + String(t.currency)] = [e, n(t.pro24h), n(t.pro7d)];
+      }
+    }
+    const usdPerXrp = xrpPerUsd > 0 ? 1 / xrpPerUsd : null;
+    let usdOk = usdPerXrp != null, checked = null;
+    if (usdOk) {
+      for (const pg of PEGGED) {
+        if (!map[pg]) continue;
+        checked = map[pg][0] * usdPerXrp;
+        if (!(checked > 0.90 && checked < 1.10)) usdOk = false;
+        break;
+      }
+      if (checked === null) usdOk = false;
+    }
+    const want = String(q.get('t') || '').split(',').map(s => s.trim()).filter(Boolean);
+    const misses = [];
+    for (const s of ALWAYS.concat(want)) {
+      if (!map[s] && misses.indexOf(s) < 0 && LOOKUPABLE(s)) misses.push(s);
+    }
+    const picked = misses.slice(0, 8);
+    for (let i = 0; i < picked.length; i++) {
+      if (i) await new Promise(r => setTimeout(r, 300));   // anonymous burst cap is 2/sec
+      try {
+        const one = await get('/token/' + encodeURIComponent(picked[i]));
+        const t = one && one.token, e = t && Number(t.exch);
+        if (isFinite(e)) map[picked[i]] = [e, n(t.pro24h), n(t.pro7d)];
+      } catch (e) {}
+    }
+    const out = { ok: true, usd: usdOk ? usdPerXrp : null, usdCheck: checked,
+      count: Object.keys(map).length, t: map, src: 'xrpl.to',
+      attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
+    _xpCache = { at: Date.now(), body: out };
+    send(out);
+  } catch (e) {
+    send({ ok: false, error: String((e && e.message) || e), t: {} }, 200);
+  }
+}
+
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/lxapi/holders') return holdersProxy(req, res, new URL(req.url, 'http://x').searchParams);
@@ -1055,6 +1137,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/news') return newsRoute(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/poolvol') return poolVol(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xlm') return xlmProxy(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrplprices') return xrplPrices(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {
