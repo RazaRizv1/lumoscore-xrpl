@@ -1166,6 +1166,37 @@ async function xrplTokens(req, res, q) {
   }
 }
 
+// Local mirror of functions/lxapi/xrplsearch. See that file for why search is proxied at all and
+// why results are ordered by volume rather than by name.
+const _xsCache = new Map();
+async function xrplSearch(req, res, q) {
+  const send = (obj) => { const b = Buffer.from(JSON.stringify(obj));
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
+  const term = String(q.get('q') || '').trim().slice(0, 40);
+  if (term.length < 2) return send({ ok: true, q: term, rows: [] });
+  const ck = term.toLowerCase();
+  const c = _xsCache.get(ck);
+  if (c && Date.now() - c.at < 300000) return send(c.body);
+  const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
+  try {
+    const r = await fetch('https://api.xrpl.to/api/tokens?limit=50&sort=vol24hxrp&order=desc&lightweight=true&filter='
+      + encodeURIComponent(term), { headers: { accept: 'application/json',
+        'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+    if (!r.ok) throw new Error('upstream ' + r.status);
+    const j = await r.json();
+    const xrpPerUsd = Number(j && j.exch && j.exch.USD);
+    const rows = ((j && j.tokens) || []).map(t => ({ n: String(t.name||''), u: String(t.user||''),
+      i: String(t.issuer||''), c: String(t.currency||''), h: num(t.holders), v: num(t.vol24hxrp),
+      p: num(t.exch), vf: t.verified ? 1 : 0 })).filter(t => t.n && t.i);
+    const body = { ok: true, q: term, total: num(j.total), count: rows.length, rows,
+      usd: xrpPerUsd > 0 ? 1 / xrpPerUsd : null, src: 'xrpl.to',
+      attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
+    _xsCache.set(ck, { at: Date.now(), body });
+    send(body);
+  } catch (e) { send({ ok: false, q: term, error: String((e && e.message) || e), rows: [] }); }
+}
+
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/lxapi/holders') return holdersProxy(req, res, new URL(req.url, 'http://x').searchParams);
@@ -1182,6 +1213,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/xlm') return xlmProxy(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplprices') return xrplPrices(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrpltokens') return xrplTokens(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrplsearch') return xrplSearch(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {

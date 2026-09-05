@@ -65,10 +65,34 @@
   // layout classes themselves. So these icons carry a class of OUR own that nothing else knows,
   // with the design's dimensions copied from its computed style (32px, round, 13px/800).
   // Real logos need the xrpl.to API key; until then, initials.
+  // Drawn as an inline SVG, and that is load-bearing rather than decorative.
+  //
+  // The page carries a logo HEALER (in nxnav-js) that scans EVERY span/div/i/b whose text is 1-5
+  // characters, resolves it as a ticker and stamps a logo over it. Three-letter initials sit exactly
+  // in that window, which is why no class-based opt-out worked: it never looks at classes. Its own
+  // isCandidate() bails on any element that already contains an img or svg -- so an element whose
+  // initials ARE a graphic is skipped for the right reason, not by trickery.
   function icon(name) {
-    var e = el('span', 'lxx-ic', initials(name));
+    var NS = 'http://www.w3.org/2000/svg';
+    var e = el('span', 'lxx-ic');
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 32 32');
+    svg.setAttribute('width', '32'); svg.setAttribute('height', '32');
+    var c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '16');
+    c.setAttribute('fill', 'rgba(255,255,255,.10)');
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', '16'); t.setAttribute('y', '17');
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('dominant-baseline', 'middle');
+    t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '800');
+    t.setAttribute('fill', '#fff');
+    t.textContent = initials(name);
+    svg.appendChild(c); svg.appendChild(t);
+    e.appendChild(svg);
     return e;
   }
+
 
   (function () {
     if (document.getElementById('lxx-ic-css')) return;
