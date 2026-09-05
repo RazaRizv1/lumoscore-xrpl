@@ -1228,6 +1228,37 @@ async function xrplToken(req, res, q) {
   } catch (e) { send({ ok: false, id, error: String((e && e.message) || e) }); }
 }
 
+// Local mirror of functions/lxapi/xrplpools. Ranked by VOLUME on purpose: sort=liquidity returns
+// five BITx pools claiming 113M with zero trade. See the Function for the measurement.
+let _xpoolCache = { at: 0, body: null };
+async function xrplPools(req, res, q) {
+  const send = (o) => { const b = Buffer.from(JSON.stringify(o));
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
+  const n = Math.min(100, Math.max(1, parseInt(q.get('n') || '50', 10) || 50));
+  if (Date.now() - _xpoolCache.at < 120000 && _xpoolCache.body) return send(_xpoolCache.body);
+  const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
+  const side = (a) => a ? { c: String(a.currency||''), i: a.issuer === 'XRPL' ? '' : String(a.issuer||''), v: num(a.value) } : null;
+  try {
+    const r = await fetch('https://api.xrpl.to/api/amm?limit=' + n + '&sort=volume&status=active',
+      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+    if (!r.ok) throw new Error('upstream ' + r.status);
+    const j = await r.json();
+    const rows = ((j && j.pools) || []).map(p => { const a = p.apy24h || {};
+      return { id: String(p._id||''), acct: String(p.ammAccount||''), a1: side(p.asset1), a2: side(p.asset2),
+        fee: num(p.tradingFee) == null ? null : num(p.tradingFee) / 1000,
+        liq: num(a.liquidity), vol: num(a.volume), fees: num(a.fees), apy: num(a.apy),
+        holders: num(p.lpHolderCount), depth: (p.health && p.health.depth) || '' }; });
+    const s2 = (j && j.summary) || {};
+    const body = { ok: true, count: rows.length, total: num(j && j.total),
+      summary: { liquidity: num(s2.totalLiquidity), vol24: num(s2.totalVolume24h),
+        fees24: num(s2.totalFees24h), avgFee: num(s2.avgFee) }, rows,
+      src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
+    _xpoolCache = { at: Date.now(), body };
+    send(body);
+  } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
+}
+
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/lxapi/holders') return holdersProxy(req, res, new URL(req.url, 'http://x').searchParams);
@@ -1246,6 +1277,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/xrpltokens') return xrplTokens(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplsearch') return xrplSearch(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrpltoken') return xrplToken(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrplpools') return xrplPools(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {
