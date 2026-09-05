@@ -2661,7 +2661,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
 
       <section class="acc-stats" id="accStats">
         <div class="acc-stat"><span class="l">Portfolio value</span><b class="v" data-k="total">&#8212;</b><span class="s" data-s="total"></span></div>
-        <div class="acc-stat"><span class="l">XLM balance</span><b class="v" data-k="xlm">&#8212;</b><span class="s" data-s="xlm"></span></div>
+        <div class="acc-stat"><span class="l">XRP balance</span><b class="v" data-k="xlm">&#8212;</b><span class="s" data-s="xlm"></span></div>
         <div class="acc-stat"><span class="l">Assets held</span><b class="v" data-k="assets">&#8212;</b><span class="s" data-s="assets"></span></div>
         <div class="acc-stat"><span class="l">Pool positions</span><b class="v" data-k="pools">&#8212;</b><span class="s" data-s="pools"></span></div>
       </section>
@@ -2692,7 +2692,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
         <div class="acc-card-head"><h2>Recent activity</h2><span class="acc-n" id="accActN"></span></div>
         <div class="acc-acts" id="accActs"><div class="acc-empty">Loading activity&#8230;</div></div>
       </section>
-</main><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do I add liquidity to this pool?","acceptedAnswer":{"@type":"Answer","text":"Use Add liquidity on this page: enter an amount for either asset and the other side fills in at the pool’s ratio. A first position also opens a trustline, which locks 0.5 XLM, so keep a little spare."}},{"@type":"Question","name":"What do the pool reserves mean?","acceptedAnswer":{"@type":"Answer","text":"The reserves are how much of each asset the pool currently holds. Their ratio is its price and their size is its depth, so a bigger pool absorbs a large trade with less movement."}},{"@type":"Question","name":"What are the risks?","acceptedAnswer":{"@type":"Answer","text":"As prices move the pool sells whichever asset is rising and buys the one falling, so you can withdraw less of the winner than you put in and fees may not cover it. A pool is also only as sound as its two assets."}}]}</script><footer>
+</main><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How do I add liquidity to this pool?","acceptedAnswer":{"@type":"Answer","text":"Use Add liquidity on this page: enter an amount for either asset and the other side fills in at the pool’s ratio. A first position also holds an LP token, which locks 0.2 XRP, so keep a little spare."}},{"@type":"Question","name":"What do the pool reserves mean?","acceptedAnswer":{"@type":"Answer","text":"The reserves are how much of each asset the pool currently holds. Their ratio is its price and their size is its depth, so a bigger pool absorbs a large trade with less movement."}},{"@type":"Question","name":"What are the risks?","acceptedAnswer":{"@type":"Answer","text":"As prices move the pool sells whichever asset is rising and buys the one falling, so you can withdraw less of the winner than you put in and fees may not cover it. A pool is also only as sound as its two assets."}}]}</script><footer>
       <div class="ft-grid"><div class="ft-col ft-brand"><div class="ft-mark"><span class="ft-logo"></span><span class="ft-name">LUMOSCORE</span></div><p>Multichain infrastructure for issuing, trading and bridging assets on multiple networks.</p><div class="socials">
           <a href="https://x.com/LumosCore" target="_blank" rel="noopener nofollow" aria-label="X"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
           <a href="http://t.me/lumoscore" target="_blank" rel="noopener nofollow" aria-label="Telegram"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M22.05 1.577c-.393-.016-.784.08-1.117.235-.484.186-21.087 8.502-21.087 8.502s5.523 1.86 5.523 1.86 2.61 8.155 2.708 8.479c.108.357.42.768.793 1.052.473.288 1.214.336 1.86-.016.7-.382 2.166-1.255 2.166-1.255l4.13 3.046s.572.345 1.218.396c.323.025 1.082-.27 1.082-.27.371-.255.62-.7.74-1.211l3.32-16.65c.085-.382-.094-.59-.166-.66-.43-.404-1.038-.524-1.295-.522l-.012-.06z"/></svg></a>
@@ -3059,7 +3059,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
         
       </div>
       <div class="sp-foot">
-        <span>Search assets, pools and wallets on Stellar.</span>
+        <span>Search assets, pools and wallets on the XRP Ledger.</span>
         <span>Type <span class="kbd-mini">?</span> for help.</span>
       </div>
     </div>
@@ -7510,7 +7510,7 @@ var qrcode = function() {
       DONE.pools=1;
       // From here on we are valuing the account -- see PXWAVE. renderStats() is deliberately LAST:
       // renderPools() and the wave below claim their pending count synchronously, so calling it first
-      // would read PXPEND as 0 and print a total built from nothing but the XLM balance.
+      // would read PXPEND as 0 and print a total built from nothing but the XRP balance.
       PXWAVE=1;
       paintHeader(); renderAssets(); wireTabs(); renderPools();
       // Price beyond the first batch so the ORDER is real rather than just Horizon's order, but stop at

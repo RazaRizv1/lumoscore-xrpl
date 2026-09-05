@@ -3202,7 +3202,7 @@ function lxLpFriendlyErr(e, lastMsg){
   var signing=/signature|signing/i.test(lastMsg||"");
   if(/reject|declin|denied|cancel|user did|not allowed|rejected/.test(raw)) return "Signature request was declined in your wallet.";
   if(/underfund|insufficient|op_underfunded/.test(raw)) return "Not enough XLM in your wallet to complete the launch.";
-  // Connected wallet isn't activated on Stellar mainnet (needs a real XLM balance to exist on-chain).
+  // Connected wallet isn't activated on Stellar mainnet (needs a real XRP balance to exist on-chain).
   if(/not found on mainnet|account not found|mainnet:/i.test(raw)) return "Your wallet isn't funded on Stellar mainnet yet. Add some XLM to it (enough to cover the new issuer + liquidity + network fees) and try again.";
   if(/not (found|detected)|no address|unlock|install/.test(raw)) return "Wallet not available — unlock your Stellar wallet and try again.";
   // A wallet threw during / around a signature (some wallets, e.g. xBull, error out on parts of the
@@ -3316,7 +3316,7 @@ function lxLpWireConfirm(){
   function txt(el,s){ if(el&&el.textContent!==s) el.textContent=s; }
   var TL=[
     {t:"Transaction signed", d:'Approved with Stellar wallet <span class="mono-mini">'+lxLpShort(r.distributor)+'</span>', s:0},
-    {t:"Asset issued on Stellar", d:'Token '+CODE+' created with issuer locked. Supply: '+lxLpFmt(supply)+' '+CODE+'.', s:3},
+    {t:"Asset issued on the XRP Ledger", d:'Token '+CODE+' created with issuer locked. Supply: '+lxLpFmt(supply)+' '+CODE+'.', s:3},
     {t:"Liquidity pool created", d:'XLM/'+CODE+' pool seeded with '+lxLpFmt(lp)+' '+CODE+' · '+(r.liqXlm||0)+' XLM.', s:6},
     {t:"Listed on DEX", d:'Your token is now discoverable and tradeable.', s:8}
   ];
