@@ -37,6 +37,27 @@ eq('OLD reserves would have overstated by',
      - C.spendableXrp(375382386, 104, { base: 10, inc: 2 }).spendable).toFixed(6), 196.2);
 
 console.log('');
+console.log('=== addresses (real accounts, and real values of the WRONG kind) ===');
+// Accepts: every one of these is an account that exists on mainnet today.
+eq('holder account',   C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymV'), true);
+eq('LUMOS issuer',     C.isAddress('rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha'), true);
+eq('second issuer',    C.isAddress('rK58zTa7AzU9T4mMySJoT13KPDxLuMYLNw'), true);
+eq('ACCOUNT_ZERO',     C.isAddress('rrrrrrrrrrrrrrrrrrrrrhoLvTp'), true);
+
+// Rejects. The first two are the ones that matter: the Stellar build shares the lumos.address key,
+// so a leftover G-address is a value that really can arrive here.
+eq('Stellar G-address', C.isAddress('GCKFBEIYTKP6RCZX6LRWLKCVMHVRYVNTQJRVHPHPYQPRRPBUFRPT7NNM'), false);
+eq('EVM 0x address',    C.isAddress('0x71C7656EC7ab88b098defB751B7401B5f6d8976F'), false);
+eq('empty string',      C.isAddress(''), false);
+eq('null',              C.isAddress(null), false);
+eq('X-address (not classic)', C.isAddress('X7AcgcsBL6XDcUb289X4mJ8djcdyKaB5hJDWMArnXr61cqZ'), false);
+eq('truncated',         C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiym'), false);
+eq('one char too many', C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymVX'), false);
+// Characters that exist in Bitcoin's base58 but NOT in the XRPL alphabet. If this ever passes, the
+// decoder is using the wrong alphabet -- which would not throw, it would just produce other bytes.
+eq('bitcoin-alphabet char rejected', C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiym0'), false);
+
+console.log('');
 console.log('=== balances ===');
 const r = C.readLines([
   { currency: 'CSC', account: 'rCSC', balance: '809.42' },

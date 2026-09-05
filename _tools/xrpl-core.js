@@ -67,6 +67,43 @@ function encodeCurrency(name) {
   return (hex + '0'.repeat(40)).slice(0, 40);
 }
 
+// ---- addresses -----------------------------------------------------------------------------------
+// XRPL uses its OWN base58 alphabet -- not Bitcoin's, not Flickr's. Decoding with the wrong one
+// silently produces different bytes rather than an error.
+const B58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
+
+// Decode to bytes. Long division in base 58, because these are 25-byte values and Number would lose
+// precision well before the end.
+function b58decode(str) {
+  if (typeof str !== 'string' || !str.length) return null;
+  const bytes = [0];
+  for (let i = 0; i < str.length; i++) {
+    const v = B58.indexOf(str[i]);
+    if (v < 0) return null;                                // not in the XRPL alphabet at all
+    let carry = v;
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j] * 58;
+      bytes[j] = carry & 255;
+      carry >>= 8;
+    }
+    while (carry) { bytes.push(carry & 255); carry >>= 8; }
+  }
+  for (let i = 0; i < str.length && str[i] === B58[0]; i++) bytes.push(0);   // leading zeros
+  return bytes.reverse();
+}
+
+// A CLASSIC XRPL ACCOUNT ADDRESS, by shape. Deliberately NOT a checksum check: verifying the trailing
+// 4 bytes needs double-SHA256, which is async in a browser (crypto.subtle) and would make every caller
+// async for a case that barely happens -- a wallet does not hand back a one-character typo of its own
+// address. What DOES happen, and what this catches, is a value of the wrong KIND: a Stellar 'G...'
+// address left in shared storage by the Stellar build, an EVM '0x...', an empty string, an X-address.
+// Connect confirms the account against the ledger separately, which is the real check.
+function isAddress(a) {
+  if (typeof a !== 'string' || a.length < 25 || a.length > 35 || a[0] !== 'r') return false;
+  const b = b58decode(a);
+  return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
+}
+
 // ---- reserves ------------------------------------------------------------------------------------
 // reserves come from server_info; never assume them.
 function spendableXrp(balanceDrops, ownerCount, reserve) {
@@ -100,7 +137,7 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines };
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
