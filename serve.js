@@ -1123,6 +1123,49 @@ async function xrplPrices(req, res, q) {
   }
 }
 
+// Local mirror of functions/lxapi/xrpltokens — market rows for the Trade page. See that file.
+let _xtCache = { at: 0, body: null };
+async function xrplTokens(req, res, q) {
+  const send = (obj) => {
+    const b = Buffer.from(JSON.stringify(obj));
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*', 'content-length': b.length });
+    res.end(b);
+  };
+  const n = Math.min(100, Math.max(1, parseInt(q.get('n') || '50', 10) || 50));
+  if (Date.now() - _xtCache.at < 120000 && _xtCache.body) return send(_xtCache.body);
+  const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
+  try {
+    const r = await fetch('https://api.xrpl.to/api/tokens?limit=100&sort=vol24hxrp&order=desc&lightweight=true',
+      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+    if (!r.ok) throw new Error('upstream ' + r.status);
+    const bulk = await r.json();
+    const xrpPerUsd = Number(bulk && bulk.exch && bulk.exch.USD);
+    const usdPerXrp = xrpPerUsd > 0 ? 1 / xrpPerUsd : null;
+    const rows = [];
+    for (const t of (bulk.tokens || [])) {
+      const p = Number(t.exch);
+      if (!isFinite(p)) continue;
+      const mm = Array.isArray(t.maxMin24h) ? t.maxMin24h : [];
+      rows.push({ c: t.currency, i: t.issuer, n: String(t.name || ''), u: String(t.user || ''),
+        p, d: num(t.pro24h), w: num(t.pro7d), v: num(t.vol24hxrp), t: num(t.tvl),
+        x: num(t.vol24htx),
+        hi: num(mm[0]), lo: num(mm[1]), h: num(t.holders), vf: t.verified ? 1 : 0,
+        o: String(t.origin || '') });
+      if (rows.length >= n) break;
+    }
+    let usd = usdPerXrp;
+    const peg = rows.find(x => x.n === 'RLUSD');
+    if (usd == null || !peg || !(peg.p * usd > 0.90 && peg.p * usd < 1.10)) usd = null;
+    const out = { ok: true, usd, count: rows.length, rows, src: 'xrpl.to',
+      attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
+    _xtCache = { at: Date.now(), body: out };
+    send(out);
+  } catch (e) {
+    send({ ok: false, error: String((e && e.message) || e), rows: [] });
+  }
+}
+
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/lxapi/holders') return holdersProxy(req, res, new URL(req.url, 'http://x').searchParams);
@@ -1138,6 +1181,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/poolvol') return poolVol(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xlm') return xlmProxy(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplprices') return xrplPrices(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrpltokens') return xrplTokens(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {
