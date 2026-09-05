@@ -58,3 +58,31 @@ special-case. Seed the LUMOS logo explicitly; do not derive it.
 
 Not CCTP. XRPL uses **Wanchain and Axelar** (RAZA, 2026-09-06). Different contracts and a different
 claim model from the Stellar bridge — research before assuming anything ports.
+
+## LUMOS Ecosystem LP reward pools (verified 2026-09-06)
+
+Ten AMM pools, each with LUMOS on one side. Supplied by RAZA as addresses only; every one was
+resolved with `amm_info` on mainnet, which confirmed it is a real AMM account **and** that LUMOS is
+genuinely one of its two sides. The pair names below are what the ledger reports — they were not
+supplied and must not be guessed from the address.
+
+| AMM account | pairs LUMOS with |
+|---|---|
+| `r27TeM8xMebVAMHt4aB3BMYw5MB5fULht` | 666 |
+| `rM6HW3s4WUGuLYwKwRvZx2aai5wk5PR5fz` | XDawgs |
+| `rhhBo4BXkrhvr17rLdtdwxMjEk1NnTvqUC` | MXI |
+| `rJZftp95akgYuXXtb2yp23F1cGuHu34pMA` | BXE |
+| `rEmgwNPCbq6ogmLKThxgee35uCSqfhB83M` | REAL |
+| `rJnv9wSoSECHzWsNXR7E74hi8mbKX9ZnDM` | RLUSD |
+| `rsKJxAyfL2AGdTMqz5ZMhBSyiSxqz97g3z` | ARMY |
+| `rKsz9Dft5yYtbLS1SSG9L6u3LyhgwuWhew` | FUZZY |
+| `rUHWxx4kodHx3P8WxtkdcjhwDXnr5p9txo` | BEAR |
+| `rJfj7MXMt1VfBFF8mBta1CesMSzXYZELyZ` | SOLO |
+
+An XRPL AMM is addressed by its **AMM account**, not by a pool id the way Stellar's are — so these
+addresses are what a rewards data layer queries (`amm_info` with `amm_account`), and they are also
+the accounts whose LP token holders are the reward recipients.
+
+**Programme start dates are the SAME as Stellar** (RAZA, 2026-09-06): native LP rewards 15 December
+2025, whale holder rewards 1 April 2026, Ecosystem LP rewards 15 April 2026. Rounds run from the 1st
+and 15th of each month.

@@ -91,6 +91,19 @@ const COPY = [
   ['You pay in XLM at the live rate', 'You pay in XRP at the live rate'],
   ['shown to people already trading Stellar assets', 'shown to people already trading XRP Ledger tokens'],
 
+  // --- Ecosystem LP rewards ----------------------------------------------------------------------
+  // RAZA supplied ten pool addresses on 2026-09-06. They were NOT taken on trust: each was resolved
+  // with amm_info on mainnet, which confirmed all ten are real AMM accounts and that LUMOS is one
+  // side of every one. The pair names below are what the ledger reports, not what was typed to me --
+  // the addresses arrived without names, so reading them off the ledger is the only way to get this
+  // list right, and it is also what proves the list is the LUMOS set at all.
+  ['currently LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and USDC',
+   'currently 666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and SOLO'],
+  ['each pairing LUMOS with one other asset', 'each pairing LUMOS with one other token'],
+  // RAZA confirmed 2026-09-06 that the XRP Ledger programmes started on the same dates as the
+  // Stellar ones, so the answer's dates stay exactly as they are and only the question is renamed.
+  ['When did rewards start on Stellar?', 'When did rewards start on the XRP Ledger?'],
+
   // --- misc labels --------------------------------------------------------------------------------
   ['XLM balance', 'XRP balance'],
 ];
@@ -102,8 +115,9 @@ const COPY = [
 //               uses Wanchain and Axelar, but the destinations and assets are not settled. RAZA:
 //               leave it (2026-09-06). Writing a chain list we have not committed to would be the
 //               most quotable false sentence on the site.
-//   rewards     the ten named pools, 100,000 LUMOS per round. The XRPL pools do not exist yet; RAZA
-//               is supplying the list. Until then there is no honest version to write.
+//   rewards     DONE. Pool list resolved from the ledger, and RAZA confirmed the XRP Ledger
+//               programmes began on the same dates as the Stellar ones, so those dates are correct
+//               as they stand and only the question needed renaming.
 //   MCP         "Stellar DeFi for AI Agents", "Stellar asset prices". The MCP server is Stellar-only.
 //               Renaming it would claim a capability that has not been built.
 //   Soroban     a "Soroban record" label on the asset page. Soroban has no XRP Ledger equivalent, so
