@@ -1,0 +1,6 @@
+# The design containers: ~60MB, and the real source of truth for every page.
+# Gitignored to match the Stellar project's convention — but that also means a
+# revert restores dist/ and NOT these, so a rebuild can silently re-ship a
+# reverted change. Back them up before any transform that deletes rather than adds.
+lumoscore-xrpl-*.html
+node_modules/

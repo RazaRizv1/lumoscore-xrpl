@@ -1,0 +1,1448 @@
+const fs = require('fs');
+const path = require('path');
+
+function read(f){ return fs.readFileSync(f, 'utf8'); }
+function getContents(data){
+  const i = data.indexOf('id="designContents"');
+  const s = data.indexOf('>', i) + 1;
+  const e = data.indexOf('</script>', s);
+  return JSON.parse(data.slice(s, e));
+}
+
+const BS = String.fromCharCode(92); // backslash
+
+// Standalone runtime injected into every extracted page:
+//  - real window.lxNavigate (picks the candidate matching this page's desktop/mobile variant)
+//  - inert guard: links to pages not shipped in this folder, or bare "#", do nothing (no 404, no jump)
+// old build filename -> clean url. Derived from ROUTES so there is one source of truth.
+// Used at RUNTIME (lxNavigate + click) because most navigation here is built dynamically in JS;
+// the static hrefs are additionally rewritten at build time so crawlers follow clean urls too.
+function cleanMapJson(){
+  const m = {};
+  for(const [url, file] of ROUTES){
+    if(/:/.test(url)) continue;                     // dynamic routes are handled by query conversion
+    // key on the BASE name: /rewards is served by lumoscore-rewards-dark.html, but links to it appear
+    // as -dark, -light and -mobile, and every one of them is the same page.
+    m[file.replace(/\.html$/, '').replace(/-(dark|light|mobile)$/, '')] = url;
+  }
+  m['lumoscore-landing'] = '/';
+  // dynamic routes with no identifier in the link fall back to the list page
+  m['lumoscore-dex-asset'] = '/trade/stellar';
+  m['lumoscore-account']   = '/account/stellar';
+  // asset-overview was REMOVED — it duplicated Trade-asset without the ability to act on what it
+  // showed. Anything still pointing at it resolves to the Trade page instead.
+  m['lumoscore-asset-overview'] = '/trade/stellar';
+  return JSON.stringify(m);
+}
+
+function runtime(validArray){
+  const VALID = JSON.stringify(validArray);
+  return '<script>(function(){if(window.__lxSite)return;window.__lxSite=1;'
+    + 'var CLEAN=' + cleanMapJson() + ';'
+    // Turn "lumoscore-x[-dark|-light|-mobile].html?query" into its clean url. Theme and device are no
+    // longer part of a url, so those suffixes are dropped. An unmapped file is returned untouched
+    // rather than guessed at, so nothing can navigate somewhere that does not exist.
+    + 'function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;'
+    + '  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}'
+    + '  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}'
+    + '  var base=u.replace(/'+BS+'.html$/,"").replace(/-(dark|light|mobile)$/,"");'
+    + '  var p=new URLSearchParams(q), a=p.get("asset");'
+    // the two dynamic routes: an ?asset= becomes a path segment
+    + '  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);'
+    + '  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);'
+    + '  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);'
+    // a pool is addressed by its two assets, which a ?pool=<id> link does not carry — leave it alone
+    + '  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;'
+    + '  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;'
+    + '  return c+(q?("?"+q):"")+h; }'
+    + 'window.lxCleanUrl=lxClean;'
+    + 'var self=(location.pathname.split("/").pop()||"");'
+    // Cloudflare Pages 308-redirects /foo.html -> /foo, so the extension is NOT present at runtime on
+    // a hosted deploy (it is on localhost). Matching only "-mobile.html" made every mobile visitor look
+    // like a desktop one and sent them to desktop pages. Accept both forms.
+    + 'var MOB=/-mobile('+BS+'.html)?$/.test(self);'
+    + 'var VALID=' + VALID + ';'
+    + 'window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;'
+    // 1) candidate matching this device (desktop/mobile) AND that actually exists
+    + 'for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile'+BS+'.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}'
+    // 2) any candidate that exists
+    + 'if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}'
+    // 3) device-matching even if not in VALID, else first
+    + 'for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile'+BS+'.html$/.test(g)){p=g;break;}}'
+    // candidate selection above works on FILENAMES (that is what VALID holds); only the final
+    // destination is converted to its clean url
+    + 'if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};'
+    + 'document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;'
+    + 'var h=a.getAttribute("href")||"";'
+    + 'if(h==="#"||h==="#!"){e.preventDefault();return;}'
+    // strip query/hash before the existence check — without this, "…dex-asset.html?asset=X" never
+    // matched the guard at all, so a link to a page not shipped here would 404 instead of going inert
+    + 'var hb=h.split("?")[0].split("#")[0];'
+    + 'if(/^lumoscore-['+BS+'w-]+'+BS+'.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}'
+    // anything still pointing at a build filename navigates to the clean url instead
+    + 'if(/^lumoscore-['+BS+'w-]+'+BS+'.html/.test(h)){var cl=lxClean(h);'
+    + 'if(cl!==h){e.preventDefault();location.href=cl;}}'
+    + '},true);'
+    // __lxNav is a SECOND navigation helper used by onclick="" handlers across many transforms, and
+    // it was never mapped — that is why clicking Dashboard still landed on lumoscore-home.html.
+    // Wrapped lazily on an interval because the transforms that define it run after this runtime.
+    + 'var wrapped=0,tries=0;var iv=setInterval(function(){tries++;'
+    + 'if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){'
+    + 'var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;'
+    + 'window.__lxNav=w;wrapped=1;}'
+    + 'if(wrapped||tries>40)clearInterval(iv);},50);'
+    + '})();</scr' + 'ipt>'
+    // light-theme was missing --surface-3 (elevated surface), leaving the account-widget wallet chip dark in light mode
+    + '<style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style>'
+    // The site tooltip renders ABOVE its trigger (bottom:calc(100% + 8px)). #themeToggle sits in the
+    // header, so above is off the top of the viewport and all the reader sees is the arrow. The design
+    // already ships a below variant as [data-tooltip-pos="below"], but setting that attribute means
+    // editing the toggle's markup in every container; one rule here reaches all 30 pages that have it.
+    // The arrow flips with it -- border-top drew it pointing down at a tooltip now underneath.
+    + '<style id="lx-tiptheme">'
+    + '#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}'
+    + '#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);'
+    + 'border-top:0;border-bottom:5px solid var(--text)}'
+    + '#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,'
+    + '#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after'
+    + '{transform:translateX(-50%) translateY(0)}'
+    + '</style>';
+}
+
+// Clean URLs put pages at depth (/trade/stellar/<ASSET>), where a relative "assets/x.png" resolves to
+// /trade/stellar/assets/x.png and 404s. Every asset reference is therefore rooted at build time.
+// A <base href="/"> would be one line, but it also rewrites every bare "#" anchor into a navigation
+// to "/", and this design uses href="#" widely — so rewriting the references is the safe fix.
+function rootRelative(html){
+  return html
+    .replace(/(\s(?:src|href|poster|data-src)=")assets\//g, '$1/assets/')
+    .replace(/(\ssrcset=")assets\//g, '$1/assets/')
+    .replace(/url\((['"]?)assets\//g, 'url($1/assets/');
+}
+
+// Rewrite literal href="lumoscore-x.html" to the clean url at build time. The runtime mapper already
+// handles clicks, but a crawler never clicks — it reads hrefs. Only exact matches (quote immediately
+// after .html) are touched, so the JS string concatenations that build "…?asset='+code" are left alone
+// and handled at runtime instead.
+function cleanLinks(html){
+  const map = JSON.parse(cleanMapJson());
+  return html.replace(/href="(lumoscore-[a-z0-9-]+)\.html"/g, (full, base) => {
+    const key = base.replace(/-(dark|light|mobile)$/, '');
+    const clean = map[key];
+    return clean ? 'href="' + clean + '"' : full;
+  });
+}
+
+// THE TOKEN REGISTRY, BAKED IN AT BUILD TIME.
+//
+// Every page resolved a LumosCore token's logo by FETCHING this same file at runtime, which meant the
+// first paint had no URL yet and drew the letter avatar, then swapped it for the real logo a moment
+// later. Two paints is one visible flash, on every page and every asset. Fetching earlier does not fix
+// that -- only knowing the answer synchronously does.
+//
+// So it is emitted into <head>, before any data layer runs, exactly like window.__lxRoute. The runtime
+// lookup becomes a property read and the avatar is never painted for a token we have.
+//
+// Read from assets/tokens/ (the source the build copies into dist/), so it is always whatever
+// _tools/_launchicons.js last wrote. A missing or unreadable file yields {} and every page falls back to
+// the behaviour it had before, rather than failing the build.
+function tokenRegistry(){
+  try{
+    const raw = fs.readFileSync(path.join(__dirname, '..', 'assets', 'tokens', 'launchpad-icons.json'), 'utf8');
+    const m = JSON.parse(raw);
+    if(!m || typeof m !== 'object' || Array.isArray(m)) return {};
+    const out = {};
+    for(const k of Object.keys(m)){
+      const v = m[k];
+      const img = (v && typeof v === 'object') ? v.image : v;
+      const name = (v && typeof v === 'object' && typeof v.name === 'string') ? v.name : '';
+      // same-origin absolute path only -- the page interpolates this into url(), so a value naming
+      // another host would let one bad write repoint every icon on the site
+      if(typeof img === 'string' && img.charAt(0) === '/' && img.indexOf('//') !== 0) out[k] = { image: img, name: name };
+      else if(name) out[k] = { image: '', name: name };
+    }
+    return out;
+  }catch(e){ return {}; }
+}
+const TOKEN_REG_JSON = JSON.stringify(tokenRegistry());
+
+function injectTokenRegistry(html){
+  // Guard on the ASSIGNMENT, not the bare name: the data layers mention __lxTokenRegistry in their
+  // comments, so a name test matched every page and silently skipped the injection entirely.
+  if(html.indexOf('window.__lxTokenRegistry=') >= 0) return html;
+  // Also seed window.__lxLogos, the shared cache every wallet icon path reads (lpIco, ilogo, actBg,
+  // selectSendAsset, the harvesters). It lives in ITS OWN head script, deliberately: the first attempt
+  // spliced this into _walletdata.js's own script string, and when the wallet then reported broken row
+  // clicks and a dead kebab menu I could not clear my own change -- the My Assets table only renders for
+  // a real account, so there was nothing local to click. Here it cannot interact with that script at all.
+  // Seeds only empty slots, so a harvested per-issuer result still wins, and the wallet's own
+  // "window.__lxLogos=window.__lxLogos||{}" preserves whatever is already here.
+  const tag = '<script>window.__lxTokenRegistry=' + TOKEN_REG_JSON + ';'
+    + '(function(){try{var R=window.__lxTokenRegistry,L=(window.__lxLogos=window.__lxLogos||{});'
+    + 'for(var k in R){if(!Object.prototype.hasOwnProperty.call(R,k))continue;'
+    + 'var d=k.indexOf("-");if(d<1)continue;var c=k.slice(0,d),u=R[k]&&R[k].image;'
+    + 'if(typeof u==="string"&&u.charAt(0)==="/"&&u.indexOf("//")!==0&&!L[c])L[c]=u;}}catch(e){}})();'
+    // Wallet: clicking a My Assets row, or View asset in its row menu, opens Trade-Asset.
+    //
+    // This lives in <head> rather than in _walletdata.js for a reason found the hard way: that script
+    // returns early when no account is connected, so an IIFE placed inside it never executed and the
+    // handler was silently absent. Function declarations hoist past that; statements do not. From here
+    // it is attached before anything else runs and cannot be gated.
+    //
+    // Delegated, so it survives the table being re-rendered, and scoped to #assetsTable and .row-menu,
+    // which exist only on the wallet page -- so it is inert everywhere else.
+    + '(function(){if(document.__lxRowNav)return;document.__lxRowNav=1;'
+    + 'function go(c,i){if(!c)return;window.location.href=(c==="XLM")?"lumoscore-dex.html":("lumoscore-dex-asset.html?asset="+encodeURIComponent(c)+(i?("-"+i):""));}'
+    + 'document.addEventListener("click",function(e){'
+    + 'if(!e.target||!e.target.closest)return;'
+    + 'var mb=e.target.closest(".row-menu button");'
+    + 'if(mb&&/view/i.test(mb.textContent||"")){var a=window.__lxActiveAsset||{};if(a.code){e.preventDefault();e.stopPropagation();go(a.code,a.iss);}return;}'
+    // everything interactive keeps its own behaviour: Trade, Send, Trustline, the kebab, the issuer copy
+    + 'if(e.target.closest("button,a,input,select,[class*=copy],[data-copy]"))return;'
+    + 'var row=e.target.closest("#assetsTable tbody tr");if(!row)return;'
+    + 'var ico=row.querySelector(".lx-aico");if(!ico)return;'
+    + 'go(ico.getAttribute("data-lxc")||"",ico.getAttribute("data-lxi")||"");'
+    + '},true);})();'
+    + '</scr'+'ipt>'
+    + '<style>#assetsTable tbody tr{cursor:pointer}</style>';
+  const hi = html.indexOf('<head>');
+  if(hi >= 0) return html.slice(0, hi + 6) + tag + html.slice(hi + 6);
+  const he = html.indexOf('</head>');
+  if(he >= 0) return html.slice(0, he) + tag + html.slice(he);
+  return html;   // no head at all -> leave the page exactly as it was
+}
+
+// Resource hints, injected FIRST in <head> so the handshakes overlap the 234 KB of inline CSS that
+// follows them rather than queueing behind it.
+//
+// MEASURED on production before adding these, not assumed. Handshake cost (DNS+TCP+TLS) to each
+// origin, against when the page first actually contacts it on /trade/stellar/:asset:
+//     horizon.stellar.org   592 ms handshake, first contacted at 1729 ms
+//     api.stellar.expert     95 ms            first contacted at 1714 ms
+//     api.coingecko.com      59 ms            first contacted at 1727 ms
+// Horizon is the whole prize: 185 ms of TCP and 394 ms of TLS, paid serially at the exact moment the
+// page is trying to fill in prices. Nothing touches it for the first 1.7 s, so a hint issued here has
+// the socket open and idle long before it is needed.
+//
+// Checked against the build rather than guessed: horizon and stellar.expert are referenced by 96 of 96
+// pages, coingecko by 92 -- so no page is warming an origin it never calls except four, which pay one
+// idle socket. Only three preconnects: each holds a connection open, so warming everything is
+// counterproductive. coingecko gets dns-prefetch, which is nearly free.
+//
+// ⚠ crossorigin ON THE FONT PRELOAD IS NOT OPTIONAL, even though the file is same-origin. Fonts are
+// fetched in CORS mode, so a preload without it is treated as a DIFFERENT request than the one the
+// stylesheet makes and the browser downloads the file TWICE -- slower than adding nothing at all.
+// Verified after the change by counting font requests, not by reading the tag.
+//
+// The font is hankengrotesk-latin: used on 96 of 96 pages, currently requested at 1212 ms and landing
+// at 1881 ms because it cannot start until the CSS that references it has parsed. font-display is
+// swap, so text is never invisible -- what this removes is a second of fallback-font flash.
+const HINTS =
+    '<link rel="preconnect" href="https://horizon.stellar.org" crossorigin>'
+  + '<link rel="preconnect" href="https://api.stellar.expert" crossorigin>'
+// esm.sh is deliberately NOT preconnected despite being the third-busiest origin in the build. It is
+// only contacted when someone connects a wallet, which is why it does not appear in the page-load
+// timing above at all -- and a preconnected socket is dropped after ~10 s idle, so the hint would
+// expire long before the click that needs it. Warming it would cost a connection and buy nothing.
+  + '<link rel="dns-prefetch" href="https://api.coingecko.com">'
+  + '<link rel="preload" as="font" type="font/woff2" crossorigin'
+  + ' href="/assets/fonts/hankengrotesk-latin.woff2">';
+
+function injectHints(html){
+  if(html.indexOf('rel="preconnect"')>=0) return html;      // idempotent across rebuilds
+  const hi = html.indexOf('<head>');
+  if(hi >= 0) return html.slice(0, hi + 6) + HINTS + html.slice(hi + 6);
+  const he = html.indexOf('</head>');
+  if(he >= 0) return html.slice(0, he) + HINTS + html.slice(he);
+  return html;   // no head at all -> leave the page exactly as it was
+}
+
+function injectRuntime(html, validArray){
+  if(html.indexOf('window.__lxSite')>=0) return html;
+  const rt = runtime(validArray);
+  const bi = html.lastIndexOf('</body>');
+  return bi>=0 ? html.slice(0,bi)+rt+html.slice(bi) : html+rt;
+}
+
+// "/" must BE the landing page, not a shim that bounces to /lumoscore-landing — otherwise the site's
+// front door is a redirect, the clean url is pointless, and search engines index the wrong address.
+// So index.html is a copy of the landing page itself, with one small script that swaps to the mobile
+// build. That swap is still a redirect on phones; it goes away once device is resolved at the edge.
+// No client-side device swap here any more: the edge picks desktop vs mobile from the User-Agent and
+// serves both at the same url. A width-based redirect would undo that — a desktop window narrower than
+// 760px would bounce to /lumoscore-landing-mobile, recreating the second url the whole design avoids.
+function indexHtml(landingHtml){
+  return landingHtml;
+}
+
+// The admin panel must never land in the public build.
+//
+// This is a static site: the server hands any file it holds to anyone who asks, and every admin page
+// carries its logic in readable JavaScript. A password checked in that JavaScript is not a gate, and
+// an unlinked URL is not a secret (history, referrers, crawlers). The only reliable protection for a
+// static site is to NOT SHIP THE FILE. So the public build simply omits every lumoscore-admin-* page,
+// and `--admin` writes them to a separate folder that is never the public root.
+//
+// Note this hides the PANEL, not the numbers: the fee collector's payment history is public on-chain
+// and readable on stellar.expert by anyone. What is protected is the admin UI and its write actions.
+const ADMIN_RE = /^lumoscore-admin-/;
+
+// _authgate.js puts a "no wallet connected -> location.replace('lumoscore-landing.html')" guard in the
+// head of every in-app page. That is correct for the public site and fatal for the admin one: the admin
+// origin is a separate Pages project that contains ONLY admin pages, so there is no landing page to
+// land on and every route 404s unless a wallet happens to be in that origin's localStorage. The admin
+// panel is gated by Cloudflare Access instead, which authenticates before any HTML is served.
+// _authgate.js no longer gates admin pages; this strips any guard already baked into the containers.
+// Pages that are built by the design but must NOT ship. asset-overview duplicated Trade-asset — same
+// price, holders, pools and trustlines, but read-only — so it was removed rather than maintained
+// twice. Dropping the FILE (not just the route) is what makes that real: a stray link to
+// lumoscore-asset-overview.html cannot quietly keep working. Everything pointing at it is redirected:
+// the clean map and lxClean send it to /trade/stellar, legacyClean 301s the raw filename, and the
+// middleware 301s /asset/stellar/<ASSET> for urls already published in the sitemap.
+// admin-create-pool came with the design and was never wired: no submit handler, and nothing behind
+// its Validate or Save-draft buttons. There is also nothing for it to do. Pools are not imported --
+// lxapi/pools reads the network live from Horizon, so a pool appears because it exists on-chain --
+// and creating one is an on-chain operation signed by a wallet, which is the public Pools section,
+// not a panel with no signing key. Its fields were token fields anyway, duplicating the Assets page.
+const DROPPED = new Set(['lumoscore-asset-overview', 'lumoscore-admin-create-pool']);
+function isDropped(name){
+  let b = name.replace(/\.html$/, '');
+  let prev;
+  do { prev = b; b = b.replace(/-(dark|light|mobile)$/, ''); } while (b !== prev);
+  return DROPPED.has(b);
+}
+
+function stripAuthGate(h){
+  return h.replace(/<script id="lx-authgate">[\s\S]*?<\/script>/g, '');
+}
+
+// Cloudflare Pages reads _headers from the deployed directory. Emitted by the build so a rebuild
+// never silently drops them.
+//
+// X-Frame-Options DENY matters more than usual here: this app asks a wallet to sign transactions, and
+// a framed signing prompt is a clickjacking target. Verified nothing in the build frames its own pages.
+//
+// THE CSP IS DELIBERATELY PARTIAL, and the earlier note here — "any useful policy would need
+// 'unsafe-inline' and buy nothing" — was half right. It is true of script-src and style-src: the design
+// carries hundreds of inline <script> and style attributes, and a script-src that has to allow
+// 'unsafe-inline' protects almost nothing. It is NOT true of the four directives below, none of which
+// has anything to do with inline code, so they are set and the rest are left off until that inline code
+// is moved out.
+//
+//   base-uri 'self'     the one that actually matters. <base href="https://evil/"> re-points every
+//                       root-relative URL on the page at another origin — including
+//                       /assets/vendor/stellar-sdk-*.min.js, the library that builds transactions for
+//                       signing. Self-hosting that file is only worth anything if the browser resolves
+//                       it against OUR origin, and this is what guarantees that.
+//   object-src 'none'   nothing in the build uses <object>, <embed> or a plugin. Checked.
+//   frame-ancestors     backs X-Frame-Options DENY with the header modern browsers actually prefer.
+//   form-action 'self'  the build contains no <form action> and creates none at runtime. Checked. So
+//                       any form that appears is not ours, and cannot post anywhere.
+//
+// Each was verified against the built output before being added rather than assumed safe: zero forms,
+// zero <object>/<embed>, zero real <base> elements (the three matches are inside a comment), and
+// nothing framing our own pages.
+const CSP = "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'";
+
+function headersFile(isAdmin){
+  const common =
+      '  X-Content-Type-Options: nosniff\n'
+    + '  X-Frame-Options: DENY\n'
+    + '  Content-Security-Policy: ' + CSP + '\n'
+    + '  Referrer-Policy: strict-origin-when-cross-origin\n'
+    + '  Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()\n';
+  if(isAdmin){
+    // belt and braces: the admin site is behind Cloudflare Access, but if a policy is ever
+    // misconfigured this at least keeps it out of search results.
+    //
+    // The public build tells browsers to revalidate HTML; the admin build said nothing, so pages were
+    // cached at the browser's discretion. A rebuilt admin screen then kept showing the OLD one after a
+    // deploy, which is indistinguishable from the deploy having failed and cost a round of debugging.
+    // no-store rather than must-revalidate: this is a single-operator internal tool where being one
+    // deploy behind is far more expensive than a re-fetch, and the pages carry account data anyway.
+    return '/*\n' + common + '  X-Robots-Tag: noindex, nofollow, noarchive\n'
+      + '\n/*.html\n  Cache-Control: no-store\n'
+      + '\n/\n  Cache-Control: no-store\n';
+  }
+  return '/*\n' + common
+    + '\n/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n'
+    // The token-icon manifest lives under /assets/ but is the one file there that CHANGES: every new
+    // launchpad logo rewrites it. Left immutable, a visitor who loaded it once keeps that copy for a
+    // YEAR and never sees a logo added afterwards -- which is exactly what happened: four logos went
+    // live, served 200, and still rendered as letter tiles because the browser never re-asked for the
+    // index naming them. Cloudflare applies every matching rule and the LAST one wins, so this must
+    // stay below /assets/*.
+    + '\n/assets/tokens/launchpad-icons.json\n  Cache-Control: public, max-age=60, must-revalidate\n'
+    + '\n/*.html\n  Cache-Control: public, max-age=0, must-revalidate\n';
+}
+
+// Without this, Cloudflare Pages falls back to index.html with a 200 for ANY unmatched path — so a
+// mistyped or probed URL silently returns the landing page and looks like a hit. A real 404.html makes
+// Pages answer with an actual 404, which is both correct and stops a prober from inferring anything.
+// ---- clean URLs -------------------------------------------------------------------------------
+// The public URL scheme. Left side is what visitors and search engines see; right side is the file
+// that actually answers. Cloudflare Pages reads _redirects from the deployed directory; status 200
+// means REWRITE (serve that file at this URL, address bar unchanged) rather than redirect.
+//
+// Ordering matters: Pages applies the FIRST matching rule, so more specific paths must come first.
+// Placeholders (:name) match a single segment. Theme never appears in a URL — light and dark are the
+// same page — and device is resolved server-side, not by a separate URL.
+const ROUTES = [
+  // dynamic first: these carry an asset or pool identifier in the path
+  ['/trade/stellar/:asset',            'lumoscore-dex-asset.html'],
+  ['/trade/stellar',                   'lumoscore-dex.html'],
+  ['/account/stellar/:address',        'lumoscore-account.html'],
+  ['/pools/stellar/id/:pool',          'lumoscore-amm-pool.html'],   // fallback: id-only links
+  ['/pools/stellar/:a/:b',             'lumoscore-amm-pool.html'],
+  ['/pools/stellar',                   'lumoscore-amm.html'],
+  // NO /asset/stellar route. The asset-overview page was removed — it showed the same facts as
+  // Trade-asset with no way to act on them. /asset/stellar/<ASSET> is now a permanent 301 to
+  // /trade/stellar/<ASSET>, handled in the middleware so already-indexed urls keep their value.
+  // launchpad flow: /launchpad/review must precede /launchpad
+  ['/launchpad/review',                'lumoscore-launch-review.html'],
+  ['/launchpad/confirm',               'lumoscore-launch-confirm.html'],
+  ['/launchpad',                       'lumoscore-launch-token.html'],
+  // flat pages
+  ['/dashboard',                       'lumoscore-home.html'],
+  ['/bridge',                          'lumoscore-bridge.html'],
+  ['/wallet',                          'lumoscore-wallet.html'],
+  ['/rewards',                         'lumoscore-rewards-dark.html'],   // only variant that exists
+  ['/lumos/stellar',                   'lumoscore-lumos-token.html'],
+  ['/lumos',                           'lumoscore-lumos-token.html'],
+  ['/signin',                          'lumoscore-signin.html'],
+  ['/mcp',                             'lumoscore-mcp.html'],
+  ['/blog/:slug',                      'lumoscore-blog-post.html'],
+  ['/blog',                            'lumoscore-blog.html'],
+  ['/privacy',                         'lumoscore-privacy.html'],
+  ['/terms',                           'lumoscore-terms.html'],
+  ['/support',                         'lumoscore-support.html'],
+  ['/whitepaper',                      'lumoscore-whitepaper.html'],
+  ['/about',                           'lumoscore-about.html'],
+  ['/list-your-token',                 'lumoscore-list-token.html'],
+  // docs: each slug before the bare /docs, which serves the introduction
+  ['/docs/introduction',                'lumoscore-docs-introduction.html'],
+  ['/docs/connect-a-wallet',            'lumoscore-docs-connect-a-wallet.html'],
+  ['/docs/fees',                        'lumoscore-docs-fees.html'],
+  ['/docs/swaps',                       'lumoscore-docs-swaps.html'],
+  ['/docs/limit-orders',                'lumoscore-docs-limit-orders.html'],
+  ['/docs/liquidity-pools',             'lumoscore-docs-liquidity-pools.html'],
+  ['/docs/cross-chain',                 'lumoscore-docs-cross-chain.html'],
+  ['/docs/wallet',                      'lumoscore-docs-wallet.html'],
+  ['/docs/trustlines',                  'lumoscore-docs-trustlines.html'],
+  ['/docs/rewards',                     'lumoscore-docs-rewards.html'],
+  ['/docs/launch-a-token',              'lumoscore-docs-launch-a-token.html'],
+  ['/docs/asset-metadata',              'lumoscore-docs-asset-metadata.html'],
+  ['/docs/verification',                'lumoscore-docs-verification.html'],
+  ['/docs/curated-listing',             'lumoscore-docs-curated-listing.html'],
+  ['/docs/security',                    'lumoscore-docs-security.html'],
+  ['/docs/troubleshooting',             'lumoscore-docs-troubleshooting.html'],
+  ['/docs/faq',                        'lumoscore-docs-faq.html'],
+  ['/docs',                            'lumoscore-docs-introduction.html'],
+  // the footer has always called it FAQs; /faq serves the same page as /docs/faq
+  ['/faq',                             'lumoscore-docs-faq.html'],
+];
+
+// Case: fixed segments are lowercase, but an asset segment must keep its case — yUSDC and YUSDC are
+// genuinely different assets on Stellar. Pages matches paths case-sensitively, so these redirects
+// only forgive the fixed part.
+// Wrong-but-published urls that must keep working. A link written once and posted somewhere
+// cannot be edited later, so the site forgives the spelling rather than 404ing.
+//   /blogs/... -- the plural. The Rewards page links this way, and the site only serves /blog/...
+const ALIASES = [
+  ['/blogs/*', '/blog/:splat'],
+  ['/blogs',   '/blog'],
+];
+
+const CASE_FIXES = [
+  ['/Trade/*', '/trade/:splat'], ['/Pools/*', '/pools/:splat'],
+  ['/Bridge',  '/bridge'], ['/Wallet', '/wallet'], ['/Rewards', '/rewards'],
+  ['/MCP',     '/mcp'],    ['/Dashboard', '/dashboard'], ['/Launchpad', '/launchpad'],
+];
+
+function redirectsFile(){
+  const L = [];
+  L.push('# Clean URLs. 200 = rewrite (url stays put); 301 = permanent redirect.');
+  L.push('# Generated by _tools/extract_site.js — edit the ROUTES table there, not this file.');
+  L.push('');
+  // Target the EXTENSIONLESS path. Pages 308-redirects /foo.html -> /foo automatically, so rewriting
+  // to "/x.html" makes it answer with that 308 instead of the page — every clean url returned 308
+  // until this was changed.
+  for(const [from, to] of ROUTES) L.push(pad(from) + '/' + to.replace(/\.html$/, '') + '  200');
+  L.push('');
+  L.push('# forgive capitalised entry points');
+  for(const [from, to] of ALIASES) L.push(pad(from) + to + '  301');
+  for(const [from, to] of CASE_FIXES) L.push(pad(from) + to + '  301');
+  L.push('');
+  L.push('# the landing page IS the site root, so its old path must not be a second copy of it');
+  L.push(pad('/lumoscore-landing') + '/  301');
+  // Deliberately NO "legacy filename -> clean url" rules: nothing has ever been deployed, so there are
+  // no old links in the wild, and such a rule collides with the rewrite above and loops.
+  return L.join('\n') + '\n';
+}
+function pad(s){ return s + ' '.repeat(Math.max(1, 42 - s.length)); }
+
+// ---- one URL per page, device resolved at the edge -----------------------------------------------
+// Desktop and mobile are genuinely different markup here, but they must NOT be different urls: a link
+// copied from a phone would carry the phone layout to a desktop, and search engines would see two
+// urls serving one page. So the edge picks the variant from the User-Agent and the address bar never
+// changes.
+//
+// Vary: User-Agent is mandatory, not optional. Without it Cloudflare caches whichever variant it saw
+// first and serves it to everyone — the classic way this technique breaks.
+//
+// _routes.json keeps the cost at zero: only these paths invoke a Function. /assets/* and every other
+// static file is served directly and never counts against the Functions quota.
+// Static, indexable routes for sitemap.xml, derived from the SAME table the middleware routes on.
+//
+// EXCLUDED, and why:
+//   * anything with a :param -- those urls are enumerated from live data instead (assets, pools and
+//     blog posts), because a placeholder is not a url;
+//   * /signin, and the launchpad's mid-flow steps, which are states rather than pages and would be
+//     thin, duplicated entries;
+//   * admin, which is not part of the public site at all.
+const SITEMAP_SKIP = new Set(['/signin', '/launchpad/review', '/launchpad/confirm']);
+// A few pages deserve a stronger signal than the default.
+const SITEMAP_WEIGHT = {
+  '/': ['1.0', 'daily'],
+  '/trade/stellar': ['0.9', 'daily'],
+  '/pools/stellar': ['0.9', 'daily'],
+  '/blog': ['0.9', 'daily'],
+  '/docs': ['0.8', 'weekly'],
+  '/whitepaper': ['0.8', 'monthly'],
+  '/faq': ['0.7', 'monthly'],
+  '/about': ['0.6', 'monthly'],
+  // An issuer looking for "list token on Stellar" is exactly who this page is for, so it is not a
+  // default-weight page.
+  '/list-your-token': ['0.7', 'monthly'],
+  '/lumos': ['0.8', 'weekly'],
+  '/bridge': ['0.8', 'weekly'],
+  '/launchpad': ['0.8', 'weekly'],
+  '/privacy': ['0.3', 'yearly'],
+  '/terms': ['0.3', 'yearly'],
+};
+function sitemapRoutesJs(routePairs){
+  const seen = new Set();
+  const rows = [];
+  for (const [urlPattern] of routePairs){
+    if (urlPattern.indexOf(':') >= 0) continue;          // dynamic: listed from live data instead
+    if (SITEMAP_SKIP.has(urlPattern)) continue;
+    if (seen.has(urlPattern)) continue;                   // /lumos and /lumos/stellar are one page
+    seen.add(urlPattern);
+    const w = SITEMAP_WEIGHT[urlPattern] || ['0.6', 'weekly'];
+    rows.push([urlPattern, w[0], w[1]]);
+  }
+  return '// GENERATED by extract_site.js — do not edit.\n'
+    + '// Static indexable routes, derived from the route table so a new page cannot be forgotten.\n'
+    + 'export const SITEMAP_ROUTES = ' + JSON.stringify(rows, null, 2) + ';\n';
+}
+
+function middlewareJs(routePairs, mobileFiles){
+  return `// GENERATED by _tools/extract_site.js — edit the ROUTES table there, not this file.
+const MOBILE = /Android|iPhone|iPod|IEMobile|BlackBerry|Opera Mini|Mobile Safari|Windows Phone/i;
+// [urlPattern, desktopFile, mobileFile|null] — "/" names both explicitly because its desktop file is
+// index (fetching /lumoscore-landing would hit the 301 back to "/" and loop).
+const ROUTES = ${JSON.stringify(routePairs, null, 2)};
+const HAS_MOBILE = new Set(${JSON.stringify(mobileFiles)});
+
+function match(pathname){
+  const segs = pathname.replace(/^\\/+|\\/+$/g, '').split('/').filter(Boolean);
+  for (const r of ROUTES){
+    const p = r[0].replace(/^\\/+|\\/+$/g, '').split('/').filter(Boolean);
+    if (p.length !== segs.length) continue;
+    let ok = true;
+    for (let i = 0; i < p.length; i++){
+      if (p[i].startsWith(':')) continue;
+      if (p[i] !== segs[i]) { ok = false; break; }
+    }
+    // strip a theme suffix before deriving the mobile name: /rewards is served by
+    // lumoscore-rewards-dark, whose mobile build is lumoscore-rewards-mobile — NOT
+    // lumoscore-rewards-dark-mobile, which does not exist.
+    if (ok) return { desktop: r[1], mobile: r[2] || (r[1].replace(/-(dark|light)$/, '') + '-mobile') };
+  }
+  return null;
+}
+
+// ---- per-page SEO, injected at the edge ---------------------------------------------------------
+// /trade/stellar/<ASSET> is ONE file serving hundreds of assets, so without this every asset page
+// ships an identical title and description — duplicate content on exactly the pages that could rank.
+// Crawlers that do not run JavaScript (GPTBot, ClaudeBot, PerplexityBot) see only what arrives in the
+// HTML, so the runtime title the page sets for itself is invisible to them. Injecting here fixes both.
+//
+// The host comes from the request, so no domain is hardcoded anywhere.
+const SEO_CACHE_TTL = 300;
+
+// The site's ONE canonical origin. Every canonical/og:url points here regardless of which host served
+// the request, so the *.pages.dev preview url cannot compete with the real domain in search results.
+const PRIMARY_ORIGIN = 'https://lumoscore.com';
+
+function esc(s){return (String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')).split(String.fromCharCode(39)).join("&#39;");}
+function fmtUsd(n){
+  if (n == null || !isFinite(n)) return null;
+  if (n >= 1000) return '$' + Math.round(n).toLocaleString('en-US');
+  // toPrecision(3) goes exponential below about 1e-6, so a genuinely cheap token shipped its price
+  // into the search result as "$7.72e-7" -- which reads as a bug to a person and is not a number a
+  // language model restates cleanly. Plenty of Stellar assets sit down there.
+  //
+  // Zero and negative are guarded before the log, which would otherwise be -Infinity and ask toFixed
+  // for 100 decimals -- that trimmed back to a bare "$0." once the zeros were stripped.
+  if (!(n > 0)) return null;
+  if (n < 0.0001) {
+    const places = Math.min(100, Math.max(4, 2 - Math.floor(Math.log10(n))));
+    return '$' + Number(n).toFixed(places).replace(/0+$/, '').replace(/\\.$/, '');
+  }
+  return '$' + Number(n).toFixed(n < 1 ? 4 : 2);
+}
+
+async function assetFacts(assetId){
+  try {
+    const r = await fetch(
+      'https://api.stellar.expert/explorer/public/asset?search=' + encodeURIComponent(assetId) + '&limit=5',
+      { cf: { cacheTtl: SEO_CACHE_TTL, cacheEverything: true } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const recs = (d && d._embedded && d._embedded.records) || [];
+    const m = recs.filter(x => String(x.asset || '').indexOf(assetId) === 0)[0];
+    if (!m) return null;
+    const toml = m.tomlInfo || m.toml_info || {};
+    return {
+      code: assetId.split('-')[0],
+      price: +m.price || null,
+      trustlines: (m.trustlines && m.trustlines[0]) || 0,
+      domain: m.domain || '',
+      image: toml.image || '',
+      name: toml.name || '',
+      desc: String(toml.desc || toml.description || '').slice(0, 400),
+    };
+  } catch (e) { return null; }
+}
+
+function assetSeo(f, assetId){
+  const code = f ? f.code : assetId.split('-')[0];
+  const bits = [];
+  const px = f && fmtUsd(f.price);
+  if (px) bits.push('Price ' + px);
+  if (f && f.trustlines) bits.push(f.trustlines.toLocaleString('en-US') + ' trustlines');
+  if (f && f.domain) bits.push('issued by ' + f.domain);
+  const facts = bits.length ? bits.join(' · ') + '. ' : '';
+  return {
+    title: code + ' price, pools and holders on Stellar | LumosCore',
+    // Search results truncate around 160 characters and the FACTS are the half worth showing, so
+    // the boilerplate tail is trimmed rather than the price and trustline count.
+    desc: (facts + code + ' price, pools, holders and trades on Stellar. Trade non-custodially.')
+      .slice(0, 158),
+    image: (f && f.image) || '',
+  };
+}
+
+function poolSeo(a, b, img){
+  const A = a === 'native' ? 'XLM' : a.split('-')[0];
+  const B = b === 'native' ? 'XLM' : b.split('-')[0];
+  return {
+    title: A + ' / ' + B + ' liquidity pool on Stellar | LumosCore',
+    desc: 'Reserves, total value locked, 24h volume and fees for the ' + A + ' / ' + B
+      + ' liquidity pool on Stellar. Add or withdraw liquidity from your own wallet.',
+    image: img || '',
+  };
+}
+
+// A purpose-built card is landscape; an asset's toml logo is a small square (SHX's is 128x128).
+// Declaring a square as a large-image card is why scrapers dropped it and used the favicon instead.
+// ---- og:image dimensions -------------------------------------------------------------------------
+// Read from the image's own header, cached in KV, and emitted only when both values are real. See the
+// note in the commit: none is always preferable to wrong.
+const DIM_KEY = 'imgdim:';
+const DIM_TTL = 60 * 60 * 24 * 365;
+
+// Only our own uploaded media. A foreign URL is never fetched and never measured.
+function mediaIdOf(u){
+  try {
+    // Our origin and our media endpoint, or nothing. The id pattern alone also matches a cover
+    // pointing at another host, and learnImgDims would then go and fetch it.
+    if (String(u || '').indexOf(PRIMARY_ORIGIN + '/lxapi/media?') !== 0) return '';
+    const m = /[?&]id=([0-9a-f]{32}\\.[a-z0-9]{2,5})/i.exec(String(u || ''));
+    return m ? m[1].toLowerCase() : '';
+  } catch (e) { return ''; }
+}
+
+// Header-only parsers. Anything unrecognised returns null rather than a guess.
+function parseImgDims(b){
+  try {
+    if (!b || b.length < 24) return null;
+    const be16 = (i) => (b[i] << 8) | b[i + 1];
+    const be32 = (i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
+    const le16 = (i) => b[i] | (b[i + 1] << 8);
+    // PNG: IHDR is always the first chunk
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+      return { w: be32(16), h: be32(20) };
+    }
+    // GIF87a / GIF89a
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) {
+      return { w: le16(6), h: le16(8) };
+    }
+    // WebP: RIFF....WEBP
+    if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+        b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) {
+      const c = String.fromCharCode(b[12], b[13], b[14], b[15]);
+      if (c === 'VP8X') return { w: (b[24] | (b[25] << 8) | (b[26] << 16)) + 1,
+                                 h: (b[27] | (b[28] << 8) | (b[29] << 16)) + 1 };
+      if (c === 'VP8 ') return { w: le16(26) & 0x3fff, h: le16(28) & 0x3fff };
+      return null;                                   // VP8L and friends: not worth a fragile parser
+    }
+    // JPEG: walk the segments to the first start-of-frame
+    if (b[0] === 0xff && b[1] === 0xd8) {
+      let i = 2;
+      while (i + 9 < b.length) {
+        if (b[i] !== 0xff) { i++; continue; }
+        const m = b[i + 1];
+        if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+        const len = be16(i + 2);
+        if (len < 2) return null;
+        const isSOF = (m >= 0xc0 && m <= 0xcf) && m !== 0xc4 && m !== 0xc8 && m !== 0xcc;
+        if (isSOF) return { h: be16(i + 5), w: be16(i + 7) };
+        i += 2 + len;
+      }
+      return null;                                    // header not inside the range we fetched
+    }
+    return null;
+  } catch (e) { return null; }
+}
+
+// What we already know. One cheap get; never fetches, never blocks on anything.
+async function imgDims(env, url){
+  try {
+    const kv = env && env.CONTENT_KV; if (!kv) return null;
+    const id = mediaIdOf(url); if (!id) return null;
+    const d = await kv.get(DIM_KEY + id, 'json');
+    if (!d) return null;
+    const w = +d.w, h = +d.h;
+    return (w > 0 && h > 0 && w < 100000 && h < 100000) ? { w, h } : null;
+  } catch (e) { return null; }
+}
+
+// Learn them for next time. waitUntil only -- this must never be awaited on the response path.
+async function learnImgDims(env, url){
+  try {
+    const kv = env && env.CONTENT_KV; if (!kv) return;
+    const id = mediaIdOf(url); if (!id) return;
+    if (await kv.get(DIM_KEY + id, 'json')) return;   // already known
+    const r = await fetch(url, { headers: { range: 'bytes=0-65535' }, cf: { cacheTtl: 300 } });
+    if (!r.ok && r.status !== 206) return;
+    const d = parseImgDims(new Uint8Array(await r.arrayBuffer()));
+    if (!d || !(d.w > 0) || !(d.h > 0)) return;
+    await kv.put(DIM_KEY + id, JSON.stringify({ w: d.w, h: d.h }), { expirationTtl: DIM_TTL });
+  } catch (e) { /* a missing dimension costs nothing; a thrown one would cost the page */ }
+}
+function isCardImage(u){ return String(u || '').indexOf('/lxapi/ogcard') >= 0; }
+
+// A 1200x630 card: the asset's logo padded onto the brand background. Built through Cloudflare's
+// resizing, whose source must be on this zone -- hence /lxapi/logoimg re-serving foreign logos.
+// One plain URL. The 1200x630 padding happens inside the endpoint, so nothing is nested here.
+function cardFor(assetId){
+  if (!assetId) return '';
+  return PRIMARY_ORIGIN + '/lxapi/ogcard?asset=' + encodeURIComponent(assetId);
+}
+
+// The logo an admin uploaded for an asset, which the issuer's toml knows nothing about.
+async function adminImage(env, assetId){
+  try {
+    const kv = env && env.CONTENT_KV;
+    if (!kv || !assetId) return '';
+    const ov = await kv.get('asset:' + assetId, 'json');
+    return (ov && ov.image) || '';
+  } catch (e) { return ''; }
+}
+// og:image is fetched by a scraper with no page context, so a relative path is useless to it.
+function absUrl(u){
+  const v = String(u || '');
+  if (!v) return '';
+  if (v.indexOf('//') === 0) return 'https:' + v;
+  if (v.indexOf('/') === 0) return PRIMARY_ORIGIN + v;
+  return v;
+}
+
+// A published post, read from the same KV the blog itself reads. Unpublished or missing returns null
+// so the page keeps its template SEO rather than advertising something that is not there.
+async function blogPost(env, slug){
+  try {
+    const kv = env && env.CONTENT_KV;
+    if (!kv || !slug) return null;
+    const p = await kv.get('blog:post:' + slug, 'json');
+    if (!p || p.published === false) return null;
+    return p;
+  } catch (e) { return null; }
+}
+// The index, for the same reason the post body is read: /blog ships an empty grid that the browser
+// fills, so a crawler saw an index of nothing -- 24 links, not one of them to a post. The four posts
+// are in sitemap.xml so they are discoverable, but a sitemap conveys existence and nothing else: no
+// internal links means no authority flowing to them and no topical context, on exactly the pages the
+// backlink campaign is meant to lift.
+//
+// Same filter the public endpoint applies, so a scheduled post is not linked before it is live.
+async function blogIndex(env){
+  try {
+    const kv = env && env.CONTENT_KV;
+    if (!kv) return [];
+    const idx = (await kv.get('blog:index', 'json')) || [];
+    const now = Date.now();
+    return idx.filter((p) => p && p.published && (!p.publishAt || p.publishAt <= now));
+  } catch (e) { return []; }
+}
+// Whitespace, built without a backslash: this whole function lives inside a template literal, where a
+// backslash is eaten on the way out. Writing /BACKSLASH-s+/g here produced /s+/g, which matched the
+// letter s and quietly deleted every one of them from the description.
+const WS_RE = new RegExp('[' + String.fromCharCode(32, 9, 10, 13) + ']+', 'g');
+
+// The excerpt if the author wrote one, otherwise the opening of the body with its markup removed.
+function blogDesc(p){
+  const ex = String((p && p.excerpt) || '').trim();
+  if (ex) return ex.slice(0, 300);
+  const body = String((p && p.body) || '')
+    .replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(WS_RE, ' ').trim();
+  return body.slice(0, 155) + (body.length > 155 ? '…' : '');
+}
+function blogSeo(p, origin){
+  // The stored title already ends in "| LumosCore" on existing posts, so it is not appended twice.
+  const t = String((p && p.title) || '').trim();
+  // endsWith rather than a pattern: no backslash to lose, and it says what it means.
+  const title = t.toLowerCase().replace(WS_RE, ' ').trim().endsWith('lumoscore')
+    ? t : (t + ' | LumosCore');
+  const cover = String((p && p.cover) || '');
+  return {
+    title,
+    desc: blogDesc(p),
+    image: cover ? (cover.indexOf('/') === 0 ? origin + cover : cover) : '',
+    // A post cover is a wide editorial image, so it earns the large card. isCardImage() only
+    // recognises our generated /lxapi/ogcard, which a cover is not.
+    largeCard: !!cover,
+    post: p,
+  };
+}
+
+function seoFor(pathname){
+  const segs = pathname.split('/').filter(Boolean);
+  if ((segs[0] === 'trade' || segs[0] === 'asset') && segs[2]) return { kind: 'asset', id: segs[2] };
+  if (segs[0] === 'pools' && segs[2] && segs[3]) return { kind: 'pool', a: segs[2], b: segs[3] };
+  if (segs[0] === 'blog' && segs[1]) return { kind: 'blog', slug: segs[1] };
+  return null;
+}
+
+// Replaces an element's text. Used on the asset identity block, whose shipped markup is the design's
+// USDC sample: without this, every asset page tells a non-rendering crawler it is USD Coin.
+// NOTE the property is v, not text: naming it "text" shadows the text() handler HTMLRewriter calls
+// on this same object, which is exactly how this threw Error 1101 on every asset page.
+//
+// mode 'inner' replaces the element's contents outright — correct where the element holds only text.
+// mode 'text' rewrites text nodes only, leaving child elements alone; a.website holds an SVG icon
+// beside the domain and would lose it otherwise.
+class TextSetter {
+  constructor(v, mode){
+    this.v = String(v == null ? '' : v);
+    this.mode = mode === 'text' ? 'text' : 'inner';
+    this.first = true;
+  }
+  element(el){
+    this.first = true;
+    if (this.mode === 'inner') el.setInnerContent(this.v);
+  }
+  text(chunk){
+    if (this.mode === 'inner') return;
+    const t = chunk.text;
+    if (!t || !t.trim()) return;              // whitespace between the icon and the label
+    chunk.replace(this.first ? this.v : '', { html: false });
+    this.first = false;
+  }
+}
+
+// Writes stored HTML into an element. Only the blog body uses this, and only with markup that came
+// back through the sanitiser in lxapi/blog.js -- setInnerContent with html:true is parsed as real
+// markup, so a <script> in there would RUN, where the client's innerHTML would not have executed it.
+// That difference is the whole reason the allowlist moved server-side.
+class HtmlSetter {
+  constructor(html){ this.html = String(html == null ? '' : html); }
+  element(el){ if (this.html) el.setInnerContent(this.html, { html: true }); }
+}
+
+class HeadInjector {
+  constructor(html){ this.html = html; this.done = false; }
+  element(el){ if (this.done) return; this.done = true; el.append(this.html, { html: true }); }
+}
+class TitleSetter {
+  constructor(t){ this.t = t; }
+  element(el){ el.setInnerContent(this.t); }
+}
+
+// Legacy build filename -> clean url, as a REAL redirect.
+//
+// The build rewrites static hrefs and the runtime maps lxNavigate/clicks, but the app also navigates
+// by assigning location.href="lumoscore-x.html?..." directly in a dozen places (_dexdata, _trending,
+// _walletdata, _feemodal, …) and through a second helper, __lxNav. Chasing every call site is
+// whack-a-mole; redirecting at the edge catches all of them, including any added later.
+//
+// Done HERE rather than in _redirects on purpose: a 301 there can collide with the 200-rewrite for
+// the same page and loop. Here the order is explicit and the rewrite path uses env.ASSETS/next(),
+// which never re-enters this check.
+function legacyClean(pathname, params){
+  // Take the LAST path segment, not the whole path. The app navigates with RELATIVE urls
+  // (location.href="lumoscore-dex-asset.html?asset=…"), which used to resolve at the site root but
+  // now resolve against a nested clean url — /trade/stellar + "lumoscore-dex-asset.html" becomes
+  // /trade/lumoscore-dex-asset.html and 404s. Matching the last segment redirects it from any depth.
+  //
+  // plain string ops, not regex: this file is emitted from a template literal, where a lone
+  // backslash does not survive and silently corrupts the pattern.
+  const segs = pathname.split('/');
+  let base = segs[segs.length - 1] || '';
+  if (base.slice(-5) === '.html') base = base.slice(0, -5);
+  if (!base.startsWith('lumoscore-')) return null;
+  base = base.replace(/-(dark|light|mobile)$/, '');
+
+  // the two dynamic routes carry their identifier in the query — promote it into the path
+  const asset = params && params.get('asset');
+  if (base === 'lumoscore-dex-asset')      return asset ? '/trade/stellar/' + asset : '/trade/stellar';
+  if (base === 'lumoscore-asset-overview') return asset ? '/trade/stellar/' + asset : '/trade/stellar';
+  // a pool is addressed by its two assets, which ?pool=<id> does not carry — leave it alone
+  const pool = params && params.get('pool');
+  if (base === 'lumoscore-amm-pool') return pool ? '/pools/stellar/id/' + pool : '/pools/stellar';
+
+  // "/" is registered in ROUTES against "index" (the landing page is copied to index.html so the
+  // front door is not a redirect), so the ROUTES loop below never matches "lumoscore-landing" and
+  // returned null. That mattered because the wallet gate used to redirect with the bare filename:
+  // from /asset/stellar/<ASSET> the browser asked for /asset/stellar/lumoscore-landing.html, no 301
+  // fired, and "/asset/stellar/:asset" then matched with the asset literally being
+  // "lumoscore-landing.html" — rendering an asset page for an asset that does not exist, i.e. blank.
+  if (base === 'lumoscore-landing') return '/';
+
+  for (const r of ROUTES){
+    if (r[0].indexOf('/:') >= 0) continue;
+    if (r[1].replace(/-(dark|light|mobile)$/, '') === base) return r[0];
+  }
+  return null;
+}
+
+// Shapes, not existence. A Stellar public key is 56 characters of base32 starting with G; an asset id
+// is CODE-ISSUER; a pool id is 64 hex. Built with String.fromCharCode where a character class would
+// otherwise need a backslash, because this whole file is emitted from a template literal and a lone
+// backslash does not survive the trip.
+const G_RE = new RegExp('^G[A-Z2-7]{55}$');
+const ASSET_RE = new RegExp('^[A-Za-z0-9]{1,12}-G[A-Z2-7]{55}$');
+const POOLID_RE = new RegExp('^[0-9a-fA-F]{64}$');
+function malformedId(pathname){
+  const s = pathname.replace(/^\\/+|\\/+$/g, '').split('/').filter(Boolean);
+  // A percent-encoded segment that will not decode is malformed by definition, so the original is
+  // tested and fails the shape check rather than throwing.
+  const dec = (x) => { try { return decodeURIComponent(x); } catch (e) { return x; } };
+  if (s[0] === 'trade' && s[1] === 'stellar' && s.length === 3){
+    return !ASSET_RE.test(dec(s[2]));
+  }
+  if (s[0] === 'account' && s[1] === 'stellar' && s.length === 3){
+    return !G_RE.test(dec(s[2]));
+  }
+  if (s[0] === 'pools' && s[1] === 'stellar' && s[2] === 'id' && s.length === 4){
+    return !POOLID_RE.test(dec(s[3]));
+  }
+  // The pair form. "native" is XLM and has no issuer, so it is the one value that is not an asset id.
+  if (s[0] === 'pools' && s[1] === 'stellar' && s.length === 4){
+    const okSide = (x) => x === 'native' || ASSET_RE.test(x);
+    return !(okSide(dec(s[2])) && okSide(dec(s[3])));
+  }
+  return false;
+}
+
+export async function onRequest(context){
+  const { request, next } = context;
+  const url = new URL(request.url);
+
+  // 0) ONE ORIGIN. www.lumoscore.com was serving the whole app on a 200 with no redirect, so the site
+  // answered on two hostnames — and a browser keeps localStorage PER ORIGIN. The wallet session lives
+  // there (lumos.wallet / lumos.address), so connecting on one host and later arriving on the other
+  // looked exactly like being logged out, with no way for the user to tell why. It also split every
+  // SEO signal in spite of the canonical tag pointing at the apex. 301 so the browser stops asking.
+  if (url.hostname.startsWith('www.')){
+    const to = new URL(url.toString());
+    to.hostname = url.hostname.slice(4);
+    return Response.redirect(to.toString(), 301);
+  }
+
+  // 0b) A TRAILING SLASH IS THE SAME PAGE, so it must redirect rather than 404.
+  //
+  // Every path answered 404 with a slash on the end: /blog/, /about/, /docs/, /faq/, /lumos/,
+  // /bridge/. People append them by habit, directory forms normalise to them, and forum software adds
+  // them -- so each was a dead link carrying nothing, and a backlink placed on the wrong form of the
+  // url was simply wasted.
+  //
+  // 301, because the canonical form is the one without. Query and hash ride along. The root is left
+  // alone: "/" IS the canonical path and trimming it would loop.
+  //
+  // GET and HEAD only. A 301 on a POST is turned into a GET by most clients and the body is dropped,
+  // so an api call that happened to carry a trailing slash would fail silently rather than loudly.
+  const navMethod = request.method === 'GET' || request.method === 'HEAD';
+  if (navMethod && url.pathname.length > 1 && url.pathname.endsWith('/')){
+    const to = new URL(url.toString());
+    to.pathname = url.pathname.replace(/\\/+$/, '');
+    if (to.pathname === '') to.pathname = '/';
+    return Response.redirect(to.toString(), 301);
+  }
+
+  // 1) someone navigated to a raw build filename -> send them to the canonical clean url
+  const legacy = legacyClean(url.pathname, url.searchParams);
+  if (legacy){
+    const to = new URL(legacy, url.origin);
+    // ?asset= / ?pool= became a path segment, so carrying THEM would duplicate the identifier — but
+    // dropping the whole query took every OTHER param with it. That silently broke the Wallet's
+    // "Remove" button on an LP position, which links to ...?pool=<id>&act=withdraw so the pool page
+    // opens on the Withdraw tab: the redirect promoted the pool into the path and threw act= away, so
+    // the user always landed on Deposit. Drop only the key that was promoted.
+    const promoted = legacy.indexOf('/trade/stellar/') === 0
+      || legacy.indexOf('/pools/stellar/id/') === 0;
+    if (promoted){
+      const keep = new URLSearchParams(url.search);
+      keep.delete('asset'); keep.delete('pool');
+      const qs = keep.toString();
+      to.search = qs ? ('?' + qs) : '';
+    } else to.search = url.search;
+    to.hash = url.hash;
+    return Response.redirect(to.toString(), 301);
+  }
+
+  // 1b) /asset/stellar/<ASSET> -> /trade/stellar/<ASSET>, permanently.
+  // The asset-overview page was removed; Trade-asset shows the same facts and can act on them.
+  // These urls were published in the sitemap and may already be indexed, so this is a 301 rather
+  // than a 404: search engines transfer the ranking to the Trade page instead of dropping it.
+  // Bare /asset/stellar (no asset) goes to the Trade list.
+  if (url.pathname === '/asset/stellar' || url.pathname.indexOf('/asset/stellar/') === 0){
+    const rest = url.pathname.slice('/asset/stellar'.length);
+    const to = new URL('/trade/stellar' + rest, url.origin);
+    to.search = url.search;
+    to.hash = url.hash;
+    return Response.redirect(to.toString(), 301);
+  }
+
+  // 1c) THE THREE OPEN URL PATTERNS. /trade/stellar/:asset, /account/stellar/:address and the two
+  // /pools/stellar forms accepted literally any string, returned 200, built a unique title out of the
+  // junk and self-canonicalised to it -- an unbounded space of indexable pages that burns crawl budget
+  // and dilutes the real asset pages.
+  //
+  // AFTER THE REDIRECTS ABOVE, NOT BEFORE THEM. Placed first, this 404ed every url the app itself
+  // navigates to: the pool page is reached by assigning location.href="lumoscore-amm-pool.html?pool=..."
+  // from a page already at /trade/stellar/..., so the browser asks for
+  // /trade/stellar/lumoscore-amm-pool.html -- three segments under /trade/stellar, whose last one is a
+  // filename and not an asset id. legacyClean exists precisely to redirect that, and it never got the
+  // chance. Every Pools-pool page on production returned "Not found" until this moved down.
+  //
+  // FORMAT ONLY, deliberately. Checking that the asset actually EXISTS would need an upstream call on
+  // every request, and that upstream is exactly the one already proven to fail intermittently -- a
+  // wobble there would start 404ing real assets, which is far worse than serving a well-formed one
+  // that happens to be empty. A Stellar issuer is 56 base32 characters; a crawler does not invent
+  // those, so the space stops being unbounded.
+  if (malformedId(url.pathname)){
+    return new Response('Not found', {
+      status: 404,
+      headers: {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'public, max-age=300',
+        'x-robots-tag': 'noindex, nofollow',
+      },
+    });
+  }
+
+  const hit = match(url.pathname);
+
+  // not a page route -> let Pages serve it as usual
+  if (!hit) return next();
+
+  const isMobile = MOBILE.test(request.headers.get('user-agent') || '');
+  const wantMobile = isMobile && HAS_MOBILE.has(hit.mobile);
+
+  // Desktop needs no rewrite — Pages already serves the right file for this url. Rewriting anyway
+  // broke "/", whose desktop file is index: fetching /index just 308s back to /.
+  // Vary is still set on BOTH branches, or a cache would hand a desktop page to a phone.
+  const res = wantMobile
+    ? await context.env.ASSETS.fetch(
+        new Request(new URL('/' + hit.mobile, request.url).toString(), request))
+    : await next();
+
+  let out = new Response(res.body, res);
+  out.headers.set('Vary', 'User-Agent');
+
+  const ct = out.headers.get('content-type') || '';
+  if (ct.indexOf('text/html') < 0) return out;
+
+  // canonical is the clean url WITHOUT query or hash, on whatever host served this request
+  //
+  // ONE EXCEPTION. /docs and /docs/introduction are the same page at two urls -- identical title,
+  // description, h1 and body, both in the sitemap, and each canonicalising to itself, so neither
+  // deferred and Google had to pick. That coin-toss lands on the entry point to the best content on
+  // the site. /docs now points at /docs/introduction, which is the one the sidebar links and the one
+  // that names what it is. Both keep serving; only the signal changes.
+  const CANON_OF = { '/docs': '/docs/introduction' };
+  const cleanPath = url.pathname === '/' ? '/' : url.pathname.replace(/\\/+$/, '');
+  const canonical = PRIMARY_ORIGIN + (CANON_OF[cleanPath] || cleanPath);
+  const want = seoFor(url.pathname);
+
+  let seo = null;
+  if (want && want.kind === 'asset') {
+    const f = await assetFacts(want.id);
+    seo = assetSeo(f, want.id);
+    seo.facts = f;
+    // Only build a card when a logo actually exists, so a missing one stays a missing image
+    // rather than an empty rectangle of brand colour.
+    const ai = await adminImage(context.env, want.id);
+    if (ai || (f && f.image)) seo.image = cardFor(want.id);
+  }
+  else if (want && want.kind === 'blog') {
+    const post = await blogPost(context.env, want.slug);
+    if (post) seo = blogSeo(post, PRIMARY_ORIGIN);
+  }
+  // The index page has no seoFor entry of its own -- its title and description are baked -- so the
+  // post list is fetched here purely to render the links.
+  let blogList = null;
+  if (url.pathname === '/blog') blogList = await blogIndex(context.env);
+  else if (want && want.kind === 'pool') {
+    // XLM has no logo of its own, so the pair's other side is the one worth showing.
+    const other = want.a === 'native' ? want.b : want.a;
+    const pf = (other && other !== 'native') ? await assetFacts(other) : null;
+    const ai = (other && other !== 'native') ? await adminImage(context.env, other) : '';
+    seo = poolSeo(want.a, want.b, (ai || (pf && pf.image)) ? cardFor(other) : '');
+  }
+
+  const head = [
+    '<link rel="canonical" href="' + esc(canonical) + '">',
+    '<meta property="og:url" content="' + esc(canonical) + '">',
+    '<meta property="og:site_name" content="LumosCore">',
+    '<meta property="og:type" content="website">',
+  ];
+  // Ask for the card type that matches the image we actually have.
+  head.push('<meta name="twitter:card" content="'
+    + ((seo && (isCardImage(seo.image) || seo.largeCard)) ? 'summary_large_image' : 'summary') + '">');
+  if (seo){
+    head.push('<meta property="og:title" content="' + esc(seo.title) + '">');
+    head.push('<meta property="og:description" content="' + esc(seo.desc) + '">');
+    head.push('<meta name="twitter:title" content="' + esc(seo.title) + '">');
+    head.push('<meta name="twitter:description" content="' + esc(seo.desc) + '">');
+    seo.image = absUrl(seo.image);
+    // A crawler reads the page first and fetches og:image a moment later. Building the card now,
+    // without holding up this response, means that second request usually finds it already cached
+    // instead of paying the cold 2-3s that made a link need pasting two or three times.
+    if (isCardImage(seo.image)) {
+      try { context.waitUntil(fetch(seo.image, { headers: { accept: 'image/*' } })); } catch (e) {}
+    }
+    if (seo.image){
+      head.push('<meta property="og:image" content="' + esc(seo.image) + '">');
+      head.push('<meta property="og:image:alt" content="' + esc(seo.title) + '">');
+    // Only when both are known and real. Unknown emits nothing, which is the previous behaviour.
+    const _dim = await imgDims(context.env, seo.image);
+    if (_dim) {
+      head.push('<meta property="og:image:width" content="' + _dim.w + '">');
+      head.push('<meta property="og:image:height" content="' + _dim.h + '">');
+    } else if (context.waitUntil) {
+      context.waitUntil(learnImgDims(context.env, seo.image));
+    }
+      head.push('<meta name="twitter:image" content="' + esc(seo.image) + '">');
+    }
+    // a description already exists from the build; replace rather than duplicate
+    head.push('<meta name="lx-seo-desc" content="' + esc(seo.desc) + '">');
+  }
+
+  // ---- structured data -------------------------------------------------------------------------
+  // Organization and WebSite go on every page: they are what lets a search or answer engine attribute
+  // a statement to a publisher rather than to an anonymous URL. The details are the registered ones.
+  const ld = [{
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    '@id': PRIMARY_ORIGIN + '/#organization',
+    name: 'LumosCore',
+    legalName: 'LumosCore OÜ',
+    url: PRIMARY_ORIGIN + '/',
+    logo: PRIMARY_ORIGIN + '/assets/favicon.png',
+    foundingLocation: { '@type': 'Place', address: { '@type': 'PostalAddress', addressCountry: 'EE' } },
+    identifier: '17336483',
+    sameAs: [
+      'https://x.com/LumosCore',
+      'https://t.me/lumoscore',
+      'https://www.linkedin.com/company/lumoscore/',
+    ],
+  }, {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    '@id': PRIMARY_ORIGIN + '/#website',
+    url: PRIMARY_ORIGIN + '/',
+    name: 'LumosCore',
+    publisher: { '@id': PRIMARY_ORIGIN + '/#organization' },
+    inLanguage: 'en',
+  }];
+
+  // Breadcrumbs only where there is a real hierarchy to describe.
+  const crumbs = [];
+  const segsC = url.pathname.split('/').filter(Boolean);
+  if (segsC.length){
+    crumbs.push({ '@type': 'ListItem', position: 1, name: 'Home', item: PRIMARY_ORIGIN + '/' });
+    let acc = '';
+    segsC.forEach(function(sg, i){
+      acc += '/' + sg;
+      crumbs.push({
+        '@type': 'ListItem',
+        position: i + 2,
+        name: decodeURIComponent(sg).replace(/-/g, ' ').slice(0, 60),
+        item: PRIMARY_ORIGIN + acc,
+      });
+    });
+    ld.push({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: crumbs,
+    });
+  }
+
+  // An article is a distinct entity with its own dates and author.
+  if (seo && seo.post){
+    const p = seo.post;
+    const iso = (v) => { try { return new Date(+v || v).toISOString(); } catch (e) { return undefined; } };
+    ld.push({
+      '@context': 'https://schema.org',
+      '@type': 'BlogPosting',
+      headline: String(p.title || '').slice(0, 110),
+      description: seo.desc,
+      image: seo.image || undefined,
+      datePublished: iso(p.publishedAt || p.publishAt || p.createdAt),
+      dateModified: iso(p.updatedAt || p.publishedAt || p.publishAt),
+      author: { '@type': 'Organization', name: 'LumosCore', '@id': PRIMARY_ORIGIN + '/#organization' },
+      publisher: { '@id': PRIMARY_ORIGIN + '/#organization' },
+      mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+      keywords: Array.isArray(p.tags) ? p.tags.join(', ') : undefined,
+      articleSection: p.category || undefined,
+      inLanguage: 'en',
+    });
+  }
+
+  head.push('<script type="application/ld+json" id="lx-ld-core">'
+    + JSON.stringify(ld).split('</').join('<\\/') + '</scr' + 'ipt>');
+
+  let rw = new HTMLRewriter().on('head', new HeadInjector(head.join('')));
+  if (seo){
+    rw = rw.on('title', new TitleSetter(seo.title))
+           .on('meta[name="description"]', {
+             element(el){ el.setAttribute('content', seo.desc); },
+           });
+  }
+  // The asset identity block ships as the design's USDC sample. Fill it with what this page is
+  // actually about, so a crawler that never runs the page's JavaScript reads the right asset.
+  // GATED ON THE ROUTE, NOT ON THE FACTS. assetFacts() depends on stellar.expert, and when that
+  // subrequest comes back empty the block used to be skipped entirely -- leaving the design's USDC
+  // sample in place, so the page told a non-rendering crawler it was USD Coin. Measured 2026-08-31:
+  // every asset page served that way to GPTBot and ClaudeBot while answering correctly to Googlebot
+  // and to browsers, which is the worst possible audience to get it wrong for.
+  //
+  // The code and the issuer are in the URL and need no upstream, so the identity is always corrected
+  // and only the enrichment is conditional. A missing price is a missing line; it is never another
+  // asset's name.
+  if (want && want.kind === 'asset'){
+    const f = seo && seo.facts ? seo.facts : null;
+    const code = (f && f.code) || want.id.split('-')[0];
+    const bits = [];
+    if (f && f.price) bits.push('Price ' + fmtUsd(f.price));
+    if (f && f.trustlines) bits.push(f.trustlines.toLocaleString('en-US') + ' trustlines');
+    // The issuer's own words when they published any; otherwise a factual sentence rather than a
+    // borrowed one. Never another asset's copy.
+    const desc = (f && f.desc)
+      || (code + ' is a Stellar asset'
+          + (f && f.domain ? ' issued by ' + f.domain : '')
+          + '. ' + (bits.length ? bits.join(' \u00b7 ') + '. ' : '')
+          + 'Trade it non-custodially on LumosCore from your own wallet.');
+    rw = rw.on('.asset-name', new TextSetter(code))
+           .on('.asset-description', new TextSetter(desc));
+    // Always rewritten, even to an empty string: an asset with no home domain was otherwise left
+    // showing the design's placeholder, which claims the issuer is circle.com. Blank is honest.
+    // Text mode because this anchor also holds the globe icon, which setInnerContent would delete.
+    rw = rw.on('a.website', new TextSetter((f && f.domain) || '', 'text'));
+  }
+
+  // THE ARTICLE ITSELF, for a crawler that runs no JavaScript.
+  //
+  // The post page ships an empty shell -- <h1></h1> and <article class="lx-post-body"></article> --
+  // and the browser fills both from /lxapi/blog. So what a crawler received was 329 words of nav and
+  // footer and not one word of the article, on the exact pages the backlink plan points at. Links to
+  // a page whose body is invisible pass their authority to a nav bar.
+  //
+  // The post is already in hand: the metadata above reads it at request time to build the title and
+  // description, so this costs no extra work. The client sets the same innerHTML on load, so it
+  // overwrites this with identical content -- no duplication, and nothing visibly changes.
+  if (want && want.kind === 'blog' && seo && seo.post){
+    const p = seo.post;
+    if (p.title) rw = rw.on('.lx-post-head h1', new TextSetter(String(p.title)));
+    if (p.body) rw = rw.on('.lx-post-body', new HtmlSetter(p.body));
+  }
+
+  // THE BLOG INDEX, likewise. Same shape the client builds, so when its own render lands a moment
+  // later it replaces this with an equivalent grid and nothing moves. The cover and the date are left
+  // to the client: the cover needs a second lookup, and the date it prints is relative ("today",
+  // "3 days ago"), which cannot be computed server-side without going stale in cache.
+  if (url.pathname === '/blog' && blogList && blogList.length){
+    const cards = blogList.map((p) => '<a class="lx-bp-card" href="/blog/' + esc(p.slug) + '">'
+      + '<div class="lx-bp-cover" data-cov="' + esc(p.slug) + '"></div>'
+      + '<div class="lx-bp-title">' + esc(p.title || p.slug) + '</div>'
+      + '<div class="lx-bp-when"></div></a>').join('');
+    rw = rw.on('.lx-bp-grid', new HtmlSetter(cards));
+  }
+
+  out = rw.transform(out);
+  out.headers.set('Vary', 'User-Agent');
+  return out;
+}
+`;
+}
+
+function routesJson(){
+  // WHICH PATHS REACH THE FUNCTIONS RUNTIME. Anything not included here is served straight from
+  // static storage and `functions/_middleware.js` never runs for it.
+  //
+  // This used to enumerate the routes ("/trade/stellar/*", "/lumoscore-*", …) so that only real
+  // pages cost an invocation. That silently broke the legacy->clean 301: the app navigates with a
+  // RELATIVE url (`location.href="lumoscore-dex-asset.html?asset=…"`), so from /trade/stellar the
+  // browser asks for **/trade/lumoscore-dex-asset.html**. The middleware matches on the LAST path
+  // segment and would have redirected it — but "/lumoscore-*" only matches at the ROOT, so that
+  // path hit no include rule, the middleware never ran, and it fell through to a static 404.
+  // Enumerating routes cannot fix this in general: a relative navigation can land the legacy
+  // filename under ANY prefix, including ones added later.
+  //
+  // So: include everything, and exclude what must stay static. `/assets/*` is the only high-volume
+  // path and it stays excluded, so images/video/fonts still bypass the runtime and stay free. Every
+  // other request is an HTML page view, which was already invoking the middleware anyway.
+  // A single "/*" also sidesteps the "Overlapping rules found" failure that used to require careful
+  // splat-vs-splat and splat-vs-exact deduping — one rule cannot overlap itself.
+  return JSON.stringify({
+    version: 1,
+    include: ['/*'],
+    exclude: ['/assets/*', '/_headers', '/_redirects', '/404.html'],
+  }, null, 2) + '\n';
+}
+
+function notFoundHtml(isAdmin){
+  const home = isAdmin ? 'lumoscore-admin-dashboard.html' : '/';
+  return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<meta name="robots" content="noindex">'
+    + '<link rel="icon" type="image/png" href="/assets/favicon.png">'
+    + '<title>Page not found — LumosCore</title>'
+    + '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;'
+    + 'background:#0f111a;color:#e7e9ee;font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;text-align:center}'
+    + 'div{padding:32px}h1{font-size:56px;margin:0 0 8px;letter-spacing:-.02em}'
+    + 'p{margin:0 0 22px;color:#9aa0ad}a{display:inline-block;padding:11px 20px;border-radius:10px;'
+    + 'background:#ea6a2c;color:#fff;text-decoration:none;font-weight:700}</style></head><body>'
+    + '<div><h1>404</h1><p>That page doesn’t exist.</p>'
+    + '<a href="' + home + '">Back to LumosCore</a></div></body></html>';
+}
+
+function adminIndexHtml(){
+  return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<meta name="robots" content="noindex,nofollow">'
+    + '<link rel="icon" type="image/png" href="/assets/favicon.png">'
+    + '<title>LumosCore Admin</title></head><body>'
+    + '<script>location.replace("lumoscore-admin-dashboard.html");</scr' + 'ipt>'
+    + '<noscript><a href="lumoscore-admin-dashboard.html">LumosCore Admin</a></noscript>'
+    + '</body></html>';
+}
+
+function build(chain, srcDir, outRoot, atRoot, adminOnly){
+  const desktop = getContents(read(path.join(srcDir, 'lumoscore-'+chain+'-desktop.html')));
+  const mobile  = getContents(read(path.join(srcDir, 'lumoscore-'+chain+'-mobile.html')));
+  const all = Object.assign({}, desktop, mobile);
+  const files = Object.keys(all).filter(n => ADMIN_RE.test(n) === adminOnly && !isDropped(n));
+  const validArray = files.slice(); // filenames shipped in this folder
+
+  // --root: single-version build lands directly in dist/ (no per-chain subfolder), so the
+  // landing page sits at the site root. Assets are left in place (extract only writes html).
+  const outDir = adminOnly ? ADMIN_OUT : (atRoot ? outRoot : path.join(outRoot, chain));
+  fs.mkdirSync(outDir, { recursive: true });
+
+  let written = 0;
+  for(const name of files){
+    const src  = adminOnly ? stripAuthGate(all[name]) : all[name];
+    const html = injectHints(cleanLinks(rootRelative(injectRuntime(injectTokenRegistry(src), validArray))));
+    fs.writeFileSync(path.join(outDir, name), html, 'utf8');
+    written++;
+  }
+  // an admin build is not a site: no landing redirect, and it opens on the dashboard
+  if(adminOnly) fs.writeFileSync(path.join(outDir, 'index.html'), adminIndexHtml(), 'utf8');
+  else {
+    const landing = all['lumoscore-landing.html'];
+    if(!landing) throw new Error('lumoscore-landing.html missing — cannot build the site root');
+    fs.writeFileSync(path.join(outDir, 'index.html'),
+      indexHtml(injectHints(cleanLinks(rootRelative(injectRuntime(injectTokenRegistry(landing), validArray))))), 'utf8');
+  }
+  // The admin panel deploys as its OWN Cloudflare project, so it cannot borrow dist/assets the way
+  // serve.js lets it locally — without this its favicon and wallet logos 404 in production.
+  // Only what the admin build actually references is copied (~470 KB), not the whole 19 MB folder.
+  if(adminOnly){
+    // 'vendor' holds the self-hosted Stellar libraries. The admin panel signs mainnet transactions
+    // too (rewards payouts), so it must NOT be the one origin left loading them off a public CDN.
+    const need = ['favicon.png', 'wallets', 'vendor'];
+    for(const item of need){
+      const src = path.join(outRoot, 'assets', item);
+      const dst = path.join(outDir, 'assets', item);
+      if(!fs.existsSync(src)) { console.warn('  ! admin asset missing: ' + item); continue; }
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.cpSync(src, dst, { recursive: true });
+    }
+    // Functions run ONLY on /lxapi/*; every other path serves a static file and costs nothing.
+    //
+    // ⚠ NO "exclude" HERE. In Cloudflare Pages, exclude ALWAYS takes priority over include, so the
+    // previous {include:['/lxapi/*'], exclude:['/*']} cancelled itself out and no Function ever ran on
+    // the admin origin -- every /lxapi/ call 404'd. That is why the holder count and the connected-
+    // wallet figures came back empty on the deployed admin panel while working everywhere else.
+    // Paths outside `include` already fall through to static assets; excluding them as well is not
+    // "extra safety", it is the off switch.
+    fs.writeFileSync(path.join(outDir, '_routes.json'),
+      JSON.stringify({ version: 1, include: ['/lxapi/*'], exclude: [] }, null, 2) + '\n', 'utf8');
+  }
+
+  fs.writeFileSync(path.join(outDir, '_headers'), headersFile(adminOnly), 'utf8');
+  fs.writeFileSync(path.join(outDir, '404.html'), notFoundHtml(adminOnly), 'utf8');
+  // clean URLs are a public-site concern; the admin build keeps its filenames
+  if(!adminOnly){
+    fs.writeFileSync(path.join(outDir, '_redirects'), redirectsFile(), 'utf8');
+
+    // device resolution at the edge. "/" is the landing page, which _redirects never covers because
+    // index.html answers it directly — so it is added here explicitly.
+    const routePairs = [['/', 'index', 'lumoscore-landing-mobile']]
+      .concat(ROUTES.map(([u, f]) => [u, f.replace(/\.html$/, ''), null]));
+    const mobileFiles = files
+      .filter(n => /-mobile\.html$/.test(n))
+      .map(n => n.replace(/\.html$/, ''));
+
+    fs.writeFileSync(path.join(outDir, '_routes.json'), routesJson(), 'utf8');
+    const fnDir = path.join(__dirname, '..', 'functions');
+    fs.mkdirSync(fnDir, { recursive: true });
+    fs.writeFileSync(path.join(fnDir, '_middleware.js'), middlewareJs(routePairs, mobileFiles), 'utf8');
+    fs.writeFileSync(path.join(fnDir, '_sitemap-routes.js'), sitemapRoutesJs(routePairs), 'utf8');
+  }
+
+  // a stale admin page left over from an earlier build would still be served, so sweep the public dir
+  let purged = 0;
+  if(!adminOnly){
+    for(const f of fs.readdirSync(outDir)){
+      if(ADMIN_RE.test(f)){ fs.unlinkSync(path.join(outDir, f)); purged++; }
+    }
+  }
+  return { chain, total: written, purged, dir: outDir };
+}
+
+// Resolved from THIS file, never hardcoded: the Stellar project is a different folder and this
+  // build must not be able to reach it even by accident. __dirname is <project>/_tools.
+  const ROOT = require('path').resolve(__dirname, '..').split('\\').join('/');
+  const SRC = ROOT;
+const OUT = ROOT + '/dist';
+const ADMIN_OUT = ROOT + '/dist-admin';
+const chains = ['aptos','hedera','starknet','vechain','worldchain','stellar','xrpl'];
+const argv = process.argv.slice(2).filter(a=>a!=='--root'&&a!=='--admin');
+const atRoot = process.argv.includes('--root');
+const adminOnly = process.argv.includes('--admin');
+const target = argv[0];
+const list = target ? [target] : chains;
+if(atRoot && list.length>1){ console.error('--root builds a single version; pass one chain (e.g. aptos --root)'); process.exit(1); }
+if(adminOnly && list.length>1){ console.error('--admin builds one version; pass one chain (e.g. aptos --admin)'); process.exit(1); }
+for(const c of list){
+  const r = build(c, SRC, OUT, atRoot, adminOnly);
+  console.log(r.chain.padEnd(11), 'pages:'+r.total, (r.purged?('purged '+r.purged+' stale admin page(s)  '):''), '->', r.dir);
+}
+if(!adminOnly) console.log('admin pages excluded from the public build \u2014 build them with: node _tools/extract_site.js '+(target||'aptos')+' --admin');

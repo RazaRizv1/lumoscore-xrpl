@@ -1,0 +1,63 @@
+{
+  "verified": {
+    "FRED|GCA73U2PZFWAXJSNVMEVPNPPJCZGETWPWZC6E4DJAIWP3ZW3BAGYZLV6": "fredenergy.org",
+    "PYBC|GBVB43NLVIP2USHXSKI7QQCZKZU2Z6U6A5PAHMIW7LLNVMQJTOX2BZI5": "luxpayband.io",
+    "BLND|GDJEHTBE6ZHUXSWFI642DCGLUOECLHPF3KSXHPXTSTJ7E3JF6MQ5EZYY": "",
+    "KALE|GBDVX4VELCDSQ54KQJYTNHXAHFLBCA77ZY2USQBM4CSHTTV7DME7KALE": "kalepail.com",
+    "XXA|GC4HS4CQCZULIOTGLLPGRAAMSBDLFRR6Y7HCUQG66LNQDISXKIXXADIM": "ixinium.io",
+    "XTAR|GAORYJ3KBDGIM7FFSKVUJHJ5NEFWIRDIAGGBJBJS7TY6ECZS53257IG4": "dogstarcoin.com",
+    "xLMNR|GDKA6WVMFSA73BMEVKPO6WXSSWP4MPRBDJVSXLLSEVIEVH226L5RJ7NL": "thelumenaire.com",
+    "ARST|GCSAZVWXZKWS4XS223M5F54H2B6XPIIXZZGP7KEAIU6YSL5HDRGCI3DG": "pubnet-sep.latamex.com"
+  },
+  "assets": [
+    {
+      "code": "FRED",
+      "issuer": "GCA73U2PZFWAXJSNVMEVPNPPJCZGETWPWZC6E4DJAIWP3ZW3BAGYZLV6",
+      "cat": "utility",
+      "b": "hsl(259,62%,46%)",
+      "logo": "https://fredenergy.org/fred-logo-xlm.png"
+    },
+    {
+      "code": "PYBC",
+      "issuer": "GBVB43NLVIP2USHXSKI7QQCZKZU2Z6U6A5PAHMIW7LLNVMQJTOX2BZI5",
+      "cat": "utility",
+      "b": "hsl(242,62%,46%)",
+      "logo": "https://luxpayband.io/img/LuxLogo21822.png"
+    },
+    {
+      "code": "BLND",
+      "issuer": "GDJEHTBE6ZHUXSWFI642DCGLUOECLHPF3KSXHPXTSTJ7E3JF6MQ5EZYY",
+      "cat": "utility",
+      "b": "hsl(168,62%,46%)",
+      "logo": "/lxapi/media?id=c7100a58d60e0a6be6802389a018ee1b.png"
+    },
+    {
+      "code": "KALE",
+      "issuer": "GBDVX4VELCDSQ54KQJYTNHXAHFLBCA77ZY2USQBM4CSHTTV7DME7KALE",
+      "cat": "utility",
+      "b": "hsl(255,62%,46%)",
+      "logo": "https://imagedelivery.net/yd3qPvu7Jy_6BfgoQb2pZQ/30466c1d-ef73-4d2b-8814-949157465a00/public"
+    },
+    {
+      "code": "XXA",
+      "issuer": "GC4HS4CQCZULIOTGLLPGRAAMSBDLFRR6Y7HCUQG66LNQDISXKIXXADIM",
+      "cat": "utility",
+      "b": "hsl(241,62%,46%)",
+      "logo": "https://ixinium.io/img/main_logo.png"
+    },
+    {
+      "code": "XTAR",
+      "issuer": "GAORYJ3KBDGIM7FFSKVUJHJ5NEFWIRDIAGGBJBJS7TY6ECZS53257IG4",
+      "cat": "utility",
+      "b": "hsl(109,62%,46%)",
+      "logo": "https://www.dogstarcoin.com/assets/img/dogstarcoin-logo.png"
+    },
+    {
+      "code": "xLMNR",
+      "issuer": "GDKA6WVMFSA73BMEVKPO6WXSSWP4MPRBDJVSXLLSEVIEVH226L5RJ7NL",
+      "cat": "utility",
+      "b": "hsl(13,62%,46%)",
+      "logo": "https://www.thelumenaire.com/images/xLMNR-icon.png"
+    }
+  ]
+}

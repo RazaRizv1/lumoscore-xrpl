@@ -1,0 +1,10 @@
+{
+  "name": "lumoscore-xrpl",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LumosCore on the XRP Ledger. Separate project on purpose: nothing here may read or write C:/LumosCore.",
+  "scripts": {
+    "build": "node _tools/extract_site.js xrpl --root",
+    "serve": "node serve.js 8082"
+  }
+}
