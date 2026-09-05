@@ -86,3 +86,32 @@ the accounts whose LP token holders are the reward recipients.
 **Programme start dates are the SAME as Stellar** (RAZA, 2026-09-06): native LP rewards 15 December
 2025, whale holder rewards 1 April 2026, Ecosystem LP rewards 15 April 2026. Rounds run from the 1st
 and 15th of each month.
+
+## Team-owned wallets — EXCLUDED from Native LP rewards (verified 2026-09-06)
+
+RAZA supplied these truncated (`rHuF5…oQpN`). A truncation must never identify an account that gets
+excluded from reward maths, so each was resolved against the live holder list and required to match
+on **three** independent things: leading characters, trailing characters, and the stated balance.
+All seven resolved to exactly one account each, with balances within 0.8% of the figures given.
+
+| account | LUMOS | funded by | acquired |
+|---|---|---|---|
+| `rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN` | 320.8M | Binance | 100% transfer |
+| `raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM` | 150.0M | `rHuF5…` ("LumosCore") | 100% transfer |
+| `r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN` | 144.7M | `rHuF5…` ("LumosCore") | — |
+| `rL9d14LpUX39owdetCB1bV56UFcwAHTs2X` | 95.0M | `rKt1Dr…` ("@jrollnation") | — |
+| `rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx` | 49.0M | unlabelled | 100% transfer |
+| `rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst` | 48.8M | `rHuF5…` ("LumosCore") | — |
+| `rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY` | 41.7M | `rKt1Dr…` ("@jrollnation") | 100% transfer |
+
+**Corroborated by the ledger, not just by the label:** three were funded directly by `rHuF5…`, which
+xrpl.to names "LumosCore"; two more by `rKt1Dr…` ("@jrollnation"). Every one shows **0% DEX, 0% AMM,
+0% LP and 100% transfer** — none of them bought on market, which is what a treasury allocation looks
+like and an ordinary holder does not.
+
+Together they hold **850M of the top-50's 978.7M (86.9%)**, so excluding them is not a rounding
+adjustment — it changes the denominator of every holder-weighted reward.
+
+**Open question for RAZA:** `rKt1DrESP2ssLM5CQpR4aBkvyg5v7WTijK` ("@jrollnation") funded two of the
+seven and itself holds 13.45M LUMOS with 1,540 trades. It was **not** on the exclusion list. Left
+counted, deliberately — that is a decision to confirm, not to make here.

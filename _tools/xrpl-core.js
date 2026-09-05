@@ -117,6 +117,46 @@ function isAddress(a) {
   return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
 }
 
+// ---- team wallets --------------------------------------------------------------------------------
+// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
+// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
+// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
+//
+// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
+// the leading characters, the trailing characters AND the stated balance before being written down.
+// A truncation alone must never identify an account that gets excluded from a payout.
+//
+// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
+// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
+// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
+//
+// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
+// eligibility reads one list; a second copy somewhere would silently drift.
+const TEAM_WALLETS = [
+  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
+  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
+  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
+  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
+  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
+  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
+  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
+];
+
+function isTeamWallet(a) {
+  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
+}
+
+// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
+// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
+function excludeTeam(rows, accountKey) {
+  const key = accountKey || 'account';
+  const kept = [], removed = [];
+  for (const r of (rows || [])) {
+    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
+  }
+  return { kept, removed };
+}
+
 // ---- reserves ------------------------------------------------------------------------------------
 // reserves come from server_info; never assume them.
 function spendableXrp(balanceDrops, ownerCount, reserve) {
@@ -150,7 +190,8 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress };
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
+  TEAM_WALLETS, isTeamWallet, excludeTeam };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;

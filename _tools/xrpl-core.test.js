@@ -75,6 +75,27 @@ eq('one char too many', C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymVX'), fals
 eq('bitcoin-alphabet char rejected', C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiym0'), false);
 
 console.log('');
+console.log('=== team wallets (excluded from reward maths) ===');
+// A mistyped address here does not throw -- it silently stops excluding a treasury wallet, or
+// excludes a real holder. Both are payout errors nobody would notice. So every entry must at least
+// be a structurally valid address, and the live section below checks them against the ledger.
+eq('all seven are valid addresses',
+   C.TEAM_WALLETS.filter((a) => C.isAddress(a)).length, 7);
+eq('no duplicates', new Set(C.TEAM_WALLETS).size, 7);
+eq('recognises a team wallet', C.isTeamWallet('rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN'), true);
+eq('does not recognise a holder', C.isTeamWallet('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymV'), false);
+eq('does not recognise the issuer', C.isTeamWallet('rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha'), false);
+{
+  const split = C.excludeTeam([
+    { account: 'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN', balance: 320800000 },
+    { account: 'rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymV', balance: 389122 },
+    { account: 'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY', balance: 41700000 },
+  ]);
+  eq('excludeTeam keeps real holders', split.kept.length, 1);
+  eq('excludeTeam removes team wallets', split.removed.length, 2);
+}
+
+console.log('');
 console.log('=== balances ===');
 const r = C.readLines([
   { currency: 'CSC', account: 'rCSC', balance: '809.42' },
@@ -116,6 +137,24 @@ eq('issuer obligation not a holding', r.obligations.length, 1);
     console.log('  unreadable names ....... ' + junk.length + (junk.length ? '  <-- FAIL' : '  (none)'));
     if (junk.length) fail++; else pass++;
     console.log('  sample ................. ' + b.held.slice(0, 6).map((h) => h.display).join(', '));
+
+    // The team wallets are checked against the LEDGER, not just against themselves. Every one must
+    // still be a funded account holding LUMOS -- if one were mistyped it would resolve to nothing,
+    // and the only symptom in production would be a treasury wallet quietly earning rewards.
+    const LUMOS_ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+    const LUMOS_CUR = C.encodeCurrency('LUMOS');
+    let holdsLumos = 0, notFound = 0;
+    for (const w of C.TEAM_WALLETS) {
+      const lines = await rpc('account_lines', { account: w, limit: 400, ledger_index: 'validated' });
+      if (!lines || lines.error) { notFound++; continue; }
+      const has = (lines.lines || []).some((l) =>
+        l.currency === LUMOS_CUR && l.account === LUMOS_ISS && Number(l.balance) > 0);
+      if (has) holdsLumos++;
+    }
+    console.log('');
+    console.log('  team wallets on ledger . ' + holdsLumos + '/' + C.TEAM_WALLETS.length
+      + ' hold LUMOS' + (notFound ? ('   ' + notFound + ' NOT FOUND') : ''));
+    if (holdsLumos === C.TEAM_WALLETS.length) pass++; else fail++;
   } catch (e) {
     console.log('  live check skipped: ' + e.message);
   }

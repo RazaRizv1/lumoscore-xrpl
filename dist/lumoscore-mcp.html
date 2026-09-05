@@ -5063,7 +5063,168 @@ window.addEventListener("storage",ping);
 .lx-faq-q{font-size:16px;font-weight:700;color:var(--text);margin:0 0 7px}
 .lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0}
 @media(max-width:640px){.lx-faq{padding:28px 16px 34px}.lx-faq h2{font-size:21px}}
-</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><script id="lx-xrplconnect">
+</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><script id="lx-xrplfeerate">
+// Fee tier: 0.2% per trade, 0.1% for holders of 250,000+ LUMOS.
+//
+// THE INHERITED VERSION COULD NEVER GRANT THE DISCOUNT. It looked up the connected address at
+// https://horizon.stellar.org/accounts/<addr> with the STELLAR LUMOS issuer (GB5T2EQC…). On this
+// site `lumos.address` is an r-address, so Horizon answered 404, the layer swallowed it, and the
+// rate stayed at 0.2% for everyone -- forever, silently, with no error anywhere. A holder with a
+// million LUMOS would simply have been charged double.
+//
+// The numbers are unchanged and deliberately so: 0.2% / 0.1% at 250,000 LUMOS, and LUMOS sitting
+// inside a pool still counts toward the threshold. Only the ledger changed.
+//
+// The public surface is kept byte-for-byte compatible with the Stellar layer -- __lxFeeRate,
+// __lxLumosBal, __lxLumosThresh, __lxLumosIssuer, __lxFeeTier(), __lxFeeTierSet, __lxFeeTierRefresh
+// and the 'lx:feetier' event -- because other code on these pages reads all of them.
+(function () {
+  if (window.__lxFrBooted) return;
+  window.__lxFrBooted = 1;
+
+  // Verified on mainnet: this issuer is blackholed (DisableMaster + RegularKey = ACCOUNT_ZERO),
+  // so the supply is fixed and no further LUMOS can ever be issued.
+  var ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  var CUR = '4C554D4F53000000000000000000000000000000';       // 'LUMOS' as a 40-char hex currency
+  var THRESH = 250000;
+  var RPC = 'https://xrplcluster.com/';
+
+  if (typeof window.__lxFeeRate !== 'number') window.__lxFeeRate = 0.002;
+  if (!('__lxLumosBal' in window)) window.__lxLumosBal = null;
+  window.__lxLumosThresh = THRESH;
+  window.__lxLumosIssuer = ISS;
+
+  function pub(bal) {
+    window.__lxLumosBal = bal;
+    window.__lxFeeRate = (bal >= THRESH) ? 0.001 : 0.002;
+    try {
+      window.dispatchEvent(new CustomEvent('lx:feetier',
+        { detail: { bal: bal, rate: window.__lxFeeRate, thresh: THRESH } }));
+    } catch (e) {}
+  }
+
+  window.__lxFeeTier = function () {
+    return { bal: window.__lxLumosBal, rate: window.__lxFeeRate, thresh: THRESH };
+  };
+  window.__lxFeeTierSet = pub;
+
+  function rpc(method, params) {
+    return fetch(RPC, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var res = j && j.result;
+      if (!res || res.error) return null;
+      return res;
+    }).catch(function () { return null; });
+  }
+
+  var linesP = {};
+  function lines(addr) {
+    if (!linesP[addr]) {
+      linesP[addr] = rpc('account_lines', { account: addr, limit: 400, ledger_index: 'validated' });
+    }
+    return linesP[addr];
+  }
+
+  var ammP = {};
+  function amm(account) {
+    if (!ammP[account]) ammP[account] = rpc('amm_info', { amm_account: account });
+    return ammP[account];
+  }
+
+  function amountOf(side) {
+    // amm_info returns a string of drops for XRP, or {currency, issuer, value} for a token.
+    if (!side || typeof side === 'string') return null;
+    if (side.currency !== CUR || side.issuer !== ISS) return null;
+    var v = Number(side.value);
+    return isFinite(v) ? v : null;
+  }
+
+  // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
+  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
+  // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
+  function poolLumos(rows, cb) {
+    var lps = [];
+    for (var i = 0; i < rows.length; i++) {
+      var c = rows[i].currency;
+      var bal = Number(rows[i].balance);
+      if (typeof c === 'string' && c.length === 40 && /^03/i.test(c) && bal > 0) lps.push(rows[i]);
+    }
+    lps = lps.slice(0, 25);                       // same cap the Stellar layer used
+    if (!lps.length) { cb(0); return; }
+
+    var left = lps.length, total = 0;
+    lps.forEach(function (lp) {
+      // The LP token's ISSUER is the AMM account itself, which is what amm_info is keyed on.
+      amm(lp.account).then(function (info) {
+        try {
+          var a = info && info.amm;
+          if (a) {
+            var lum = amountOf(a.amount);
+            if (lum == null) lum = amountOf(a.amount2);
+            var supply = a.lp_token ? Number(a.lp_token.value) : 0;
+            var mine = Number(lp.balance);
+            if (lum != null && supply > 0 && isFinite(mine)) total += lum * (mine / supply);
+          }
+        } catch (e) {}
+        if (--left === 0) cb(total);
+      });
+    });
+  }
+
+  function resolve(force) {
+    var me = '';
+    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
+
+    if (!me) {
+      if (window.__lxLumosBal !== null) pub(null);
+      else { window.__lxLumosBal = null; window.__lxFeeRate = 0.002; }
+      return;
+    }
+    if (!force && window.__lxFrFor === me) return;
+    window.__lxFrFor = me;
+    if (force) { try { delete linesP[me]; } catch (e) {} }
+
+    lines(me).then(function (res) {
+      if (!res || !res.lines) { window.__lxFrFor = ''; return; }
+      var rows = res.lines;
+
+      var held = 0;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].currency === CUR && rows[i].account === ISS) {
+          var v = Number(rows[i].balance);
+          // A NEGATIVE balance means this account ISSUES LUMOS; it is an obligation, not a holding.
+          if (isFinite(v) && v > 0) held += v;
+        }
+      }
+      pub(held);
+      if (held >= THRESH) return;                 // already qualified; no need to price the pools
+
+      poolLumos(rows, function (extra) {
+        if (extra > 0 && window.__lxFrFor === me) pub(held + extra);
+      });
+    });
+  }
+
+  window.__lxFeeTierRefresh = function () {
+    var me = '';
+    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
+    if (me) { try { delete linesP[me]; } catch (e) {} }
+    window.__lxFrFor = '';
+    resolve(true);
+  };
+
+  resolve();
+  window.addEventListener('storage', function (e) {
+    if (e && e.key === 'lumos.address') { window.__lxFrFor = ''; resolve(); }
+  });
+  // The address can be written after this runs (connect finishes late, or a redirect returns).
+  setTimeout(resolve, 1200);
+  setTimeout(resolve, 4000);
+})();
+
+</script><script id="lx-xrplconnect">
 // XRPL primitives, kept in one place and testable in node.
 //
 // Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
@@ -5183,6 +5344,46 @@ function isAddress(a) {
   return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
 }
 
+// ---- team wallets --------------------------------------------------------------------------------
+// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
+// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
+// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
+//
+// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
+// the leading characters, the trailing characters AND the stated balance before being written down.
+// A truncation alone must never identify an account that gets excluded from a payout.
+//
+// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
+// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
+// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
+//
+// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
+// eligibility reads one list; a second copy somewhere would silently drift.
+const TEAM_WALLETS = [
+  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
+  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
+  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
+  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
+  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
+  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
+  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
+];
+
+function isTeamWallet(a) {
+  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
+}
+
+// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
+// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
+function excludeTeam(rows, accountKey) {
+  const key = accountKey || 'account';
+  const kept = [], removed = [];
+  for (const r of (rows || [])) {
+    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
+  }
+  return { kept, removed };
+}
+
 // ---- reserves ------------------------------------------------------------------------------------
 // reserves come from server_info; never assume them.
 function spendableXrp(balanceDrops, ownerCount, reserve) {
@@ -5216,7 +5417,8 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress };
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
+  TEAM_WALLETS, isTeamWallet, excludeTeam };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -5846,6 +6048,46 @@ function isAddress(a) {
   return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
 }
 
+// ---- team wallets --------------------------------------------------------------------------------
+// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
+// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
+// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
+//
+// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
+// the leading characters, the trailing characters AND the stated balance before being written down.
+// A truncation alone must never identify an account that gets excluded from a payout.
+//
+// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
+// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
+// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
+//
+// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
+// eligibility reads one list; a second copy somewhere would silently drift.
+const TEAM_WALLETS = [
+  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
+  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
+  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
+  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
+  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
+  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
+  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
+];
+
+function isTeamWallet(a) {
+  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
+}
+
+// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
+// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
+function excludeTeam(rows, accountKey) {
+  const key = accountKey || 'account';
+  const kept = [], removed = [];
+  for (const r of (rows || [])) {
+    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
+  }
+  return { kept, removed };
+}
+
 // ---- reserves ------------------------------------------------------------------------------------
 // reserves come from server_info; never assume them.
 function spendableXrp(balanceDrops, ownerCount, reserve) {
@@ -5879,7 +6121,8 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress };
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
+  TEAM_WALLETS, isTeamWallet, excludeTeam };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -6059,167 +6302,6 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }, 250);
 
   window.__lxxSearchRun = run;
-})();
-
-</script><script id="lx-xrplfeerate">
-// Fee tier: 0.2% per trade, 0.1% for holders of 250,000+ LUMOS.
-//
-// THE INHERITED VERSION COULD NEVER GRANT THE DISCOUNT. It looked up the connected address at
-// https://horizon.stellar.org/accounts/<addr> with the STELLAR LUMOS issuer (GB5T2EQC…). On this
-// site `lumos.address` is an r-address, so Horizon answered 404, the layer swallowed it, and the
-// rate stayed at 0.2% for everyone -- forever, silently, with no error anywhere. A holder with a
-// million LUMOS would simply have been charged double.
-//
-// The numbers are unchanged and deliberately so: 0.2% / 0.1% at 250,000 LUMOS, and LUMOS sitting
-// inside a pool still counts toward the threshold. Only the ledger changed.
-//
-// The public surface is kept byte-for-byte compatible with the Stellar layer -- __lxFeeRate,
-// __lxLumosBal, __lxLumosThresh, __lxLumosIssuer, __lxFeeTier(), __lxFeeTierSet, __lxFeeTierRefresh
-// and the 'lx:feetier' event -- because other code on these pages reads all of them.
-(function () {
-  if (window.__lxFrBooted) return;
-  window.__lxFrBooted = 1;
-
-  // Verified on mainnet: this issuer is blackholed (DisableMaster + RegularKey = ACCOUNT_ZERO),
-  // so the supply is fixed and no further LUMOS can ever be issued.
-  var ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
-  var CUR = '4C554D4F53000000000000000000000000000000';       // 'LUMOS' as a 40-char hex currency
-  var THRESH = 250000;
-  var RPC = 'https://xrplcluster.com/';
-
-  if (typeof window.__lxFeeRate !== 'number') window.__lxFeeRate = 0.002;
-  if (!('__lxLumosBal' in window)) window.__lxLumosBal = null;
-  window.__lxLumosThresh = THRESH;
-  window.__lxLumosIssuer = ISS;
-
-  function pub(bal) {
-    window.__lxLumosBal = bal;
-    window.__lxFeeRate = (bal >= THRESH) ? 0.001 : 0.002;
-    try {
-      window.dispatchEvent(new CustomEvent('lx:feetier',
-        { detail: { bal: bal, rate: window.__lxFeeRate, thresh: THRESH } }));
-    } catch (e) {}
-  }
-
-  window.__lxFeeTier = function () {
-    return { bal: window.__lxLumosBal, rate: window.__lxFeeRate, thresh: THRESH };
-  };
-  window.__lxFeeTierSet = pub;
-
-  function rpc(method, params) {
-    return fetch(RPC, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
-      var res = j && j.result;
-      if (!res || res.error) return null;
-      return res;
-    }).catch(function () { return null; });
-  }
-
-  var linesP = {};
-  function lines(addr) {
-    if (!linesP[addr]) {
-      linesP[addr] = rpc('account_lines', { account: addr, limit: 400, ledger_index: 'validated' });
-    }
-    return linesP[addr];
-  }
-
-  var ammP = {};
-  function amm(account) {
-    if (!ammP[account]) ammP[account] = rpc('amm_info', { amm_account: account });
-    return ammP[account];
-  }
-
-  function amountOf(side) {
-    // amm_info returns a string of drops for XRP, or {currency, issuer, value} for a token.
-    if (!side || typeof side === 'string') return null;
-    if (side.currency !== CUR || side.issuer !== ISS) return null;
-    var v = Number(side.value);
-    return isFinite(v) ? v : null;
-  }
-
-  // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
-  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
-  // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
-  function poolLumos(rows, cb) {
-    var lps = [];
-    for (var i = 0; i < rows.length; i++) {
-      var c = rows[i].currency;
-      var bal = Number(rows[i].balance);
-      if (typeof c === 'string' && c.length === 40 && /^03/i.test(c) && bal > 0) lps.push(rows[i]);
-    }
-    lps = lps.slice(0, 25);                       // same cap the Stellar layer used
-    if (!lps.length) { cb(0); return; }
-
-    var left = lps.length, total = 0;
-    lps.forEach(function (lp) {
-      // The LP token's ISSUER is the AMM account itself, which is what amm_info is keyed on.
-      amm(lp.account).then(function (info) {
-        try {
-          var a = info && info.amm;
-          if (a) {
-            var lum = amountOf(a.amount);
-            if (lum == null) lum = amountOf(a.amount2);
-            var supply = a.lp_token ? Number(a.lp_token.value) : 0;
-            var mine = Number(lp.balance);
-            if (lum != null && supply > 0 && isFinite(mine)) total += lum * (mine / supply);
-          }
-        } catch (e) {}
-        if (--left === 0) cb(total);
-      });
-    });
-  }
-
-  function resolve(force) {
-    var me = '';
-    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
-
-    if (!me) {
-      if (window.__lxLumosBal !== null) pub(null);
-      else { window.__lxLumosBal = null; window.__lxFeeRate = 0.002; }
-      return;
-    }
-    if (!force && window.__lxFrFor === me) return;
-    window.__lxFrFor = me;
-    if (force) { try { delete linesP[me]; } catch (e) {} }
-
-    lines(me).then(function (res) {
-      if (!res || !res.lines) { window.__lxFrFor = ''; return; }
-      var rows = res.lines;
-
-      var held = 0;
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].currency === CUR && rows[i].account === ISS) {
-          var v = Number(rows[i].balance);
-          // A NEGATIVE balance means this account ISSUES LUMOS; it is an obligation, not a holding.
-          if (isFinite(v) && v > 0) held += v;
-        }
-      }
-      pub(held);
-      if (held >= THRESH) return;                 // already qualified; no need to price the pools
-
-      poolLumos(rows, function (extra) {
-        if (extra > 0 && window.__lxFrFor === me) pub(held + extra);
-      });
-    });
-  }
-
-  window.__lxFeeTierRefresh = function () {
-    var me = '';
-    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
-    if (me) { try { delete linesP[me]; } catch (e) {} }
-    window.__lxFrFor = '';
-    resolve(true);
-  };
-
-  resolve();
-  window.addEventListener('storage', function (e) {
-    if (e && e.key === 'lumos.address') { window.__lxFrFor = ''; resolve(); }
-  });
-  // The address can be written after this runs (connect finishes late, or a redirect returns).
-  setTimeout(resolve, 1200);
-  setTimeout(resolve, 4000);
 })();
 
 </script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/stellar","lumoscore-account":"/account/stellar","lumoscore-asset-overview":"/trade/stellar"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
