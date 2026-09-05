@@ -5,6 +5,7 @@
   "description": "LumosCore on the XRP Ledger. Separate project on purpose: nothing here may read or write C:/LumosCore.",
   "scripts": {
     "build": "node _tools/extract_site.js xrpl --root",
-    "serve": "node serve.js 8082"
+    "serve": "node serve.js 8082",
+    "test": "node _tools/xrpl-core.test.js"
   }
 }
