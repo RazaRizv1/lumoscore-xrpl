@@ -112,6 +112,6 @@ like and an ordinary holder does not.
 Together they hold **850M of the top-50's 978.7M (86.9%)**, so excluding them is not a rounding
 adjustment — it changes the denominator of every holder-weighted reward.
 
-**Open question for RAZA:** `rKt1DrESP2ssLM5CQpR4aBkvyg5v7WTijK` ("@jrollnation") funded two of the
-seven and itself holds 13.45M LUMOS with 1,540 trades. It was **not** on the exclusion list. Left
-counted, deliberately — that is a decision to confirm, not to make here.
+**Decided (RAZA, 2026-09-06):** `rKt1DrESP2ssLM5CQpR4aBkvyg5v7WTijK` ("@jrollnation") funded two of
+the seven and holds 13.45M LUMOS with 1,540 trades. It is **INCLUDED** — it counts as a normal
+holder and earns rewards. Asked and answered; do not raise it again or quietly exclude it.
