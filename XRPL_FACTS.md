@@ -115,3 +115,18 @@ adjustment — it changes the denominator of every holder-weighted reward.
 **Decided (RAZA, 2026-09-06):** `rKt1DrESP2ssLM5CQpR4aBkvyg5v7WTijK` ("@jrollnation") funded two of
 the seven and holds 13.45M LUMOS with 1,540 trades. It is **INCLUDED** — it counts as a normal
 holder and earns rewards. Asked and answered; do not raise it again or quietly exclude it.
+
+## Native LP pool — LUMOS/XRP (verified 2026-09-06)
+
+| | |
+|---|---|
+| AMM account | `rnPQqk3cfHyqSyvAGh3AfMtWiszK8zaF4U` |
+| LP token currency | `036F75C1FE65CDE55F2FFCED6E9F9DFB743C0EE4` |
+| holds | 412.5 XRP / 17,075,469 LUMOS |
+| trading fee | 0.625% |
+
+**The AMM account is not a holder.** It appeared near the top of the LUMOS holder list with 17.09M
+LUMOS, which is simply the pool's own reserve. Any holder-weighted calculation must drop AMM
+accounts as well as the team wallets, or the largest "holder" of LUMOS is a smart contract.
+On the XRP Ledger an AMM account is recognisable because it is the ISSUER of an LP token — a
+currency of 40 hex characters beginning `03`.
