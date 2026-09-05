@@ -79,9 +79,38 @@ const COPY = [
   // --- wallets: none of the Stellar ones exist here ----------------------------------------------
   ['Freighter, Rabet, Albedo, xBull and WalletConnect.', 'Xaman and GemWallet.'],
 
+  // --- launchpad and listing ---------------------------------------------------------------------
+  // RAZA confirmed 2026-09-06: the prices carry over unchanged, only the currency changes.
+  // The dollar figures are therefore left exactly as they are -- $25, $250, $15/1,000, $75 minimum.
+  ['pay $250 in XLM from your own wallet', 'pay $250 in XRP from your own wallet'],
+  ['pay $250 in XLM, refunded in full', 'pay $250 in XRP, refunded in full'],
+  ['the same amount of XLM, sent back to the account that paid it',
+   'the same amount of XRP, sent back to the account that paid it'],
+  ['paid in XLM or LUMOS.', 'paid in XRP or LUMOS.'],
+  ['Pay in XLM or LUMOS.', 'Pay in XRP or LUMOS.'],
+  ['You pay in XLM at the live rate', 'You pay in XRP at the live rate'],
+  ['shown to people already trading Stellar assets', 'shown to people already trading XRP Ledger tokens'],
+
   // --- misc labels --------------------------------------------------------------------------------
   ['XLM balance', 'XRP balance'],
 ];
+
+// NOT in the table, and each for a stated reason. Listed here so the gap is a decision on the record
+// rather than something that was missed:
+//
+//   bridge      "USDC moves between Stellar and Ethereum, Base, ..." via Circle CCTP. The XRP Ledger
+//               uses Wanchain and Axelar, but the destinations and assets are not settled. RAZA:
+//               leave it (2026-09-06). Writing a chain list we have not committed to would be the
+//               most quotable false sentence on the site.
+//   rewards     the ten named pools, 100,000 LUMOS per round. The XRPL pools do not exist yet; RAZA
+//               is supplying the list. Until then there is no honest version to write.
+//   MCP         "Stellar DeFi for AI Agents", "Stellar asset prices". The MCP server is Stellar-only.
+//               Renaming it would claim a capability that has not been built.
+//   Soroban     a "Soroban record" label on the asset page. Soroban has no XRP Ledger equivalent, so
+//               this is a field to remove, not to rename.
+//   .lc-* modal the unused connect modal's wallet rows (Freighter, xBull, Rabet, Albedo, LOBSTR).
+//               Hidden markup, superseded by the JS flow, and 61 of the remaining occurrences. It
+//               goes when that dead modal is removed, which is a markup change, not a copy one.
 
 let files = 0, pages = 0;
 const applied = new Map(COPY.map(([a]) => [a, 0]));
