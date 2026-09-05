@@ -6321,5 +6321,338 @@ function txt(s){ var e=a.querySelector(s); return e?e.textContent.trim().replace
   try{ new MutationObserver(function(){ lxMarkUnsafe(); })
     .observe(document.documentElement,{childList:true,subtree:true}); }catch(_){}
   try{ lxMarkUnsafe(); }catch(_){}
-})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/stellar","lumoscore-account":"/account/stellar","lumoscore-asset-overview":"/trade/stellar"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+})();</script><script id="lx-xrplwallet">
+// XRPL primitives, kept in one place and testable in node.
+//
+// Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
+// three of them are the kind that ship visible garbage if guessed:
+//
+// 1. A CURRENCY CODE IS NOT ALWAYS TEXT. Three forms exist and a real wallet holds all three:
+//      "CSC"                                       standard 3-character code, use as-is
+//      4C554D4F5300...00  -> "LUMOS"               40-char hex whose bytes are printable ASCII
+//      0329E80F3800DA3C...                         first byte 0x03 = an AMM LP token (XLS-30)
+//    Decoding the third as UTF-8 produces mojibake -- exactly what a naive hex-decode renders. Worse,
+//    LP tokens are POOL SHARES, not assets: listing them beside XRP and LUMOS would tell someone they
+//    hold a token that does not exist. They are separated, the same way Stellar's
+//    liquidity_pool_shares are kept out of the balance list.
+//
+// 2. RESERVES ARE READ FROM THE LEDGER, NEVER HARDCODED. Spendable XRP is
+//      balance - (reserve_base + reserve_inc * OwnerCount)
+//    Measured today: base 1 XRP, increment 0.2 XRP per owned object. Both were TEN TIMES higher before
+//    2024 and can change again by amendment, so a hardcoded 10/2 would quietly overstate what a user
+//    can send -- the same class of bug as the Stellar MAX button offering more than the balance.
+//
+// 3. A TRUST LINE BALANCE IS SIGNED, and negative means the account is the ISSUER of that token --
+//    it is an obligation, not a holding. Showing it as a balance would tell an issuer it owns its own
+//    entire supply.
+'use strict';
+
+const XRP_DROPS = 1e6;
+
+// Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
+// run IS the code that ships. Two copies of these rules would drift, which is how a duplicated esc()
+// caused trouble in the Stellar project.
+function hexBytes(hex) {
+  const out = [];
+  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+  return out;
+}
+
+// ---- currency codes ------------------------------------------------------------------------------
+const CUR_XRP = 'XRP';
+
+function isLpToken(code) {
+  return typeof code === 'string' && code.length === 40 && /^03/i.test(code);
+}
+
+// Returns { code, display, kind } — kind is 'std' | 'hex' | 'lp' | 'opaque'
+function decodeCurrency(code) {
+  if (!code) return { code: '', display: '', kind: 'opaque' };
+  if (code === CUR_XRP) return { code, display: 'XRP', kind: 'std' };
+  if (code.length <= 3) return { code, display: code, kind: 'std' };
+  if (!/^[0-9A-Fa-f]{40}$/.test(code)) return { code, display: code, kind: 'opaque' };
+  if (isLpToken(code)) return { code, display: 'LP', kind: 'lp' };
+
+  const bytes = hexBytes(code);
+  let end = bytes.length;
+  while (end > 0 && bytes[end - 1] === 0) end--;          // strip the zero padding
+  let text = ''; for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
+  // Printable ASCII only. Anything else is an arbitrary 160-bit code and must NOT be rendered as text.
+  if (end > 0 && /^[\x20-\x7E]+$/.test(text)) return { code, display: text, kind: 'hex' };
+  return { code, display: code.slice(0, 8) + '…', kind: 'opaque' };
+}
+
+// The inverse, for building requests: 'LUMOS' -> 4C554D4F53 padded to 40.
+function encodeCurrency(name) {
+  if (!name || name === 'XRP') return 'XRP';
+  if (name.length <= 3) return name;
+  let hex = ''; for (let i = 0; i < name.length; i++) hex += (name.charCodeAt(i) & 255).toString(16).padStart(2, '0');
+  hex = hex.toUpperCase();
+  return (hex + '0'.repeat(40)).slice(0, 40);
+}
+
+// ---- reserves ------------------------------------------------------------------------------------
+// reserves come from server_info; never assume them.
+function spendableXrp(balanceDrops, ownerCount, reserve) {
+  const bal = Number(balanceDrops) / XRP_DROPS;
+  const base = Number(reserve && reserve.base);
+  const inc = Number(reserve && reserve.inc);
+  if (!isFinite(bal)) return null;
+  if (!isFinite(base) || !isFinite(inc)) return null;      // unknown reserve: say so, do not guess
+  const locked = base + inc * (Number(ownerCount) || 0);
+  return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
+}
+
+// ---- balances ------------------------------------------------------------------------------------
+// Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
+function readLines(lines) {
+  const held = [], pools = [], obligations = [];
+  for (const l of (lines || [])) {
+    const amt = Number(l.balance);
+    const cur = decodeCurrency(l.currency);
+    const row = {
+      currency: l.currency, display: cur.display, kind: cur.kind,
+      issuer: l.account, balance: amt,
+      frozen: !!(l.freeze || l.freeze_peer),
+      noRipple: !!l.no_ripple,
+      limit: Number(l.limit),
+    };
+    if (amt < 0) { obligations.push(row); continue; }      // this account issues it; not a holding
+    if (cur.kind === 'lp') { pools.push(row); continue; }  // pool share, not an asset
+    held.push(row);
+  }
+  return { held, pools, obligations };
+}
+
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines };
+
+// Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
+if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
+if (typeof window !== 'undefined') window.lxx = LXX;
+
+// Wallet page: real XRP Ledger balances, on desktop AND mobile.
+//
+// Written as a FILE and injected verbatim, never assembled as a string in the transform. Every
+// escaping accident in the Stellar project came from browser code living inside quoted strings --
+// a template literal ate the backslashes out of a regex and shipped it inert, an SVG's quotes closed
+// the string it sat in and crashed the transform. A file has no layers to survive.
+//
+// TWO RENDERERS, because the two designs are not the same markup:
+//   desktop  <tbody id="assetsTable">   table rows, 5 columns
+//   mobile   <div  id="assetList">      .asset-row cards
+// Writing only the desktop one is the single most repeated bug in the Stellar project -- a fix aimed
+// at a desktop selector silently does nothing on the phone, and it caused at least five separate
+// reports there. Whichever container exists is the one that gets filled.
+//
+// Depends on window.lxx (xrpl-core.js), injected immediately above and byte-identical to the file the
+// node tests run against, so the currency and reserve rules cannot drift between test and page.
+(function () {
+  if (window.__lxxWallet) return;
+  window.__lxxWallet = 1;
+
+  var RPC = 'https://xrplcluster.com/';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+
+  function rpc(method, params) {
+    return fetch(RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var res = j && j.result;
+      if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
+      return res;
+    });
+  }
+
+  function addr() {
+    try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
+  }
+
+  function fmt(n, dp) {
+    if (n == null || !isFinite(n)) return '—';
+    var s = Number(n).toFixed(dp == null ? 6 : dp);
+    if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+    var p = s.split('.');
+    p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return p.join('.');
+  }
+
+  function short(a) { return a && a.length > 12 ? a.slice(0, 5) + '…' + a.slice(-4) : (a || ''); }
+
+  // textContent everywhere for ledger-supplied values: a currency name is arbitrary bytes off a public
+  // ledger and anyone can issue one containing markup.
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // ---- rows, per design ---------------------------------------------------------------------------
+  function tableRow(name, sub, right, rightSub, frozen) {
+    var tr = document.createElement('tr');
+    var c1 = el('td');
+    c1.appendChild(el('div', 'asset-nm', name + (frozen ? ' (frozen)' : '')));
+    c1.appendChild(el('div', 'asset-sb', sub || ''));
+    tr.appendChild(c1);
+    tr.appendChild(el('td', null, '—'));                 // price: needs a price source
+    tr.appendChild(el('td', null, '—'));                 // 7d: later
+    var c4 = el('td', 'right');
+    c4.appendChild(el('div', 'asset-bal', right));
+    if (rightSub) c4.appendChild(el('div', 'asset-sb', rightSub));
+    tr.appendChild(c4);
+    tr.appendChild(el('td', 'right'));
+    return tr;
+  }
+
+  function card(name, sub, right, rightSub, frozen) {
+    var row = el('div', 'asset-row');
+    var top = el('div', 'asset-top');
+    top.appendChild(el('div', 'asset-ico', (name || '?').slice(0, 2).toUpperCase()));
+    var meta = el('div', 'asset-meta');
+    var nr = el('div', 'asset-name-row');
+    nr.appendChild(el('span', 'asset-name', name + (frozen ? ' (frozen)' : '')));
+    meta.appendChild(nr);
+    meta.appendChild(el('div', 'asset-sub', sub || ''));
+    top.appendChild(meta);
+    var bal = el('div', 'asset-balance-block');
+    bal.appendChild(el('div', 'v1', right));
+    if (rightSub) bal.appendChild(el('div', 'v2', rightSub));
+    top.appendChild(bal);
+    row.appendChild(top);
+    return row;
+  }
+
+  // BOTH containers exist on every wallet page -- the design keeps a table and a card list and shows
+  // one by media query. Taking whichever is found first would fill the hidden one and leave the
+  // visible one empty, which on a phone looks exactly like the page failing to load.
+  // getClientRects() cannot be used to decide: both are EMPTY at this point and so have no rects.
+  function hidden(e) {
+    for (var n = e; n && n !== document.body; n = n.parentElement) {
+      var cs = getComputedStyle(n);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return true;
+    }
+    return false;
+  }
+
+  function host() {
+    var t = $('#assetsTable'), l = $('#assetList');
+    if (t && !hidden(t)) return { node: t, kind: 'table' };
+    if (l && !hidden(l)) return { node: l, kind: 'cards' };
+    if (t) return { node: t, kind: 'table' };
+    if (l) return { node: l, kind: 'cards' };
+    return null;
+  }
+
+  // The mobile design ships an anti-flash gate inherited from the Stellar build:
+  //     body:not(.lxmw-ready) #assetList { visibility: hidden }
+  // and it lifts only when window.__lxWalletEarly / __lxWalletReady is set -- flags that belonged to
+  // Stellar's wallet data layer, which does not exist here. Left alone the phone renders a page that
+  // is fully populated and completely invisible: 65 correct cards, correct colours, opacity 1, and
+  // nothing on screen. Nothing in the console, because nothing is wrong.
+  //
+  // This layer is now the thing that fills that list, so it is the thing that says it is ready. Set
+  // BOTH: the flag, for the design's own pass() when it runs after us, and the class, for when it has
+  // already run. Called before the first note(), so the loading and error messages are visible too --
+  // they live inside the gated container.
+  function lift() {
+    try {
+      window.__lxWalletReady = 1;
+      document.body.classList.add('lxmw-ready');
+    } catch (e) {}
+  }
+
+  function note(h, text) {
+    h.node.innerHTML = '';
+    if (h.kind === 'table') {
+      var tr = document.createElement('tr');
+      var td = el('td', null, text);
+      td.colSpan = 5;
+      td.style.cssText = 'padding:26px 14px;text-align:center;opacity:.7';
+      tr.appendChild(td);
+      h.node.appendChild(tr);
+    } else {
+      var d = el('div', null, text);
+      d.style.cssText = 'padding:22px 6px;text-align:center;opacity:.7';
+      h.node.appendChild(d);
+    }
+  }
+
+  function setMeta(held, pools, xrp) {
+    var m = $('.section-heading .meta');
+    var n = held + (xrp ? 1 : 0);
+    if (m) {
+      m.textContent = n + ' holding' + (n === 1 ? '' : 's')
+        + (xrp ? (' · ' + fmt(xrp.balance, 2) + ' XRP') : '');
+    }
+    var cnt = document.querySelectorAll('.asset-tabs .cnt');
+    if (cnt[0]) cnt[0].textContent = String(n);
+    if (cnt[1]) cnt[1].textContent = String(pools);
+  }
+
+  function paint(data) {
+    var h = host();
+    if (!h) return;
+    h.node.innerHTML = '';
+    var make = h.kind === 'table' ? tableRow : card;
+
+    // XRP first, carrying the number people actually need: what is spendable once the reserve is out.
+    if (data.xrp) {
+      var rs = data.xrp.reserved != null
+        ? (fmt(data.xrp.spendable, 6) + ' spendable · ' + fmt(data.xrp.reserved, 2) + ' reserved')
+        : 'reserve unknown';
+      h.node.appendChild(make('XRP', 'XRP Ledger', fmt(data.xrp.balance, 6) + ' XRP', rs, false));
+    }
+
+    data.held.sort(function (a, b) { return b.balance - a.balance; });
+    for (var i = 0; i < data.held.length; i++) {
+      var t = data.held[i];
+      h.node.appendChild(make(t.display, short(t.issuer), fmt(t.balance, 6) + ' ' + t.display, '', t.frozen));
+    }
+
+    if (!data.held.length && !data.xrp) note(h, 'Nothing held on this account yet.');
+    setMeta(data.held.length, data.pools.length, data.xrp);
+  }
+
+  function load() {
+    var h = host();
+    if (!h) return;                                      // not a wallet page
+    lift();
+    var a = addr();
+    if (!a) { note(h, 'Connect a wallet to see your balances.'); return; }
+
+    note(h, 'Reading the XRP Ledger…');
+
+    Promise.all([
+      rpc('server_info', {}),
+      rpc('account_info', { account: a, ledger_index: 'validated' }),
+      rpc('account_lines', { account: a, limit: 400, ledger_index: 'validated' })
+    ]).then(function (r) {
+      var v = (r[0].info && r[0].info.validated_ledger) || {};
+      // Read every time. These halved by amendment once already; a hardcoded pair would quietly
+      // overstate what the user can send.
+      var reserve = { base: v.reserve_base_xrp, inc: v.reserve_inc_xrp };
+      var ad = r[1].account_data || {};
+      var data = {
+        xrp: window.lxx.spendableXrp(ad.Balance, ad.OwnerCount, reserve),
+        held: [], pools: [], obligations: []
+      };
+      var split = window.lxx.readLines(r[2].lines);
+      data.held = split.held; data.pools = split.pools; data.obligations = split.obligations;
+      window.__lxxData = data;
+      paint(data);
+    }).catch(function (e) {
+      // An account with no transactions simply does not exist on the ledger yet. Not an error.
+      if (/actNotFound/i.test(e.message || '')) { note(h, 'This account is not activated on the XRP Ledger yet.'); return; }
+      note(h, 'Could not read the XRP Ledger — ' + (e.message || 'try again'));
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
+  else load();
+  window.__lxxReload = load;
+})();
+
+</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/stellar","lumoscore-account":"/account/stellar","lumoscore-asset-overview":"/trade/stellar"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>

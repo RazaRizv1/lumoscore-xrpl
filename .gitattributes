@@ -1,0 +1,14 @@
+# Put here BEFORE anything is vendored, because the failure it prevents is silent.
+#
+# core.autocrlf is on for this machine, which is right for our own sources but WRONG for third-party
+# libraries we self-host. This was proven in the Stellar project, not assumed: deleting a vendored
+# stellar-sdk .min.js and checking it back out turned 923,458 bytes into 923,459 and changed its
+# sha256 -- git had rewritten a byte inside a file whose provenance had been verified against two
+# independent CDNs. Every fresh clone would then have deployed a signing library that is not the one
+# that was checked, and nothing would have reported it.
+#
+# The XRPL build will self-host xrpl.js on the same terms, so the guard goes in first.
+#
+# -text disables all end-of-line conversion for these paths: what was verified is what ships.
+dist/assets/vendor/** -text
+dist-admin/assets/vendor/** -text

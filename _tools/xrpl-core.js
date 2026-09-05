@@ -25,6 +25,15 @@
 
 const XRP_DROPS = 1e6;
 
+// Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
+// run IS the code that ships. Two copies of these rules would drift, which is how a duplicated esc()
+// caused trouble in the Stellar project.
+function hexBytes(hex) {
+  const out = [];
+  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+  return out;
+}
+
 // ---- currency codes ------------------------------------------------------------------------------
 const CUR_XRP = 'XRP';
 
@@ -40,10 +49,10 @@ function decodeCurrency(code) {
   if (!/^[0-9A-Fa-f]{40}$/.test(code)) return { code, display: code, kind: 'opaque' };
   if (isLpToken(code)) return { code, display: 'LP', kind: 'lp' };
 
-  const bytes = Buffer.from(code, 'hex');
+  const bytes = hexBytes(code);
   let end = bytes.length;
   while (end > 0 && bytes[end - 1] === 0) end--;          // strip the zero padding
-  const text = bytes.slice(0, end).toString('latin1');
+  let text = ''; for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
   // Printable ASCII only. Anything else is an arbitrary 160-bit code and must NOT be rendered as text.
   if (end > 0 && /^[\x20-\x7E]+$/.test(text)) return { code, display: text, kind: 'hex' };
   return { code, display: code.slice(0, 8) + '…', kind: 'opaque' };
@@ -53,7 +62,8 @@ function decodeCurrency(code) {
 function encodeCurrency(name) {
   if (!name || name === 'XRP') return 'XRP';
   if (name.length <= 3) return name;
-  const hex = Buffer.from(name, 'ascii').toString('hex').toUpperCase();
+  let hex = ''; for (let i = 0; i < name.length; i++) hex += (name.charCodeAt(i) & 255).toString(16).padStart(2, '0');
+  hex = hex.toUpperCase();
   return (hex + '0'.repeat(40)).slice(0, 40);
 }
 
@@ -90,4 +100,8 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
-module.exports = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines };
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines };
+
+// Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
+if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
+if (typeof window !== 'undefined') window.lxx = LXX;
