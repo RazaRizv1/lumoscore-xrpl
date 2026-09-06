@@ -88,8 +88,29 @@ export async function onRequest(context) {
     const peg = rows.find((r) => r.n === 'RLUSD');
     if (usd == null || !peg || !(peg.p * usd > 0.90 && peg.p * usd < 1.10)) usd = null;
 
+    // Whole-market figures for the dashboard. They ride along in the SAME response the token rows
+    // come from, so this costs no extra upstream call and cannot drift from the prices beside it.
+    // Everything here is denominated in XRP unless the name says otherwise.
+    const g = (bulk && bulk.global) || {};
+    const h = (bulk && bulk.H24) || {};
+
     out = {
-      ok: true, usd, count: rows.length, rows,
+      ok: true, usd, count: rows.length,
+      // How many tokens the ledger has, as opposed to how many this response carries. The dashboard
+      // needs the former and was showing a mock 4,234 against a real 20,362.
+      total: num(bulk && bulk.total),
+      stats: {
+        dexVol24: num(g.gDexVolume),
+        tvl: num(g.totalTVL),
+        marketcap: num(g.gMarketcap),
+        trustlines: num(g.totalTrustLines),
+        addresses: num(g.totalAddresses),
+        activeAddresses24: num(h.activeAddresses24H),
+        transactions24: num(h.transactions24H),
+        tradedTokens24: num(h.tradedTokens24H),
+        traders24: num(h.uniqueTraders24H),
+      },
+      rows,
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to',
     };
   } catch (e) {
