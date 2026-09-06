@@ -4675,7 +4675,28 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   var USD = { create: 0.50, liq: 1.50, pool: 0 };
   var TEST_PRICING = USD.create !== USD_REAL.create || USD.liq !== USD_REAL.liq;
 
-  var COST_EL = { costCreation: 'create', costLiquidity: 'liq', costNetwork: 'pool' };
+  // THE REVIEW PAGE HAS ITS OWN COST PANEL, with no ids at all -- `.cost-row` blocks matched by
+  // their label. It was never repainted, so after the form correctly showed 0.35 XRP the review step
+  // still read "173.50 XRP ≈ $25": the design's original hardcoded figures, at XLM's rate, on the
+  // very screen where the user commits. Both panels are painted from the same numbers now.
+  var COST_ID = { create: 'costCreation', liq: 'costLiquidity', pool: 'costNetwork', total: 'costTotal' };
+  var COST_LABEL = {
+    create: 'token creation', liq: 'initial liquidity',
+    pool: 'liq. pool & network', total: 'total cost',
+  };
+
+  function costCell(key) {
+    var byId = document.getElementById(COST_ID[key]);
+    if (byId) return byId;
+    var want = COST_LABEL[key];
+    var rows = $$('.cost-row, .cost-total');
+    for (var i = 0; i < rows.length; i++) {
+      var k = rows[i].querySelector('.k'), v = rows[i].querySelector('.v');
+      if (!k || !v) continue;
+      if ((k.textContent || '').trim().toLowerCase() === want) return v;
+    }
+    return null;
+  }
 
   var xrpUsd = null;
 
@@ -4693,8 +4714,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // Comparing against the DOM instead is self-limiting: the second pass finds the text already
   // correct, writes nothing, and mutates nothing, so the loop cannot continue. It also means the
   // observer only ever undoes the design's repaint, never its own.
-  function setCost(id, xrp, usdOverride) {
-    var el = document.getElementById(id);
+  function setCost(key, xrp, usdOverride) {
+    var el = costCell(key);
     if (!el) return;
     var want = fmtXrp(xrp);
     var usdSpan = el.querySelector('.usd');
@@ -4723,10 +4744,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // labels are only correct at the real prices, so under test pricing the panel read
     // "0.35 XRP ≈ $5" -- the right XRP beside the wrong dollars.
     var baseUsd = 0;
-    Object.keys(COST_EL).forEach(function (id) {
-      var usd = USD[COST_EL[id]];
+    ['create', 'liq', 'pool'].forEach(function (key) {
+      var usd = USD[key];
       baseUsd += usd;
-      setCost(id, usd / xrpUsd, usd);
+      setCost(key, usd / xrpUsd, usd);
     });
 
     // THE TOTAL ALSO CARRIES WHATEVER EXTRA LIQUIDITY THE USER ADDS, and that field is denominated
@@ -4738,7 +4759,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (!isFinite(extra) || extra < 0) extra = 0;
 
     var totalXrp = baseUsd / xrpUsd + extra;
-    setCost('costTotal', totalXrp, totalXrp * xrpUsd);
+    setCost('total', totalXrp, totalXrp * xrpUsd);
   }
 
   // The design's recalcCost() lives inside an IIFE, so it cannot be called or replaced -- and it
@@ -4746,13 +4767,121 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // would not cover it either: the share slider updates the value WITHOUT firing an input event.
   // So the container is watched and the correct figures re-applied.
   function watchCosts() {
-    var first = document.getElementById('costCreation');
+    var first = costCell('create');
     var row = first && first.closest ? first.closest('.cost-row') : null;
     var host = row && row.parentElement;
     if (!host || !window.MutationObserver) return;
     new MutationObserver(paintCosts).observe(host, {
       childList: true, characterData: true, subtree: true,
     });
+  }
+
+  // ---- the token icon ---------------------------------------------------------------------------
+  //
+  // THREE THINGS WERE WRONG AND THEY HAVE THE SAME ROOT. The upload did nothing, the preview showed
+  // a STELLAR mark, and the review step showed the XRP logo -- none of them the user's file.
+  //
+  //   * The code that read the chosen file lived inside the stripped Stellar layer, so choosing one
+  //     changed nothing at all.
+  //   * The design fills the preview with the first three letters of the ticker
+  //     (`previewIcon.textContent = v.slice(0,3)`). That is 1-5 characters of text in a div, which
+  //     is exactly what the site's LOGO HEALER hunts: it resolves the text as a ticker and stamps a
+  //     logo over it. "XFR" resolved to something Stellar-shaped. There is no class opt-out; the
+  //     only thing the healer skips is an element that already contains an <img> or <svg>.
+  //   * The review hero carries `lx-natico`, a painter that draws the NETWORK's native asset -- so
+  //     it drew XRP's logo on every token.
+  //
+  // So the icon is always rendered as a real <img>, or as an inline <svg> of initials. Both make the
+  // element opaque to every painter on the page.
+  var ICON_PX = 128;
+
+  // Downscaled before it is stored. A full-size PNG as a data URL has already blown the localStorage
+  // quota once in this project, and a quota error here would lose the whole draft, not just the
+  // picture. 128px is ample for a 90px avatar and lands in tens of KB.
+  function readIcon(file, cb) {
+    if (!file || !/^image\//.test(file.type || '')) { cb(null); return; }
+    var fr = new FileReader();
+    fr.onerror = function () { cb(null); };
+    fr.onload = function () {
+      var img = new Image();
+      img.onerror = function () { cb(null); };
+      img.onload = function () {
+        try {
+          var c = document.createElement('canvas');
+          c.width = ICON_PX; c.height = ICON_PX;
+          var g = c.getContext('2d');
+          // Cover, not stretch: a non-square logo squashed into a circle looks broken.
+          var s = Math.min(img.width, img.height);
+          g.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, ICON_PX, ICON_PX);
+          cb(c.toDataURL('image/png'));
+        } catch (e) { cb(null); }
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+
+  function initialsSvg(text, px) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 64 64');
+    svg.setAttribute('width', String(px)); svg.setAttribute('height', String(px));
+    var t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', '32'); t.setAttribute('y', '34');
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+    t.setAttribute('font-size', '22'); t.setAttribute('font-weight', '800');
+    t.setAttribute('fill', 'currentColor');
+    t.textContent = String(text || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+    svg.appendChild(t);
+    return svg;
+  }
+
+  // Paint `host` with the icon, or with initials. Always leaves an element node inside, which is
+  // what keeps the logo healer and lx-natico off it.
+  function paintIcon(host, dataUrl, fallbackText, px) {
+    if (!host) return;
+    host.innerHTML = '';
+    host.classList.remove('empty');
+    host.removeAttribute('data-logo');
+    host.classList.remove('lx-natico');          // stop the native-asset painter claiming it
+    if (dataUrl) {
+      var img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = '';
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+      host.appendChild(img);
+    } else {
+      host.appendChild(initialsSvg(fallbackText, px || 40));
+    }
+  }
+
+  var iconData = null;
+
+  function wireIcon() {
+    var input = $('#iconFileInput');
+    var host = $('#previewIcon');
+    if (!input) return;
+
+    var repaint = function () {
+      paintIcon(host, iconData, ($('#tokenTicker') || {}).value || '', 44);
+    };
+
+    input.addEventListener('change', function () {
+      var f = input.files && input.files[0];
+      readIcon(f, function (url) {
+        iconData = url;
+        repaint();
+      });
+    });
+
+    // The design rewrites #previewIcon's text on every keystroke in the ticker field, which would
+    // wipe the image and hand the element back to the healer. Re-applying on the same events keeps
+    // it ours; the paint is a no-op when nothing changed.
+    ['#tokenTicker', '#tokenName'].forEach(function (sel) {
+      var f = $(sel);
+      if (f) f.addEventListener('input', repaint);
+    });
+    repaint();
   }
 
   // ---- validation ------------------------------------------------------------------------------
@@ -4832,7 +4961,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     d.currency = v.currency.code;
     d.currencyKind = v.currency.kind;
     d.ledger = 'xrpl';
-    try { localStorage.setItem(DRAFT, JSON.stringify(d)); } catch (e) { /* private mode */ }
+    d.icon = iconData || null;
+
+    // THE ICON MUST NEVER COST THE USER THEIR DRAFT. A data URL is the largest thing in here by far,
+    // and a quota error on setItem would throw away the name, ticker, supply and socials along with
+    // it. So the write is attempted with the picture and retried without it.
+    try {
+      localStorage.setItem(DRAFT, JSON.stringify(d));
+    } catch (e) {
+      try {
+        var lean = {};
+        for (var k in d) if (k !== 'icon') lean[k] = d[k];
+        lean.icon = null;
+        localStorage.setItem(DRAFT, JSON.stringify(lean));
+      } catch (e2) { /* private mode: the review page will show what it can */ }
+    }
     return v;
   }
 
@@ -4869,8 +5012,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   function load() {
-    if (!$('#tokenTicker')) return;                               // not the launchpad form
-    wireNext();
+    // The cost panel exists on BOTH the form and the review step, so the guard cannot be the form's
+    // ticker field -- that is what left the review page quoting 173.50 XRP.
+    var isForm = !!$('#tokenTicker');
+    if (!isForm && !$('.cost-row')) return;                       // not a launchpad page
+
+    if (isForm) { wireNext(); wireIcon(); }
 
     // Loud on purpose. Reduced pricing that ships unnoticed is a launchpad that charges 50 cents
     // for a $5 service, and nothing else on the page would ever say so.
@@ -4999,6 +5146,37 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var pool = (supply != null && lpShare != null) ? supply * lpShare / 100 : null;
     var ticker = d.ticker || '';
 
+    // THE HERO ICON WAS DRAWING XRP'S OWN LOGO on every token, because it carries `lx-natico` -- a
+    // painter for the network's NATIVE asset. Replaced with the uploaded icon, or initials drawn as
+    // inline SVG. Either way the element ends up containing a real node, which is what stops both
+    // that painter and the logo healer from claiming it back.
+    var heroIcon = $('.hero-icon');
+    if (heroIcon) {
+      heroIcon.classList.remove('lx-natico');
+      heroIcon.removeAttribute('data-logo');
+      heroIcon.innerHTML = '';
+      if (d.icon) {
+        var img = document.createElement('img');
+        img.src = d.icon;
+        img.alt = '';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+        heroIcon.appendChild(img);
+      } else {
+        var NS = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 64 64');
+        svg.setAttribute('width', '52'); svg.setAttribute('height', '52');
+        var t = document.createElementNS(NS, 'text');
+        t.setAttribute('x', '32'); t.setAttribute('y', '34');
+        t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+        t.setAttribute('font-size', '22'); t.setAttribute('font-weight', '800');
+        t.setAttribute('fill', '#fff');
+        t.textContent = String(d.ticker || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+        svg.appendChild(t);
+        heroIcon.appendChild(svg);
+      }
+    }
+
     var name = $('.hero-name');
     if (name) name.textContent = d.name || '—';
     var desc = $('.hero-desc');
@@ -5008,9 +5186,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     setRow('ticker', '$' + ticker);
     setRow('description', d.desc || 'Not provided');
 
-    // The icon row shipped a mock filename -- "icon-slr.png · 142 KB" -- next to a preview of a
-    // token nobody uploaded. Nothing carries an icon through the draft yet, so it says so.
-    setRow('icon', d.icon || 'Not provided', true);
+    // The icon row shipped a mock filename -- "icon-slr.png · 142 KB" -- beside a preview of a token
+    // nobody uploaded. It now reports whether one actually came through the draft.
+    setRow('icon', d.icon ? 'Uploaded' : 'Not provided', true);
 
     setRow('total supply', group(supply) + ' ' + ticker);
     setRow('your share', share == null ? '—' : (share + '% (' + group(yours) + ' ' + ticker + ')'));

@@ -94,6 +94,37 @@
     var pool = (supply != null && lpShare != null) ? supply * lpShare / 100 : null;
     var ticker = d.ticker || '';
 
+    // THE HERO ICON WAS DRAWING XRP'S OWN LOGO on every token, because it carries `lx-natico` -- a
+    // painter for the network's NATIVE asset. Replaced with the uploaded icon, or initials drawn as
+    // inline SVG. Either way the element ends up containing a real node, which is what stops both
+    // that painter and the logo healer from claiming it back.
+    var heroIcon = $('.hero-icon');
+    if (heroIcon) {
+      heroIcon.classList.remove('lx-natico');
+      heroIcon.removeAttribute('data-logo');
+      heroIcon.innerHTML = '';
+      if (d.icon) {
+        var img = document.createElement('img');
+        img.src = d.icon;
+        img.alt = '';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+        heroIcon.appendChild(img);
+      } else {
+        var NS = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 64 64');
+        svg.setAttribute('width', '52'); svg.setAttribute('height', '52');
+        var t = document.createElementNS(NS, 'text');
+        t.setAttribute('x', '32'); t.setAttribute('y', '34');
+        t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+        t.setAttribute('font-size', '22'); t.setAttribute('font-weight', '800');
+        t.setAttribute('fill', '#fff');
+        t.textContent = String(d.ticker || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+        svg.appendChild(t);
+        heroIcon.appendChild(svg);
+      }
+    }
+
     var name = $('.hero-name');
     if (name) name.textContent = d.name || '—';
     var desc = $('.hero-desc');
@@ -103,9 +134,9 @@
     setRow('ticker', '$' + ticker);
     setRow('description', d.desc || 'Not provided');
 
-    // The icon row shipped a mock filename -- "icon-slr.png · 142 KB" -- next to a preview of a
-    // token nobody uploaded. Nothing carries an icon through the draft yet, so it says so.
-    setRow('icon', d.icon || 'Not provided', true);
+    // The icon row shipped a mock filename -- "icon-slr.png · 142 KB" -- beside a preview of a token
+    // nobody uploaded. It now reports whether one actually came through the draft.
+    setRow('icon', d.icon ? 'Uploaded' : 'Not provided', true);
 
     setRow('total supply', group(supply) + ' ' + ticker);
     setRow('your share', share == null ? '—' : (share + '% (' + group(yours) + ' ' + ticker + ')'));
