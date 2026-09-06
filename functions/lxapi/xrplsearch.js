@@ -70,6 +70,7 @@ export async function onRequest(context) {
       v: num(t.vol24hxrp),
       p: num(t.exch),
       vf: t.verified ? 1 : 0,
+      m: String(t.md5 || ''),
     })).filter((t) => t.n && t.i);
 
     out = {

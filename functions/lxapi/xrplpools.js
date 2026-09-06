@@ -48,6 +48,7 @@ function side(a) {
     c: String(a.currency || ''),
     i: a.issuer === 'XRPL' ? '' : String(a.issuer || ''),
     v: num(a.value),
+    m: String(a.md5 || ''),
   };
 }
 

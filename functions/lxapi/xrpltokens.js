@@ -8,9 +8,9 @@
 // One upstream page (top 100 by 24h volume), edge-cached. Same reasons as xrplprices: the anonymous
 // tier is 333 requests per DAY per IP, so this cannot be fetched from the visitor's browser.
 //
-// LOGOS ARE DELIBERATELY ABSENT. xrpl.to's thumbnail endpoint requires an API key -- it answers 401
-// without one -- so there is no logo URL to give the page. The browser layer draws initials instead.
-// Emitting a URL that 401s would put a broken image beside every token, which is worse than a letter.
+// LOGOS: each row carries `m`, the token's md5. The page turns that into /lxapi/xrplthumb?id=<m>,
+// which proxies the image server-side -- xrpl.to's thumbnail endpoint needs the API key, and that
+// key must never reach the browser. Initials remain the fallback when a token has no logo.
 
 const UP = 'https://api.xrpl.to/api';
 const TTL = 120;
@@ -72,6 +72,7 @@ export async function onRequest(context) {
         d: num(t.pro24h), w: num(t.pro7d),
         v: num(t.vol24hxrp), t: num(t.tvl),
         x: num(t.vol24htx),                    // trade count in 24h, for the Trades column
+        m: String(t.md5 || ''),               // logo id; the page fetches it via /lxapi/xrplthumb
         hi: num(mm[0]), lo: num(mm[1]),
         h: num(t.holders),
         vf: t.verified ? 1 : 0,

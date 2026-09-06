@@ -4,3 +4,12 @@
 # reverted change. Back them up before any transform that deletes rather than adds.
 lumoscore-xrpl-*.html
 node_modules/
+
+# Secrets. The xrpl.to API key is a SERVER-side credential — unlike the Xaman API key, which is a
+# public PKCE client id and ships in the page on purpose. This one is read from the environment:
+# XRPLTO_API_KEY, set in Cloudflare Pages for production and exported in the shell for local runs.
+# It must never be written into a file in this repo.
+.env
+.env.*
+!.env.example
+*.key

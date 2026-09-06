@@ -21,14 +21,15 @@
 
 const UP = 'https://api.xrpl.to/api';
 const TTL = 120;                       // seconds at the edge
-const MAX_MISSES = 8;                  // hard cap: never turn one page view into a rate-limit burst
-const PACE = 300;                      // ms between per-token calls; anonymous burst cap is 2/sec
+const MAX_MISSES = 24;                 // still capped: one page view must not become a burst
+const PACE = 60;                       // ms between calls; keyed burst is 20/sec, anonymous was 2
 
 // How many 100-token pages of the volume ranking to pull. MEASURED against a real 51-token wallet:
 //   top 100 -> 37%   top 200 -> 49%   top 300 -> 55%   top 400 -> 61%   top 500 -> 61%
 // Page 5 added nothing, so the tail is tokens with no 24h volume at all rather than tokens the
-// ranking has not reached. Three pages is where the curve flattens against the request cost.
-const PAGES = 3;
+// ranking has not reached. Three pages was the anonymous-tier compromise; with a key the budget is
+// ~33,000 requests a day instead of 333, so this now pulls six and fills far more per-token misses.
+const PAGES = 6;
 
 // Always priced, whatever its volume rank. LUMOS trades ~18 XRP/day, far below the top-100 cutoff,
 // so a "top tokens" list alone would leave the platform's own token showing a dash.

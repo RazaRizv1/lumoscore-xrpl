@@ -6117,382 +6117,6 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   else resume();
 })();
 
-</script><script id="lx-xrplsearch">
-// XRPL primitives, kept in one place and testable in node.
-//
-// Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
-// three of them are the kind that ship visible garbage if guessed:
-//
-// 1. A CURRENCY CODE IS NOT ALWAYS TEXT. Three forms exist and a real wallet holds all three:
-//      "CSC"                                       standard 3-character code, use as-is
-//      4C554D4F5300...00  -> "LUMOS"               40-char hex whose bytes are printable ASCII
-//      0329E80F3800DA3C...                         first byte 0x03 = an AMM LP token (XLS-30)
-//    Decoding the third as UTF-8 produces mojibake -- exactly what a naive hex-decode renders. Worse,
-//    LP tokens are POOL SHARES, not assets: listing them beside XRP and LUMOS would tell someone they
-//    hold a token that does not exist. They are separated, the same way Stellar's
-//    liquidity_pool_shares are kept out of the balance list.
-//
-// 2. RESERVES ARE READ FROM THE LEDGER, NEVER HARDCODED. Spendable XRP is
-//      balance - (reserve_base + reserve_inc * OwnerCount)
-//    Measured today: base 1 XRP, increment 0.2 XRP per owned object. Both were TEN TIMES higher before
-//    2024 and can change again by amendment, so a hardcoded 10/2 would quietly overstate what a user
-//    can send -- the same class of bug as the Stellar MAX button offering more than the balance.
-//
-// 3. A TRUST LINE BALANCE IS SIGNED, and negative means the account is the ISSUER of that token --
-//    it is an obligation, not a holding. Showing it as a balance would tell an issuer it owns its own
-//    entire supply.
-'use strict';
-
-// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
-//
-// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
-// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
-// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
-// <script> block, taking the wallet layer down with it. The page then renders the design's mock
-// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
-// broken. It shipped exactly once that way.
-//
-// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
-// module.exports, both assigned at the end.
-(function () {
-
-const XRP_DROPS = 1e6;
-
-// Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
-// run IS the code that ships. Two copies of these rules would drift, which is how a duplicated esc()
-// caused trouble in the Stellar project.
-function hexBytes(hex) {
-  const out = [];
-  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
-  return out;
-}
-
-// ---- currency codes ------------------------------------------------------------------------------
-const CUR_XRP = 'XRP';
-
-function isLpToken(code) {
-  return typeof code === 'string' && code.length === 40 && /^03/i.test(code);
-}
-
-// Returns { code, display, kind } — kind is 'std' | 'hex' | 'lp' | 'opaque'
-function decodeCurrency(code) {
-  if (!code) return { code: '', display: '', kind: 'opaque' };
-  if (code === CUR_XRP) return { code, display: 'XRP', kind: 'std' };
-  if (code.length <= 3) return { code, display: code, kind: 'std' };
-  if (!/^[0-9A-Fa-f]{40}$/.test(code)) return { code, display: code, kind: 'opaque' };
-  if (isLpToken(code)) return { code, display: 'LP', kind: 'lp' };
-
-  const bytes = hexBytes(code);
-  let end = bytes.length;
-  while (end > 0 && bytes[end - 1] === 0) end--;          // strip the zero padding
-  let text = ''; for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
-  // Printable ASCII only. Anything else is an arbitrary 160-bit code and must NOT be rendered as text.
-  if (end > 0 && /^[\x20-\x7E]+$/.test(text)) return { code, display: text, kind: 'hex' };
-  return { code, display: code.slice(0, 8) + '…', kind: 'opaque' };
-}
-
-// The inverse, for building requests: 'LUMOS' -> 4C554D4F53 padded to 40.
-function encodeCurrency(name) {
-  if (!name || name === 'XRP') return 'XRP';
-  if (name.length <= 3) return name;
-  let hex = ''; for (let i = 0; i < name.length; i++) hex += (name.charCodeAt(i) & 255).toString(16).padStart(2, '0');
-  hex = hex.toUpperCase();
-  return (hex + '0'.repeat(40)).slice(0, 40);
-}
-
-// ---- addresses -----------------------------------------------------------------------------------
-// XRPL uses its OWN base58 alphabet -- not Bitcoin's, not Flickr's. Decoding with the wrong one
-// silently produces different bytes rather than an error.
-const B58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
-
-// Decode to bytes. Long division in base 58, because these are 25-byte values and Number would lose
-// precision well before the end.
-function b58decode(str) {
-  if (typeof str !== 'string' || !str.length) return null;
-  const bytes = [0];
-  for (let i = 0; i < str.length; i++) {
-    const v = B58.indexOf(str[i]);
-    if (v < 0) return null;                                // not in the XRPL alphabet at all
-    let carry = v;
-    for (let j = 0; j < bytes.length; j++) {
-      carry += bytes[j] * 58;
-      bytes[j] = carry & 255;
-      carry >>= 8;
-    }
-    while (carry) { bytes.push(carry & 255); carry >>= 8; }
-  }
-  for (let i = 0; i < str.length && str[i] === B58[0]; i++) bytes.push(0);   // leading zeros
-  return bytes.reverse();
-}
-
-// A CLASSIC XRPL ACCOUNT ADDRESS, by shape. Deliberately NOT a checksum check: verifying the trailing
-// 4 bytes needs double-SHA256, which is async in a browser (crypto.subtle) and would make every caller
-// async for a case that barely happens -- a wallet does not hand back a one-character typo of its own
-// address. What DOES happen, and what this catches, is a value of the wrong KIND: a Stellar 'G...'
-// address left in shared storage by the Stellar build, an EVM '0x...', an empty string, an X-address.
-// Connect confirms the account against the ledger separately, which is the real check.
-function isAddress(a) {
-  if (typeof a !== 'string' || a.length < 25 || a.length > 35 || a[0] !== 'r') return false;
-  const b = b58decode(a);
-  return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
-}
-
-// ---- team wallets --------------------------------------------------------------------------------
-// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
-// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
-// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
-//
-// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
-// the leading characters, the trailing characters AND the stated balance before being written down.
-// A truncation alone must never identify an account that gets excluded from a payout.
-//
-// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
-// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
-// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
-//
-// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
-// eligibility reads one list; a second copy somewhere would silently drift.
-const TEAM_WALLETS = [
-  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
-  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
-  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
-  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
-  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
-  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
-  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
-];
-
-function isTeamWallet(a) {
-  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
-}
-
-// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
-// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
-function excludeTeam(rows, accountKey) {
-  const key = accountKey || 'account';
-  const kept = [], removed = [];
-  for (const r of (rows || [])) {
-    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
-  }
-  return { kept, removed };
-}
-
-// ---- reserves ------------------------------------------------------------------------------------
-// reserves come from server_info; never assume them.
-function spendableXrp(balanceDrops, ownerCount, reserve) {
-  const bal = Number(balanceDrops) / XRP_DROPS;
-  const base = Number(reserve && reserve.base);
-  const inc = Number(reserve && reserve.inc);
-  if (!isFinite(bal)) return null;
-  if (!isFinite(base) || !isFinite(inc)) return null;      // unknown reserve: say so, do not guess
-  const locked = base + inc * (Number(ownerCount) || 0);
-  return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
-}
-
-// ---- balances ------------------------------------------------------------------------------------
-// Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
-function readLines(lines) {
-  const held = [], pools = [], obligations = [];
-  for (const l of (lines || [])) {
-    const amt = Number(l.balance);
-    const cur = decodeCurrency(l.currency);
-    const row = {
-      currency: l.currency, display: cur.display, kind: cur.kind,
-      issuer: l.account, balance: amt,
-      frozen: !!(l.freeze || l.freeze_peer),
-      noRipple: !!l.no_ripple,
-      limit: Number(l.limit),
-    };
-    if (amt < 0) { obligations.push(row); continue; }      // this account issues it; not a holding
-    if (cur.kind === 'lp') { pools.push(row); continue; }  // pool share, not an asset
-    held.push(row);
-  }
-  return { held, pools, obligations };
-}
-
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
-  TEAM_WALLETS, isTeamWallet, excludeTeam };
-
-// Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
-if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
-if (typeof window !== 'undefined') window.lxx = LXX;
-
-})();
-
-// Search: XRP Ledger tokens.
-//
-// REPLACES A LIVE WRONG-CHAIN LAYER. `lx-searchassets` shipped a STELLAR asset index and ran on
-// every page of this site: typing "USD" returned Stellar assets with G-issuers, and the page
-// prefetched their logos from /lxapi/assetlogo. Like the Trade table, it was not broken-looking --
-// it was confidently answering about the wrong ledger.
-//
-// A TICKER IS NOT AN IDENTITY. Searching "USD" here returns RLUSD (Ripple), USDC (Circle), USD
-// (Bitstamp), USD (RippleFox), USDT (XRPS), USDC (GateHub) -- two different USDs and two different
-// USDCs, all real. So every row shows the issuer's name AND its address, and results come back
-// ordered by 24h volume rather than by name, because alphabetical ordering puts an impostor above
-// the token someone actually meant.
-//
-// Icons are initials in a class of our own: the design's `.sp-ico` is a hook for the inherited
-// Stellar icon painter, which resolves logos by ticker.
-(function () {
-  if (window.__lxxSearch) return;
-  window.__lxxSearch = 1;
-
-  var $ = function (s, r) { return (r || document).querySelector(s); };
-  var MIN = 2;
-  var seq = 0;
-
-  function el(tag, cls, text) {
-    var e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text != null) e.textContent = text;      // ledger-supplied names are arbitrary bytes
-    return e;
-  }
-
-  function initials(n) { return String(n || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase(); }
-
-  function short(a) { return a && a.length > 12 ? a.slice(0, 4) + '…' + a.slice(-4) : (a || ''); }
-
-  function holders(v) {
-    if (v == null || !isFinite(v)) return null;
-    if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M holders';
-    if (v >= 1000) return (v / 1000).toFixed(1) + 'K holders';
-    return v + ' holder' + (v === 1 ? '' : 's');
-  }
-
-  (function () {
-    if (document.getElementById('lxx-sea-css')) return;
-    var st = document.createElement('style');
-    st.id = 'lxx-sea-css';
-    st.textContent = '.lxx-sea-ic{width:30px;height:30px;flex:0 0 30px;border-radius:50%;'
-      + 'display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;'
-      + 'font-weight:800;color:#fff;background:rgba(255,255,255,.10)}'
-      + '.lxx-sea-note{padding:18px 14px;text-align:center;opacity:.65;font-size:13.5px}';
-    document.head.appendChild(st);
-  })();
-
-  // Inline SVG, for the same reason as the Trade icons: the page carries a logo healer that scans
-  // every span/div/i/b with 1-5 characters of text and stamps a ticker logo over it. It skips any
-  // element that already contains a graphic, so initials drawn as an SVG are left alone.
-  function seaIcon(name) {
-    var NS = 'http://www.w3.org/2000/svg';
-    var e = el('div', 'lxx-sea-ic');
-    var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 30 30');
-    svg.setAttribute('width', '30'); svg.setAttribute('height', '30');
-    var c = document.createElementNS(NS, 'circle');
-    c.setAttribute('cx', '15'); c.setAttribute('cy', '15'); c.setAttribute('r', '15');
-    c.setAttribute('fill', 'rgba(255,255,255,.10)');
-    var t = document.createElementNS(NS, 'text');
-    t.setAttribute('x', '15'); t.setAttribute('y', '16');
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('dominant-baseline', 'middle');
-    t.setAttribute('font-size', '10'); t.setAttribute('font-weight', '800');
-    t.setAttribute('fill', '#fff');
-    t.textContent = initials(name);
-    svg.appendChild(c); svg.appendChild(t);
-    e.appendChild(svg);
-    return e;
-  }
-
-  function rowFor(t) {
-    var a = document.createElement('a');
-    a.className = 'sp-row sp-row--asset';
-    a.setAttribute('data-chain', 'xrpl');
-    a.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
-
-    var ic = seaIcon(t.n);
-    a.appendChild(ic);
-
-    var info = el('div', 'sp-info');
-    var nameRow = el('div', 'sp-name-row', t.n);
-    if (t.u) nameRow.appendChild(el('span', 'sp-domain', ' ' + t.u));
-    info.appendChild(nameRow);
-    // The issuer is part of the answer, not decoration: it is the only thing separating two tokens
-    // that share a ticker.
-    // The issuer address shows once, on the right. It was appearing twice per row.
-    info.appendChild(el('div', 'sp-sub', holders(t.h) || ''));
-    a.appendChild(info);
-
-    var right = el('div', 'sp-right');
-    var mini = el('div', 'sp-addr-mini', short(t.i));
-    mini.setAttribute('data-copy', t.i);
-    mini.setAttribute('data-copy-label', t.n + ' issuer');
-    right.appendChild(mini);
-    a.appendChild(right);
-    return a;
-  }
-
-  function note(list, text) {
-    list.innerHTML = '';
-    list.appendChild(el('div', 'lxx-sea-note', text));
-  }
-
-  function setCount(n) {
-    var c = $('#spAssetCount');
-    if (c) c.textContent = n == null ? '' : '(' + n + ')';
-  }
-
-  function render(list, d) {
-    list.innerHTML = '';
-    if (!d.rows.length) { note(list, 'No XRP Ledger token matches that.'); setCount(0); return; }
-    for (var i = 0; i < d.rows.length; i++) list.appendChild(rowFor(d.rows[i]));
-    setCount(d.rows.length);
-  }
-
-  function run(q) {
-    var list = $('#spAssetList');
-    if (!list) return;
-    if (q.length < MIN) { note(list, 'Type at least ' + MIN + ' characters.'); setCount(null); return; }
-
-    var mine = ++seq;
-    note(list, 'Searching the XRP Ledger…');
-    fetch('/lxapi/xrplsearch?q=' + encodeURIComponent(q))
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        // Keystrokes race. Only the newest query may paint, or a slow early request lands on top of
-        // a fast later one and the box shows results for something the user has stopped typing.
-        if (mine !== seq) return;
-        if (!d || !d.ok) { note(list, 'Search is unavailable right now.'); setCount(null); return; }
-        render(list, d);
-      })
-      .catch(function () {
-        if (mine !== seq) return;
-        note(list, 'Search is unavailable right now.');
-        setCount(null);
-      });
-  }
-
-  var timer = null;
-  function onInput(e) {
-    var q = String(e.target.value || '').trim();
-    clearTimeout(timer);
-    // Debounced: the upstream allows 333 requests a DAY per IP, and although this goes through our
-    // own cached proxy, one request per keystroke would still be pointless load for no better answer.
-    timer = setTimeout(function () { run(q); }, 260);
-  }
-
-  function wire() {
-    var inp = $('#spSearchInput');
-    if (!inp || inp.__lxx) return;
-    inp.__lxx = 1;
-    inp.addEventListener('input', onInput);
-    // The design's placeholder still offers Stellar; this layer decides what is searchable.
-    try { inp.placeholder = 'Search XRP Ledger tokens'; } catch (e) {}
-  }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
-  else wire();
-  // The popup is created/opened by lx-searchctl, which may mount the input after this runs.
-  var tries = 0;
-  var poll = setInterval(function () {
-    wire();
-    if (++tries > 40 || ($('#spSearchInput') && $('#spSearchInput').__lxx)) clearInterval(poll);
-  }, 250);
-
-  window.__lxxSearchRun = run;
-})();
-
 </script><script id="lx-xrpldexasset">
 // XRPL primitives, kept in one place and testable in node.
 //
@@ -6980,6 +6604,407 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
   window.__lxxAssetReload = load;
+})();
+
+</script><script id="lx-xrplsearch">
+// XRPL primitives, kept in one place and testable in node.
+//
+// Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
+// three of them are the kind that ship visible garbage if guessed:
+//
+// 1. A CURRENCY CODE IS NOT ALWAYS TEXT. Three forms exist and a real wallet holds all three:
+//      "CSC"                                       standard 3-character code, use as-is
+//      4C554D4F5300...00  -> "LUMOS"               40-char hex whose bytes are printable ASCII
+//      0329E80F3800DA3C...                         first byte 0x03 = an AMM LP token (XLS-30)
+//    Decoding the third as UTF-8 produces mojibake -- exactly what a naive hex-decode renders. Worse,
+//    LP tokens are POOL SHARES, not assets: listing them beside XRP and LUMOS would tell someone they
+//    hold a token that does not exist. They are separated, the same way Stellar's
+//    liquidity_pool_shares are kept out of the balance list.
+//
+// 2. RESERVES ARE READ FROM THE LEDGER, NEVER HARDCODED. Spendable XRP is
+//      balance - (reserve_base + reserve_inc * OwnerCount)
+//    Measured today: base 1 XRP, increment 0.2 XRP per owned object. Both were TEN TIMES higher before
+//    2024 and can change again by amendment, so a hardcoded 10/2 would quietly overstate what a user
+//    can send -- the same class of bug as the Stellar MAX button offering more than the balance.
+//
+// 3. A TRUST LINE BALANCE IS SIGNED, and negative means the account is the ISSUER of that token --
+//    it is an obligation, not a holding. Showing it as a balance would tell an issuer it owns its own
+//    entire supply.
+'use strict';
+
+// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
+//
+// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
+// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
+// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
+// <script> block, taking the wallet layer down with it. The page then renders the design's mock
+// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
+// broken. It shipped exactly once that way.
+//
+// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
+// module.exports, both assigned at the end.
+(function () {
+
+const XRP_DROPS = 1e6;
+
+// Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
+// run IS the code that ships. Two copies of these rules would drift, which is how a duplicated esc()
+// caused trouble in the Stellar project.
+function hexBytes(hex) {
+  const out = [];
+  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+  return out;
+}
+
+// ---- currency codes ------------------------------------------------------------------------------
+const CUR_XRP = 'XRP';
+
+function isLpToken(code) {
+  return typeof code === 'string' && code.length === 40 && /^03/i.test(code);
+}
+
+// Returns { code, display, kind } — kind is 'std' | 'hex' | 'lp' | 'opaque'
+function decodeCurrency(code) {
+  if (!code) return { code: '', display: '', kind: 'opaque' };
+  if (code === CUR_XRP) return { code, display: 'XRP', kind: 'std' };
+  if (code.length <= 3) return { code, display: code, kind: 'std' };
+  if (!/^[0-9A-Fa-f]{40}$/.test(code)) return { code, display: code, kind: 'opaque' };
+  if (isLpToken(code)) return { code, display: 'LP', kind: 'lp' };
+
+  const bytes = hexBytes(code);
+  let end = bytes.length;
+  while (end > 0 && bytes[end - 1] === 0) end--;          // strip the zero padding
+  let text = ''; for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
+  // Printable ASCII only. Anything else is an arbitrary 160-bit code and must NOT be rendered as text.
+  if (end > 0 && /^[\x20-\x7E]+$/.test(text)) return { code, display: text, kind: 'hex' };
+  return { code, display: code.slice(0, 8) + '…', kind: 'opaque' };
+}
+
+// The inverse, for building requests: 'LUMOS' -> 4C554D4F53 padded to 40.
+function encodeCurrency(name) {
+  if (!name || name === 'XRP') return 'XRP';
+  if (name.length <= 3) return name;
+  let hex = ''; for (let i = 0; i < name.length; i++) hex += (name.charCodeAt(i) & 255).toString(16).padStart(2, '0');
+  hex = hex.toUpperCase();
+  return (hex + '0'.repeat(40)).slice(0, 40);
+}
+
+// ---- addresses -----------------------------------------------------------------------------------
+// XRPL uses its OWN base58 alphabet -- not Bitcoin's, not Flickr's. Decoding with the wrong one
+// silently produces different bytes rather than an error.
+const B58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
+
+// Decode to bytes. Long division in base 58, because these are 25-byte values and Number would lose
+// precision well before the end.
+function b58decode(str) {
+  if (typeof str !== 'string' || !str.length) return null;
+  const bytes = [0];
+  for (let i = 0; i < str.length; i++) {
+    const v = B58.indexOf(str[i]);
+    if (v < 0) return null;                                // not in the XRPL alphabet at all
+    let carry = v;
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j] * 58;
+      bytes[j] = carry & 255;
+      carry >>= 8;
+    }
+    while (carry) { bytes.push(carry & 255); carry >>= 8; }
+  }
+  for (let i = 0; i < str.length && str[i] === B58[0]; i++) bytes.push(0);   // leading zeros
+  return bytes.reverse();
+}
+
+// A CLASSIC XRPL ACCOUNT ADDRESS, by shape. Deliberately NOT a checksum check: verifying the trailing
+// 4 bytes needs double-SHA256, which is async in a browser (crypto.subtle) and would make every caller
+// async for a case that barely happens -- a wallet does not hand back a one-character typo of its own
+// address. What DOES happen, and what this catches, is a value of the wrong KIND: a Stellar 'G...'
+// address left in shared storage by the Stellar build, an EVM '0x...', an empty string, an X-address.
+// Connect confirms the account against the ledger separately, which is the real check.
+function isAddress(a) {
+  if (typeof a !== 'string' || a.length < 25 || a.length > 35 || a[0] !== 'r') return false;
+  const b = b58decode(a);
+  return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
+}
+
+// ---- team wallets --------------------------------------------------------------------------------
+// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
+// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
+// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
+//
+// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
+// the leading characters, the trailing characters AND the stated balance before being written down.
+// A truncation alone must never identify an account that gets excluded from a payout.
+//
+// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
+// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
+// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
+//
+// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
+// eligibility reads one list; a second copy somewhere would silently drift.
+const TEAM_WALLETS = [
+  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
+  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
+  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
+  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
+  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
+  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
+  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
+];
+
+function isTeamWallet(a) {
+  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
+}
+
+// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
+// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
+function excludeTeam(rows, accountKey) {
+  const key = accountKey || 'account';
+  const kept = [], removed = [];
+  for (const r of (rows || [])) {
+    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
+  }
+  return { kept, removed };
+}
+
+// ---- reserves ------------------------------------------------------------------------------------
+// reserves come from server_info; never assume them.
+function spendableXrp(balanceDrops, ownerCount, reserve) {
+  const bal = Number(balanceDrops) / XRP_DROPS;
+  const base = Number(reserve && reserve.base);
+  const inc = Number(reserve && reserve.inc);
+  if (!isFinite(bal)) return null;
+  if (!isFinite(base) || !isFinite(inc)) return null;      // unknown reserve: say so, do not guess
+  const locked = base + inc * (Number(ownerCount) || 0);
+  return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
+}
+
+// ---- balances ------------------------------------------------------------------------------------
+// Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
+function readLines(lines) {
+  const held = [], pools = [], obligations = [];
+  for (const l of (lines || [])) {
+    const amt = Number(l.balance);
+    const cur = decodeCurrency(l.currency);
+    const row = {
+      currency: l.currency, display: cur.display, kind: cur.kind,
+      issuer: l.account, balance: amt,
+      frozen: !!(l.freeze || l.freeze_peer),
+      noRipple: !!l.no_ripple,
+      limit: Number(l.limit),
+    };
+    if (amt < 0) { obligations.push(row); continue; }      // this account issues it; not a holding
+    if (cur.kind === 'lp') { pools.push(row); continue; }  // pool share, not an asset
+    held.push(row);
+  }
+  return { held, pools, obligations };
+}
+
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
+  TEAM_WALLETS, isTeamWallet, excludeTeam };
+
+// Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
+if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
+if (typeof window !== 'undefined') window.lxx = LXX;
+
+})();
+
+// Search: XRP Ledger tokens.
+//
+// REPLACES A LIVE WRONG-CHAIN LAYER. `lx-searchassets` shipped a STELLAR asset index and ran on
+// every page of this site: typing "USD" returned Stellar assets with G-issuers, and the page
+// prefetched their logos from /lxapi/assetlogo. Like the Trade table, it was not broken-looking --
+// it was confidently answering about the wrong ledger.
+//
+// A TICKER IS NOT AN IDENTITY. Searching "USD" here returns RLUSD (Ripple), USDC (Circle), USD
+// (Bitstamp), USD (RippleFox), USDT (XRPS), USDC (GateHub) -- two different USDs and two different
+// USDCs, all real. So every row shows the issuer's name AND its address, and results come back
+// ordered by 24h volume rather than by name, because alphabetical ordering puts an impostor above
+// the token someone actually meant.
+//
+// Icons are real token logos via /lxapi/xrplthumb (the key stays server-side), falling back to
+// initials. They use a class of our own: the design's `.sp-ico` is a hook for the inherited Stellar
+// icon painter, which resolves logos by TICKER and would put the wrong chain's mark on a match.
+(function () {
+  if (window.__lxxSearch) return;
+  window.__lxxSearch = 1;
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var MIN = 2;
+  var seq = 0;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;      // ledger-supplied names are arbitrary bytes
+    return e;
+  }
+
+  function initials(n) { return String(n || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase(); }
+
+  function short(a) { return a && a.length > 12 ? a.slice(0, 4) + '…' + a.slice(-4) : (a || ''); }
+
+  function holders(v) {
+    if (v == null || !isFinite(v)) return null;
+    if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M holders';
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'K holders';
+    return v + ' holder' + (v === 1 ? '' : 's');
+  }
+
+  (function () {
+    if (document.getElementById('lxx-sea-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lxx-sea-css';
+    st.textContent = '.lxx-sea-ic{width:30px;height:30px;flex:0 0 30px;border-radius:50%;'
+      + 'display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;'
+      + 'font-weight:800;color:#fff;background:rgba(255,255,255,.10)}'
+      + '.lxx-sea-note{padding:18px 14px;text-align:center;opacity:.65;font-size:13.5px}';
+    document.head.appendChild(st);
+  })();
+
+  // Real logo when we have one, initials when we do not.
+  //
+  // The <img> is wrapped in the SAME inline-SVG-bearing span used for initials, because the page
+  // carries a logo healer that repaints any element with 1-5 characters of text -- an element
+  // holding an img or svg is the only thing it skips. See browser/trade.js.
+  //
+  // The image goes through /lxapi/xrplthumb, never xrpl.to directly: that endpoint needs the API
+  // key and the key must not reach the browser.
+  function logoEl(name, md5, size) {
+    var s = size || 32;
+    var NS = 'http://www.w3.org/2000/svg';
+    var e = document.createElement('span');
+    e.className = 'lxx-ic';
+    e.style.cssText = 'display:inline-flex;width:'+s+'px;height:'+s+'px;flex:0 0 '+s+'px;'
+      + 'border-radius:50%;overflow:hidden;align-items:center;justify-content:center';
+
+    function initials() {
+      e.innerHTML = '';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 32 32');
+      svg.setAttribute('width', String(s)); svg.setAttribute('height', String(s));
+      var c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '16');
+      c.setAttribute('fill', 'rgba(255,255,255,.12)');
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', '16'); t.setAttribute('y', '17');
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+      t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '800');
+      t.setAttribute('fill', '#fff');
+      t.textContent = String(name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+      svg.appendChild(c); svg.appendChild(t);
+      e.appendChild(svg);
+    }
+
+    if (/^[0-9a-f]{32}$/i.test(md5 || '')) {
+      var img = document.createElement('img');
+      img.src = '/lxapi/xrplthumb?id=' + md5 + '&w=' + (s > 48 ? 64 : 48);
+      img.alt = ''; img.loading = 'lazy'; img.width = s; img.height = s;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+      // A token with no logo upstream 404s. Fall back rather than leave a broken image.
+      img.onerror = initials;
+      e.appendChild(img);
+    } else {
+      initials();
+    }
+    return e;
+  }
+
+  function rowFor(t) {
+    var a = document.createElement('a');
+    a.className = 'sp-row sp-row--asset';
+    a.setAttribute('data-chain', 'xrpl');
+    a.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
+
+    var ic = logoEl(t.n, t.m, 30);
+    a.appendChild(ic);
+
+    var info = el('div', 'sp-info');
+    var nameRow = el('div', 'sp-name-row', t.n);
+    if (t.u) nameRow.appendChild(el('span', 'sp-domain', ' ' + t.u));
+    info.appendChild(nameRow);
+    // The issuer is part of the answer, not decoration: it is the only thing separating two tokens
+    // that share a ticker.
+    // The issuer address shows once, on the right. It was appearing twice per row.
+    info.appendChild(el('div', 'sp-sub', holders(t.h) || ''));
+    a.appendChild(info);
+
+    var right = el('div', 'sp-right');
+    var mini = el('div', 'sp-addr-mini', short(t.i));
+    mini.setAttribute('data-copy', t.i);
+    mini.setAttribute('data-copy-label', t.n + ' issuer');
+    right.appendChild(mini);
+    a.appendChild(right);
+    return a;
+  }
+
+  function note(list, text) {
+    list.innerHTML = '';
+    list.appendChild(el('div', 'lxx-sea-note', text));
+  }
+
+  function setCount(n) {
+    var c = $('#spAssetCount');
+    if (c) c.textContent = n == null ? '' : '(' + n + ')';
+  }
+
+  function render(list, d) {
+    list.innerHTML = '';
+    if (!d.rows.length) { note(list, 'No XRP Ledger token matches that.'); setCount(0); return; }
+    for (var i = 0; i < d.rows.length; i++) list.appendChild(rowFor(d.rows[i]));
+    setCount(d.rows.length);
+  }
+
+  function run(q) {
+    var list = $('#spAssetList');
+    if (!list) return;
+    if (q.length < MIN) { note(list, 'Type at least ' + MIN + ' characters.'); setCount(null); return; }
+
+    var mine = ++seq;
+    note(list, 'Searching the XRP Ledger…');
+    fetch('/lxapi/xrplsearch?q=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        // Keystrokes race. Only the newest query may paint, or a slow early request lands on top of
+        // a fast later one and the box shows results for something the user has stopped typing.
+        if (mine !== seq) return;
+        if (!d || !d.ok) { note(list, 'Search is unavailable right now.'); setCount(null); return; }
+        render(list, d);
+      })
+      .catch(function () {
+        if (mine !== seq) return;
+        note(list, 'Search is unavailable right now.');
+        setCount(null);
+      });
+  }
+
+  var timer = null;
+  function onInput(e) {
+    var q = String(e.target.value || '').trim();
+    clearTimeout(timer);
+    // Debounced: the upstream allows 333 requests a DAY per IP, and although this goes through our
+    // own cached proxy, one request per keystroke would still be pointless load for no better answer.
+    timer = setTimeout(function () { run(q); }, 260);
+  }
+
+  function wire() {
+    var inp = $('#spSearchInput');
+    if (!inp || inp.__lxx) return;
+    inp.__lxx = 1;
+    inp.addEventListener('input', onInput);
+    // The design's placeholder still offers Stellar; this layer decides what is searchable.
+    try { inp.placeholder = 'Search XRP Ledger tokens'; } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+  // The popup is created/opened by lx-searchctl, which may mount the input after this runs.
+  var tries = 0;
+  var poll = setInterval(function () {
+    wire();
+    if (++tries > 40 || ($('#spSearchInput') && $('#spSearchInput').__lxx)) clearInterval(poll);
+  }, 250);
+
+  window.__lxxSearchRun = run;
 })();
 
 </script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/stellar","lumoscore-account":"/account/stellar","lumoscore-asset-overview":"/trade/stellar"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>

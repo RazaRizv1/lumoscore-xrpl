@@ -10,10 +10,12 @@
 // requests per DAY per IP, so a browser-side fetch would exhaust it and take out everyone behind a
 // shared mobile IP at once.
 //
-// NO LOGOS AND NO SPARKLINES, deliberately. Token thumbnails need an API key (the endpoint answers
-// 401 without one), so initials are drawn instead of shipping a broken image beside every row. And
-// the feed gives a 7d PERCENTAGE, not a 7d series -- drawing a curve from a single number would be
-// inventing the shape of the week, so that cell stays empty until there is real history behind it.
+// LOGOS are real now: each row carries the token md5 and the image is proxied through
+// /lxapi/xrplthumb, because xrpl.to's thumbnail endpoint needs the API key and that key must never
+// reach the browser. Initials remain the fallback for tokens with no logo.
+//
+// NO SPARKLINES, still deliberately: the feed gives a 7d PERCENTAGE, not a 7d series, and drawing a
+// curve from a single number would be inventing the shape of the week.
 (function () {
   if (window.__lxxTrade) return;
   window.__lxxTrade = 1;
@@ -52,44 +54,56 @@
 
   function pct(v) { return (v == null || !isFinite(v)) ? null : (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
 
-  // NO data-lxic ON ANYTHING THIS FILE CREATES. That attribute is the hook for the inherited
-  // Stellar icon painter, which resolves logos BY TICKER -- and it was doing exactly that here,
-  // stamping Stellar SVGs onto RLUSD, USDC and ARMY and wiping their initials. A ticker is not an
-  // identity on either ledger; an XRPL ARMY is not the Stellar ARMY. Initials are correct-and-plain;
-  // a confident wrong logo is not. Real logos need the xrpl.to API key.
-  // The design's icon classes (.mdx-mk-ic, .dex-mk-pair-ic, .dex-mover-ico) are all hooks for the
-  // inherited Stellar icon painters, which resolve logos BY TICKER: they stamped a Stellar mark onto
-  // RLUSD, USDC and ARMY and cleared the initials. A ticker is not an identity on either ledger --
-  // an XRPL ARMY is not the Stellar ARMY -- so a confident wrong logo is worse than a letter.
-  // Removing data-lxic was not enough and neither was dropping lxmd-ic; the painters match the
-  // layout classes themselves. So these icons carry a class of OUR own that nothing else knows,
-  // with the design's dimensions copied from its computed style (32px, round, 13px/800).
-  // Real logos need the xrpl.to API key; until then, initials.
-  // Drawn as an inline SVG, and that is load-bearing rather than decorative.
+  // ICONS: the design's icon classes (.mdx-mk-ic, .dex-mk-pair-ic, .dex-mover-ico) and the
+  // data-lxic attribute are all hooks for inherited Stellar icon painters that resolve logos BY
+  // TICKER -- they stamped a Stellar mark onto RLUSD, USDC and ARMY and cleared the text. A ticker
+  // is not an identity on either ledger. So icons carry a class of our own and, now that the API
+  // key exists, a REAL logo proxied through /lxapi/xrplthumb.
+  // Real logo when we have one, initials when we do not.
   //
-  // The page carries a logo HEALER (in nxnav-js) that scans EVERY span/div/i/b whose text is 1-5
-  // characters, resolves it as a ticker and stamps a logo over it. Three-letter initials sit exactly
-  // in that window, which is why no class-based opt-out worked: it never looks at classes. Its own
-  // isCandidate() bails on any element that already contains an img or svg -- so an element whose
-  // initials ARE a graphic is skipped for the right reason, not by trickery.
-  function icon(name) {
+  // The <img> is wrapped in the SAME inline-SVG-bearing span used for initials, because the page
+  // carries a logo healer that repaints any element with 1-5 characters of text -- an element
+  // holding an img or svg is the only thing it skips. See browser/trade.js.
+  //
+  // The image goes through /lxapi/xrplthumb, never xrpl.to directly: that endpoint needs the API
+  // key and the key must not reach the browser.
+  function logoEl(name, md5, size) {
+    var s = size || 32;
     var NS = 'http://www.w3.org/2000/svg';
-    var e = el('span', 'lxx-ic');
-    var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 32 32');
-    svg.setAttribute('width', '32'); svg.setAttribute('height', '32');
-    var c = document.createElementNS(NS, 'circle');
-    c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '16');
-    c.setAttribute('fill', 'rgba(255,255,255,.10)');
-    var t = document.createElementNS(NS, 'text');
-    t.setAttribute('x', '16'); t.setAttribute('y', '17');
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('dominant-baseline', 'middle');
-    t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '800');
-    t.setAttribute('fill', '#fff');
-    t.textContent = initials(name);
-    svg.appendChild(c); svg.appendChild(t);
-    e.appendChild(svg);
+    var e = document.createElement('span');
+    e.className = 'lxx-ic';
+    e.style.cssText = 'display:inline-flex;width:'+s+'px;height:'+s+'px;flex:0 0 '+s+'px;'
+      + 'border-radius:50%;overflow:hidden;align-items:center;justify-content:center';
+
+    function initials() {
+      e.innerHTML = '';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 32 32');
+      svg.setAttribute('width', String(s)); svg.setAttribute('height', String(s));
+      var c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '16');
+      c.setAttribute('fill', 'rgba(255,255,255,.12)');
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', '16'); t.setAttribute('y', '17');
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+      t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '800');
+      t.setAttribute('fill', '#fff');
+      t.textContent = String(name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+      svg.appendChild(c); svg.appendChild(t);
+      e.appendChild(svg);
+    }
+
+    if (/^[0-9a-f]{32}$/i.test(md5 || '')) {
+      var img = document.createElement('img');
+      img.src = '/lxapi/xrplthumb?id=' + md5 + '&w=' + (s > 48 ? 64 : 48);
+      img.alt = ''; img.loading = 'lazy'; img.width = s; img.height = s;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+      // A token with no logo upstream 404s. Fall back rather than leave a broken image.
+      img.onerror = initials;
+      e.appendChild(img);
+    } else {
+      initials();
+    }
     return e;
   }
 
@@ -104,8 +118,6 @@
     document.head.appendChild(st);
   })();
 
-  function initials(name) { return String(name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase(); }
-
   // The table is keyed by ticker+issuer, the same identity the rest of the site uses. The ticker
   // alone is NOT an identity on this ledger any more than it is on Stellar -- several unrelated
   // tokens call themselves USDC -- so the issuer travels with it on the row.
@@ -118,7 +130,7 @@
     var c0 = el('td');
     var cell = el('div', 'dex-mk-pair-cell');
     cell.appendChild(el('span', 'dex-mk-rank', '#' + rank));
-    var ic = icon(t.n);
+    var ic = logoEl(t.n, t.m, 32);
     cell.appendChild(ic);
     var nm = el('div', 'dex-mk-pair-name');
     nm.appendChild(el('div', 'dex-mk-pair-head', t.n));
@@ -217,7 +229,7 @@
     var top = el('div', 'mdx-mk-top');
         // NOT 'lxmd-ic': that class is lx-mobdex's hook, and it decorates whatever carries it --
     // stamping a Stellar mark and clearing the initials. Layout class only.
-    var ic = icon(t.n);
+    var ic = logoEl(t.n, t.m, 32);
     top.appendChild(ic);
 
     var meta = el('div', 'mdx-mk-meta');
@@ -247,7 +259,7 @@
     var card = el('div', 'dex-mover-card');
     card.setAttribute('data-tkr', t.n);
     var head = el('div', 'dex-mover-head');
-    var ic = icon(t.n);
+    var ic = logoEl(t.n, t.m, 32);
     head.appendChild(ic);
     var pair = el('div', 'dex-mover-pair', t.n);
     if (t.u) pair.appendChild(el('span', 'sub', ' ' + t.u));

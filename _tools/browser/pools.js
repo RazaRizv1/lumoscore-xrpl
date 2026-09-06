@@ -8,9 +8,10 @@
 // with another worthless token inflates nominal value for free. Volume cannot be faked without
 // paying fees.
 //
-// Icons are initials drawn as inline SVG. The page carries a logo healer that repaints any element
-// with 1-5 characters of text as a ticker logo, and it does not look at classes -- an SVG child is
-// the only thing it skips. See browser/trade.js for the full story.
+// Icons are real token logos, proxied through /lxapi/xrplthumb so the xrpl.to API key stays
+// server-side, falling back to initials drawn as inline SVG. The SVG matters beyond looks: the page
+// carries a logo healer that repaints any element with 1-5 characters of text as a ticker logo and
+// does not look at classes -- an img or svg child is the only thing it skips. See browser/trade.js.
 (function () {
   if (window.__lxxPools) return;
   window.__lxxPools = 1;
@@ -25,25 +26,51 @@
     return e;
   }
 
-  function initials(n) { return String(n || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase(); }
+  // Real logo when we have one, initials when we do not.
+  //
+  // The <img> is wrapped in the SAME inline-SVG-bearing span used for initials, because the page
+  // carries a logo healer that repaints any element with 1-5 characters of text -- an element
+  // holding an img or svg is the only thing it skips. See browser/trade.js.
+  //
+  // The image goes through /lxapi/xrplthumb, never xrpl.to directly: that endpoint needs the API
+  // key and the key must not reach the browser.
+  function logoEl(name, md5, size) {
+    var s = size || 32;
+    var NS = 'http://www.w3.org/2000/svg';
+    var e = document.createElement('span');
+    e.className = 'lxx-ic';
+    e.style.cssText = 'display:inline-flex;width:'+s+'px;height:'+s+'px;flex:0 0 '+s+'px;'
+      + 'border-radius:50%;overflow:hidden;align-items:center;justify-content:center';
 
-  function icon(name, size) {
-    var s = size || 22;
-    var e = el('span', 'lxx-pic');
-    e.style.cssText = 'display:inline-flex;width:' + s + 'px;height:' + s + 'px;flex:0 0 ' + s + 'px';
-    var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 32 32');
-    svg.setAttribute('width', String(s)); svg.setAttribute('height', String(s));
-    var c = document.createElementNS(NS, 'circle');
-    c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '16');
-    c.setAttribute('fill', 'rgba(255,255,255,.12)');
-    var t = document.createElementNS(NS, 'text');
-    t.setAttribute('x', '16'); t.setAttribute('y', '17');
-    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
-    t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '800'); t.setAttribute('fill', '#fff');
-    t.textContent = initials(name);
-    svg.appendChild(c); svg.appendChild(t);
-    e.appendChild(svg);
+    function initials() {
+      e.innerHTML = '';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 32 32');
+      svg.setAttribute('width', String(s)); svg.setAttribute('height', String(s));
+      var c = document.createElementNS(NS, 'circle');
+      c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '16');
+      c.setAttribute('fill', 'rgba(255,255,255,.12)');
+      var t = document.createElementNS(NS, 'text');
+      t.setAttribute('x', '16'); t.setAttribute('y', '17');
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
+      t.setAttribute('font-size', '11'); t.setAttribute('font-weight', '800');
+      t.setAttribute('fill', '#fff');
+      t.textContent = String(name || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+      svg.appendChild(c); svg.appendChild(t);
+      e.appendChild(svg);
+    }
+
+    if (/^[0-9a-f]{32}$/i.test(md5 || '')) {
+      var img = document.createElement('img');
+      img.src = '/lxapi/xrplthumb?id=' + md5 + '&w=' + (s > 48 ? 64 : 48);
+      img.alt = ''; img.loading = 'lazy'; img.width = s; img.height = s;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+      // A token with no logo upstream 404s. Fall back rather than leave a broken image.
+      img.onerror = initials;
+      e.appendChild(img);
+    } else {
+      initials();
+    }
     return e;
   }
 
@@ -84,8 +111,8 @@
     var pair = el('td');
     var wrap = el('div', 'pool-pair');
     wrap.style.cssText = 'display:flex;align-items:center;gap:7px';
-    wrap.appendChild(icon(nameOf(p.a1)));
-    wrap.appendChild(icon(nameOf(p.a2)));
+    wrap.appendChild(logoEl(nameOf(p.a1), p.a1 && p.a1.m, 22));
+    wrap.appendChild(logoEl(nameOf(p.a2), p.a2 && p.a2.m, 22));
     wrap.appendChild(el('span', null, nameOf(p.a1) + ' / ' + nameOf(p.a2)));
     if (p.fee != null) {
       var f = el('span', null, p.fee + '%');

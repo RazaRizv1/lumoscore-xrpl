@@ -74,6 +74,7 @@ export async function onRequest(context) {
       holders: num(t.holders), trustlines: num(t.trustlines), offers: num(t.offers),
       issued: num(t.amount), circulating: num(t.supply),
       verified: t.verified ? 1 : 0,
+      md5: String(t.md5 || ''),
       domain: String(t.domain || ''),
       origin: String(t.origin || ''),
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to',

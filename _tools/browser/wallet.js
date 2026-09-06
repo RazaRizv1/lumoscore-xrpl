@@ -21,7 +21,12 @@
   var RPC = 'https://xrplcluster.com/';
   var $ = function (s, r) { return (r || document).querySelector(s); };
 
-  function rpc(method, params) {
+  // RETRIED ONCE, and that is not belt-and-braces. This page now runs four layers that each talk to
+  // the ledger on load -- balances, the fee tier, connect, and prices -- and a public node drops one
+  // of a simultaneous burst. The symptom is the whole asset list replaced by 'Could not read the XRP
+  // Ledger' while the very same request succeeds by hand a second later. A transient failure that
+  // leaves a permanent empty state is the worst kind, because it looks like a broken page.
+  function rpc(method, params, attempt) {
     return fetch(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -30,6 +35,11 @@
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
       return res;
+    }).catch(function (e) {
+      // actNotFound is a real answer about a real account, not a dropped request: do not retry it.
+      if ((attempt || 0) > 0 || /actNotFound/i.test(e && e.message)) throw e;
+      return new Promise(function (r) { setTimeout(r, 700); })
+        .then(function () { return rpc(method, params, 1); });
     });
   }
 

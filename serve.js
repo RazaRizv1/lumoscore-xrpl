@@ -1104,9 +1104,9 @@ async function xrplPrices(req, res, q) {
     for (const s of ALWAYS.concat(want)) {
       if (!map[s] && misses.indexOf(s) < 0 && LOOKUPABLE(s)) misses.push(s);
     }
-    const picked = misses.slice(0, 8);
+    const picked = misses.slice(0, 24);
     for (let i = 0; i < picked.length; i++) {
-      if (i) await new Promise(r => setTimeout(r, 300));   // anonymous burst cap is 2/sec
+      if (i) await new Promise(r => setTimeout(r, 60));
       try {
         const one = await get('/token/' + encodeURIComponent(picked[i]));
         const t = one && one.token, e = t && Number(t.exch);
@@ -1124,7 +1124,7 @@ async function xrplPrices(req, res, q) {
 }
 
 // Local mirror of functions/lxapi/xrpltokens — market rows for the Trade page. See that file.
-let _xtCache = { at: 0, body: null };
+let _xtCache = { at: 0, n: 0, body: null };
 async function xrplTokens(req, res, q) {
   const send = (obj) => {
     const b = Buffer.from(JSON.stringify(obj));
@@ -1133,11 +1133,13 @@ async function xrplTokens(req, res, q) {
     res.end(b);
   };
   const n = Math.min(100, Math.max(1, parseInt(q.get('n') || '50', 10) || 50));
-  if (Date.now() - _xtCache.at < 120000 && _xtCache.body) return send(_xtCache.body);
+  // Keyed by n. Without it an ?n=6 request poisons the cache for the page's ?n=50 one and the
+  // market table quietly renders six rows — which is exactly what happened while testing.
+  if (_xtCache.n === n && Date.now() - _xtCache.at < 120000 && _xtCache.body) return send(_xtCache.body);
   const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
   try {
     const r = await fetch('https://api.xrpl.to/api/tokens?limit=100&sort=vol24hxrp&order=desc&lightweight=true',
-      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+      { headers: xrplToHeaders() });
     if (!r.ok) throw new Error('upstream ' + r.status);
     const bulk = await r.json();
     const xrpPerUsd = Number(bulk && bulk.exch && bulk.exch.USD);
@@ -1149,7 +1151,7 @@ async function xrplTokens(req, res, q) {
       const mm = Array.isArray(t.maxMin24h) ? t.maxMin24h : [];
       rows.push({ c: t.currency, i: t.issuer, n: String(t.name || ''), u: String(t.user || ''),
         p, d: num(t.pro24h), w: num(t.pro7d), v: num(t.vol24hxrp), t: num(t.tvl),
-        x: num(t.vol24htx),
+        x: num(t.vol24htx), m: String(t.md5 || ''),
         hi: num(mm[0]), lo: num(mm[1]), h: num(t.holders), vf: t.verified ? 1 : 0,
         o: String(t.origin || '') });
       if (rows.length >= n) break;
@@ -1159,7 +1161,7 @@ async function xrplTokens(req, res, q) {
     if (usd == null || !peg || !(peg.p * usd > 0.90 && peg.p * usd < 1.10)) usd = null;
     const out = { ok: true, usd, count: rows.length, rows, src: 'xrpl.to',
       attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
-    _xtCache = { at: Date.now(), body: out };
+    _xtCache = { at: Date.now(), n, body: out };
     send(out);
   } catch (e) {
     send({ ok: false, error: String((e && e.message) || e), rows: [] });
@@ -1181,14 +1183,13 @@ async function xrplSearch(req, res, q) {
   const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
   try {
     const r = await fetch('https://api.xrpl.to/api/tokens?limit=50&sort=vol24hxrp&order=desc&lightweight=true&filter='
-      + encodeURIComponent(term), { headers: { accept: 'application/json',
-        'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+      + encodeURIComponent(term), { headers: xrplToHeaders() });
     if (!r.ok) throw new Error('upstream ' + r.status);
     const j = await r.json();
     const xrpPerUsd = Number(j && j.exch && j.exch.USD);
     const rows = ((j && j.tokens) || []).map(t => ({ n: String(t.name||''), u: String(t.user||''),
       i: String(t.issuer||''), c: String(t.currency||''), h: num(t.holders), v: num(t.vol24hxrp),
-      p: num(t.exch), vf: t.verified ? 1 : 0 })).filter(t => t.n && t.i);
+      p: num(t.exch), vf: t.verified ? 1 : 0, m: String(t.md5||'') })).filter(t => t.n && t.i);
     const body = { ok: true, q: term, total: num(j.total), count: rows.length, rows,
       usd: xrpPerUsd > 0 ? 1 / xrpPerUsd : null, src: 'xrpl.to',
       attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
@@ -1211,7 +1212,7 @@ async function xrplToken(req, res, q) {
   const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
   try {
     const r = await fetch('https://api.xrpl.to/api/token/' + encodeURIComponent(id),
-      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+      { headers: xrplToHeaders() });
     if (!r.ok) throw new Error('upstream ' + r.status);
     const j = await r.json(); const t = j && j.token;
     if (!t) return send({ ok: false, error: 'not found', id });
@@ -1221,7 +1222,7 @@ async function xrplToken(req, res, q) {
       vol24: num(t.vol24hxrp), trades24: num(t.vol24htx), tvl: num(t.tvl),
       marketcap: num(t.marketcap), holders: num(t.holders), trustlines: num(t.trustlines),
       offers: num(t.offers), issued: num(t.amount), circulating: num(t.supply),
-      verified: t.verified ? 1 : 0, domain: String(t.domain||''), origin: String(t.origin||''),
+      verified: t.verified ? 1 : 0, md5: String(t.md5||''), domain: String(t.domain||''), origin: String(t.origin||''),
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
     _xtokCache.set(id, { at: Date.now(), body });
     send(body);
@@ -1230,18 +1231,18 @@ async function xrplToken(req, res, q) {
 
 // Local mirror of functions/lxapi/xrplpools. Ranked by VOLUME on purpose: sort=liquidity returns
 // five BITx pools claiming 113M with zero trade. See the Function for the measurement.
-let _xpoolCache = { at: 0, body: null };
+let _xpoolCache = { at: 0, n: 0, body: null };
 async function xrplPools(req, res, q) {
   const send = (o) => { const b = Buffer.from(JSON.stringify(o));
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
   const n = Math.min(100, Math.max(1, parseInt(q.get('n') || '50', 10) || 50));
-  if (Date.now() - _xpoolCache.at < 120000 && _xpoolCache.body) return send(_xpoolCache.body);
+  if (_xpoolCache.n === n && Date.now() - _xpoolCache.at < 120000 && _xpoolCache.body) return send(_xpoolCache.body);
   const num = (v) => { const x = Number(v); return isFinite(x) ? x : null; };
-  const side = (a) => a ? { c: String(a.currency||''), i: a.issuer === 'XRPL' ? '' : String(a.issuer||''), v: num(a.value) } : null;
+  const side = (a) => a ? { c: String(a.currency||''), i: a.issuer === 'XRPL' ? '' : String(a.issuer||''), v: num(a.value), m: String(a.md5||'') } : null;
   try {
     const r = await fetch('https://api.xrpl.to/api/amm?limit=' + n + '&sort=volume&status=active',
-      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+      { headers: xrplToHeaders() });
     if (!r.ok) throw new Error('upstream ' + r.status);
     const j = await r.json();
     const rows = ((j && j.pools) || []).map(p => { const a = p.apy24h || {};
@@ -1254,7 +1255,7 @@ async function xrplPools(req, res, q) {
       summary: { liquidity: num(s2.totalLiquidity), vol24: num(s2.totalVolume24h),
         fees24: num(s2.totalFees24h), avgFee: num(s2.avgFee) }, rows,
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
-    _xpoolCache = { at: Date.now(), body };
+    _xpoolCache = { at: Date.now(), n, body };
     send(body);
   } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
 }
@@ -1270,7 +1271,7 @@ async function xrplBridge(req, res) {
   if (Date.now() - _xbCache.at < 900000 && _xbCache.body) return send(_xbCache.body);
   try {
     const r = await fetch('https://api.axelarscan.io/api/getChains',
-      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+      { headers: xrplToHeaders() });
     if (!r.ok) throw new Error('upstream ' + r.status);
     const raw = await r.json();
     const all = Array.isArray(raw) ? raw : (raw.data || []);
@@ -1289,6 +1290,34 @@ async function xrplBridge(req, res) {
     _xbCache = { at: Date.now(), body };
     send(body);
   } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
+}
+
+// One place builds the xrpl.to headers. The key comes from the ENVIRONMENT and is never written
+// into this file: it is a server-side credential carrying the whole project request budget.
+//   PowerShell:  $env:XRPLTO_API_KEY = '...'; node serve.js 8082
+function xrplToHeaders(extra) {
+  const h = Object.assign({ accept: 'application/json',
+    'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' }, extra || {});
+  if (process.env.XRPLTO_API_KEY) h['x-api-key'] = process.env.XRPLTO_API_KEY;
+  return h;
+}
+
+// Local mirror of functions/lxapi/xrplthumb — token logos, proxied so the key stays server-side.
+async function xrplThumb(req, res, q) {
+  const id = String(q.get('id') || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(id)) { res.writeHead(400); res.end('bad id'); return; }
+  const sizes = [16,32,40,48,64,96,128];
+  let w = parseInt(q.get('w') || '48', 10); if (sizes.indexOf(w) < 0) w = 48;
+  try {
+    const r = await fetch('https://api.xrpl.to/api/thumb/' + id + '?w=' + w,
+      { headers: xrplToHeaders({ accept: 'image/webp,image/*' }) });
+    if (!r.ok) { res.writeHead(r.status === 401 ? 404 : r.status); res.end('no logo'); return; }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.writeHead(200, { 'content-type': r.headers.get('content-type') || 'image/webp',
+      'cache-control': 'public, max-age=604800, immutable',
+      'access-control-allow-origin': '*', 'content-length': buf.length });
+    res.end(buf);
+  } catch (e) { res.writeHead(502); res.end('upstream unreachable'); }
 }
 
 http.createServer((req, res) => {
@@ -1311,6 +1340,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/xrpltoken') return xrplToken(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplpools') return xrplPools(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplbridge') return xrplBridge(req, res);
+  if (p === '/lxapi/xrplthumb') return xrplThumb(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {
