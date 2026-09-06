@@ -255,6 +255,9 @@
       .then(function (p) {
         if (!p || !p.ok || !(p.usd > 0)) return;
         xrpUsd = p.usd;
+        // The review page prices its fee and liquidity from the same rate this page quotes, so the
+        // number a user agreed to on the form is the number they are asked to send.
+        window.__lxxXrpUsd = p.usd;
         paintCosts();
         watchCosts();
       })

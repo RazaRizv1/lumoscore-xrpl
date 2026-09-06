@@ -2496,710 +2496,6 @@ window.addEventListener("storage",ping);
   setTimeout(resolve, 4000);
 })();
 
-</script><script id="lx-xrplconnect">
-// XRPL primitives, kept in one place and testable in node.
-//
-// Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
-// three of them are the kind that ship visible garbage if guessed:
-//
-// 1. A CURRENCY CODE IS NOT ALWAYS TEXT. Three forms exist and a real wallet holds all three:
-//      "CSC"                                       standard 3-character code, use as-is
-//      4C554D4F5300...00  -> "LUMOS"               40-char hex whose bytes are printable ASCII
-//      0329E80F3800DA3C...                         first byte 0x03 = an AMM LP token (XLS-30)
-//    Decoding the third as UTF-8 produces mojibake -- exactly what a naive hex-decode renders. Worse,
-//    LP tokens are POOL SHARES, not assets: listing them beside XRP and LUMOS would tell someone they
-//    hold a token that does not exist. They are separated, the same way Stellar's
-//    liquidity_pool_shares are kept out of the balance list.
-//
-// 2. RESERVES ARE READ FROM THE LEDGER, NEVER HARDCODED. Spendable XRP is
-//      balance - (reserve_base + reserve_inc * OwnerCount)
-//    Measured today: base 1 XRP, increment 0.2 XRP per owned object. Both were TEN TIMES higher before
-//    2024 and can change again by amendment, so a hardcoded 10/2 would quietly overstate what a user
-//    can send -- the same class of bug as the Stellar MAX button offering more than the balance.
-//
-// 3. A TRUST LINE BALANCE IS SIGNED, and negative means the account is the ISSUER of that token --
-//    it is an obligation, not a holding. Showing it as a balance would tell an issuer it owns its own
-//    entire supply.
-'use strict';
-
-// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
-//
-// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
-// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
-// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
-// <script> block, taking the wallet layer down with it. The page then renders the design's mock
-// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
-// broken. It shipped exactly once that way.
-//
-// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
-// module.exports, both assigned at the end.
-(function () {
-
-const XRP_DROPS = 1e6;
-
-// Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
-// run IS the code that ships. Two copies of these rules would drift, which is how a duplicated esc()
-// caused trouble in the Stellar project.
-function hexBytes(hex) {
-  const out = [];
-  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
-  return out;
-}
-
-// ---- currency codes ------------------------------------------------------------------------------
-const CUR_XRP = 'XRP';
-
-function isLpToken(code) {
-  return typeof code === 'string' && code.length === 40 && /^03/i.test(code);
-}
-
-// Returns { code, display, kind } — kind is 'std' | 'hex' | 'lp' | 'opaque'
-function decodeCurrency(code) {
-  if (!code) return { code: '', display: '', kind: 'opaque' };
-  if (code === CUR_XRP) return { code, display: 'XRP', kind: 'std' };
-  if (code.length <= 3) return { code, display: code, kind: 'std' };
-  if (!/^[0-9A-Fa-f]{40}$/.test(code)) return { code, display: code, kind: 'opaque' };
-  if (isLpToken(code)) return { code, display: 'LP', kind: 'lp' };
-
-  const bytes = hexBytes(code);
-  let end = bytes.length;
-  while (end > 0 && bytes[end - 1] === 0) end--;          // strip the zero padding
-  let text = ''; for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
-  // Printable ASCII only. Anything else is an arbitrary 160-bit code and must NOT be rendered as text.
-  if (end > 0 && /^[\x20-\x7E]+$/.test(text)) return { code, display: text, kind: 'hex' };
-  return { code, display: code.slice(0, 8) + '…', kind: 'opaque' };
-}
-
-// The inverse, for building requests: 'LUMOS' -> 4C554D4F53 padded to 40.
-function encodeCurrency(name) {
-  if (!name || name === 'XRP') return 'XRP';
-  if (name.length <= 3) return name;
-  let hex = ''; for (let i = 0; i < name.length; i++) hex += (name.charCodeAt(i) & 255).toString(16).padStart(2, '0');
-  hex = hex.toUpperCase();
-  return (hex + '0'.repeat(40)).slice(0, 40);
-}
-
-// ---- addresses -----------------------------------------------------------------------------------
-// XRPL uses its OWN base58 alphabet -- not Bitcoin's, not Flickr's. Decoding with the wrong one
-// silently produces different bytes rather than an error.
-const B58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
-
-// Decode to bytes. Long division in base 58, because these are 25-byte values and Number would lose
-// precision well before the end.
-function b58decode(str) {
-  if (typeof str !== 'string' || !str.length) return null;
-  const bytes = [0];
-  for (let i = 0; i < str.length; i++) {
-    const v = B58.indexOf(str[i]);
-    if (v < 0) return null;                                // not in the XRPL alphabet at all
-    let carry = v;
-    for (let j = 0; j < bytes.length; j++) {
-      carry += bytes[j] * 58;
-      bytes[j] = carry & 255;
-      carry >>= 8;
-    }
-    while (carry) { bytes.push(carry & 255); carry >>= 8; }
-  }
-  for (let i = 0; i < str.length && str[i] === B58[0]; i++) bytes.push(0);   // leading zeros
-  return bytes.reverse();
-}
-
-// A CLASSIC XRPL ACCOUNT ADDRESS, by shape. Deliberately NOT a checksum check: verifying the trailing
-// 4 bytes needs double-SHA256, which is async in a browser (crypto.subtle) and would make every caller
-// async for a case that barely happens -- a wallet does not hand back a one-character typo of its own
-// address. What DOES happen, and what this catches, is a value of the wrong KIND: a Stellar 'G...'
-// address left in shared storage by the Stellar build, an EVM '0x...', an empty string, an X-address.
-// Connect confirms the account against the ledger separately, which is the real check.
-function isAddress(a) {
-  if (typeof a !== 'string' || a.length < 25 || a.length > 35 || a[0] !== 'r') return false;
-  const b = b58decode(a);
-  return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
-}
-
-// ---- team wallets --------------------------------------------------------------------------------
-// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
-// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
-// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
-//
-// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
-// the leading characters, the trailing characters AND the stated balance before being written down.
-// A truncation alone must never identify an account that gets excluded from a payout.
-//
-// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
-// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
-// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
-//
-// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
-// eligibility reads one list; a second copy somewhere would silently drift.
-const TEAM_WALLETS = [
-  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
-  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
-  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
-  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
-  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
-  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
-  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
-];
-
-function isTeamWallet(a) {
-  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
-}
-
-// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
-// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
-function excludeTeam(rows, accountKey) {
-  const key = accountKey || 'account';
-  const kept = [], removed = [];
-  for (const r of (rows || [])) {
-    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
-  }
-  return { kept, removed };
-}
-
-// ---- reserves ------------------------------------------------------------------------------------
-// reserves come from server_info; never assume them.
-function spendableXrp(balanceDrops, ownerCount, reserve) {
-  const bal = Number(balanceDrops) / XRP_DROPS;
-  const base = Number(reserve && reserve.base);
-  const inc = Number(reserve && reserve.inc);
-  if (!isFinite(bal)) return null;
-  if (!isFinite(base) || !isFinite(inc)) return null;      // unknown reserve: say so, do not guess
-  const locked = base + inc * (Number(ownerCount) || 0);
-  return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
-}
-
-// ---- balances ------------------------------------------------------------------------------------
-// Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
-function readLines(lines) {
-  const held = [], pools = [], obligations = [];
-  for (const l of (lines || [])) {
-    const amt = Number(l.balance);
-    const cur = decodeCurrency(l.currency);
-    const row = {
-      currency: l.currency, display: cur.display, kind: cur.kind,
-      issuer: l.account, balance: amt,
-      frozen: !!(l.freeze || l.freeze_peer),
-      noRipple: !!l.no_ripple,
-      limit: Number(l.limit),
-    };
-    if (amt < 0) { obligations.push(row); continue; }      // this account issues it; not a holding
-    if (cur.kind === 'lp') { pools.push(row); continue; }  // pool share, not an asset
-    held.push(row);
-  }
-  return { held, pools, obligations };
-}
-
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
-  TEAM_WALLETS, isTeamWallet, excludeTeam };
-
-// Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
-if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
-if (typeof window !== 'undefined') window.lxx = LXX;
-
-})();
-
-// XRP Ledger wallet connect.
-//
-// This REPLACES the inherited Stellar block (lx-realconnect), which is dead in this project anyway:
-// it wires `.lxw-row` elements built by `lx-mc`, and `lx-mc` was never carried into the XRPL
-// containers. So on every XRPL page today the connect button does nothing at all. Worse, if it did
-// run it would store a Stellar `G...` address under `lumos.address` -- the same key the XRPL wallet
-// layer reads -- and every page would then query the XRP Ledger with an address that cannot exist on
-// it. That is why this ships as a replacement rather than an addition.
-//
-// Two wallets, both verified against their own published source rather than from documentation:
-//
-//   Xaman (Xumm)  OAuth2 PKCE, browser-only: a PUBLIC api key (uuid), no secret and no backend.
-//                 Works on mobile, which the two extensions do not. window.XummPkce, self-hosted.
-//   GemWallet     a window.postMessage protocol to the extension's content script. The npm package
-//                 is a thin wrapper over it, so the protocol is spoken directly here -- no bundler,
-//                 no ESM, nothing to keep in sync but the message names.
-//
-// Storage contract is deliberately the SAME keys the Stellar build uses, so the layers already
-// written against them keep working:
-//   lumos.address    the r-address
-//   lumos.wallet     display name  ('Xaman' | 'GemWallet')
-//   lumos.transport  how to sign later ('xaman' | 'gem')
-//   lumos.chain      'xrpl'
-//   lumos.network    'mainnet'
-(function () {
-  if (window.__lxxConnect) return;
-  window.__lxxConnect = 1;
-
-  // ---------------------------------------------------------------------------------------------
-  // PASTE THE XAMAN API KEY HERE.
-  //
-  // Get it free at https://apps.xaman.dev -> create an application -> copy the API KEY (a uuid).
-  // The SECRET is NOT used here and must never be put in front-end code: this is the PKCE flow,
-  // which is designed to run without one. In the Xaman console, set the application's redirect URI
-  // to the site origin (https://lumoscore.com/) or sign-in will be refused by their server.
-  //
-  // Left blank, Xaman shows as "Setup needed" instead of failing silently mid-flow.
-  var XAMAN_KEY = 'aa0d5f5f-c80c-4763-8bf6-1cb63cea7fbb';
-  // ---------------------------------------------------------------------------------------------
-
-  var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
-  var RPC = 'https://xrplcluster.com/';
-
-  var K = {
-    addr: 'lumos.address', wallet: 'lumos.wallet', transport: 'lumos.transport',
-    chain: 'lumos.chain', network: 'lumos.network'
-  };
-
-  function get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
-  function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-  function del(k) { try { localStorage.removeItem(k); } catch (e) {} }
-  function noop() {}
-
-  // xrpl-core is injected immediately above this file and is the same bytes the node tests run.
-  function validAddress(a) {
-    try { return window.lxx.isAddress(a); } catch (e) { return false; }
-  }
-
-  function short(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
-
-  // ---- state -----------------------------------------------------------------------------------
-  var listeners = [];
-  function emit() {
-    var a = get(K.addr);
-    for (var i = 0; i < listeners.length; i++) { try { listeners[i](a); } catch (e) {} }
-  }
-
-  function store(addr, walletName, transport) {
-    set(K.addr, addr); set(K.wallet, walletName); set(K.transport, transport);
-    set(K.chain, 'xrpl'); set(K.network, 'mainnet');
-    emit();
-  }
-
-  function forget() {
-    del(K.addr); del(K.wallet); del(K.transport); del(K.chain); del(K.network);
-    emit();
-  }
-
-  // The address a wallet hands back is not taken on trust. Not because wallets lie, but because this
-  // key is shared with the Stellar build and has held a `G...` address before -- and a bad value here
-  // is not a visible error, it is every page quietly reporting an empty account.
-  function accept(addr, walletName, transport) {
-    if (!validAddress(addr)) {
-      throw new Error(walletName + ' returned something that is not an XRP Ledger address.');
-    }
-    store(addr, walletName, transport);
-    return addr;
-  }
-
-  // ---- ledger ----------------------------------------------------------------------------------
-  // Confirms the account exists. An unfunded account is NOT an error: below the base reserve the
-  // ledger simply has no record of it, which is the normal state of a brand-new wallet.
-  function ledgerState(a) {
-    return fetch(RPC, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: 'account_info', params: [{ account: a, ledger_index: 'validated' }] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
-      var res = (j && j.result) || {};
-      if (res.error === 'actNotFound') return 'unfunded';
-      if (res.error) return 'unknown';
-      return 'funded';
-    }).catch(function () { return 'unknown'; });
-  }
-
-  // ---- GemWallet -------------------------------------------------------------------------------
-  // Protocol copied from @gemwallet/api's own source (helpers/extensionMessaging.js, getAddress.js).
-  function favicon() {
-    try {
-      var l = document.querySelector('link[rel*="icon"]');
-      return l ? l.href : '';
-    } catch (e) { return ''; }
-  }
-
-  function gemSend(type, payload, ms) {
-    return new Promise(function (resolve, reject) {
-      var id = Date.now() + Math.random();
-      var timer = setTimeout(function () {
-        window.removeEventListener('message', onMsg);
-        reject(new Error('GemWallet did not respond.'));
-      }, ms || 90000);
-
-      function onMsg(ev) {
-        if (ev.source !== window) return;
-        var d = ev.data;
-        if (!d || d.source !== 'GEM_WALLET_MSG_RESPONSE') return;
-        // `messagedId`, not `messageId`. That spelling is a typo in GemWallet's own client, which
-        // makes it the wire format: correcting it here would mean never resolving, on a path that
-        // otherwise looks completely healthy.
-        if (d.messagedId !== id) return;
-        clearTimeout(timer);
-        window.removeEventListener('message', onMsg);
-        resolve(d);
-      }
-
-      window.addEventListener('message', onMsg, false);
-      var msg = { source: 'GEM_WALLET_MSG_REQUEST', messageId: id, app: 'gem-wallet', type: type };
-      if (payload) msg.payload = payload;
-      window.postMessage(msg, window.location.origin);
-    });
-  }
-
-  function gemInstalled() {
-    if (window.gemWallet) return Promise.resolve(true);
-    // The extension sets window.gemWallet late on some loads, so absence is not proof. Ask, and
-    // treat silence within a second as "no" -- the same 1s the official client allows.
-    return gemSend('REQUEST_IS_INSTALLED/V3', null, 1000)
-      .then(function (d) { return !!(d && (d.isInstalled || (d.result && d.result.isInstalled))); })
-      .catch(function () { return false; });
-  }
-
-  function gemConnect() {
-    return gemInstalled().then(function (ok) {
-      if (!ok) throw new Error('GemWallet is not installed in this browser.');
-      return gemSend('REQUEST_GET_ADDRESS/V3', {
-        url: window.location.origin, title: document.title, favicon: favicon()
-      });
-    }).then(function (d) {
-      if (d && d.error) {
-        var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
-        throw new Error(/reject|denied|cancel/i.test(m) ? 'Request rejected in GemWallet.' : m);
-      }
-      var r = (d && d.result) || {};
-      if (!r.address) throw new Error('GemWallet did not return an address.');
-      return accept(r.address, 'GemWallet', 'gem');
-    });
-  }
-
-  // ---- Xaman -----------------------------------------------------------------------------------
-  function loadScript(src) {
-    return new Promise(function (res, rej) {
-      var s = document.createElement('script');
-      s.src = src; s.async = true;
-      s.onload = function () { res(); };
-      s.onerror = function () { rej(new Error('Could not load the Xaman library.')); };
-      document.head.appendChild(s);
-    });
-  }
-
-  var xummReady = null;
-  function xumm() {
-    if (!XAMAN_KEY) {
-      return Promise.reject(new Error('Xaman is not set up yet — the site is missing its Xaman API key.'));
-    }
-    if (xummReady) return xummReady;
-    xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
-      if (!window.XummPkce) throw new Error('The Xaman library did not load.');
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true });
-
-      // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
-      // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
-      // the old page. 'retrieved' is how the session is picked back up. The Stellar side shipped
-      // without the equivalent WalletConnect resume and the symptom was exactly what you would
-      // expect and nobody diagnoses quickly: approving in the app, returning to the site, and
-      // being signed out.
-      x.on('retrieved', function () { adoptXumm(x); });
-      x.on('success', function () { adoptXumm(x); });
-      return x;
-    });
-    return xummReady;
-  }
-
-  function adoptXumm(x) {
-    try {
-      var p = x.state();
-      if (!p || !p.then) return;
-      p.then(function (state) {
-        if (!state || !state.me || !state.me.account) return;
-        if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
-      }).catch(noop);
-    } catch (e) {}
-  }
-
-  // Real funds. A session opened against Testnet or Devnet must not be presented as an account here.
-  // networkType is absent on older sessions, and absence is not treated as wrong -- only an explicit
-  // non-mainnet value is.
-  function netOk(me) {
-    var t = me && me.networkType;
-    return !t || /main/i.test(String(t));
-  }
-
-  function xamanConnect() {
-    return xumm().then(function (x) {
-      var p = x.authorize();
-      return p && p.then ? p : Promise.reject(new Error('Xaman sign-in could not start.'));
-    }).then(function (state) {
-      if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
-      if (!netOk(state.me)) {
-        throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
-      }
-      return accept(state.me.account, 'Xaman', 'xaman');
-    });
-  }
-
-  // ---- registry --------------------------------------------------------------------------------
-  var WALLETS = [
-    {
-      id: 'xaman', name: 'Xaman', sub: 'Mobile and desktop',
-      ico: '#2d2d2d', glyph: 'X',
-      connect: xamanConnect,
-      status: function () { return Promise.resolve(XAMAN_KEY ? '' : 'Setup needed'); }
-    },
-    {
-      id: 'gem', name: 'GemWallet', sub: 'Browser extension',
-      ico: 'linear-gradient(135deg,#3f9c5a 0%,#1f6b3a 100%)', glyph: 'G',
-      connect: gemConnect,
-      status: function () {
-        return gemInstalled().then(function (ok) { return ok ? 'Installed' : ''; });
-      }
-    }
-  ];
-
-  // ---- UI --------------------------------------------------------------------------------------
-  // Self-contained: the design's own connect modal is built by `lx-mc`, which this project does not
-  // have. Styles are scoped under .lxx-* and take their colours from the site's variables, with
-  // fallbacks so the modal is never invisible if a page is missing a token.
-  var CSS = ''
-    + '.lxx-bd{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.62);backdrop-filter:blur(4px);'
-    + 'display:flex;align-items:center;justify-content:center;padding:18px}'
-    + '.lxx-bd[hidden]{display:none}'
-    + '.lxx-m{width:100%;max-width:392px;background:var(--card,var(--bg,#131317));color:var(--text,#f6f5f3);'
-    + 'border:1px solid var(--line,rgba(255,255,255,.10));border-radius:18px;overflow:hidden;'
-    + 'box-shadow:0 24px 70px rgba(0,0,0,.5);font-family:inherit}'
-    + '.lxx-h{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 12px}'
-    + '.lxx-h h3{margin:0;font-size:18px;font-weight:800;letter-spacing:-.3px}'
-    + '.lxx-h p{margin:3px 0 0;font-size:13.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
-    + '.lxx-x{background:none;border:0;color:var(--text-muted,#9b9ba4);cursor:pointer;padding:6px;'
-    + 'border-radius:8px;line-height:0}'
-    + '.lxx-x:hover{color:var(--text,#f6f5f3);background:rgba(255,255,255,.06)}'
-    + '.lxx-list{padding:6px 12px 16px;display:flex;flex-direction:column;gap:6px}'
-    + '.lxx-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:13px;'
-    + 'background:none;border:1px solid transparent;color:inherit;cursor:pointer;text-align:left;font-family:inherit}'
-    + '.lxx-row:hover{background:rgba(255,255,255,.055);border-color:var(--line,rgba(255,255,255,.10))}'
-    + '.lxx-ico{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;'
-    + 'justify-content:center;font-weight:800;font-size:15px;color:#fff;flex:0 0 36px}'
-    + '.lxx-nm{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}'
-    + '.lxx-nm b{font-size:14.5px;font-weight:700}'
-    + '.lxx-nm span{font-size:12.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
-    + '.lxx-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;'
-    + 'background:rgba(255,255,255,.08);color:var(--text-muted,#9b9ba4);white-space:nowrap}'
-    + '.lxx-state{padding:26px 22px 24px;text-align:center;display:flex;flex-direction:column;'
-    + 'align-items:center;gap:12px}'
-    + '.lxx-state h4{margin:0;font-size:16.5px;font-weight:800}'
-    + '.lxx-state p{margin:0;font-size:14px;line-height:1.55;color:var(--text-muted,#9b9ba4);'
-    + 'font-weight:500;max-width:300px;word-break:break-word}'
-    + '.lxx-spin{width:30px;height:30px;border-radius:50%;border:3px solid rgba(255,255,255,.14);'
-    + 'border-top-color:var(--accent,#ff894c);animation:lxxSpin 1s linear infinite}'
-    + '@keyframes lxxSpin{to{transform:rotate(360deg)}}'
-    + '@media(prefers-reduced-motion:reduce){.lxx-spin{animation-duration:3s}}'
-    + '.lxx-addr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;'
-    + 'background:rgba(255,255,255,.06);padding:9px 13px;border-radius:10px;word-break:break-all}'
-    + '.lxx-btn{margin-top:4px;padding:11px 20px;border-radius:11px;border:0;cursor:pointer;'
-    + 'font-family:inherit;font-size:14.5px;font-weight:700;background:var(--accent,#ff894c);color:#12100e}'
-    + '.lxx-btn.ghost{background:none;border:1px solid var(--line,rgba(255,255,255,.14));'
-    + 'color:var(--text-muted,#9b9ba4)}'
-    + '.lxx-err{color:#e5484d}';
-
-  var ui = (function () {
-    var bd = null, body = null, built = false;
-
-    function build() {
-      if (built) return;
-      built = true;
-      var st = document.createElement('style');
-      st.id = 'lxx-connect-css';
-      st.textContent = CSS;
-      document.head.appendChild(st);
-
-      bd = document.createElement('div');
-      bd.className = 'lxx-bd';
-      bd.hidden = true;
-      bd.setAttribute('role', 'dialog');
-      bd.setAttribute('aria-modal', 'true');
-      body = document.createElement('div');
-      body.className = 'lxx-m';
-      bd.appendChild(body);
-      bd.addEventListener('click', function (e) { if (e.target === bd) close(); });
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && bd && !bd.hidden) close();
-      });
-      document.body.appendChild(bd);
-    }
-
-    function head(title, sub) {
-      var h = document.createElement('div');
-      h.className = 'lxx-h';
-      var t = document.createElement('div');
-      var h3 = document.createElement('h3'); h3.textContent = title; t.appendChild(h3);
-      if (sub) { var p = document.createElement('p'); p.textContent = sub; t.appendChild(p); }
-      h.appendChild(t);
-      var x = document.createElement('button');
-      x.className = 'lxx-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close');
-      x.textContent = '✕';
-      x.addEventListener('click', close);
-      h.appendChild(x);
-      return h;
-    }
-
-    function open() { build(); bd.hidden = false; }
-    function close() { if (bd) bd.hidden = true; }
-
-    function pick() {
-      build();
-      body.innerHTML = '';
-      body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
-      var list = document.createElement('div');
-      list.className = 'lxx-list';
-
-      WALLETS.forEach(function (w) {
-        var b = document.createElement('button');
-        b.className = 'lxx-row'; b.type = 'button';
-        var ic = document.createElement('span');
-        ic.className = 'lxx-ico'; ic.style.background = w.ico; ic.textContent = w.glyph;
-        var nm = document.createElement('span');
-        nm.className = 'lxx-nm';
-        var nb = document.createElement('b'); nb.textContent = w.name;
-        var ns = document.createElement('span'); ns.textContent = w.sub;
-        nm.appendChild(nb); nm.appendChild(ns);
-        b.appendChild(ic); b.appendChild(nm);
-
-        var badge = document.createElement('span');
-        badge.className = 'lxx-badge';
-        badge.hidden = true;
-        b.appendChild(badge);
-        // Detection is async and must never hold up the list being usable.
-        w.status().then(function (s) {
-          if (!s) return;
-          badge.textContent = s;
-          badge.hidden = false;
-        }).catch(noop);
-
-        b.addEventListener('click', function () { run(w); });
-        list.appendChild(b);
-      });
-
-      body.appendChild(list);
-      open();
-    }
-
-    function waiting(w) {
-      build();
-      body.innerHTML = '';
-      body.appendChild(head('Connecting…', ''));
-      var s = document.createElement('div');
-      s.className = 'lxx-state';
-      var sp = document.createElement('div'); sp.className = 'lxx-spin';
-      var h4 = document.createElement('h4'); h4.textContent = 'Waiting for ' + w.name;
-      var p = document.createElement('p');
-      p.textContent = w.id === 'xaman'
-        ? 'Approve the sign-in request in Xaman. On a phone this opens the app — come back here when it is done.'
-        : 'Approve the connection request in ' + w.name + ' to continue.';
-      var c = document.createElement('button');
-      c.className = 'lxx-btn ghost'; c.type = 'button'; c.textContent = 'Cancel';
-      c.addEventListener('click', pick);
-      s.appendChild(sp); s.appendChild(h4); s.appendChild(p); s.appendChild(c);
-      body.appendChild(s);
-      open();
-    }
-
-    function fail(w, msg) {
-      build();
-      body.innerHTML = '';
-      body.appendChild(head('Could not connect', ''));
-      var s = document.createElement('div');
-      s.className = 'lxx-state';
-      var h4 = document.createElement('h4'); h4.className = 'lxx-err'; h4.textContent = w.name;
-      var p = document.createElement('p'); p.textContent = msg;
-      var again = document.createElement('button');
-      again.className = 'lxx-btn'; again.type = 'button'; again.textContent = 'Try another wallet';
-      again.addEventListener('click', pick);
-      s.appendChild(h4); s.appendChild(p); s.appendChild(again);
-      body.appendChild(s);
-      open();
-    }
-
-    function done(addr, note) {
-      build();
-      body.innerHTML = '';
-      body.appendChild(head('Connected', ''));
-      var s = document.createElement('div');
-      s.className = 'lxx-state';
-      var h4 = document.createElement('h4'); h4.textContent = "You're connected";
-      var a = document.createElement('div'); a.className = 'lxx-addr'; a.textContent = addr;
-      s.appendChild(h4); s.appendChild(a);
-      if (note) { var p = document.createElement('p'); p.textContent = note; s.appendChild(p); }
-      var b = document.createElement('button');
-      b.className = 'lxx-btn'; b.type = 'button'; b.textContent = 'Continue';
-      b.addEventListener('click', function () { close(); window.location.reload(); });
-      s.appendChild(b);
-      body.appendChild(s);
-      open();
-    }
-
-    return { pick: pick, waiting: waiting, fail: fail, done: done, close: close, open: open };
-  })();
-
-  function run(w) {
-    ui.waiting(w);
-    w.connect().then(function (addr) {
-      return ledgerState(addr).then(function (st) {
-        ui.done(addr, st === 'unfunded'
-          ? 'This account is not activated on the XRP Ledger yet — it needs a small XRP reserve before it can hold anything.'
-          : '');
-      });
-    }).catch(function (e) {
-      ui.fail(w, (e && e.message) || 'Something went wrong.');
-    });
-  }
-
-  // ---- page wiring -----------------------------------------------------------------------------
-  // Delegated and capture-phase, so it works on buttons rendered after load and beats any inherited
-  // handler still bound to the old flow.
-  function isConnectTrigger(el) {
-    var n = el.closest('[data-lxx-connect],[data-connect],.lc-guest-cta,.lxw-open,#connectBtn');
-    if (n) return n;
-    var b = el.closest('button,a');
-    if (!b) return null;
-    var t = (b.textContent || '').trim().toLowerCase();
-    if (t === 'connect wallet' || t === 'connect' || t === 'connect a wallet') return b;
-    return null;
-  }
-
-  document.addEventListener('click', function (e) {
-    var t = isConnectTrigger(e.target);
-    if (!t) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (get(K.addr)) ui.done(get(K.addr), '');
-    else ui.pick();
-  }, true);
-
-  // A Xaman sign-in on a phone returns here as a brand-new page load. If a session is remembered,
-  // the SDK has to be constructed for 'retrieved' to fire at all -- nothing resumes on its own.
-  function resume() {
-    if (!XAMAN_KEY) return;
-    var remembered = false;
-    try { remembered = !!localStorage.getItem('XummPkceJwt'); } catch (e) {}
-    var returning = /xumm|xApp|access_token|authorization_code/i.test(window.location.href);
-    if (!remembered && !returning) return;
-    xumm().catch(noop);
-  }
-
-  window.lxc = {
-    open: function () { get(K.addr) ? ui.done(get(K.addr), '') : ui.pick(); },
-    address: function () { return get(K.addr); },
-    wallet: function () { return get(K.wallet); },
-    transport: function () { return get(K.transport); },
-    disconnect: function () {
-      var t = get(K.transport);
-      forget();
-      if (t === 'xaman' && xummReady) xummReady.then(function (x) { try { x.logout(); } catch (e) {} }).catch(noop);
-      try { localStorage.removeItem('XummPkceJwt'); } catch (e) {}
-    },
-    onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
-    wallets: WALLETS.map(function (w) { return w.name; }),
-    configured: function () { return { xaman: !!XAMAN_KEY }; }
-  };
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
-  else resume();
-})();
-
 </script><script id="lx-xrplsearch">
 // XRPL primitives, kept in one place and testable in node.
 //
@@ -3601,6 +2897,757 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   window.__lxxSearchRun = run;
 })();
 
+</script><script id="lx-xrplconnect">
+// XRPL primitives, kept in one place and testable in node.
+//
+// Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
+// three of them are the kind that ship visible garbage if guessed:
+//
+// 1. A CURRENCY CODE IS NOT ALWAYS TEXT. Three forms exist and a real wallet holds all three:
+//      "CSC"                                       standard 3-character code, use as-is
+//      4C554D4F5300...00  -> "LUMOS"               40-char hex whose bytes are printable ASCII
+//      0329E80F3800DA3C...                         first byte 0x03 = an AMM LP token (XLS-30)
+//    Decoding the third as UTF-8 produces mojibake -- exactly what a naive hex-decode renders. Worse,
+//    LP tokens are POOL SHARES, not assets: listing them beside XRP and LUMOS would tell someone they
+//    hold a token that does not exist. They are separated, the same way Stellar's
+//    liquidity_pool_shares are kept out of the balance list.
+//
+// 2. RESERVES ARE READ FROM THE LEDGER, NEVER HARDCODED. Spendable XRP is
+//      balance - (reserve_base + reserve_inc * OwnerCount)
+//    Measured today: base 1 XRP, increment 0.2 XRP per owned object. Both were TEN TIMES higher before
+//    2024 and can change again by amendment, so a hardcoded 10/2 would quietly overstate what a user
+//    can send -- the same class of bug as the Stellar MAX button offering more than the balance.
+//
+// 3. A TRUST LINE BALANCE IS SIGNED, and negative means the account is the ISSUER of that token --
+//    it is an obligation, not a holding. Showing it as a balance would tell an issuer it owns its own
+//    entire supply.
+'use strict';
+
+// WRAPPED IN AN IIFE ON PURPOSE, and it must stay that way.
+//
+// This file is injected into pages by more than one transform (_xrplconnect and _xrplwallet). At
+// top level, `const XRP_DROPS` is a GLOBAL binding in a classic script, so a second copy throws
+// "Identifier 'XRP_DROPS' has already been declared" -- and that error kills the ENTIRE second
+// <script> block, taking the wallet layer down with it. The page then renders the design's mock
+// table: five invented rows with plausible-looking prices, no missing data, nothing obviously
+// broken. It shipped exactly once that way.
+//
+// Nothing here may be declared outside this wrapper. The only exports are window.lxx and
+// module.exports, both assigned at the end.
+(function () {
+
+const XRP_DROPS = 1e6;
+
+// Hand-rolled rather than Buffer: this file is injected into the page verbatim, so the code the tests
+// run IS the code that ships. Two copies of these rules would drift, which is how a duplicated esc()
+// caused trouble in the Stellar project.
+function hexBytes(hex) {
+  const out = [];
+  for (let i = 0; i + 1 < hex.length; i += 2) out.push(parseInt(hex.substr(i, 2), 16));
+  return out;
+}
+
+// ---- currency codes ------------------------------------------------------------------------------
+const CUR_XRP = 'XRP';
+
+function isLpToken(code) {
+  return typeof code === 'string' && code.length === 40 && /^03/i.test(code);
+}
+
+// Returns { code, display, kind } — kind is 'std' | 'hex' | 'lp' | 'opaque'
+function decodeCurrency(code) {
+  if (!code) return { code: '', display: '', kind: 'opaque' };
+  if (code === CUR_XRP) return { code, display: 'XRP', kind: 'std' };
+  if (code.length <= 3) return { code, display: code, kind: 'std' };
+  if (!/^[0-9A-Fa-f]{40}$/.test(code)) return { code, display: code, kind: 'opaque' };
+  if (isLpToken(code)) return { code, display: 'LP', kind: 'lp' };
+
+  const bytes = hexBytes(code);
+  let end = bytes.length;
+  while (end > 0 && bytes[end - 1] === 0) end--;          // strip the zero padding
+  let text = ''; for (let i = 0; i < end; i++) text += String.fromCharCode(bytes[i]);
+  // Printable ASCII only. Anything else is an arbitrary 160-bit code and must NOT be rendered as text.
+  if (end > 0 && /^[\x20-\x7E]+$/.test(text)) return { code, display: text, kind: 'hex' };
+  return { code, display: code.slice(0, 8) + '…', kind: 'opaque' };
+}
+
+// The inverse, for building requests: 'LUMOS' -> 4C554D4F53 padded to 40.
+function encodeCurrency(name) {
+  if (!name || name === 'XRP') return 'XRP';
+  if (name.length <= 3) return name;
+  let hex = ''; for (let i = 0; i < name.length; i++) hex += (name.charCodeAt(i) & 255).toString(16).padStart(2, '0');
+  hex = hex.toUpperCase();
+  return (hex + '0'.repeat(40)).slice(0, 40);
+}
+
+// ---- addresses -----------------------------------------------------------------------------------
+// XRPL uses its OWN base58 alphabet -- not Bitcoin's, not Flickr's. Decoding with the wrong one
+// silently produces different bytes rather than an error.
+const B58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
+
+// Decode to bytes. Long division in base 58, because these are 25-byte values and Number would lose
+// precision well before the end.
+function b58decode(str) {
+  if (typeof str !== 'string' || !str.length) return null;
+  const bytes = [0];
+  for (let i = 0; i < str.length; i++) {
+    const v = B58.indexOf(str[i]);
+    if (v < 0) return null;                                // not in the XRPL alphabet at all
+    let carry = v;
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j] * 58;
+      bytes[j] = carry & 255;
+      carry >>= 8;
+    }
+    while (carry) { bytes.push(carry & 255); carry >>= 8; }
+  }
+  for (let i = 0; i < str.length && str[i] === B58[0]; i++) bytes.push(0);   // leading zeros
+  return bytes.reverse();
+}
+
+// A CLASSIC XRPL ACCOUNT ADDRESS, by shape. Deliberately NOT a checksum check: verifying the trailing
+// 4 bytes needs double-SHA256, which is async in a browser (crypto.subtle) and would make every caller
+// async for a case that barely happens -- a wallet does not hand back a one-character typo of its own
+// address. What DOES happen, and what this catches, is a value of the wrong KIND: a Stellar 'G...'
+// address left in shared storage by the Stellar build, an EVM '0x...', an empty string, an X-address.
+// Connect confirms the account against the ledger separately, which is the real check.
+function isAddress(a) {
+  if (typeof a !== 'string' || a.length < 25 || a.length > 35 || a[0] !== 'r') return false;
+  const b = b58decode(a);
+  return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
+}
+
+// ---- team wallets --------------------------------------------------------------------------------
+// EXCLUDED from Native LP reward maths. These are treasury/team allocations, not holders, and
+// counting them would dilute every real participant's share -- they are 850M LUMOS, 86.9% of the
+// top-50 holder total, so this is the denominator of the whole calculation rather than a rounding.
+//
+// Supplied truncated ("rHuF5...oQpN") and resolved against the live holder list, requiring a match on
+// the leading characters, the trailing characters AND the stated balance before being written down.
+// A truncation alone must never identify an account that gets excluded from a payout.
+//
+// Corroborated from the ledger rather than from the label: three were funded directly by rHuF5,
+// which xrpl.to names "LumosCore", two more by rKt1Dr ("@jrollnation"), and every one of them shows
+// 0% DEX / 0% AMM / 0% LP and 100% transfer -- none bought on market.
+//
+// Full provenance table in XRPL_FACTS.md. Kept HERE so that every layer which touches reward
+// eligibility reads one list; a second copy somewhere would silently drift.
+const TEAM_WALLETS = [
+  'rHuF5XcfA6izw3DhPuZZ5M2z1Vt5ozoQpN',   // 320.8M
+  'raieaf1UXyXgvptvSBZQ8Tojj3ztr77sdM',   // 150.0M
+  'r42RLyT9Uz35joCo6thvknLJVBDeFqPhgN',   // 144.7M
+  'rL9d14LpUX39owdetCB1bV56UFcwAHTs2X',   //  95.0M
+  'rEw27GSsFBmGYtkjTh2fYx8AMQY6id6jjx',   //  49.0M
+  'rNN7aocBTz4Ba27CnL1uR38EhCxYsoHqst',   //  48.8M
+  'rUdnkuyMpDoSfeSko4Y5Pg6Do9mUh8X1tY',   //  41.7M
+];
+
+function isTeamWallet(a) {
+  return typeof a === 'string' && TEAM_WALLETS.indexOf(a) >= 0;
+}
+
+// Drops team wallets from a list of { account, balance }-shaped rows and reports what it removed,
+// so a caller can show "excluding team wallets" honestly rather than quietly shrinking a total.
+function excludeTeam(rows, accountKey) {
+  const key = accountKey || 'account';
+  const kept = [], removed = [];
+  for (const r of (rows || [])) {
+    (isTeamWallet(r && r[key]) ? removed : kept).push(r);
+  }
+  return { kept, removed };
+}
+
+// ---- reserves ------------------------------------------------------------------------------------
+// reserves come from server_info; never assume them.
+function spendableXrp(balanceDrops, ownerCount, reserve) {
+  const bal = Number(balanceDrops) / XRP_DROPS;
+  const base = Number(reserve && reserve.base);
+  const inc = Number(reserve && reserve.inc);
+  if (!isFinite(bal)) return null;
+  if (!isFinite(base) || !isFinite(inc)) return null;      // unknown reserve: say so, do not guess
+  const locked = base + inc * (Number(ownerCount) || 0);
+  return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
+}
+
+// ---- balances ------------------------------------------------------------------------------------
+// Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
+function readLines(lines) {
+  const held = [], pools = [], obligations = [];
+  for (const l of (lines || [])) {
+    const amt = Number(l.balance);
+    const cur = decodeCurrency(l.currency);
+    const row = {
+      currency: l.currency, display: cur.display, kind: cur.kind,
+      issuer: l.account, balance: amt,
+      frozen: !!(l.freeze || l.freeze_peer),
+      noRipple: !!l.no_ripple,
+      limit: Number(l.limit),
+    };
+    if (amt < 0) { obligations.push(row); continue; }      // this account issues it; not a holding
+    if (cur.kind === 'lp') { pools.push(row); continue; }  // pool share, not an asset
+    held.push(row);
+  }
+  return { held, pools, obligations };
+}
+
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
+  TEAM_WALLETS, isTeamWallet, excludeTeam };
+
+// Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
+if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
+if (typeof window !== 'undefined') window.lxx = LXX;
+
+})();
+
+// XRP Ledger wallet connect.
+//
+// This REPLACES the inherited Stellar block (lx-realconnect), which is dead in this project anyway:
+// it wires `.lxw-row` elements built by `lx-mc`, and `lx-mc` was never carried into the XRPL
+// containers. So on every XRPL page today the connect button does nothing at all. Worse, if it did
+// run it would store a Stellar `G...` address under `lumos.address` -- the same key the XRPL wallet
+// layer reads -- and every page would then query the XRP Ledger with an address that cannot exist on
+// it. That is why this ships as a replacement rather than an addition.
+//
+// Two wallets, both verified against their own published source rather than from documentation:
+//
+//   Xaman (Xumm)  OAuth2 PKCE, browser-only: a PUBLIC api key (uuid), no secret and no backend.
+//                 Works on mobile, which the two extensions do not. window.XummPkce, self-hosted.
+//   GemWallet     a window.postMessage protocol to the extension's content script. The npm package
+//                 is a thin wrapper over it, so the protocol is spoken directly here -- no bundler,
+//                 no ESM, nothing to keep in sync but the message names.
+//
+// Storage contract is deliberately the SAME keys the Stellar build uses, so the layers already
+// written against them keep working:
+//   lumos.address    the r-address
+//   lumos.wallet     display name  ('Xaman' | 'GemWallet')
+//   lumos.transport  how to sign later ('xaman' | 'gem')
+//   lumos.chain      'xrpl'
+//   lumos.network    'mainnet'
+(function () {
+  if (window.__lxxConnect) return;
+  window.__lxxConnect = 1;
+
+  // ---------------------------------------------------------------------------------------------
+  // PASTE THE XAMAN API KEY HERE.
+  //
+  // Get it free at https://apps.xaman.dev -> create an application -> copy the API KEY (a uuid).
+  // The SECRET is NOT used here and must never be put in front-end code: this is the PKCE flow,
+  // which is designed to run without one. In the Xaman console, set the application's redirect URI
+  // to the site origin (https://lumoscore.com/) or sign-in will be refused by their server.
+  //
+  // Left blank, Xaman shows as "Setup needed" instead of failing silently mid-flow.
+  var XAMAN_KEY = 'aa0d5f5f-c80c-4763-8bf6-1cb63cea7fbb';
+  // ---------------------------------------------------------------------------------------------
+
+  var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
+  var RPC = 'https://xrplcluster.com/';
+
+  var K = {
+    addr: 'lumos.address', wallet: 'lumos.wallet', transport: 'lumos.transport',
+    chain: 'lumos.chain', network: 'lumos.network'
+  };
+
+  function get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  function noop() {}
+
+  // xrpl-core is injected immediately above this file and is the same bytes the node tests run.
+  function validAddress(a) {
+    try { return window.lxx.isAddress(a); } catch (e) { return false; }
+  }
+
+  function short(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
+
+  // ---- state -----------------------------------------------------------------------------------
+  var listeners = [];
+  function emit() {
+    var a = get(K.addr);
+    for (var i = 0; i < listeners.length; i++) { try { listeners[i](a); } catch (e) {} }
+  }
+
+  function store(addr, walletName, transport) {
+    set(K.addr, addr); set(K.wallet, walletName); set(K.transport, transport);
+    set(K.chain, 'xrpl'); set(K.network, 'mainnet');
+    emit();
+  }
+
+  function forget() {
+    del(K.addr); del(K.wallet); del(K.transport); del(K.chain); del(K.network);
+    emit();
+  }
+
+  // The address a wallet hands back is not taken on trust. Not because wallets lie, but because this
+  // key is shared with the Stellar build and has held a `G...` address before -- and a bad value here
+  // is not a visible error, it is every page quietly reporting an empty account.
+  function accept(addr, walletName, transport) {
+    if (!validAddress(addr)) {
+      throw new Error(walletName + ' returned something that is not an XRP Ledger address.');
+    }
+    store(addr, walletName, transport);
+    return addr;
+  }
+
+  // ---- ledger ----------------------------------------------------------------------------------
+  // Confirms the account exists. An unfunded account is NOT an error: below the base reserve the
+  // ledger simply has no record of it, which is the normal state of a brand-new wallet.
+  function ledgerState(a) {
+    return fetch(RPC, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: 'account_info', params: [{ account: a, ledger_index: 'validated' }] })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var res = (j && j.result) || {};
+      if (res.error === 'actNotFound') return 'unfunded';
+      if (res.error) return 'unknown';
+      return 'funded';
+    }).catch(function () { return 'unknown'; });
+  }
+
+  // ---- GemWallet -------------------------------------------------------------------------------
+  // Protocol copied from @gemwallet/api's own source (helpers/extensionMessaging.js, getAddress.js).
+  function favicon() {
+    try {
+      var l = document.querySelector('link[rel*="icon"]');
+      return l ? l.href : '';
+    } catch (e) { return ''; }
+  }
+
+  function gemSend(type, payload, ms) {
+    return new Promise(function (resolve, reject) {
+      var id = Date.now() + Math.random();
+      var timer = setTimeout(function () {
+        window.removeEventListener('message', onMsg);
+        reject(new Error('GemWallet did not respond.'));
+      }, ms || 90000);
+
+      function onMsg(ev) {
+        if (ev.source !== window) return;
+        var d = ev.data;
+        if (!d || d.source !== 'GEM_WALLET_MSG_RESPONSE') return;
+        // `messagedId`, not `messageId`. That spelling is a typo in GemWallet's own client, which
+        // makes it the wire format: correcting it here would mean never resolving, on a path that
+        // otherwise looks completely healthy.
+        if (d.messagedId !== id) return;
+        clearTimeout(timer);
+        window.removeEventListener('message', onMsg);
+        resolve(d);
+      }
+
+      window.addEventListener('message', onMsg, false);
+      var msg = { source: 'GEM_WALLET_MSG_REQUEST', messageId: id, app: 'gem-wallet', type: type };
+      if (payload) msg.payload = payload;
+      window.postMessage(msg, window.location.origin);
+    });
+  }
+
+  // Submit a transaction through GemWallet. The user approves it in the extension; the extension
+  // fills in Fee, Sequence and LastLedgerSequence, signs, and submits.
+  //
+  // UNTESTED AGAINST THE EXTENSION. There is no GemWallet in the browser this was written in, so
+  // the happy path here is written from @gemwallet/api's documented protocol and has never actually
+  // round-tripped. It is built to fail LOUDLY rather than silently: anything other than a result
+  // carrying a hash throws, so a wrong guess about the response shape stops the launch instead of
+  // letting it continue as though a transaction had been submitted.
+  function gemSubmit(tx) {
+    return gemInstalled().then(function (ok) {
+      if (!ok) throw new Error('GemWallet is not installed in this browser.');
+      return gemSend('REQUEST_SUBMIT_TRANSACTION/V3', {
+        transaction: tx,
+        url: window.location.origin, title: document.title, favicon: favicon()
+      });
+    }).then(function (d) {
+      if (d && d.error) {
+        var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
+        throw new Error(/reject|denied|cancel/i.test(m) ? 'Rejected in GemWallet.' : m);
+      }
+      var r = (d && d.result) || {};
+      if (r.type === 'reject') throw new Error('Rejected in GemWallet.');
+      var hash = r.hash || r.txHash || (r.result && r.result.hash);
+      if (!hash) throw new Error('GemWallet did not return a transaction hash.');
+      return String(hash);
+    });
+  }
+
+  function gemInstalled() {
+    if (window.gemWallet) return Promise.resolve(true);
+    // The extension sets window.gemWallet late on some loads, so absence is not proof. Ask, and
+    // treat silence within a second as "no" -- the same 1s the official client allows.
+    return gemSend('REQUEST_IS_INSTALLED/V3', null, 1000)
+      .then(function (d) { return !!(d && (d.isInstalled || (d.result && d.result.isInstalled))); })
+      .catch(function () { return false; });
+  }
+
+  function gemConnect() {
+    return gemInstalled().then(function (ok) {
+      if (!ok) throw new Error('GemWallet is not installed in this browser.');
+      return gemSend('REQUEST_GET_ADDRESS/V3', {
+        url: window.location.origin, title: document.title, favicon: favicon()
+      });
+    }).then(function (d) {
+      if (d && d.error) {
+        var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
+        throw new Error(/reject|denied|cancel/i.test(m) ? 'Request rejected in GemWallet.' : m);
+      }
+      var r = (d && d.result) || {};
+      if (!r.address) throw new Error('GemWallet did not return an address.');
+      return accept(r.address, 'GemWallet', 'gem');
+    });
+  }
+
+  // ---- Xaman -----------------------------------------------------------------------------------
+  function loadScript(src) {
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = src; s.async = true;
+      s.onload = function () { res(); };
+      s.onerror = function () { rej(new Error('Could not load the Xaman library.')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  var xummReady = null;
+  function xumm() {
+    if (!XAMAN_KEY) {
+      return Promise.reject(new Error('Xaman is not set up yet — the site is missing its Xaman API key.'));
+    }
+    if (xummReady) return xummReady;
+    xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
+      if (!window.XummPkce) throw new Error('The Xaman library did not load.');
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true });
+
+      // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
+      // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
+      // the old page. 'retrieved' is how the session is picked back up. The Stellar side shipped
+      // without the equivalent WalletConnect resume and the symptom was exactly what you would
+      // expect and nobody diagnoses quickly: approving in the app, returning to the site, and
+      // being signed out.
+      x.on('retrieved', function () { adoptXumm(x); });
+      x.on('success', function () { adoptXumm(x); });
+      return x;
+    });
+    return xummReady;
+  }
+
+  function adoptXumm(x) {
+    try {
+      var p = x.state();
+      if (!p || !p.then) return;
+      p.then(function (state) {
+        if (!state || !state.me || !state.me.account) return;
+        if (!netOk(state.me)) return;
+        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
+      }).catch(noop);
+    } catch (e) {}
+  }
+
+  // Real funds. A session opened against Testnet or Devnet must not be presented as an account here.
+  // networkType is absent on older sessions, and absence is not treated as wrong -- only an explicit
+  // non-mainnet value is.
+  function netOk(me) {
+    var t = me && me.networkType;
+    return !t || /main/i.test(String(t));
+  }
+
+  function xamanConnect() {
+    return xumm().then(function (x) {
+      var p = x.authorize();
+      return p && p.then ? p : Promise.reject(new Error('Xaman sign-in could not start.'));
+    }).then(function (state) {
+      if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
+      if (!netOk(state.me)) {
+        throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
+      }
+      return accept(state.me.account, 'Xaman', 'xaman');
+    });
+  }
+
+  // ---- registry --------------------------------------------------------------------------------
+  var WALLETS = [
+    {
+      id: 'xaman', name: 'Xaman', sub: 'Mobile and desktop',
+      ico: '#2d2d2d', glyph: 'X',
+      connect: xamanConnect,
+      status: function () { return Promise.resolve(XAMAN_KEY ? '' : 'Setup needed'); }
+    },
+    {
+      id: 'gem', name: 'GemWallet', sub: 'Browser extension',
+      ico: 'linear-gradient(135deg,#3f9c5a 0%,#1f6b3a 100%)', glyph: 'G',
+      connect: gemConnect,
+      status: function () {
+        return gemInstalled().then(function (ok) { return ok ? 'Installed' : ''; });
+      }
+    }
+  ];
+
+  // ---- UI --------------------------------------------------------------------------------------
+  // Self-contained: the design's own connect modal is built by `lx-mc`, which this project does not
+  // have. Styles are scoped under .lxx-* and take their colours from the site's variables, with
+  // fallbacks so the modal is never invisible if a page is missing a token.
+  var CSS = ''
+    + '.lxx-bd{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.62);backdrop-filter:blur(4px);'
+    + 'display:flex;align-items:center;justify-content:center;padding:18px}'
+    + '.lxx-bd[hidden]{display:none}'
+    + '.lxx-m{width:100%;max-width:392px;background:var(--card,var(--bg,#131317));color:var(--text,#f6f5f3);'
+    + 'border:1px solid var(--line,rgba(255,255,255,.10));border-radius:18px;overflow:hidden;'
+    + 'box-shadow:0 24px 70px rgba(0,0,0,.5);font-family:inherit}'
+    + '.lxx-h{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 12px}'
+    + '.lxx-h h3{margin:0;font-size:18px;font-weight:800;letter-spacing:-.3px}'
+    + '.lxx-h p{margin:3px 0 0;font-size:13.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
+    + '.lxx-x{background:none;border:0;color:var(--text-muted,#9b9ba4);cursor:pointer;padding:6px;'
+    + 'border-radius:8px;line-height:0}'
+    + '.lxx-x:hover{color:var(--text,#f6f5f3);background:rgba(255,255,255,.06)}'
+    + '.lxx-list{padding:6px 12px 16px;display:flex;flex-direction:column;gap:6px}'
+    + '.lxx-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:13px;'
+    + 'background:none;border:1px solid transparent;color:inherit;cursor:pointer;text-align:left;font-family:inherit}'
+    + '.lxx-row:hover{background:rgba(255,255,255,.055);border-color:var(--line,rgba(255,255,255,.10))}'
+    + '.lxx-ico{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;'
+    + 'justify-content:center;font-weight:800;font-size:15px;color:#fff;flex:0 0 36px}'
+    + '.lxx-nm{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}'
+    + '.lxx-nm b{font-size:14.5px;font-weight:700}'
+    + '.lxx-nm span{font-size:12.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
+    + '.lxx-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;'
+    + 'background:rgba(255,255,255,.08);color:var(--text-muted,#9b9ba4);white-space:nowrap}'
+    + '.lxx-state{padding:26px 22px 24px;text-align:center;display:flex;flex-direction:column;'
+    + 'align-items:center;gap:12px}'
+    + '.lxx-state h4{margin:0;font-size:16.5px;font-weight:800}'
+    + '.lxx-state p{margin:0;font-size:14px;line-height:1.55;color:var(--text-muted,#9b9ba4);'
+    + 'font-weight:500;max-width:300px;word-break:break-word}'
+    + '.lxx-spin{width:30px;height:30px;border-radius:50%;border:3px solid rgba(255,255,255,.14);'
+    + 'border-top-color:var(--accent,#ff894c);animation:lxxSpin 1s linear infinite}'
+    + '@keyframes lxxSpin{to{transform:rotate(360deg)}}'
+    + '@media(prefers-reduced-motion:reduce){.lxx-spin{animation-duration:3s}}'
+    + '.lxx-addr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;'
+    + 'background:rgba(255,255,255,.06);padding:9px 13px;border-radius:10px;word-break:break-all}'
+    + '.lxx-btn{margin-top:4px;padding:11px 20px;border-radius:11px;border:0;cursor:pointer;'
+    + 'font-family:inherit;font-size:14.5px;font-weight:700;background:var(--accent,#ff894c);color:#12100e}'
+    + '.lxx-btn.ghost{background:none;border:1px solid var(--line,rgba(255,255,255,.14));'
+    + 'color:var(--text-muted,#9b9ba4)}'
+    + '.lxx-err{color:#e5484d}';
+
+  var ui = (function () {
+    var bd = null, body = null, built = false;
+
+    function build() {
+      if (built) return;
+      built = true;
+      var st = document.createElement('style');
+      st.id = 'lxx-connect-css';
+      st.textContent = CSS;
+      document.head.appendChild(st);
+
+      bd = document.createElement('div');
+      bd.className = 'lxx-bd';
+      bd.hidden = true;
+      bd.setAttribute('role', 'dialog');
+      bd.setAttribute('aria-modal', 'true');
+      body = document.createElement('div');
+      body.className = 'lxx-m';
+      bd.appendChild(body);
+      bd.addEventListener('click', function (e) { if (e.target === bd) close(); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && bd && !bd.hidden) close();
+      });
+      document.body.appendChild(bd);
+    }
+
+    function head(title, sub) {
+      var h = document.createElement('div');
+      h.className = 'lxx-h';
+      var t = document.createElement('div');
+      var h3 = document.createElement('h3'); h3.textContent = title; t.appendChild(h3);
+      if (sub) { var p = document.createElement('p'); p.textContent = sub; t.appendChild(p); }
+      h.appendChild(t);
+      var x = document.createElement('button');
+      x.className = 'lxx-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close');
+      x.textContent = '✕';
+      x.addEventListener('click', close);
+      h.appendChild(x);
+      return h;
+    }
+
+    function open() { build(); bd.hidden = false; }
+    function close() { if (bd) bd.hidden = true; }
+
+    function pick() {
+      build();
+      body.innerHTML = '';
+      body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
+      var list = document.createElement('div');
+      list.className = 'lxx-list';
+
+      WALLETS.forEach(function (w) {
+        var b = document.createElement('button');
+        b.className = 'lxx-row'; b.type = 'button';
+        var ic = document.createElement('span');
+        ic.className = 'lxx-ico'; ic.style.background = w.ico; ic.textContent = w.glyph;
+        var nm = document.createElement('span');
+        nm.className = 'lxx-nm';
+        var nb = document.createElement('b'); nb.textContent = w.name;
+        var ns = document.createElement('span'); ns.textContent = w.sub;
+        nm.appendChild(nb); nm.appendChild(ns);
+        b.appendChild(ic); b.appendChild(nm);
+
+        var badge = document.createElement('span');
+        badge.className = 'lxx-badge';
+        badge.hidden = true;
+        b.appendChild(badge);
+        // Detection is async and must never hold up the list being usable.
+        w.status().then(function (s) {
+          if (!s) return;
+          badge.textContent = s;
+          badge.hidden = false;
+        }).catch(noop);
+
+        b.addEventListener('click', function () { run(w); });
+        list.appendChild(b);
+      });
+
+      body.appendChild(list);
+      open();
+    }
+
+    function waiting(w) {
+      build();
+      body.innerHTML = '';
+      body.appendChild(head('Connecting…', ''));
+      var s = document.createElement('div');
+      s.className = 'lxx-state';
+      var sp = document.createElement('div'); sp.className = 'lxx-spin';
+      var h4 = document.createElement('h4'); h4.textContent = 'Waiting for ' + w.name;
+      var p = document.createElement('p');
+      p.textContent = w.id === 'xaman'
+        ? 'Approve the sign-in request in Xaman. On a phone this opens the app — come back here when it is done.'
+        : 'Approve the connection request in ' + w.name + ' to continue.';
+      var c = document.createElement('button');
+      c.className = 'lxx-btn ghost'; c.type = 'button'; c.textContent = 'Cancel';
+      c.addEventListener('click', pick);
+      s.appendChild(sp); s.appendChild(h4); s.appendChild(p); s.appendChild(c);
+      body.appendChild(s);
+      open();
+    }
+
+    function fail(w, msg) {
+      build();
+      body.innerHTML = '';
+      body.appendChild(head('Could not connect', ''));
+      var s = document.createElement('div');
+      s.className = 'lxx-state';
+      var h4 = document.createElement('h4'); h4.className = 'lxx-err'; h4.textContent = w.name;
+      var p = document.createElement('p'); p.textContent = msg;
+      var again = document.createElement('button');
+      again.className = 'lxx-btn'; again.type = 'button'; again.textContent = 'Try another wallet';
+      again.addEventListener('click', pick);
+      s.appendChild(h4); s.appendChild(p); s.appendChild(again);
+      body.appendChild(s);
+      open();
+    }
+
+    function done(addr, note) {
+      build();
+      body.innerHTML = '';
+      body.appendChild(head('Connected', ''));
+      var s = document.createElement('div');
+      s.className = 'lxx-state';
+      var h4 = document.createElement('h4'); h4.textContent = "You're connected";
+      var a = document.createElement('div'); a.className = 'lxx-addr'; a.textContent = addr;
+      s.appendChild(h4); s.appendChild(a);
+      if (note) { var p = document.createElement('p'); p.textContent = note; s.appendChild(p); }
+      var b = document.createElement('button');
+      b.className = 'lxx-btn'; b.type = 'button'; b.textContent = 'Continue';
+      b.addEventListener('click', function () { close(); window.location.reload(); });
+      s.appendChild(b);
+      body.appendChild(s);
+      open();
+    }
+
+    return { pick: pick, waiting: waiting, fail: fail, done: done, close: close, open: open };
+  })();
+
+  function run(w) {
+    ui.waiting(w);
+    w.connect().then(function (addr) {
+      return ledgerState(addr).then(function (st) {
+        ui.done(addr, st === 'unfunded'
+          ? 'This account is not activated on the XRP Ledger yet — it needs a small XRP reserve before it can hold anything.'
+          : '');
+      });
+    }).catch(function (e) {
+      ui.fail(w, (e && e.message) || 'Something went wrong.');
+    });
+  }
+
+  // ---- page wiring -----------------------------------------------------------------------------
+  // Delegated and capture-phase, so it works on buttons rendered after load and beats any inherited
+  // handler still bound to the old flow.
+  function isConnectTrigger(el) {
+    var n = el.closest('[data-lxx-connect],[data-connect],.lc-guest-cta,.lxw-open,#connectBtn');
+    if (n) return n;
+    var b = el.closest('button,a');
+    if (!b) return null;
+    var t = (b.textContent || '').trim().toLowerCase();
+    if (t === 'connect wallet' || t === 'connect' || t === 'connect a wallet') return b;
+    return null;
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = isConnectTrigger(e.target);
+    if (!t) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (get(K.addr)) ui.done(get(K.addr), '');
+    else ui.pick();
+  }, true);
+
+  // A Xaman sign-in on a phone returns here as a brand-new page load. If a session is remembered,
+  // the SDK has to be constructed for 'retrieved' to fire at all -- nothing resumes on its own.
+  function resume() {
+    if (!XAMAN_KEY) return;
+    var remembered = false;
+    try { remembered = !!localStorage.getItem('XummPkceJwt'); } catch (e) {}
+    var returning = /xumm|xApp|access_token|authorization_code/i.test(window.location.href);
+    if (!remembered && !returning) return;
+    xumm().catch(noop);
+  }
+
+  window.lxc = {
+    open: function () { get(K.addr) ? ui.done(get(K.addr), '') : ui.pick(); },
+    address: function () { return get(K.addr); },
+    wallet: function () { return get(K.wallet); },
+    transport: function () { return get(K.transport); },
+    disconnect: function () {
+      var t = get(K.transport);
+      forget();
+      if (t === 'xaman' && xummReady) xummReady.then(function (x) { try { x.logout(); } catch (e) {} }).catch(noop);
+      try { localStorage.removeItem('XummPkceJwt'); } catch (e) {}
+    },
+    // Ask the connected wallet to sign and submit one transaction, resolving with its hash.
+    //
+    // REFUSES RATHER THAN GUESSES. A stored address with an EMPTY transport is a real state -- it is
+    // what this build currently leaves behind -- and it means the page knows who you are but has no
+    // way to sign for you. Treating that as "probably GemWallet" would open an extension prompt that
+    // may never come, or worse, succeed against the wrong wallet.
+    submit: function (tx) {
+      var t = get(K.transport);
+      if (!get(K.addr)) return Promise.reject(new Error('Connect a wallet first.'));
+      if (t === 'gem') return gemSubmit(tx);
+      if (t === 'xaman') {
+        return Promise.reject(new Error(
+          'Signing with Xaman is not built yet — reconnect with GemWallet on desktop.'));
+      }
+      return Promise.reject(new Error(
+        'This wallet connection cannot sign. Disconnect and connect again.'));
+    },
+    canSign: function () { return get(K.transport) === 'gem'; },
+
+    onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
+    wallets: WALLETS.map(function (w) { return w.name; }),
+    configured: function () { return { xaman: !!XAMAN_KEY }; }
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
+  else resume();
+})();
+
 </script><script id="lx-xrplaunchpad">
 // Launchpad: the XRP Ledger's rules, costs and currency codes.
 //
@@ -3859,6 +3906,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       .then(function (p) {
         if (!p || !p.ok || !(p.usd > 0)) return;
         xrpUsd = p.usd;
+        // The review page prices its fee and liquidity from the same rate this page quotes, so the
+        // number a user agreed to on the form is the number they are asked to send.
+        window.__lxxXrpUsd = p.usd;
         paintCosts();
         watchCosts();
       })
@@ -3890,11 +3940,19 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 // This file fixes (1) outright and makes (2) honest. It also builds the exact transaction sequence a
 // launch consists of, so the plan can be inspected and tested before anything is signed.
 //
-// WHAT IS STILL MISSING, and it is not this file's to solve: nothing in this project can sign a
-// transaction with the USER's wallet yet. connect.js reads an address from GemWallet or Xaman and
-// stops there -- window.lxc has open/address/wallet/transport/disconnect and no sign(). A launch
-// needs four user-signed transactions, so until that layer exists the button explains rather than
-// pretends. See buildLaunchPlan() for the sequence it will drive.
+// THE LAUNCH NOW RUNS, on GemWallet. lxc.submit() carries the user's four transactions to the
+// extension; the issuer's four are signed locally with a key generated here and thrown away.
+//
+// TWO HONEST LIMITS, both deliberate:
+//
+//   * Xaman cannot sign yet, so a mobile connection is refused by name rather than left to fail at
+//     the first prompt.
+//   * NONE OF THE GEMWALLET PATH HAS ROUND-TRIPPED AGAINST THE EXTENSION. It is written from the
+//     documented protocol and there is no extension in the browser it was built in. What IS tested
+//     is the ordering and the failure handling, by running this same orchestrator against a fake
+//     ledger: the happy path completes eight steps in order, a ledger rejection stops immediately
+//     rather than blackholing an issuer whose mint failed, and a refused prompt leaves nothing
+//     done. The first real launch is still a test, and it costs real XRP.
 (function () {
   if (window.__lxxMint) return;
   window.__lxxMint = 1;
@@ -4010,7 +4068,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   //   * The blackhole is SetRegularKey FIRST, then DisableMaster. Disabling the master key first
   //     would leave no key able to sign the SetRegularKey, and the issuer would keep a live master
   //     key forever -- the exact opposite of what "supply is fixed" claims.
-  function buildLaunchPlan(d, issuer, user, reserveXrp) {
+  function buildLaunchPlan(d, issuer, user, reserveXrp, opts) {
+    var o = opts || {};
     var cur = d.currency;
     var supply = String(d.supply);
 
@@ -4019,10 +4078,33 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // rather than rounded up.
     var fund = (reserveXrp == null ? 1 : reserveXrp) + 0.5;
 
-    return [
+    // What the pool gets. The review page states a liquidity share -- 75% of supply against the XRP
+    // side -- so the pool has to actually be created, or that row is a promise the launch breaks.
+    var share = Number(d.share);
+    var lpTokens = (isFinite(share) && d.supply) ? (Number(d.supply) * (100 - share) / 100) : 0;
+    var lpXrp = Number(o.liquidityXrp || 0) + (Number(d.extra) || 0);
+
+    var plan = [];
+
+    // THE FEE GOES FIRST. It is the pattern this project already uses for paid flows -- the listing
+    // request pays before it submits -- and it means a launch that fails later has not also left an
+    // unpaid token on the ledger. The user is told the whole sequence before the first prompt.
+    if (o.feeXrp > 0 && o.feeCollector) {
+      plan.push({ by: 'user', what: 'Pay the launch fee',
+        tx: { TransactionType: 'Payment', Account: user, Destination: o.feeCollector,
+              Amount: String(Math.round(o.feeXrp * 1e6)) } });
+    }
+
+    plan.push(
       { by: 'user', what: 'Fund the issuing account',
         tx: { TransactionType: 'Payment', Account: user, Destination: issuer,
-              Amount: String(Math.round(fund * 1e6)) } },
+              Amount: String(Math.round(fund * 1e6)) } });
+
+    return plan.concat(buildRest(cur, supply, issuer, user, lpTokens, lpXrp));
+  }
+
+  function buildRest(cur, supply, issuer, user, lpTokens, lpXrp) {
+    return [
 
       { by: 'issuer', what: 'Enable rippling and set the domain',
         // 8 = asfDefaultRipple. Domain is hex of the ASCII host, which is what makes the token
@@ -4038,6 +4120,20 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         tx: { TransactionType: 'Payment', Account: issuer, Destination: user,
               Amount: { currency: cur, issuer: issuer, value: supply } } },
 
+      // THE POOL. Without this the review page's "Liquidity Pool Share 75%" is a promise the launch
+      // never keeps: the whole supply would sit in the launcher's wallet with nothing to trade
+      // against. Created by the USER, because the tokens are theirs by this point.
+      //
+      // AMMCreate is skipped entirely when there is nothing to seed it with, rather than submitted
+      // with a zero side, which the ledger rejects.
+      (lpTokens > 0 && lpXrp > 0) ? {
+        by: 'user', what: 'Create the liquidity pool',
+        tx: { TransactionType: 'AMMCreate', Account: user,
+              Amount: { currency: cur, issuer: issuer, value: String(lpTokens) },
+              Amount2: String(Math.round(lpXrp * 1e6)),
+              // Trading fee in units of 1/1000 of a percent, so 500 is 0.5%.
+              TradingFee: 500 } } : null,
+
       { by: 'issuer', what: 'Hand over the issuer key',
         tx: { TransactionType: 'SetRegularKey', Account: issuer, RegularKey: BLACKHOLE_KEY } },
 
@@ -4045,7 +4141,50 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         // 4 = asfDisableMaster. After this nothing can ever sign for the issuer again, so the
         // supply minted above is the supply forever.
         tx: { TransactionType: 'AccountSet', Account: issuer, SetFlag: 4 } },
-    ];
+    ].filter(Boolean);
+  }
+
+  // ---- running the launch -----------------------------------------------------------------------
+  //
+  // Every dependency is injected. That is not ceremony: a launch moves real money and cannot be
+  // rehearsed against mainnet, so the only way to test the ORDERING and the FAILURE HANDLING is to
+  // run the same orchestrator against a fake ledger. See the checks in the commit for this file.
+  //
+  // The contract it keeps: on failure it reports exactly how far it got. A launch that stops halfway
+  // has left the user's XRP somewhere -- in a funded issuer, or in a token with no pool -- and the
+  // one thing they must not be told is a generic "something went wrong".
+  function runLaunch(env) {
+    var plan = env.plan;
+    var completed = [];
+    var chain = Promise.resolve();
+
+    plan.forEach(function (step, i) {
+      chain = chain.then(function () {
+        env.onStep(i, 'start', step);
+        var submit = step.by === 'user' ? env.submitUser : env.submitIssuer;
+        return submit(step.tx).then(function (hash) {
+          // WAIT FOR VALIDATION, never just for submission. A submitted transaction has been
+          // accepted by one server, not written to a ledger, and the next step depends on the
+          // previous one having actually happened -- the issuer does not exist until its funding
+          // validates, and the mint fails without the trust line.
+          return env.waitValidated(hash).then(function (res) {
+            if (!res || !res.ok) {
+              throw new Error(step.what + ' was rejected by the ledger'
+                + (res && res.code ? ' (' + res.code + ')' : '') + '.');
+            }
+            completed.push({ what: step.what, hash: hash });
+            env.onStep(i, 'done', step);
+          });
+        });
+      });
+    });
+
+    return chain
+      .then(function () { return { ok: true, completed: completed }; })
+      .catch(function (e) {
+        return { ok: false, error: (e && e.message) || String(e), completed: completed,
+                 stoppedAt: completed.length };
+      });
   }
 
   function hexAscii(s) {
@@ -4059,19 +4198,102 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
   // ---- the launch control ----------------------------------------------------------------------
 
-  function explain(anchor) {
-    var box = $('#lxxMintNote');
-    if (box) return box;
-    box = document.createElement('div');
-    box.id = 'lxxMintNote';
-    box.style.cssText = 'margin:12px 0;padding:12px 14px;border-radius:12px;font-size:13px;'
-      + 'line-height:1.55;color:var(--text-muted,#6b6b76);background:var(--surface-2,rgba(127,127,127,.07));'
-      + 'border:1px solid var(--border,rgba(127,127,127,.22))';
-    box.textContent = 'Launching is not live yet. Signing transactions with a connected wallet is '
-      + 'still being built, and this button will not issue a token until it is — so it no longer '
-      + 'takes you to a success page.';
-    if (anchor && anchor.parentElement) anchor.parentElement.insertBefore(box, anchor);
+  // ---- the real ledger, behind the same interface the fake one implements --------------------
+
+  var RPC = 'https://xrplcluster.com/';
+  var LIB = '/assets/vendor/xrpl-5.1.0.min.js';
+
+  function rpc(method, params) {
+    return fetch(RPC, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] }),
+    }).then(function (r) { return r.json(); });
+  }
+
+  function loadLib() {
+    if (window.xrpl) return Promise.resolve(window.xrpl);
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = LIB;
+      s.onload = function () { window.xrpl ? res(window.xrpl) : rej(new Error('Signing library failed to load.')); };
+      s.onerror = function () { rej(new Error('Signing library failed to load.')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  // Fill in the three fields the ledger requires and the wallet does not supply for us. Sequence is
+  // re-read before every issuer transaction rather than incremented locally: a locally tracked
+  // sequence drifts the moment anything else touches the account, and the failure is a silent
+  // tefPAST_SEQ rather than an error anyone can read.
+  function autofill(tx, xrpl) {
+    return Promise.all([
+      rpc('account_info', { account: tx.Account, ledger_index: 'current' }),
+      rpc('server_info', {}),
+    ]).then(function (r) {
+      var acct = r[0] && r[0].result && r[0].result.account_data;
+      if (!acct) throw new Error('The issuing account is not on the ledger yet.');
+      var info = r[1] && r[1].result && r[1].result.info;
+      var base = (info && info.validated_ledger && info.validated_ledger.base_fee_xrp) || 0.00001;
+      var ledger = (info && info.validated_ledger && info.validated_ledger.seq) || 0;
+      var out = Object.assign({}, tx);
+      out.Sequence = acct.Sequence;
+      out.Fee = String(Math.max(10, Math.round(base * 1e6 * 2)));
+      if (ledger) out.LastLedgerSequence = ledger + 20;
+      return out;
+    });
+  }
+
+  function submitIssuerTx(tx, issuerWallet, xrpl) {
+    return autofill(tx, xrpl).then(function (full) {
+      var signed = issuerWallet.sign(full);
+      return rpc('submit', { tx_blob: signed.tx_blob }).then(function (j) {
+        var res = j && j.result;
+        var code = res && res.engine_result;
+        // tesSUCCESS means accepted for this ledger, and tec* means it WILL be recorded as a
+        // failure. Anything else was not applied at all, so there is no hash worth waiting on.
+        if (!code || (code !== 'tesSUCCESS' && code.slice(0, 3) !== 'tec')) {
+          throw new Error('The ledger refused the transaction' + (code ? ' (' + code + ')' : '') + '.');
+        }
+        return signed.hash;
+      });
+    });
+  }
+
+  // Poll until the transaction is in a validated ledger. `validated: false` is not failure -- it is
+  // "not yet" -- so only a definitive answer stops the wait.
+  function waitValidated(hash, tries) {
+    var n = tries == null ? 30 : tries;
+    return rpc('tx', { transaction: hash, binary: false }).then(function (j) {
+      var r = j && j.result;
+      if (r && r.validated) {
+        var code = (r.meta && r.meta.TransactionResult) || (r.metaData && r.metaData.TransactionResult);
+        return { ok: code === 'tesSUCCESS', code: code };
+      }
+      if (n <= 0) return { ok: false, code: 'timed out waiting for validation' };
+      return new Promise(function (res) { setTimeout(res, 1500); })
+        .then(function () { return waitValidated(hash, n - 1); });
+    });
+  }
+
+  function status(anchor, html) {
+    var box = $('#lxxMintStatus');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'lxxMintStatus';
+      box.setAttribute('role', 'status');
+      box.style.cssText = 'margin:12px 0;padding:12px 14px;border-radius:12px;font-size:13px;'
+        + 'line-height:1.6;background:var(--surface-2,rgba(127,127,127,.07));'
+        + 'border:1px solid var(--border,rgba(127,127,127,.22))';
+      if (anchor && anchor.parentElement) anchor.parentElement.insertBefore(box, anchor);
+    }
+    box.innerHTML = html;
     return box;
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
   }
 
   function wireLaunch() {
@@ -4082,16 +4304,108 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     // THE LINK IS NEUTRALISED, not merely intercepted. Leaving the href in place means a
     // middle-click, a right-click "open in new tab", or a keyboard activation still reaches the
-    // success page behind the handler's back.
+    // success page behind the handler's back — a confetti page for a token that was never issued.
     if (el.tagName === 'A') { el.removeAttribute('href'); el.setAttribute('role', 'button'); }
-    el.setAttribute('aria-disabled', 'true');
-    el.style.opacity = '.6';
-    el.style.cursor = 'not-allowed';
 
+    var running = false;
     el.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
-      explain(el);
+      if (running) return;
+
+      var d = readDraft();
+      if (!d) { status(el, 'No token details found — start again from the form.'); return; }
+
+      var lxc = window.lxc;
+      if (!lxc || !lxc.address()) { status(el, 'Connect a wallet first.'); return; }
+      if (!lxc.canSign || !lxc.canSign()) {
+        status(el, esc(lxc.transport() === 'xaman'
+          ? 'Signing with Xaman is not built yet — reconnect with GemWallet on desktop.'
+          : 'This wallet connection cannot sign. Disconnect and connect again.'));
+        return;
+      }
+
+      // CONFIRM BEFORE THE FIRST PROMPT, with the whole sequence and the total shown. Eight wallet
+      // prompts arriving unannounced is indistinguishable from something going wrong, and the last
+      // two are irreversible.
+      var cfg = window.__lxxLaunchConfig || {};
+
+      running = true;
+      status(el, 'Reading the ledger…');
+
+      // The rate is fetched HERE rather than read from a global the form page sets. This page does
+      // not run the form's layer, so that global is never set on the review step -- and a missing
+      // rate would silently price the fee at zero.
+      Promise.all([rpc('server_info', {}), fetch('/lxapi/xrplprices').then(function (r) { return r.json(); })])
+        .then(function (both) {
+        var j = both[0], p = both[1];
+        var rate = (p && p.ok && p.usd > 0) ? p.usd : null;
+        if (!rate) throw new Error('Could not price the launch in XRP right now.');
+        var feeXrp = cfg.usd ? (cfg.usd.create / rate) : 0;
+        var liqXrp = cfg.usd ? (cfg.usd.liq / rate) : 0;
+
+        var v = j && j.result && j.result.info && j.result.info.validated_ledger;
+        var reserve = v ? Number(v.reserve_base_xrp) : 1;
+
+        return loadLib().then(function (xrpl) {
+          var issuer = xrpl.Wallet.generate();
+          var plan = buildLaunchPlan(d, issuer.classicAddress, lxc.address(), reserve, {
+            feeXrp: feeXrp, feeCollector: cfg.feeCollector, liquidityXrp: liqXrp,
+          });
+
+          var lines = plan.map(function (s, i) {
+            return (i + 1) + '. ' + esc(s.what) + (s.by === 'user' ? ' <em>(you approve)</em>' : '');
+          }).join('<br>');
+
+          status(el, '<strong>' + plan.length + ' transactions will be sent.</strong><br>' + lines
+            + '<br><br>The last two permanently disable the issuing account, which is what fixes the '
+            + 'supply. This cannot be undone.<br><br>'
+            + '<button id="lxxGo" style="padding:8px 14px;border-radius:9px;border:0;'
+            + 'background:var(--accent,#f26b1d);color:#fff;font-weight:700;cursor:pointer">'
+            + 'Start the launch</button>');
+
+          var go = $('#lxxGo');
+          go.addEventListener('click', function () {
+            go.disabled = true;
+            var log = [];
+            return runLaunch({
+              plan: plan,
+              onStep: function (i, phase, step) {
+                if (phase === 'start') log.push('· ' + esc(step.what) + '…');
+                else log[log.length - 1] = '✓ ' + esc(step.what);
+                status(el, log.join('<br>'));
+              },
+              submitUser: function (tx) { return lxc.submit(tx); },
+              submitIssuer: function (tx) { return submitIssuerTx(tx, issuer, xrpl); },
+              waitValidated: waitValidated,
+            }).then(function (res) {
+              running = false;
+              if (res.ok) {
+                try {
+                  localStorage.setItem('lumos.launch.result', JSON.stringify({
+                    ok: true, issuer: issuer.classicAddress, currency: d.currency,
+                    ticker: d.ticker, name: d.name, supply: d.supply,
+                    hashes: res.completed,
+                  }));
+                } catch (e) { /* private mode: the page still shows the result below */ }
+                status(el, log.join('<br>') + '<br><br><strong>Launched.</strong> Issuer '
+                  + esc(issuer.classicAddress) + ' is now blackholed, so the supply is fixed.');
+                return;
+              }
+              // A PARTIAL LAUNCH IS REPORTED IN FULL. The user's money has gone somewhere and the
+              // one thing they must not be told is "something went wrong".
+              status(el, log.join('<br>') + '<br><br><strong>Stopped: ' + esc(res.error)
+                + '</strong><br>' + res.completed.length + ' of ' + plan.length
+                + ' transactions completed. The issuing account is <code>'
+                + esc(issuer.classicAddress) + '</code> — keep this, it is the only record of a '
+                + 'launch that did not finish.');
+            });
+          });
+        });
+      }).catch(function (e) {
+        running = false;
+        status(el, 'Could not start: ' + esc((e && e.message) || e));
+      });
     });
   }
 
@@ -4104,8 +4418,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
 
-  // Exposed so the plan can be inspected and tested without signing anything.
+  // Exposed so the plan and the orchestrator can be inspected and tested without signing anything.
   window.__lxxLaunchPlan = buildLaunchPlan;
+  window.__lxxRunLaunch = runLaunch;
   window.__lxxPaintReview = paintReview;
 })();
 

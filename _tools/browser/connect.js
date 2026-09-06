@@ -139,6 +139,34 @@
     });
   }
 
+  // Submit a transaction through GemWallet. The user approves it in the extension; the extension
+  // fills in Fee, Sequence and LastLedgerSequence, signs, and submits.
+  //
+  // UNTESTED AGAINST THE EXTENSION. There is no GemWallet in the browser this was written in, so
+  // the happy path here is written from @gemwallet/api's documented protocol and has never actually
+  // round-tripped. It is built to fail LOUDLY rather than silently: anything other than a result
+  // carrying a hash throws, so a wrong guess about the response shape stops the launch instead of
+  // letting it continue as though a transaction had been submitted.
+  function gemSubmit(tx) {
+    return gemInstalled().then(function (ok) {
+      if (!ok) throw new Error('GemWallet is not installed in this browser.');
+      return gemSend('REQUEST_SUBMIT_TRANSACTION/V3', {
+        transaction: tx,
+        url: window.location.origin, title: document.title, favicon: favicon()
+      });
+    }).then(function (d) {
+      if (d && d.error) {
+        var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
+        throw new Error(/reject|denied|cancel/i.test(m) ? 'Rejected in GemWallet.' : m);
+      }
+      var r = (d && d.result) || {};
+      if (r.type === 'reject') throw new Error('Rejected in GemWallet.');
+      var hash = r.hash || r.txHash || (r.result && r.result.hash);
+      if (!hash) throw new Error('GemWallet did not return a transaction hash.');
+      return String(hash);
+    });
+  }
+
   function gemInstalled() {
     if (window.gemWallet) return Promise.resolve(true);
     // The extension sets window.gemWallet late on some loads, so absence is not proof. Ask, and
@@ -491,6 +519,25 @@
       if (t === 'xaman' && xummReady) xummReady.then(function (x) { try { x.logout(); } catch (e) {} }).catch(noop);
       try { localStorage.removeItem('XummPkceJwt'); } catch (e) {}
     },
+    // Ask the connected wallet to sign and submit one transaction, resolving with its hash.
+    //
+    // REFUSES RATHER THAN GUESSES. A stored address with an EMPTY transport is a real state -- it is
+    // what this build currently leaves behind -- and it means the page knows who you are but has no
+    // way to sign for you. Treating that as "probably GemWallet" would open an extension prompt that
+    // may never come, or worse, succeed against the wrong wallet.
+    submit: function (tx) {
+      var t = get(K.transport);
+      if (!get(K.addr)) return Promise.reject(new Error('Connect a wallet first.'));
+      if (t === 'gem') return gemSubmit(tx);
+      if (t === 'xaman') {
+        return Promise.reject(new Error(
+          'Signing with Xaman is not built yet — reconnect with GemWallet on desktop.'));
+      }
+      return Promise.reject(new Error(
+        'This wallet connection cannot sign. Disconnect and connect again.'));
+    },
+    canSign: function () { return get(K.transport) === 'gem'; },
+
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     wallets: WALLETS.map(function (w) { return w.name; }),
     configured: function () { return { xaman: !!XAMAN_KEY }; }
