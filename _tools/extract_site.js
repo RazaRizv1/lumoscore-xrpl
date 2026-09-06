@@ -237,19 +237,40 @@ function injectTokenRegistry(html){
 // The font is hankengrotesk-latin: used on 96 of 96 pages, currently requested at 1212 ms and landing
 // at 1881 ms because it cannot start until the CSS that references it has parsed. font-display is
 // swap, so text is never invisible -- what this removes is a second of fallback-font flash.
+// RE-MEASURED FOR THE XRP LEDGER, because the inherited list warmed three origins this build never
+// contacts. Counting references across the 47 built pages with the hint tags themselves excluded --
+// they otherwise count as their own evidence:
+//
+//     xrplcluster.com      46    every data layer's RPC
+//     horizon.stellar.org   1    the inherited Stellar activity beacon, which can never fire here
+//     api.stellar.expert    1
+//     api.coingecko.com     0
+//
+// So the ledger RPC is warmed and the other three are dropped. Each preconnect holds a socket open,
+// and warming an origin the page never calls is a cost with no return.
 const HINTS =
-    '<link rel="preconnect" href="https://horizon.stellar.org" crossorigin>'
-  + '<link rel="preconnect" href="https://api.stellar.expert" crossorigin>'
-// esm.sh is deliberately NOT preconnected despite being the third-busiest origin in the build. It is
-// only contacted when someone connects a wallet, which is why it does not appear in the page-load
-// timing above at all -- and a preconnected socket is dropped after ~10 s idle, so the hint would
-// expire long before the click that needs it. Warming it would cost a connection and buy nothing.
-  + '<link rel="dns-prefetch" href="https://api.coingecko.com">'
+    '<link rel="preconnect" href="https://xrplcluster.com" crossorigin>'
+// xumm.app is deliberately NOT preconnected, for the reason esm.sh was not on the Stellar build: it
+// is only contacted when someone connects a wallet, and a preconnected socket is dropped after ~10s
+// idle, so the hint would expire long before the click that needs it.
   + '<link rel="preload" as="font" type="font/woff2" crossorigin'
   + ' href="/assets/fonts/hankengrotesk-latin.woff2">';
 
+// The old guard was `if the page has ANY preconnect, leave it alone`, which is idempotent but also
+// unfixable: three account pages carry Stellar's hints in their own design markup, so they kept
+// warming horizon.stellar.org no matter what this constant said. Now the check is whether OUR
+// current hint is present, and stale hints for origins this build does not call are removed first.
+const STALE_HINT =
+  /<link rel="(?:preconnect|dns-prefetch)"[^>]*href="https:\/\/(?:horizon\.stellar\.org|api\.stellar\.expert|api\.coingecko\.com)"[^>]*>/g;
+// Those same three pages also ship their own copy of the font preload, so inserting HINTS gave them
+// the tag twice. Harmless to the browser, but a duplicated resource hint is exactly the kind of
+// thing that later gets read as evidence the font is being fetched twice.
+const OWN_FONT_PRELOAD =
+  /<link rel="preload" as="font"[^>]*href="\/assets\/fonts\/hankengrotesk-latin\.woff2"[^>]*>/g;
+
 function injectHints(html){
-  if(html.indexOf('rel="preconnect"')>=0) return html;      // idempotent across rebuilds
+  if(html.indexOf('href="https://xrplcluster.com"')>=0) return html;   // idempotent across rebuilds
+  html = html.replace(STALE_HINT, '').replace(OWN_FONT_PRELOAD, '');
   const hi = html.indexOf('<head>');
   if(hi >= 0) return html.slice(0, hi + 6) + HINTS + html.slice(hi + 6);
   const he = html.indexOf('</head>');
