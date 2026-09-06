@@ -108,7 +108,11 @@ if (bad) {
 }
 
 const ID = 'lx-xrplaunchpad';
-let page = fs.readFileSync(__dirname + '/browser/launchpad.js', 'utf8');
+// The form rules and the review/launch behaviour ship together: the review page reads the draft the
+// form wrote, and a change to one without the other is how a review step ends up describing a
+// different token than the one that was validated.
+let page = fs.readFileSync(__dirname + '/browser/launchpad.js', 'utf8')
+  + '\n' + fs.readFileSync(__dirname + '/browser/mint.js', 'utf8');
 
 // Injected rather than written into the browser file, so the address exists in exactly one place and
 // that place is the one the checksum gate above guards.

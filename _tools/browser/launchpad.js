@@ -148,9 +148,25 @@
 
   // ---- validation ------------------------------------------------------------------------------
 
+  // The three social inputs carry NO id and no name -- only a placeholder. Matching on that is
+  // fragile-looking but it is the only handle the markup offers, and without it the review page
+  // shows the design's own accounts (t.me/solarflare) beside the user's token.
+  // Selected as `input` and filtered on the PROPERTY, not as `input[type=text]`: these fields carry
+  // no type attribute at all, so the attribute selector matches none of them and every social link
+  // came back empty while looking like it had been read.
+  function byPlaceholder(re) {
+    var f = $$('input').filter(function (i) {
+      return i.type === 'text' && re.test(i.placeholder || '');
+    })[0];
+    return f ? String(f.value || '').trim() : '';
+  }
+
   function readForm() {
     var num = function (s) { return Number(String(s || '').replace(/[, ]/g, '')); };
     return {
+      telegram: byPlaceholder(/t\.me/i),
+      twitter: byPlaceholder(/x\.com|twitter/i),
+      website: byPlaceholder(/yourproject\.com|https?:\/\//i),
       name: ($('#tokenName') || {}).value || '',
       ticker: ($('#tokenTicker') || {}).value || '',
       type: (($$('input[name=ptype]').filter(function (r) { return r.checked; })[0]) || {}).value || '',
