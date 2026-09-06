@@ -25,6 +25,11 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
+  // Where launch fees are paid. Substituted at build time from _xrplaunchpad.js, which verifies the
+  // full base58 checksum before the build is allowed to proceed -- a typed address is the one case
+  // the browser's shape-only check was never meant to cover.
+  var FEE_COLLECTOR = '__FEE_COLLECTOR__';
+
   // ---- XRPL currency codes ---------------------------------------------------------------------
   // A ticker is not free text here. The ledger takes either a 3-character code or a 160-bit hex
   // blob, and the two are not interchangeable: "LUMOS" is not a 3-character code, so it travels as
@@ -60,16 +65,86 @@
     return { ok: true, code: hex, kind: 'hex' };
   }
 
-  // ---- costs: NOT painted, on purpose ----------------------------------------------------------
-  // The design states the price in USD -- "≈ $5" mint, "≈ $10" liquidity, "≈ $10" pool -- and those
-  // figures are unchanged by the move to this ledger, so they are left alone. What is missing is the
-  // XRP a payer would actually send, and that is deliberately NOT shown yet: quoting an amount
-  // implies there is somewhere to send it, and this ledger has no fee-collector address yet. A
-  // priced button that cannot take payment is worse than an unpriced one.
+  // ---- costs -----------------------------------------------------------------------------------
+  // THE PAGE QUOTED THE COST IN THE WRONG CURRENCY, roughly tenfold. The design's own script says:
   //
-  // The markup also carries no anchor to write into: the amounts are bare text nodes. When the
-  // collector exists, the transform should stamp the slots and this can fill them from
-  // /lxapi/xrplprices, which is already the source for XRP/USD elsewhere.
+  //     const BASE_CREATION_APT = 34.70;
+  //     // USD/XRP rate derived from displayed defaults (173.50 XRP ≈ $25 → ~$0.1441 per XRP)
+  //
+  // $0.1441 is XLM's rate wearing XRP's name, so the page offered "34.70 XRP ≈ $5" when 34.70 XRP
+  // is about $49. The USD figures are the real contract and are unchanged; what needed fixing is
+  // the XRP a payer actually sends, which is now derived from the live rate.
+  var USD = { create: 5, liq: 10, pool: 10 };
+  var COST_EL = { costCreation: 'create', costLiquidity: 'liq', costNetwork: 'pool' };
+
+  var xrpUsd = null;
+
+  function fmtXrp(v) {
+    return (v < 10 ? v.toFixed(2) : v.toFixed(1)) + ' XRP';
+  }
+
+  // Write only when the value is actually wrong.
+  //
+  // A `writing = true` flag around the paint DOES NOT WORK here, and the first version of this
+  // hung the page. MutationObserver delivers its callback asynchronously, as a microtask after the
+  // synchronous block finishes -- by which time the flag has already been reset to false. So every
+  // write re-entered the observer, which wrote again, forever.
+  //
+  // Comparing against the DOM instead is self-limiting: the second pass finds the text already
+  // correct, writes nothing, and mutates nothing, so the loop cannot continue. It also means the
+  // observer only ever undoes the design's repaint, never its own.
+  function setCost(id, xrp, usdOverride) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var want = fmtXrp(xrp);
+    var usdSpan = el.querySelector('.usd');
+    var wantUsd = usdOverride == null ? null : ('≈ $' + Math.round(usdOverride).toLocaleString('en-US'));
+
+    var have = (el.textContent || '').replace(usdSpan ? (usdSpan.textContent || '') : '', '').trim();
+    var haveUsd = usdSpan ? (usdSpan.textContent || '').trim() : null;
+    // Already right: touching it would mutate, re-enter the observer, and loop.
+    if (have === want && (wantUsd == null || haveUsd === wantUsd)) return;
+
+    if (usdSpan && wantUsd != null) usdSpan.textContent = wantUsd;
+    el.textContent = want + ' ';
+    if (usdSpan) el.appendChild(usdSpan);
+  }
+
+  function paintCosts() {
+    if (!xrpUsd || !(xrpUsd > 0)) return;     // no rate: leave the design's text rather than guess
+
+    var baseUsd = 0;
+    Object.keys(COST_EL).forEach(function (id) {
+      var usd = USD[COST_EL[id]];
+      baseUsd += usd;
+      setCost(id, usd / xrpUsd);
+    });
+
+    // THE TOTAL ALSO CARRIES WHATEVER EXTRA LIQUIDITY THE USER ADDS, and that field is denominated
+    // in XRP, not USD. The design added it at its own $0.1441 rate, so seeding 50 XRP -- about $71 --
+    // moved the total by $7 and left the row reading "17.6 XRP ≈ $32", which is not even
+    // self-consistent. Both halves of this row are written here for that reason.
+    var extraEl = document.getElementById('extraLiquidity');
+    var extra = extraEl ? Number(String(extraEl.value || '').replace(/[, ]/g, '')) : 0;
+    if (!isFinite(extra) || extra < 0) extra = 0;
+
+    var totalXrp = baseUsd / xrpUsd + extra;
+    setCost('costTotal', totalXrp, totalXrp * xrpUsd);
+  }
+
+  // The design's recalcCost() lives inside an IIFE, so it cannot be called or replaced -- and it
+  // repaints these same elements whenever the liquidity or share inputs change. Duplicate listeners
+  // would not cover it either: the share slider updates the value WITHOUT firing an input event.
+  // So the container is watched and the correct figures re-applied.
+  function watchCosts() {
+    var first = document.getElementById('costCreation');
+    var row = first && first.closest ? first.closest('.cost-row') : null;
+    var host = row && row.parentElement;
+    if (!host || !window.MutationObserver) return;
+    new MutationObserver(paintCosts).observe(host, {
+      childList: true, characterData: true, subtree: true,
+    });
+  }
 
   // ---- validation ------------------------------------------------------------------------------
 
@@ -158,6 +233,16 @@
   function load() {
     if (!$('#tokenTicker')) return;                               // not the launchpad form
     wireNext();
+
+    fetch('/lxapi/xrplprices')
+      .then(function (r) { return r.json(); })
+      .then(function (p) {
+        if (!p || !p.ok || !(p.usd > 0)) return;
+        xrpUsd = p.usd;
+        paintCosts();
+        watchCosts();
+      })
+      .catch(function () { /* no rate: the design's own figures stand */ });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
@@ -166,4 +251,5 @@
   // Exposed for the console and for the tests: the currency rule is the piece most worth checking
   // from outside, because getting it wrong mints a different asset than the one requested.
   window.__lxxToCurrency = toCurrency;
+  window.__lxxLaunchConfig = { feeCollector: FEE_COLLECTOR, usd: USD };
 })();

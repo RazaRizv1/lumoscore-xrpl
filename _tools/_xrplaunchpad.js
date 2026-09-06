@@ -19,8 +19,69 @@ const { read, getContents } = require(__dirname + '/lib.js');
 const { stripById } = require(__dirname + '/stripscript.js');
 const B = String.fromCharCode(92);
 
+const crypto = require('crypto');
+
+// THE FEE COLLECTOR, CHECKSUM-VERIFIED AT BUILD TIME.
+//
+// browser/xrpl-core.js checks address SHAPE only, and says so: verifying the trailing 4 bytes needs
+// double-SHA256, which is async in a browser and would make every caller async to catch a typo a
+// wallet cannot make. That reasoning covers addresses a WALLET hands back. It does not cover this
+// one, which a human typed into a config -- and a single wrong character here sends every fee
+// LumosCore ever collects to an address nobody holds the key to, permanently and silently.
+//
+// Node has synchronous SHA-256, so the full check runs here and the build fails rather than ships.
+//
+// Verified against the ledger on 2026-09-06: the account exists with 2.000012 XRP, and carries
+// neither RequireDestTag (which would reject a fee payment sent without a tag), DisallowXRP,
+// DepositAuth (which would reject unsolicited payments), nor GlobalFreeze. It holds no trust lines,
+// so it can receive XRP and nothing else -- collecting a fee in an issued token would need one.
+const FEE_COLLECTOR = 'rBDV4nwHzg5ByAYJtPWrbBZnuUXSUtFr94';
+
+const B58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
+
+function checkAddress(a) {
+  if (typeof a !== 'string' || a[0] !== 'r') return 'does not start with r';
+  const bytes = [0];
+  for (const ch of a) {
+    const v = B58.indexOf(ch);
+    if (v < 0) return 'character ' + JSON.stringify(ch) + ' is not in the XRPL alphabet';
+    let carry = v;
+    for (let j = 0; j < bytes.length; j++) {
+      carry += bytes[j] * 58;
+      bytes[j] = carry & 255;
+      carry >>= 8;
+    }
+    while (carry) { bytes.push(carry & 255); carry >>= 8; }
+  }
+  for (let i = 0; i < a.length && a[i] === B58[0]; i++) bytes.push(0);
+  const buf = Buffer.from(bytes.reverse());
+  if (buf.length !== 25) return 'decodes to ' + buf.length + ' bytes, not 25';
+  if (buf[0] !== 0) return 'version byte is ' + buf[0] + ', not 0';
+
+  const body = buf.subarray(0, 21);
+  const want = buf.subarray(21);
+  const sha = (b) => crypto.createHash('sha256').update(b).digest();
+  const got = sha(sha(body)).subarray(0, 4);
+  if (!got.equals(want)) return 'CHECKSUM MISMATCH — this address contains a typo';
+  return null;
+}
+
+const bad = checkAddress(FEE_COLLECTOR);
+if (bad) {
+  console.error('  fee collector ' + FEE_COLLECTOR + ': ' + bad);
+  process.exit(1);
+}
+
 const ID = 'lx-xrplaunchpad';
-const page = fs.readFileSync(__dirname + '/browser/launchpad.js', 'utf8');
+let page = fs.readFileSync(__dirname + '/browser/launchpad.js', 'utf8');
+
+// Injected rather than written into the browser file, so the address exists in exactly one place and
+// that place is the one the checksum gate above guards.
+if (page.indexOf('__FEE_COLLECTOR__') < 0) {
+  console.error('  browser/launchpad.js has no __FEE_COLLECTOR__ placeholder — aborting');
+  process.exit(1);
+}
+page = page.split('__FEE_COLLECTOR__').join(FEE_COLLECTOR);
 
 if (page.indexOf('</' + 'script') >= 0) {
   console.error('  launchpad.js contains a closing script tag — aborting');
