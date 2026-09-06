@@ -104,6 +104,18 @@ const COPY = [
   // Stellar ones, so the answer's dates stay exactly as they are and only the question is renamed.
   ['When did rewards start on Stellar?', 'When did rewards start on the XRP Ledger?'],
 
+  // --- bridge -------------------------------------------------------------------------------------
+  // Settled 2026-09-06: Axelar, whose live registry reports 58 networks reachable from the XRP
+  // Ledger. The copy says route discovery rather than claiming you can bridge today, because
+  // transfers are not wired -- that needs Squid routing plus a signed transaction.
+  ['How do I bridge USDC to or from Stellar?',
+   'How do I bridge assets to or from the XRP Ledger?'],
+  ['USDC moves between Stellar and Ethereum, Base, Arbitrum, Optimism, Polygon, Avalanche, Linea and World Chain: eight destinations, nine chains in all.',
+   'The XRP Ledger connects to 58 other networks through Axelar, including Ethereum, Base, Arbitrum, Avalanche, Polygon and Solana. Transfers are not enabled from this page yet — it currently shows which routes exist.'],
+  ['Can I bridge my own Stellar asset?', 'Can I bridge my own XRP Ledger token?'],
+  ['USDC can be bridged between Stellar and Ethereum, Base, Arbitrum, Optimism, Polygon, Avalanche, Linea and World Chain using Circle CCTP.',
+   'Cross-chain routes run through Axelar, which connects the XRP Ledger to 58 other networks.'],
+
   // --- misc labels --------------------------------------------------------------------------------
   ['XLM balance', 'XRP balance'],
 ];

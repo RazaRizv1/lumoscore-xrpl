@@ -1259,6 +1259,38 @@ async function xrplPools(req, res, q) {
   } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
 }
 
+// Local mirror of functions/lxapi/xrplbridge — Axelar chains reachable from the XRP Ledger.
+// The list is fetched, never hardcoded: a bridge offering a route that no longer exists is worse
+// than one offering fewer.
+let _xbCache = { at: 0, body: null };
+async function xrplBridge(req, res) {
+  const send = (o) => { const b = Buffer.from(JSON.stringify(o));
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+      'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
+  if (Date.now() - _xbCache.at < 900000 && _xbCache.body) return send(_xbCache.body);
+  try {
+    const r = await fetch('https://api.axelarscan.io/api/getChains',
+      { headers: { accept: 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' } });
+    if (!r.ok) throw new Error('upstream ' + r.status);
+    const raw = await r.json();
+    const all = Array.isArray(raw) ? raw : (raw.data || []);
+    const xrpl = all.find(c => c.id === 'xrpl');
+    if (!xrpl) return send({ ok: false, error: 'xrpl not in the Axelar registry', rows: [] });
+    const rows = all.filter(c => c.id !== 'xrpl' && !c.deprecated && c.name)
+      .map(c => ({ id: String(c.id||''), name: String(c.name||''),
+        short: String(c.short_name||c.name||''), type: String(c.chain_type||''),
+        img: c.image ? ('https://axelarscan.io' + c.image) : '' }))
+      .sort((a, b2) => a.name.localeCompare(b2.name));
+    const body = { ok: true,
+      source: { id: xrpl.id, name: xrpl.name, native: (xrpl.native_token && xrpl.native_token.symbol) || 'XRP' },
+      count: rows.length, rows, transfers: false,
+      note: 'Route discovery only — transfers are not enabled yet.',
+      src: 'Axelar', srcUrl: 'https://axelarscan.io' };
+    _xbCache = { at: Date.now(), body };
+    send(body);
+  } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
+}
+
 http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/lxapi/holders') return holdersProxy(req, res, new URL(req.url, 'http://x').searchParams);
@@ -1278,6 +1310,7 @@ http.createServer((req, res) => {
   if (p === '/lxapi/xrplsearch') return xrplSearch(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrpltoken') return xrplToken(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplpools') return xrplPools(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrplbridge') return xrplBridge(req, res);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {
