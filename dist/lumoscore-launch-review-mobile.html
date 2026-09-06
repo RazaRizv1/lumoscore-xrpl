@@ -3928,37 +3928,55 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     fr.readAsDataURL(file);
   }
 
-  function initialsSvg(text, px) {
+  // The design's own empty state: a photo placeholder on the light tile that `.empty` provides.
+  // Drawn as SVG rather than left as text, which is also what keeps the logo healer off the
+  // element -- it repaints anything holding 1-5 characters, and the tile's ticker initials were
+  // exactly that.
+  function placeholderSvg(px) {
     var NS = 'http://www.w3.org/2000/svg';
     var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 64 64');
-    svg.setAttribute('width', String(px)); svg.setAttribute('height', String(px));
-    var t = document.createElementNS(NS, 'text');
-    t.setAttribute('x', '32'); t.setAttribute('y', '34');
-    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'middle');
-    t.setAttribute('font-size', '22'); t.setAttribute('font-weight', '800');
-    t.setAttribute('fill', 'currentColor');
-    t.textContent = String(text || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
-    svg.appendChild(t);
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', String(Math.round(px * 0.5)));
+    svg.setAttribute('height', String(Math.round(px * 0.5)));
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', '#9ca3af');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    var parts = [
+      ['rect', { x: '3', y: '3', width: '18', height: '18', rx: '3' }],
+      ['circle', { cx: '8.5', cy: '8.5', r: '1.5' }],
+      ['path', { d: 'M21 15l-5-5L5 21' }],
+    ];
+    parts.forEach(function (p) {
+      var e = document.createElementNS(NS, p[0]);
+      for (var k in p[1]) e.setAttribute(k, p[1][k]);
+      svg.appendChild(e);
+    });
     return svg;
   }
 
-  // Paint `host` with the icon, or with initials. Always leaves an element node inside, which is
-  // what keeps the logo healer and lx-natico off it.
-  function paintIcon(host, dataUrl, fallbackText, px) {
+  // Paint `host` with the icon, or with the design's placeholder. Always leaves an element node
+  // inside, which is what keeps the logo healer and lx-natico off it.
+  //
+  // `.empty` IS THE DESIGN'S OWN CLASS and carries the light tile the placeholder sits on. Removing
+  // it unconditionally -- which the first version did -- left the placeholder on the filled-state
+  // background, which is not what the tile looks like before an upload.
+  function paintIcon(host, dataUrl, _fallbackText, px) {
     if (!host) return;
     host.innerHTML = '';
-    host.classList.remove('empty');
     host.removeAttribute('data-logo');
     host.classList.remove('lx-natico');          // stop the native-asset painter claiming it
     if (dataUrl) {
+      host.classList.remove('empty');
       var img = document.createElement('img');
       img.src = dataUrl;
       img.alt = '';
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
       host.appendChild(img);
     } else {
-      host.appendChild(initialsSvg(fallbackText, px || 40));
+      host.classList.add('empty');
+      host.appendChild(placeholderSvg(px || 40));
     }
   }
 
