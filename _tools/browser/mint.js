@@ -549,9 +549,62 @@
     });
   }
 
+  // ---- who is paying ----------------------------------------------------------------------------
+  //
+  // The panel shipped the design's mock: "Paying from rrrhDE…EwUw / Balance 842.16 XRP". Both are
+  // fiction. It named an account the user does not control and quoted a balance forty times what
+  // they actually held, directly above the button that spends it -- so a wallet without enough XRP
+  // would still have looked ready to launch.
+  function paintWallet() {
+    var panel = $('.wallet-info');
+    if (!panel) return;
+    var lxc = window.lxc;
+    var addr = lxc && lxc.address ? lxc.address() : null;
+
+    var addrEl = panel.querySelector('.addr');
+    var avEl = panel.querySelector('.av');
+    var balEl = panel.querySelector('.balance .val');
+
+    if (!addr) {
+      if (addrEl) addrEl.textContent = 'Not connected';
+      if (avEl) avEl.textContent = '—';
+      if (balEl) balEl.textContent = '—';
+      return;
+    }
+
+    // Same shape the header uses: six characters, an ellipsis, then four.
+    if (addrEl) addrEl.textContent = addr.slice(0, 6) + '…' + addr.slice(-4);
+    if (avEl) avEl.textContent = addr.slice(0, 2).toUpperCase();
+    if (balEl) balEl.textContent = '…';
+
+    rpc('account_info', { account: addr, ledger_index: 'validated' }).then(function (j) {
+      var res = j && j.result;
+      if (!res || res.error || !res.account_data) {
+        // actNotFound means the account has never been funded, which is a real answer, not an error.
+        if (balEl) balEl.textContent = (res && res.error === 'actNotFound') ? '0 XRP' : '—';
+        return;
+      }
+      var drops = Number(res.account_data.Balance);
+      var xrp = drops / 1e6;
+      if (balEl) balEl.textContent = xrp.toFixed(2) + ' XRP';
+
+      // A launch cannot be part-paid. Warn before the first prompt rather than after two
+      // transactions have already gone through.
+      var need = Number(window.__lxxLaunchTotalXrp || 0);
+      if (need > 0 && xrp < need) {
+        var warn = document.createElement('div');
+        warn.style.cssText = 'margin-top:8px;font-size:12px;color:#e5484d';
+        warn.textContent = 'This launch needs about ' + need.toFixed(2)
+          + ' XRP and this wallet holds ' + xrp.toFixed(2) + '.';
+        panel.appendChild(warn);
+      }
+    }).catch(function () { if (balEl) balEl.textContent = '—'; });
+  }
+
   function load() {
     if (!$('.detail-row')) return;                   // not the review page
     paintReview();
+    paintWallet();
     wireLaunch();
   }
 

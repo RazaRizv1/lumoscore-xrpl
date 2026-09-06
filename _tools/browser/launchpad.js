@@ -173,6 +173,10 @@
 
     var totalXrp = createXrp + liqXrp + netXrp;
     setCost('total', totalXrp, totalXrp * xrpUsd);
+
+    // Published so the review page can check it against the connected wallet's actual balance.
+    // One number, computed once, so the quote and the sufficiency check can never disagree.
+    window.__lxxLaunchTotalXrp = totalXrp;
   }
 
   // The extra liquidity is a FORM INPUT on one page and a DRAFT FIELD on the other. Reading only the
@@ -437,6 +441,33 @@
 
   // ---- boot ------------------------------------------------------------------------------------
 
+  // The supply field is a plain TEXT input, so "1000000000jj" typed straight in. Number() then
+  // returns NaN and validation rejects it, but only after the user has filled the rest of the form
+  // and pressed Next -- the field should simply not accept letters.
+  //
+  // Digits and separators only, applied on input and on paste, with the caret preserved so typing
+  // in the middle of a number does not jump to the end.
+  function wireNumericFields() {
+    ['#supply', '#shareNum', '#extraLiquidity'].forEach(function (sel) {
+      var el = $(sel);
+      if (!el) return;
+      // Extra liquidity is an XRP amount, so it keeps a decimal point; the other two are whole units.
+      var allow = sel === '#extraLiquidity' ? /[^0-9.]/g : /[^0-9,]/g;
+      el.addEventListener('input', function () {
+        var before = el.value;
+        var cleaned = before.replace(allow, '');
+        if (cleaned === before) return;
+        var pos = el.selectionStart;
+        el.value = cleaned;
+        try { el.setSelectionRange(pos - (before.length - cleaned.length), pos - (before.length - cleaned.length)); }
+        catch (e) { /* not all inputs support selection */ }
+      });
+      // inputmode gets a numeric keypad on phones without changing the input's type, which the
+      // design's own styling depends on.
+      el.setAttribute('inputmode', sel === '#extraLiquidity' ? 'decimal' : 'numeric');
+    });
+  }
+
   function wireNext() {
     $$('button').forEach(function (b) {
       if ((b.textContent || '').trim().toLowerCase() !== 'next') return;
@@ -454,7 +485,7 @@
     var isForm = !!$('#tokenTicker');
     if (!isForm && !$('.cost-row')) return;                       // not a launchpad page
 
-    if (isForm) { wireNext(); wireIcon(); }
+    if (isForm) { wireNext(); wireIcon(); wireNumericFields(); }
 
     // Loud on purpose. Reduced pricing that ships unnoticed is a launchpad that charges 50 cents
     // for a $5 service, and nothing else on the page would ever say so.
