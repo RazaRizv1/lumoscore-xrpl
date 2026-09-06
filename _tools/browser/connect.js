@@ -261,22 +261,63 @@
   }
 
   // ---- registry --------------------------------------------------------------------------------
+  // The logo files already ship in this build -- assets/wallets/{gem,xaman}.png -- so the picker and
+  // the header chip use the real marks rather than a letter in a coloured square. The Stellar site
+  // shows the connected wallet's own logo in the header, and this did not.
   var WALLETS = [
     {
       id: 'xaman', name: 'Xaman', sub: 'Mobile and desktop',
-      ico: '#2d2d2d', glyph: 'X',
+      ico: '#2d2d2d', glyph: 'X', logo: '/assets/wallets/xaman.png',
       connect: xamanConnect,
       status: function () { return Promise.resolve(XAMAN_KEY ? '' : 'Setup needed'); }
     },
     {
       id: 'gem', name: 'GemWallet', sub: 'Browser extension',
       ico: 'linear-gradient(135deg,#3f9c5a 0%,#1f6b3a 100%)', glyph: 'G',
+      logo: '/assets/wallets/gem.png',
       connect: gemConnect,
       status: function () {
         return gemInstalled().then(function (ok) { return ok ? 'Installed' : ''; });
       }
     }
   ];
+
+  // `lumos.wallet` stores the display name, which is what lx-whead reads too.
+  function walletLogo() {
+    var name = String(get(K.wallet) || '').toLowerCase();
+    for (var i = 0; i < WALLETS.length; i++) {
+      var w = WALLETS[i];
+      if (name === w.name.toLowerCase() || name === w.id) return w.logo;
+    }
+    return null;
+  }
+
+  // Paint the header chip's avatar with the connected wallet's logo.
+  //
+  // The chip is built by `lx-whead`, which this project does not own, and it ships the XRP mark --
+  // the NETWORK's logo, on every wallet. Re-applied on a short poll rather than once, because
+  // lx-whead rebuilds the chip from a stored copy of its own original markup whenever the
+  // connection state changes, which would put the XRP mark straight back.
+  function paintWalletChip() {
+    var src = walletLogo();
+    if (!src) return;
+    var av = document.querySelector('.lx-topwallet .lx-tw-av');
+    if (!av) return;
+    var img = av.querySelector('img');
+    if (img && img.getAttribute('src') === src) return;      // already ours: leave it alone
+    av.innerHTML = '';
+    var el = document.createElement('img');
+    el.src = src;
+    el.alt = '';
+    el.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+    av.appendChild(el);
+  }
+
+  function watchWalletChip() {
+    paintWalletChip();
+    // Cheap and bounded: the comparison above makes every pass after the first a no-op.
+    setInterval(paintWalletChip, 1000);
+  }
 
   // ---- UI --------------------------------------------------------------------------------------
   // Self-contained: the design's own connect modal is built by `lx-mc`, which this project does not
@@ -378,7 +419,20 @@
         var b = document.createElement('button');
         b.className = 'lxx-row'; b.type = 'button';
         var ic = document.createElement('span');
-        ic.className = 'lxx-ico'; ic.style.background = w.ico; ic.textContent = w.glyph;
+        ic.className = 'lxx-ico';
+        if (w.logo) {
+          // The real mark, since the files ship with the build. The coloured letter stays as the
+          // fallback for a logo that fails to load, and an <img> also keeps the logo healer off the
+          // element -- it repaints anything holding one to five characters, which "G" and "X" are.
+          ic.style.background = w.ico;
+          var wi = document.createElement('img');
+          wi.src = w.logo; wi.alt = '';
+          wi.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+          wi.onerror = function () { ic.textContent = w.glyph; };
+          ic.appendChild(wi);
+        } else {
+          ic.style.background = w.ico; ic.textContent = w.glyph;
+        }
         var nm = document.createElement('span');
         nm.className = 'lxx-nm';
         var nb = document.createElement('b'); nb.textContent = w.name;
@@ -564,6 +618,8 @@
     configured: function () { return { xaman: !!XAMAN_KEY }; }
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
-  else resume();
+  function boot() { resume(); watchWalletChip(); }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();

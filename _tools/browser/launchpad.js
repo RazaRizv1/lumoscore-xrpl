@@ -315,7 +315,11 @@
       // `.preview-icon.empty` follows the theme instead -- so in dark mode it rendered a grey glyph
       // on a near-black tile. Set explicitly so the placeholder reads the same either way.
       host.style.background = 'linear-gradient(135deg,#fafbfc,#ffffff)';
-      host.appendChild(placeholderSvg(px || 40));
+      // Sized from the TILE, not from a constant. The glyph was being drawn at half of a hardcoded
+      // 44px while the tile is 88px, so it sat at about a quarter of the tile instead of the ~45%
+      // the design draws — the placeholder read as too small rather than as the same component.
+      var tile = Math.round(host.getBoundingClientRect().width) || (px || 40) * 2;
+      host.appendChild(placeholderSvg(Math.round(tile * 0.9)));
     }
   }
 
