@@ -147,6 +147,15 @@ if (page.indexOf('__FEE_COLLECTOR__') < 0) {
 }
 page = page.split('__FEE_COLLECTOR__').join(FEE_COLLECTOR);
 
+// TEST PRICING GUARD. The launchpad's prices live in one line of browser/launchpad.js, and a
+// reduced one shipped by accident means charging 50 cents for a $5 service with nothing on the page
+// or in the build to say so. This shouts on every build until the real numbers are restored.
+const priced = page.match(/var USD = \{ create: ([\d.]+), liq: ([\d.]+)/);
+if (priced && (priced[1] !== '5' || priced[2] !== '10')) {
+  console.warn('  ⚠ TEST PRICING ACTIVE: create $' + priced[1] + ' / liquidity $' + priced[2]
+    + ' — restore { create: 5, liq: 10, pool: 10 } in _tools/browser/launchpad.js before release');
+}
+
 if (page.indexOf('</' + 'script') >= 0) {
   console.error('  launchpad.js contains a closing script tag — aborting');
   process.exit(1);

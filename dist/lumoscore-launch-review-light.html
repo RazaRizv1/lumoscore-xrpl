@@ -4300,7 +4300,20 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // $0.1441 is XLM's rate wearing XRP's name, so the page offered "34.70 XRP ≈ $5" when 34.70 XRP
   // is about $49. The USD figures are the real contract and are unchanged; what needed fixing is
   // the XRP a payer actually sends, which is now derived from the live rate.
-  var USD = { create: 5, liq: 10, pool: 10 };
+  // ⚠ TEMPORARY TEST PRICING — RESTORE BEFORE THIS GOES ANYWHERE NEAR PRODUCTION.
+  //
+  // The real prices are { create: 5, liq: 10, pool: 10 }, which is $25 and about 17.6 XRP. That is
+  // a lot to spend proving a GemWallet round-trip works, so the first live launch runs at a
+  // fraction of it. Put the line below back to the real numbers once a test launch has succeeded.
+  //
+  // What this actually costs at ~$1.42/XRP: 0.35 fee + 1.06 into the pool + 1.5 funding the issuer
+  // + 0.2 for the AMM's owner reserve = roughly 3.1 XRP. Of that only the issuer funding is truly
+  // spent -- it is locked forever by the blackhole. The fee returns to LumosCore's own collector and
+  // the pool side is withdrawable with the LP tokens.
+  var USD_REAL = { create: 5, liq: 10, pool: 10 };
+  var USD = { create: 0.50, liq: 1.50, pool: 0 };
+  var TEST_PRICING = USD.create !== USD_REAL.create || USD.liq !== USD_REAL.liq;
+
   var COST_EL = { costCreation: 'create', costLiquidity: 'liq', costNetwork: 'pool' };
 
   var xrpUsd = null;
@@ -4324,7 +4337,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (!el) return;
     var want = fmtXrp(xrp);
     var usdSpan = el.querySelector('.usd');
-    var wantUsd = usdOverride == null ? null : ('≈ $' + Math.round(usdOverride).toLocaleString('en-US'));
+    // Sub-dollar amounts keep their cents. Rounding $0.50 to "$1" during test pricing would have
+    // been a second wrong number sitting next to the first.
+    // Cents whenever the amount is not whole. Rounding to the nearest dollar is right for the real
+    // $5 / $10 prices and wrong for everything else -- $1.50 was displaying as "$2".
+    var wantUsd = usdOverride == null ? null
+      : ('≈ $' + (usdOverride % 1 === 0 ? Math.round(usdOverride).toLocaleString('en-US')
+                                        : usdOverride.toFixed(2)));
 
     var have = (el.textContent || '').replace(usdSpan ? (usdSpan.textContent || '') : '', '').trim();
     var haveUsd = usdSpan ? (usdSpan.textContent || '').trim() : null;
@@ -4339,11 +4358,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function paintCosts() {
     if (!xrpUsd || !(xrpUsd > 0)) return;     // no rate: leave the design's text rather than guess
 
+    // The USD figure is written on EVERY row, not just the total. The design's static "$5" / "$10"
+    // labels are only correct at the real prices, so under test pricing the panel read
+    // "0.35 XRP ≈ $5" -- the right XRP beside the wrong dollars.
     var baseUsd = 0;
     Object.keys(COST_EL).forEach(function (id) {
       var usd = USD[COST_EL[id]];
       baseUsd += usd;
-      setCost(id, usd / xrpUsd);
+      setCost(id, usd / xrpUsd, usd);
     });
 
     // THE TOTAL ALSO CARRIES WHATEVER EXTRA LIQUIDITY THE USER ADDS, and that field is denominated
@@ -4488,6 +4510,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function load() {
     if (!$('#tokenTicker')) return;                               // not the launchpad form
     wireNext();
+
+    // Loud on purpose. Reduced pricing that ships unnoticed is a launchpad that charges 50 cents
+    // for a $5 service, and nothing else on the page would ever say so.
+    if (TEST_PRICING && window.console && console.warn) {
+      console.warn('LumosCore launchpad is running TEST PRICING ($'
+        + USD.create + ' / $' + USD.liq + '), not the real $'
+        + USD_REAL.create + ' / $' + USD_REAL.liq + '. Restore USD in browser/launchpad.js.');
+    }
 
     fetch('/lxapi/xrplprices')
       .then(function (r) { return r.json(); })
