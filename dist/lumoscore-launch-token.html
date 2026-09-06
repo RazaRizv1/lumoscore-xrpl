@@ -4902,6 +4902,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     host.classList.remove('lx-natico');          // stop the native-asset painter claiming it
     if (dataUrl) {
       host.classList.remove('empty');
+      host.style.background = '';                // drop the placeholder tile the empty branch set
       var img = document.createElement('img');
       img.src = dataUrl;
       img.alt = '';
@@ -4909,6 +4910,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       host.appendChild(img);
     } else {
       host.classList.add('empty');
+      // The empty tile is LIGHT on the Stellar site even in dark mode, and this build's
+      // `.preview-icon.empty` follows the theme instead -- so in dark mode it rendered a grey glyph
+      // on a near-black tile. Set explicitly so the placeholder reads the same either way.
+      host.style.background = 'linear-gradient(135deg,#fafbfc,#ffffff)';
       host.appendChild(placeholderSvg(px || 40));
     }
   }
