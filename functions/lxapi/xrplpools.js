@@ -57,14 +57,26 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const n = Math.min(100, Math.max(1, parseInt(url.searchParams.get('n') || '50', 10) || 50));
 
+  // Optional: restrict to pools where one side is issued by this account. The upstream honours
+  // `issuer` on /amm and narrows 30,648 pools to the 22 holding LUMOS -- which is the only way to
+  // put a real pool count on the token page. Verified against the listing: all 22 come back with
+  // status "active" and a populated currentLiquidity, and one of them is the known Native LP
+  // account rnPQqk3cfHyqSyvAGh3AfMtWiszK8zaF4U.
+  //
+  // Constrained to the XRPL address shape rather than passed through, so this cannot be used to
+  // graft arbitrary query onto the upstream path.
+  const issuerRaw = (url.searchParams.get('issuer') || '').trim();
+  const issuer = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(issuerRaw) ? issuerRaw : '';
+
   const cache = caches.default;
-  const key = new Request(url.origin + url.pathname + '?n=' + n, request);
+  const key = new Request(url.origin + url.pathname + '?n=' + n + '&issuer=' + issuer, request);
   const hit = await cache.match(key);
   if (hit) return hit;
 
   let out;
   try {
-    const r = await upstream('/amm?limit=' + n + '&sort=volume&status=active', env);
+    const r = await upstream('/amm?limit=' + n + '&sort=volume&status=active'
+      + (issuer ? '&issuer=' + encodeURIComponent(issuer) : ''), env);
     const rows = ((r && r.pools) || []).map((p) => {
       const a = p.apy24h || {};
       return {
@@ -80,9 +92,15 @@ export async function onRequest(context) {
     });
 
     const s = (r && r.summary) || {};
+    // THE SUMMARY IS NOT FILTERED. With `issuer` set the upstream narrows `pools` and `total` but
+    // returns the SAME whole-market summary -- 28.7M liquidity, 408K 24h volume across all 30,648
+    // pools. Passing that back beside 22 LUMOS pools would invite reading it as LUMOS's liquidity,
+    // which is wrong by four orders of magnitude. Dropped rather than relabelled: a filtered
+    // summary is not something this response can honestly supply.
     out = {
       ok: true, count: rows.length, total: num(r && r.total),
-      summary: {
+      filteredBy: issuer || null,
+      summary: issuer ? null : {
         liquidity: num(s.totalLiquidity),
         vol24: num(s.totalVolume24h),
         fees24: num(s.totalFees24h),

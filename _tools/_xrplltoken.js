@@ -23,8 +23,11 @@ const B = String.fromCharCode(92);
 const ID = 'lx-xrplltoken';
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/ltoken.js', 'utf8');
+// The chart ships with this page: its SVG was built by lx-ltdata, so stripping that layer left an
+// empty box where the chart had been.
+const chart = fs.readFileSync(__dirname + '/browser/chart.js', 'utf8');
 
-for (const src of [core, page]) {
+for (const src of [core, page, chart]) {
   if (src.indexOf('</' + 'script') >= 0) {
     console.error('  a source file contains a closing script tag — aborting');
     process.exit(1);
@@ -34,13 +37,23 @@ for (const src of [core, page]) {
 // Broken -> repaired. Every one of these currently contains a space, which is illegal in an id and
 // fatal in a url(#...) reference.
 const IDFIX = [
+  // JS IDENTIFIERS the blind replace broke. These are not cosmetic: `var pathXRP Ledger = ...` is a
+  // hard SyntaxError that kills the entire 17KB script block it sits in, and the console only says
+  // "Unexpected identifier 'Ledger'" with no hint where. They were missed at first because that
+  // block has no id and the earlier scan only looked at <script id=...>.
+  //
+  // NOT fixed, deliberately: `APTXRP Ledger` appears 40 times across the build but always inside a
+  // COMMENT -- // ticker at a word start (handles "0.2 APTXRP Ledger") -- where it parses fine.
+  // Renaming text inside comments would be churn on 40 files to change nothing.
+  ['pathXRP Ledger', 'pathXrpl'],
+  ['areaXRP Ledger', 'areaXrpl'],
   ['gradXRP Ledger', 'gradXrplArea'],
   ['chartDotXRP Ledger', 'chartDotXrpl2'],
   ['ctPriceXRP Ledger', 'ctPriceXrpl2'],
   ['ctMcXRP Ledger', 'ctMcXrpl2'],
 ];
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + chart + '\n</' + 'script>';
 
 let files = 0, pages = 0, stripped = 0, idFixes = 0;
 for (const dev of ['desktop', 'mobile']) {

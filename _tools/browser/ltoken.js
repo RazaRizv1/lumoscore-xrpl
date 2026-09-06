@@ -24,6 +24,10 @@
   var ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
   var CUR = '4C554D4F53000000000000000000000000000000';
 
+  // Anything that arrives on a second request and has to survive a repaint. `pools` starts null,
+  // not 0: an unknown count must render as a dash, and 0 is a claim that LUMOS has no pools.
+  var state = { pools: null };
+
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
@@ -75,6 +79,15 @@
   function lift() {
     var h = $('.hero-price-block');
     if (h) h.classList.add('lxlt');
+
+    // Eleventh gate, same stylesheet, same shape, different element:
+    //     .cstat:not(.lxlt) .val, .cstat:not(.lxlt) .sub { visibility: hidden }
+    // Every stat card under the hero -- market cap, FDV, holders, pools, 24h volume -- was being
+    // filled with correct figures and then hidden, so the row read as five empty boxes with labels.
+    // Nothing in the DOM complained: right text, right numbers, display:block. Only the screenshot
+    // showed the gap, which is the third time on this page that has been the deciding check.
+    var cs = document.querySelectorAll('.cstat');
+    for (var i = 0; i < cs.length; i++) cs[i].classList.add('lxlt');
   }
 
   function paint(d) {
@@ -122,22 +135,75 @@
     });
 
     // ---- the comparison panel -----------------------------------------------------------------
-    // Its rows were quoting a "LUMOS/XLM mark". There is no XLM here; rows that cannot be sourced
-    // are dashed rather than left saying something about another chain.
+    // EVERY row here shipped with the design's mock still in it, and the mock is not merely stale:
+    // it quoted $0.00322 against a real price of $0.00003413 -- a hundredfold overstatement -- plus
+    // a flat 1,000,000,000 circulating where 705.21M is issued-and-circulating, and a "LUMOS/XLM
+    // mark" for a chain this page is not about. Only the holders row was being replaced, and the
+    // whole panel happened to be sitting behind a visibility gate, which is the single reason a
+    // hundredfold-wrong price was never on screen. Every row is now written from `d` or dashed.
     $$('.lt-cmp-row').forEach(function (row) {
       var v = row.querySelector('.lt-cmp-v');
       if (!v) return;
-      var label = (row.textContent || '').toLowerCase();
-      if (/xlm|stellar/.test(v.textContent.toLowerCase())) v.textContent = '—';
-      if (/holder/.test(label) && d && d.holders != null) {
-        v.textContent = Math.round(d.holders).toLocaleString('en-US')
-          + (d.trustlines != null ? ('  ·  ' + Math.round(d.trustlines).toLocaleString('en-US')) : '');
+      var label = ((row.querySelector('.lt-cmp-l') || row).textContent || '').toLowerCase();
+
+      // Each row carries its own trailing span and they are NOT interchangeable: `.chg` holds the
+      // 24h change, `.sub` a secondary line, `.u` the unit. Setting textContent drops whichever one
+      // the row had, so keep it and refill it -- otherwise the price row silently loses its change
+      // figure and the supply row loses the word LUMOS.
+      var tail = v.querySelector('.chg, .sub, .u');
+      var setV = function (main, tailText) {
+        v.textContent = main;
+        if (tail && tailText != null) { tail.textContent = tailText; v.appendChild(tail); }
+      };
+
+      if (/price/.test(label)) {
+        setV(d ? usd(d.usd) : '—', d && d.p24 != null ? pct(d.p24) : '—');
+        if (tail) tail.className = 'chg ' + (d && d.p24 != null && d.p24 < 0 ? 'down' : 'up');
+      } else if (/volume/.test(label)) {
+        // The subline said "across 11 pools" -- a second stale count, in prose this time.
+        setV(d && d.vol24 != null && d.usd != null && d.price
+          ? usd(d.vol24 * (d.usd / d.price)) : '—',
+          state.pools == null ? 'across — pools' : ('across ' + state.pools + ' pools'));
+      } else if (/circulating|supply/.test(label)) {
+        setV(d && d.circulating != null
+          ? Math.round(d.circulating).toLocaleString('en-US') : '—', 'LUMOS');
+      } else if (/holder/.test(label)) {
+        setV(d && d.holders != null
+          ? (Math.round(d.holders).toLocaleString('en-US')
+            + (d.trustlines != null ? ('  ·  ' + Math.round(d.trustlines).toLocaleString('en-US')) : ''))
+          : '—', null);
+      } else if (/pool/.test(label)) {
+        setV(state.pools == null ? '—' : String(state.pools), null);
+      } else if (/xlm|stellar/.test(v.textContent.toLowerCase())) {
+        v.textContent = '—';
       }
+
+      // Twelfth gate: `.lt-cmp-row:not(.lxlt) .lt-cmp-v { visibility:hidden }`. Lifted PER ROW and
+      // only after that row has been written, so the mock it shipped with can never be the thing
+      // that becomes visible. Lifting the panel up front would have put $0.00322 on screen.
+      row.classList.add('lxlt');
     });
+
+    // The pools stat card is not in the payload at all, so it was showing the design's mock 14.
+    setStat('pool', state.pools == null ? '—' : String(state.pools), null);
+  }
+
+  // How many AMM pools hold LUMOS. /lxapi/xrplpools?issuer= narrows the upstream's 30,648 pools to
+  // the ones with a LUMOS side; `total` is the count, independent of the page size asked for.
+  function loadPools() {
+    fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(ISS))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok || d.total == null) return;
+        state.pools = d.total;
+        paint(window.__lxxLumos || null);         // repaint the two places the count appears
+      })
+      .catch(function () { /* the card stays dashed, which is the honest default */ });
   }
 
   function load() {
     if (!$('.hero-price-block') && !$('.lh-stats')) return;      // not this page
+    loadPools();
     fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(ISS + '-' + CUR))
       .then(function (r) { return r.json(); })
       .then(function (d) {

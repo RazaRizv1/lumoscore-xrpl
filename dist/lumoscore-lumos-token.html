@@ -3137,8 +3137,8 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
       return toPath(pts) + 'L ' + xAt(pts.length - 1).toFixed(1) + ' ' + (MT + plotH) + ' L ' + ML + ' ' + (MT + plotH) + ' Z';
     }
 
-    var pathXRP Ledger = toPath(stellar);
-    var areaXRP Ledger = toArea(stellar);
+    var pathXrpl = toPath(stellar);
+    var areaXrpl = toArea(stellar);
     var pathXrpl = toPath(xrpl);
     var areaXrpl = toArea(xrpl);
 
@@ -3169,9 +3169,9 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
             '<stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>' +
           '</linearGradient>' +
         '</defs>' +
-        '<path d="' + areaXRP Ledger + '" fill="url(#gradXrplArea)"/>' +
+        '<path d="' + areaXrpl + '" fill="url(#gradXrplArea)"/>' +
         
-        '<path d="' + pathXRP Ledger + '" fill="none" stroke="#ea6a2c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<path d="' + pathXrpl + '" fill="none" stroke="#ea6a2c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
         '<line id="chartCrosshair" x1="0" y1="' + MT + '" x2="0" y2="' + (MT + plotH) + '" stroke="#a5a4ac" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>' +
         '<circle id="chartDotXrpl2" r="4.5" fill="#ea6a2c" stroke="#ffffff" stroke-width="2" opacity="0"/>' +
         '<circle id="chartDotXrpl" r="4.5" fill="none" stroke="none" opacity="0"/>' +
@@ -6348,6 +6348,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   var ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
   var CUR = '4C554D4F53000000000000000000000000000000';
 
+  // Anything that arrives on a second request and has to survive a repaint. `pools` starts null,
+  // not 0: an unknown count must render as a dash, and 0 is a claim that LUMOS has no pools.
+  var state = { pools: null };
+
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
@@ -6399,6 +6403,15 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function lift() {
     var h = $('.hero-price-block');
     if (h) h.classList.add('lxlt');
+
+    // Eleventh gate, same stylesheet, same shape, different element:
+    //     .cstat:not(.lxlt) .val, .cstat:not(.lxlt) .sub { visibility: hidden }
+    // Every stat card under the hero -- market cap, FDV, holders, pools, 24h volume -- was being
+    // filled with correct figures and then hidden, so the row read as five empty boxes with labels.
+    // Nothing in the DOM complained: right text, right numbers, display:block. Only the screenshot
+    // showed the gap, which is the third time on this page that has been the deciding check.
+    var cs = document.querySelectorAll('.cstat');
+    for (var i = 0; i < cs.length; i++) cs[i].classList.add('lxlt');
   }
 
   function paint(d) {
@@ -6446,22 +6459,75 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
 
     // ---- the comparison panel -----------------------------------------------------------------
-    // Its rows were quoting a "LUMOS/XLM mark". There is no XLM here; rows that cannot be sourced
-    // are dashed rather than left saying something about another chain.
+    // EVERY row here shipped with the design's mock still in it, and the mock is not merely stale:
+    // it quoted $0.00322 against a real price of $0.00003413 -- a hundredfold overstatement -- plus
+    // a flat 1,000,000,000 circulating where 705.21M is issued-and-circulating, and a "LUMOS/XLM
+    // mark" for a chain this page is not about. Only the holders row was being replaced, and the
+    // whole panel happened to be sitting behind a visibility gate, which is the single reason a
+    // hundredfold-wrong price was never on screen. Every row is now written from `d` or dashed.
     $$('.lt-cmp-row').forEach(function (row) {
       var v = row.querySelector('.lt-cmp-v');
       if (!v) return;
-      var label = (row.textContent || '').toLowerCase();
-      if (/xlm|stellar/.test(v.textContent.toLowerCase())) v.textContent = '—';
-      if (/holder/.test(label) && d && d.holders != null) {
-        v.textContent = Math.round(d.holders).toLocaleString('en-US')
-          + (d.trustlines != null ? ('  ·  ' + Math.round(d.trustlines).toLocaleString('en-US')) : '');
+      var label = ((row.querySelector('.lt-cmp-l') || row).textContent || '').toLowerCase();
+
+      // Each row carries its own trailing span and they are NOT interchangeable: `.chg` holds the
+      // 24h change, `.sub` a secondary line, `.u` the unit. Setting textContent drops whichever one
+      // the row had, so keep it and refill it -- otherwise the price row silently loses its change
+      // figure and the supply row loses the word LUMOS.
+      var tail = v.querySelector('.chg, .sub, .u');
+      var setV = function (main, tailText) {
+        v.textContent = main;
+        if (tail && tailText != null) { tail.textContent = tailText; v.appendChild(tail); }
+      };
+
+      if (/price/.test(label)) {
+        setV(d ? usd(d.usd) : '—', d && d.p24 != null ? pct(d.p24) : '—');
+        if (tail) tail.className = 'chg ' + (d && d.p24 != null && d.p24 < 0 ? 'down' : 'up');
+      } else if (/volume/.test(label)) {
+        // The subline said "across 11 pools" -- a second stale count, in prose this time.
+        setV(d && d.vol24 != null && d.usd != null && d.price
+          ? usd(d.vol24 * (d.usd / d.price)) : '—',
+          state.pools == null ? 'across — pools' : ('across ' + state.pools + ' pools'));
+      } else if (/circulating|supply/.test(label)) {
+        setV(d && d.circulating != null
+          ? Math.round(d.circulating).toLocaleString('en-US') : '—', 'LUMOS');
+      } else if (/holder/.test(label)) {
+        setV(d && d.holders != null
+          ? (Math.round(d.holders).toLocaleString('en-US')
+            + (d.trustlines != null ? ('  ·  ' + Math.round(d.trustlines).toLocaleString('en-US')) : ''))
+          : '—', null);
+      } else if (/pool/.test(label)) {
+        setV(state.pools == null ? '—' : String(state.pools), null);
+      } else if (/xlm|stellar/.test(v.textContent.toLowerCase())) {
+        v.textContent = '—';
       }
+
+      // Twelfth gate: `.lt-cmp-row:not(.lxlt) .lt-cmp-v { visibility:hidden }`. Lifted PER ROW and
+      // only after that row has been written, so the mock it shipped with can never be the thing
+      // that becomes visible. Lifting the panel up front would have put $0.00322 on screen.
+      row.classList.add('lxlt');
     });
+
+    // The pools stat card is not in the payload at all, so it was showing the design's mock 14.
+    setStat('pool', state.pools == null ? '—' : String(state.pools), null);
+  }
+
+  // How many AMM pools hold LUMOS. /lxapi/xrplpools?issuer= narrows the upstream's 30,648 pools to
+  // the ones with a LUMOS side; `total` is the count, independent of the page size asked for.
+  function loadPools() {
+    fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(ISS))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok || d.total == null) return;
+        state.pools = d.total;
+        paint(window.__lxxLumos || null);         // repaint the two places the count appears
+      })
+      .catch(function () { /* the card stays dashed, which is the honest default */ });
   }
 
   function load() {
     if (!$('.hero-price-block') && !$('.lh-stats')) return;      // not this page
+    loadPools();
     fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(ISS + '-' + CUR))
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -6475,6 +6541,226 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
   window.__lxxLTokenReload = load;
+})();
+
+// Price chart: a real line drawn from real candles.
+//
+// The design's chart SVG was built by `lx-ltdata`, so removing that Stellar layer left an empty
+// 40x30 box where the chart had been. This draws its replacement from /lxapi/xrplohlc.
+//
+// WHAT IT WILL NOT DO. If the range comes back with fewer than two points there is no line to draw,
+// and it says so rather than plotting a flat bar across the middle. A chart is a claim about how a
+// price moved; a straight line through one point is a claim nobody made.
+//
+// Drawn as inline SVG rather than canvas so it scales with the container and inherits the page's
+// colours, and because the logo healer on this page skips any element containing an svg.
+(function () {
+  if (window.__lxxChart) return;
+  window.__lxxChart = 1;
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
+
+  // The one token this page is about. Other pages pass their own id via data-lxx-chart.
+  var LUMOS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha-4C554D4F53000000000000000000000000000000';
+
+  var state = { id: null, range: '7D', pts: [], vs: 'USD' };
+
+  function svgEl(name, attrs) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) if (attrs[k] != null) e.setAttribute(k, String(attrs[k]));
+    return e;
+  }
+
+  function money(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v < 0.000001) return '$' + v.toExponential(2);
+    if (v < 0.01) return '$' + v.toPrecision(4);
+    if (v < 1000) return '$' + v.toFixed(4);
+    return '$' + Math.round(v).toLocaleString('en-US');
+  }
+
+  function note(host, text) {
+    host.innerHTML = '';
+    var d = document.createElement('div');
+    d.textContent = text;
+    d.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;'
+      + 'min-height:140px;opacity:.6;font-size:13px';
+    host.appendChild(d);
+  }
+
+  function draw(host, pts) {
+    host.innerHTML = '';
+    if (!pts || pts.length < 2) { note(host, 'No price history for this range.'); return; }
+
+    var box = host.getBoundingClientRect();
+    // The container can be collapsed at first paint; fall back to a sane aspect rather than
+    // dividing by zero and emitting NaN path data, which renders as nothing at all.
+    var W = Math.max(320, Math.round(box.width) || 640);
+    var H = Math.max(150, Math.round(box.height) || 220);
+    var padT = 10, padB = 10, padL = 2, padR = 2;
+
+    var lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      if (pts[i][1] < lo) lo = pts[i][1];
+      if (pts[i][1] > hi) hi = pts[i][1];
+    }
+    // A perfectly flat series would make the range zero and every y identical; give it a little
+    // room so the line sits in the middle instead of on the floor.
+    if (!(hi > lo)) { hi = lo * 1.0001 + 1e-12; lo = lo * 0.9999; }
+
+    var x = function (i) { return padL + (i / (pts.length - 1)) * (W - padL - padR); };
+    var y = function (v) { return padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB); };
+
+    var svg = svgEl('svg', {
+      viewBox: '0 0 ' + W + ' ' + H, width: '100%', height: '100%',
+      preserveAspectRatio: 'none', role: 'img',
+      'aria-label': 'Price chart, ' + state.range,
+    });
+    svg.style.display = 'block';
+
+    var up = pts[pts.length - 1][1] >= pts[0][1];
+    // A LITERAL colour, not var(--green). CSS custom properties are NOT valid in SVG presentation
+    // attributes -- only in CSS declarations -- so stroke='var(...)' leaves the path with no colour
+    // and the chart renders as an invisible 180-segment line. Everything measured fine: correct
+    // box, correct viewBox, hit-testable. Only the screenshot showed it.
+    var stroke = up ? '#22c55e' : '#e5484d';
+
+    var gradId = 'lxxChartGrad';
+    var defs = svgEl('defs');
+    var g = svgEl('linearGradient', { id: gradId, x1: '0', y1: '0', x2: '0', y2: '1' });
+    g.appendChild(svgEl('stop', { offset: '0%', 'stop-color': stroke, 'stop-opacity': '0.28' }));
+    g.appendChild(svgEl('stop', { offset: '100%', 'stop-color': stroke, 'stop-opacity': '0' }));
+    defs.appendChild(g);
+    svg.appendChild(defs);
+
+    var line = '', area = '';
+    for (var j = 0; j < pts.length; j++) {
+      var px = x(j).toFixed(2), py = y(pts[j][1]).toFixed(2);
+      line += (j ? 'L' : 'M') + px + ',' + py;
+    }
+    area = line + 'L' + x(pts.length - 1).toFixed(2) + ',' + (H - padB)
+      + 'L' + x(0).toFixed(2) + ',' + (H - padB) + 'Z';
+
+    // THE CLASSES ARE LOAD-BEARING, not decoration. lx-lt-css carries
+    //     #priceChart svg path:not(.lx-cline):not(.lx-carea), ... { display:none !important }
+    // which is how the old layer suppressed the design's mock chart markup while still showing the
+    // two paths it drew itself. Inherit that contract: an unclassed path is hidden, so it has a
+    // valid `d`, a real stroke and getTotalLength() of 1559 while painting absolutely nothing.
+    // getBBox() reading 0x0 is the tell -- it does not compute for a display:none element, whereas
+    // getTotalLength() happily does.
+    svg.appendChild(svgEl('path', { d: area, class: 'lx-carea', fill: 'url(#' + gradId + ')' }));
+    svg.appendChild(svgEl('path', {
+      d: line, class: 'lx-cline', fill: 'none', stroke: stroke, 'stroke-width': '2',
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+      'vector-effect': 'non-scaling-stroke',
+    }));
+    svg.appendChild(svgEl('circle', {
+      cx: x(pts.length - 1), cy: y(pts[pts.length - 1][1]), r: '3', fill: stroke,
+    }));
+
+    host.appendChild(svg);
+
+    // THE NINTH ANTI-FLASH GATE. `#priceChart:not(.lxlt) svg{visibility:hidden}` ships in lx-lt-css,
+    // and the class was added by lx-ltdata -- the layer this file replaces. So a chart with correct
+    // data, a valid path and a real stroke colour still paints nothing, and everything that reads
+    // the DOM says it is fine: 168 segments, hit-testable box, computed stroke rgb(229,72,77).
+    // getBBox() reading 0x0 while getBoundingClientRect() read 928x214 was the only tell, because
+    // getBBox does not compute for an unpainted element. Lift it here, after the draw, so the gate
+    // still does its job of hiding the design's mock until real data has landed.
+    host.classList.add('lxlt');
+
+    // Hover readout, using the tooltip elements the design already ships.
+    var tip = $('#chartTooltip'), tDate = $('#ctDate'), tPrice = $('#ctPriceXrpl2');
+    if (tip) {
+      host.onmousemove = function (ev) {
+        var r = host.getBoundingClientRect();
+        var frac = (ev.clientX - r.left) / Math.max(1, r.width);
+        var idx = Math.max(0, Math.min(pts.length - 1, Math.round(frac * (pts.length - 1))));
+        var p = pts[idx];
+        if (tDate) tDate.textContent = new Date(p[0]).toLocaleDateString('en-GB',
+          { day: 'numeric', month: 'short', year: 'numeric' });
+        if (tPrice) tPrice.textContent = money(p[1]);
+        tip.style.opacity = '1';
+      };
+      host.onmouseleave = function () { tip.style.opacity = ''; };
+    }
+  }
+
+  function load(range) {
+    var host = $('#priceChart');
+    if (!host) return;
+    state.range = range || state.range;
+    note(host, 'Loading price history…');
+
+    fetch('/lxapi/xrplohlc?id=' + encodeURIComponent(state.id)
+      + '&r=' + encodeURIComponent(state.range) + '&vs=USD')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) { note(host, 'Price history is unavailable right now.'); return; }
+        state.pts = d.pts || [];
+        window.__lxxChartData = d;
+        draw(host, state.pts);
+      })
+      .catch(function () { note(host, 'Price history is unavailable right now.'); });
+  }
+
+  // The range buttons are the design's own; match them by their label rather than by an attribute
+  // they do not carry.
+  function wireRanges() {
+    var labels = ['1H', '24H', '7D', '30D', '1Y', 'ALL'];
+    $$('button, .tf, .range-btn, [class*=tf] > *').forEach(function (b) {
+      var t = (b.textContent || '').trim().toUpperCase();
+      if (labels.indexOf(t) < 0) return;
+      if (b.__lxx) return;
+      b.__lxx = 1;
+      b.addEventListener('click', function () {
+        // Move the design's own active class with the selection.
+        var sibs = b.parentElement ? b.parentElement.children : [];
+        for (var i = 0; i < sibs.length; i++) sibs[i].classList.remove('active');
+        b.classList.add('active');
+        load(t);
+      });
+    });
+  }
+
+  function boot() {
+    var host = $('#priceChart');
+    if (!host) return;                                   // not a page with this chart
+    state.id = host.getAttribute('data-lxx-chart') || LUMOS;
+    wireRanges();
+    load(state.range);
+
+    // Redraw when the container's WIDTH changes, not just when the window resizes.
+    //
+    // The path is computed in pixels against the box measured at draw time, so a draw that lands
+    // while the card is still collapsed bakes in that width and never recovers -- the window never
+    // resizes, so the old listener alone never fired. A ResizeObserver catches the case that
+    // actually happens here: layout settling, a font landing, a tab panel opening.
+    //
+    // Guarded on a real change of at least 8px so the observer cannot re-trigger itself through the
+    // draw it just caused, and skipped entirely at width 0, where there is nothing to measure.
+    var last = 0, t = null;
+    var redraw = function (w) {
+      if (!w || Math.abs(w - last) < 8 || !state.pts.length) return;
+      last = w;
+      clearTimeout(t);
+      t = setTimeout(function () { draw(host, state.pts); }, 60);
+    };
+    if (window.ResizeObserver) {
+      new ResizeObserver(function (entries) {
+        redraw(Math.round(entries[0].contentRect.width));
+      }).observe(host);
+    }
+    window.addEventListener('resize', function () {
+      redraw(Math.round(host.getBoundingClientRect().width));
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  window.__lxxChartReload = load;
 })();
 
 </script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/stellar","lumoscore-account":"/account/stellar","lumoscore-asset-overview":"/trade/stellar"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/stellar/"+a+h):("/account/stellar"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/stellar/"+a+h):("/trade/stellar"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
