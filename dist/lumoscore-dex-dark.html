@@ -6009,14 +6009,35 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return null;
   }
 
-  document.addEventListener('click', function (e) {
+  function openPicker() {
+    if (get(K.addr)) ui.done(get(K.addr), '');
+    else ui.pick();
+  }
+
+  // ON `window`, NOT `document`, and that is the whole point.
+  //
+  // The design ships its own 24KB connect modal, and under its `xrpl` entry it lists PETRA, MARTIAN
+  // and PONTEM -- Aptos wallets, inherited from the multi-chain template this design came from.
+  // Choosing one does not connect anything: it writes `lumos.wallet`, shows a hardcoded
+  // `0x9c7d...a802` and switches to a "connected" screen. A user is then looking at a connected
+  // header for a wallet they never authorised, with no way to reach GemWallet at all.
+  //
+  // Its handler is bound on `document` in the capture phase, and it is earlier in the page than this
+  // file, so it registers first and wins. Capture runs window -> document, so listening on `window`
+  // is what puts this ahead of it -- registration order only decides ties on the SAME target.
+  window.addEventListener('click', function (e) {
     var t = isConnectTrigger(e.target);
     if (!t) return;
     e.preventDefault();
     e.stopPropagation();
-    if (get(K.addr)) ui.done(get(K.addr), '');
-    else ui.pick();
+    openPicker();
   }, true);
+
+  // The backstop for every other way in. A header network-chooser also calls this directly, so
+  // intercepting clicks alone would still leave routes that open the Aptos list. Overriding it
+  // costs nothing and cannot orphan anything: the markup and the script stay where they are, and
+  // the function keeps its name and arity.
+  try { window.lxwOpenWallet = function () { openPicker(); }; } catch (e) {}
 
   // A Xaman sign-in on a phone returns here as a brand-new page load. If a session is remembered,
   // the SDK has to be constructed for 'retrieved' to fire at all -- nothing resumes on its own.
