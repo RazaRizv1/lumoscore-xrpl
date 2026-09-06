@@ -101,7 +101,6 @@
 
     setRow('token name', d.name || '—');
     setRow('ticker', '$' + ticker);
-    setRow('project type', d.type === 'utility' ? 'Utility Project' : 'Meme Project');
     setRow('description', d.desc || 'Not provided');
 
     // The icon row shipped a mock filename -- "icon-slr.png · 142 KB" -- next to a preview of a

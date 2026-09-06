@@ -169,7 +169,8 @@
       website: byPlaceholder(/yourproject\.com|https?:\/\//i),
       name: ($('#tokenName') || {}).value || '',
       ticker: ($('#tokenTicker') || {}).value || '',
-      type: (($$('input[name=ptype]').filter(function (r) { return r.checked; })[0]) || {}).value || '',
+      // No project type. Meme/Utility was removed from the Stellar site, and the field is removed
+      // from this markup too, so there is nothing to read and nothing to store.
       desc: ($('#desc') || {}).value || '',
       supply: num(($('#supply') || {}).value),
       share: num(($('#shareNum') || {}).value),
@@ -187,10 +188,22 @@
     // The ledger stores a token amount as a 54-bit mantissa with a decimal exponent, so the ceiling
     // is enormous, but a supply of zero or a fraction is a mistake worth catching here rather than
     // as a failed transaction the user has already paid a fee for.
+    // The cap is the page's own stated rule -- "Maximum 10,000,000,000" sits under the field -- and
+    // like the 30% share it was stated in copy and enforced nowhere. The ledger would happily accept
+    // far more, which is exactly why the check has to be here.
     if (!(d.supply > 0)) errs.push('Enter a total supply greater than zero.');
-    else if (d.supply > 1e15) errs.push('Total supply is too large.');
+    else if (d.supply > 1e10) errs.push('Total supply cannot exceed 10,000,000,000.');
 
-    if (!(d.share >= 0 && d.share <= 100)) errs.push('Liquidity share must be between 0 and 100%.');
+    // THE CREATOR'S SHARE IS CAPPED AT 30%, so at least 70% of supply always reaches the pool.
+    //
+    // The slider only goes to 30 and the copy beside it reads "Recommended: 5-15%" with "The rest
+    // goes to the liquidity pool" -- but the field itself is a plain TEXT input with no max
+    // attribute, so the cap existed only as far as the widget. Typing 100 walked straight past it
+    // and would have minted the entire supply to the creator with no liquidity behind it, which is
+    // the shape of a rug rather than a launch.
+    if (!(d.share >= 0 && d.share <= 30)) {
+      errs.push('Your share cannot exceed 30% — the rest goes to the liquidity pool.');
+    }
     if (d.extra && d.extra < 0) errs.push('Extra liquidity cannot be negative.');
 
     return { ok: !errs.length, errs: errs, currency: cur.ok ? cur : null };

@@ -107,6 +107,31 @@ if (bad) {
   process.exit(1);
 }
 
+// Remove the block that CONTAINS `needle`, starting from the nearest enclosing `openTag` before it
+// and ending at its matching close, by counting tags. Used to drop whole fields and rows without
+// writing a regex that tries to span nested markup.
+function removeBlockContaining(html, needle, openTag, tagName) {
+  const at = html.indexOf(needle);
+  if (at < 0) return { html: html, removed: 0 };
+  const start = html.lastIndexOf(openTag, at);
+  if (start < 0) return { html: html, removed: 0 };
+
+  const re = new RegExp('</?' + (tagName || 'div') + '\\b[^>]*>', 'gi');
+  re.lastIndex = start;
+  let depth = 0, m;
+  while ((m = re.exec(html))) {
+    depth += (m[0][1] === '/') ? -1 : 1;
+    if (depth === 0) {
+      const end = m.index + m[0].length;
+      // Only accept a block that actually still contains the needle -- a mis-anchored start would
+      // otherwise silently delete a neighbouring field.
+      if (html.slice(start, end).indexOf(needle) < 0) return { html: html, removed: 0 };
+      return { html: html.slice(0, start) + html.slice(end), removed: 1 };
+    }
+  }
+  return { html: html, removed: 0 };
+}
+
 const ID = 'lx-xrplaunchpad';
 // The form rules and the review/launch behaviour ship together: the review page reads the draft the
 // form wrote, and a change to one without the other is how a review step ends up describing a
@@ -137,7 +162,7 @@ function isLaunchpad(h) {
     || h.indexOf('lumos.launch.draft') >= 0;
 }
 
-let files = 0, pages = 0, stripped = 0;
+let files = 0, pages = 0, stripped = 0, typeRemoved = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -167,6 +192,37 @@ for (const dev of ['desktop', 'mobile']) {
     // a 2-character ticker is rejected, or that a 12-character one is fine.
     h = h.split('2-6 uppercase letters').join('3 characters, or up to 20');
 
+    // PROJECT TYPE IS GONE. Removed from the Stellar site, so it should not exist here either --
+    // taken out of the markup on both pages rather than hidden, so nothing writes `ptype` into the
+    // draft and no review row is left to paint.
+    //
+    // Two different containers, because the two pages express it differently: the form wraps it in
+    // a `.field`, the review page in a `.detail-row`. Anchoring both on the same tag would have
+    // deleted the wrong block on one of them.
+    // The type also appears as a BADGE in two more places -- the form's live preview card and the
+    // review hero -- each with its own tag. The design's own updateBadge() already guards on a null
+    // element and iterates `.type-card` with querySelectorAll, so removing these orphans nothing.
+    for (const [needle, tag, tagName] of [
+      ['Project Type', '<div class="field">', 'div'],
+      ['Project Type', '<div class="detail-row">', 'div'],
+      // Anchored on the OPEN TAG itself, and that detail matters twice over. Anchoring on the words
+      // "Meme Project" missed the mobile review badge, which reads just "Meme". Anchoring on the
+      // bare class name then failed differently and more quietly: the class appears FIRST in the
+      // page's CSS, so indexOf landed in the stylesheet and the backward search for the element
+      // found nothing above it -- reporting zero removals for a badge that was plainly still there.
+      ['<div class="preview-type-badge"', '<div class="preview-type-badge"', 'div'],
+      ['<span class="hero-type-badge"', '<span class="hero-type-badge"', 'span'],
+    ]) {
+      // Repeat until exhausted: a page can carry more than one copy, and indexOf only finds the
+      // first. Bounded so a helper that stops matching cannot spin.
+      for (let pass = 0; pass < 4; pass++) {
+        const cut = removeBlockContaining(h, needle, tag, tagName);
+        if (!cut.removed) break;
+        h = cut.html;
+        typeRemoved += cut.removed;
+      }
+    }
+
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
     json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
@@ -178,5 +234,6 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl launchpad: injected on ' + pages + ' page key(s) across ' + files
-  + ' container(s); stripped the Stellar issuance layer from ' + stripped);
+  + ' container(s); stripped the Stellar issuance layer from ' + stripped
+  + '; removed the project-type block from ' + typeRemoved);
 if (!pages) console.error('  ! no page carried the launchpad — nothing was wired');
