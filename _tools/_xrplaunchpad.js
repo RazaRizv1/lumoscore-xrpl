@@ -20,6 +20,41 @@ const { stripById } = require(__dirname + '/stripscript.js');
 const B = String.fromCharCode(92);
 
 const crypto = require('crypto');
+const path = require('path');
+
+// THE VENDORED SIGNING LIBRARY, PINNED BY HASH.
+//
+// xrpl.js 5.1.0, ISC, self-hosted for the same reason the Stellar SDKs are: a signing library must
+// not be fetched from a CDN at run time, where whoever controls that origin controls what signs the
+// user's transactions.
+//
+// Provenance, checked rather than assumed:
+//   * byte-identical from two independent mirrors (jsdelivr and unpkg), 554,433 bytes
+//   * derives the DOCUMENTED genesis address from the published master seed
+//     snoPBrXtMeMyMHUVTgbuqAfg1SUTb -> rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh
+//   * its isValidClassicAddress agrees with the hand-written checksum gate below on every case,
+//     two independent implementations reaching the same answer
+//   * decoded a REAL signed transaction off the ledger, re-encoded it BYTE-IDENTICALLY, and
+//     recomputed its hash to match the ledger's own -- serialization proven against ledger truth,
+//     which is the part that must be right for a signature to cover the transaction shown
+//
+// The hash is checked on every build because .gitattributes exists for a proven reason: autocrlf
+// once rewrote a byte inside a vendored SDK on checkout, changing its sha256 and leaving nothing to
+// report it. `-text` prevents that; this catches it if the guard is ever lost.
+const XRPL_LIB = 'assets/vendor/xrpl-5.1.0.min.js';
+const XRPL_SHA256 = '16b73706bf2006186b8cb09df5aa8e4a43414f3376e6ba0a52d252b2e2b69dc4';
+
+const libPath = path.join(__dirname, '..', 'dist', XRPL_LIB);
+let libBytes;
+try { libBytes = fs.readFileSync(libPath); }
+catch (e) { console.error('  vendored ' + XRPL_LIB + ' is missing — aborting'); process.exit(1); }
+const libHash = crypto.createHash('sha256').update(libBytes).digest('hex');
+if (libHash !== XRPL_SHA256) {
+  console.error('  ' + XRPL_LIB + ' FAILED its integrity check');
+  console.error('    expected ' + XRPL_SHA256);
+  console.error('    found    ' + libHash + '  (' + libBytes.length + ' bytes)');
+  process.exit(1);
+}
 
 // THE FEE COLLECTOR, CHECKSUM-VERIFIED AT BUILD TIME.
 //
