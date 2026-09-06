@@ -3856,24 +3856,48 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // The USD figure is written on EVERY row, not just the total. The design's static "$5" / "$10"
     // labels are only correct at the real prices, so under test pricing the panel read
     // "0.35 XRP ≈ $5" -- the right XRP beside the wrong dollars.
-    var baseUsd = 0;
-    ['create', 'liq', 'pool'].forEach(function (key) {
-      var usd = USD[key];
-      baseUsd += usd;
-      setCost(key, usd / xrpUsd, usd);
-    });
+    // WHAT THE TOTAL HAS TO MEAN: every drop that leaves the wallet. It previously summed the three
+    // priced rows and nothing else, so it under-reported by more than half — the ledger's own costs
+    // were missing entirely, and the extra liquidity was missing on the review page.
+    var createXrp = USD.create / xrpUsd;
+    var liqXrp = USD.liq / xrpUsd + extraXrp();
+    var netXrp = ledgerXrp();
 
-    // THE TOTAL ALSO CARRIES WHATEVER EXTRA LIQUIDITY THE USER ADDS, and that field is denominated
-    // in XRP, not USD. The design added it at its own $0.1441 rate, so seeding 50 XRP -- about $71 --
-    // moved the total by $7 and left the row reading "17.6 XRP ≈ $32", which is not even
-    // self-consistent. Both halves of this row are written here for that reason.
-    var extraEl = document.getElementById('extraLiquidity');
-    var extra = extraEl ? Number(String(extraEl.value || '').replace(/[, ]/g, '')) : 0;
-    if (!isFinite(extra) || extra < 0) extra = 0;
+    setCost('create', createXrp, createXrp * xrpUsd);
+    setCost('liq', liqXrp, liqXrp * xrpUsd);
 
-    var totalXrp = baseUsd / xrpUsd + extra;
+    // The row is literally called "Liq. pool & network", so the ledger's charges belong in it: the
+    // base reserve that makes the issuing account exist (locked forever once it is blackholed) and
+    // the owner reserve AMMCreate consumes. Neither is a LumosCore fee, and both are unavoidable.
+    setCost('pool', netXrp, netXrp * xrpUsd);
+
+    var totalXrp = createXrp + liqXrp + netXrp;
     setCost('total', totalXrp, totalXrp * xrpUsd);
   }
+
+  // The extra liquidity is a FORM INPUT on one page and a DRAFT FIELD on the other. Reading only the
+  // input meant the review step — the screen where the amount is actually committed — silently
+  // dropped whatever the user had added.
+  function extraXrp() {
+    var el = document.getElementById('extraLiquidity');
+    var raw = null;
+    if (el) {
+      raw = el.value;
+    } else {
+      try {
+        var d = JSON.parse(localStorage.getItem(DRAFT) || 'null');
+        raw = d ? d.extra : null;
+      } catch (e) { raw = null; }
+    }
+    var v = Number(String(raw == null ? '' : raw).replace(/[, ]/g, ''));
+    return (isFinite(v) && v > 0) ? v : 0;
+  }
+
+  // Read from the ledger, with the same defaults the launch itself uses if server_info is
+  // unreachable. `+ 0.5` matches the issuer funding in buildLaunchPlan — if one changes, so must
+  // the other, or the quote stops matching the transaction.
+  var ledger = { base: 1, owner: 0.2 };
+  function ledgerXrp() { return (ledger.base + 0.5) + ledger.owner; }
 
   // The design's recalcCost() lives inside an IIFE, so it cannot be called or replaced -- and it
   // repaints these same elements whenever the liquidity or share inputs change. Duplicate listeners
@@ -4151,7 +4175,22 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         paintCosts();
         watchCosts();
       })
-      .catch(function () { /* no rate: the design's own figures stand */ });
+      .catch(function () { /* no rate: the design's own figures stand */ })
+      // Reserves are governance-settable and have been lowered twice, so they are read rather than
+      // assumed. A failure here leaves the defaults above, which are today's values.
+      .then(function () {
+        return fetch('https://xrplcluster.com/', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ method: 'server_info', params: [{}] }),
+        }).then(function (r) { return r.json(); }).then(function (j) {
+          var v = j && j.result && j.result.info && j.result.info.validated_ledger;
+          if (!v) return;
+          if (isFinite(Number(v.reserve_base_xrp))) ledger.base = Number(v.reserve_base_xrp);
+          if (isFinite(Number(v.reserve_inc_xrp))) ledger.owner = Number(v.reserve_inc_xrp);
+          paintCosts();
+        });
+      })
+      .catch(function () { /* defaults stand */ });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
@@ -4315,9 +4354,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // The issuer is blackholed at the end of the launch, so this row is a promise the flow keeps.
     setRow('issuer locked', 'Yes — supply is fixed');
 
+    // NOT group(): that rounds to whole units, which is right for a token supply and wrong for an
+    // XRP amount -- it turned 0.25 XRP into "0 XRP added to the pool", reporting the user's own
+    // contribution as nothing.
     var extra = num(d.extra);
     setRow('extra xrp', (extra && extra > 0)
-      ? (group(extra) + ' XRP added to the pool')
+      ? ((extra % 1 === 0 ? extra.toLocaleString('en-US') : String(extra)) + ' XRP added to the pool')
       : 'None — using default liquidity only');
 
     // Socials: whatever was not filled in says so, rather than showing the design's accounts.

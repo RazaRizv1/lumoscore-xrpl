@@ -150,9 +150,12 @@
     // The issuer is blackholed at the end of the launch, so this row is a promise the flow keeps.
     setRow('issuer locked', 'Yes — supply is fixed');
 
+    // NOT group(): that rounds to whole units, which is right for a token supply and wrong for an
+    // XRP amount -- it turned 0.25 XRP into "0 XRP added to the pool", reporting the user's own
+    // contribution as nothing.
     var extra = num(d.extra);
     setRow('extra xrp', (extra && extra > 0)
-      ? (group(extra) + ' XRP added to the pool')
+      ? ((extra % 1 === 0 ? extra.toLocaleString('en-US') : String(extra)) + ' XRP added to the pool')
       : 'None — using default liquidity only');
 
     // Socials: whatever was not filled in says so, rather than showing the design's accounts.
