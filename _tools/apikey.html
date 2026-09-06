@@ -1,0 +1,155 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Get an xrpl.to API key</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; padding:34px 22px; background:#0f0f12; color:#f2f1ef;
+         font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:640px; margin:0 auto; }
+  h1 { font-size:21px; margin:0 0 6px; letter-spacing:-.3px; }
+  p.sub { margin:0 0 22px; opacity:.7; font-size:13.5px; }
+  .card { background:#17171c; border:1px solid rgba(255,255,255,.09); border-radius:14px;
+          padding:16px 17px; margin-bottom:14px; }
+  .step { display:flex; gap:10px; align-items:flex-start; font-size:13.5px; margin-bottom:9px; }
+  .n { flex:0 0 20px; height:20px; border-radius:50%; background:rgba(255,255,255,.09);
+       display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; }
+  button { font:inherit; font-weight:700; padding:11px 18px; border-radius:11px; border:0;
+           background:#ff894c; color:#12100e; cursor:pointer; }
+  button[disabled] { opacity:.5; cursor:default; }
+  pre { background:#000; border:1px solid rgba(255,255,255,.10); border-radius:10px;
+        padding:12px; overflow:auto; font-size:12.5px; margin:10px 0 0; white-space:pre-wrap;
+        word-break:break-all; }
+  .key { color:#7ee08a; font-weight:800; font-size:15px; }
+  .warn { color:#ffb26b; }
+  .err { color:#ff8080; }
+  code { background:rgba(255,255,255,.08); padding:1px 5px; border-radius:5px; font-size:12.5px; }
+</style>
+<main>
+  <h1>Get an xrpl.to API key</h1>
+  <p class="sub">Runs locally. Your private key never leaves GemWallet — it signs a short text
+    string and only the signature is sent.</p>
+
+  <div class="card">
+    <div class="step"><span class="n">1</span><span>Unlock the <b>GemWallet</b> extension in this browser.</span></div>
+    <div class="step"><span class="n">2</span><span>Click below. GemWallet will ask you to approve reading your address, then to sign the message <code>&lt;your-address&gt;:&lt;timestamp&gt;</code>.</span></div>
+    <div class="step"><span class="n">3</span><span><b class="warn">Copy the key immediately.</b> xrpl.to shows it once and cannot retrieve it later.</span></div>
+  </div>
+
+  <button id="go">Connect GemWallet and request a key</button>
+  <pre id="out">Waiting…</pre>
+</main>
+<script>
+// GemWallet's postMessage protocol, spoken directly — the npm package is a thin wrapper over it.
+// NOTE: the response field is `messagedId`, not `messageId`. That is a typo in GemWallet's own
+// client, which makes it the wire format; "correcting" it means never resolving.
+var out = document.getElementById('out');
+function log(s, cls) {
+  out.innerHTML = '';
+  var span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = s;
+  out.appendChild(span);
+}
+function append(s, cls) {
+  var span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = '\n' + s;
+  out.appendChild(span);
+}
+
+function gem(type, payload, ms) {
+  return new Promise(function (resolve, reject) {
+    var id = Date.now() + Math.random();
+    var timer = setTimeout(function () {
+      window.removeEventListener('message', onMsg);
+      reject(new Error('GemWallet did not respond (is it unlocked?)'));
+    }, ms || 90000);
+    function onMsg(ev) {
+      if (ev.source !== window) return;
+      var d = ev.data;
+      if (!d || d.source !== 'GEM_WALLET_MSG_RESPONSE') return;
+      if (d.messagedId !== id) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', onMsg);
+      resolve(d);
+    }
+    window.addEventListener('message', onMsg, false);
+    var msg = { source: 'GEM_WALLET_MSG_REQUEST', messageId: id, app: 'gem-wallet', type: type };
+    if (payload) msg.payload = payload;
+    window.postMessage(msg, window.location.origin);
+  });
+}
+
+document.getElementById('go').addEventListener('click', function () {
+  var btn = this;
+  btn.disabled = true;
+  log('Asking GemWallet for your address…');
+
+  var meta = { url: window.location.origin, title: document.title, favicon: '' };
+  var wallet, pubkey;
+
+  gem('REQUEST_GET_ADDRESS/V3', meta)
+    .then(function (d) {
+      if (d.error) throw new Error(String(d.error.message || d.error));
+      wallet = d.result && d.result.address;
+      if (!wallet) throw new Error('GemWallet returned no address (request rejected?)');
+      append('address: ' + wallet);
+      append('Asking for your public key…');
+      return gem('REQUEST_GET_PUBLIC_KEY/V3', meta);
+    })
+    .then(function (d) {
+      pubkey = d && d.result && (d.result.publicKey || d.result.public_key);
+      append(pubkey ? ('public key: ' + pubkey) : 'public key: (not returned — trying without it)');
+
+      // xrpl.to signs the literal string "{wallet}:{timestamp}"; timestamp is unix MILLISECONDS
+      // and is valid for 5 minutes.
+      var ts = String(Date.now());
+      var message = wallet + ':' + ts;
+      append('signing: ' + message);
+      return gem('REQUEST_SIGN_MESSAGE/V3', { message: message, url: meta.url, title: meta.title })
+        .then(function (d2) {
+          if (d2.error) throw new Error(String(d2.error.message || d2.error));
+          var sig = d2.result && (d2.result.signedMessage || d2.result.signature);
+          if (!sig) throw new Error('GemWallet returned no signature (request rejected?)');
+          append('signature: ' + String(sig).slice(0, 40) + '…');
+          append('Requesting the key from xrpl.to…');
+
+          var headers = {
+            'content-type': 'application/json',
+            'X-Wallet': wallet,
+            'X-Signature': sig,
+            'X-Timestamp': ts,
+          };
+          if (pubkey) headers['X-Public-Key'] = pubkey;
+
+          return fetch('https://api.xrpl.to/v1/keys', {
+            method: 'POST', headers: headers,
+            body: JSON.stringify({ name: 'LumosCore' }),
+          });
+        });
+    })
+    .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+    .then(function (res) {
+      if (res.body && res.body.apiKey) {
+        append('');
+        append('YOUR API KEY (shown once — copy it now):', 'warn');
+        append(res.body.apiKey, 'key');
+        append('');
+        append('Paste it to Claude, or set XRPLTO_API_KEY in Cloudflare Pages.');
+      } else {
+        append('');
+        append('xrpl.to replied ' + res.status + ':', 'err');
+        append(JSON.stringify(res.body, null, 1));
+        append('');
+        append('If it rejected the signature, the signing scheme may differ from what their docs '
+          + 'describe. Send me this output and I will adjust it.', 'warn');
+      }
+      btn.disabled = false;
+    })
+    .catch(function (e) {
+      append('');
+      append('Failed: ' + (e && e.message), 'err');
+      btn.disabled = false;
+    });
+});
+</script>
