@@ -4957,6 +4957,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       heroIcon.removeAttribute('data-logo');
       heroIcon.innerHTML = '';
       if (d.icon) {
+        // The tile paints `linear-gradient(135deg, var(--accent), #ff9a3d)` as its own background,
+        // which is right for a placeholder and wrong behind a real logo -- it rimmed the artwork in
+        // orange. Cleared only when there IS an image; the initials still need it.
+        heroIcon.style.background = 'none';
         var img = document.createElement('img');
         img.src = d.icon;
         img.alt = '';
@@ -5232,18 +5236,46 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
   }
 
-  function status(anchor, html) {
+  var running = false;
+
+  // INLINE, IN THE WIDE COLUMN -- no popup.
+  //
+  // This went through two wrong shapes. First it was inserted next to the launch button, which sits
+  // in a ~200px summary column, so eight progress lines wrapped into a tall ribbon that collided
+  // with the button. Then it became a modal, which fixed the layout and added a second confirmation
+  // step the Stellar site does not have -- and this page IS the confirmation: it is titled "Review
+  // Your Token", it carries an "This action is irreversible" panel, and the button reads "Confirm &
+  // Launch". Asking again after that is noise.
+  //
+  // So progress renders in the main content column, which is wide enough to read, and the launch
+  // starts on the button the user already pressed.
+  function status(_anchor, html) {
     var box = $('#lxxMintStatus');
     if (!box) {
       box = document.createElement('div');
       box.id = 'lxxMintStatus';
       box.setAttribute('role', 'status');
-      box.style.cssText = 'margin:12px 0;padding:12px 14px;border-radius:12px;font-size:13px;'
-        + 'line-height:1.6;background:var(--surface-2,rgba(127,127,127,.07));'
-        + 'border:1px solid var(--border,rgba(127,127,127,.22))';
-      if (anchor && anchor.parentElement) anchor.parentElement.insertBefore(box, anchor);
+      box.style.cssText = 'margin:18px 0;padding:16px 18px;border-radius:14px;font-size:13.5px;'
+        + 'line-height:1.7;background:var(--surface-2,rgba(127,127,127,.07));'
+        + 'color:var(--text,inherit);border:1px solid var(--border,rgba(127,127,127,.22))';
+
+      // PLACED BETWEEN THE HERO CARD AND THE FIRST DETAIL CARD, which are siblings in the same
+      // column. Two earlier attempts got this wrong in opposite directions, and both because the
+      // anchor was chosen by ancestry rather than by name: `hero.closest('.card,.panel,section,div')`
+      // matched the hero's own immediate div and dropped the box INSIDE the hero, over the token
+      // name; widening it to `closest('.card,.panel,section')` from the General Info heading matched
+      // a section wrapping the whole page and put the box above the page title. `.detail-card` is
+      // the actual sibling boundary.
+      var main = $('main.page') || document.body;
+      var detail = $('.detail-card');
+      if (detail && detail.parentElement) {
+        detail.parentElement.insertBefore(box, detail);
+      } else {
+        main.insertBefore(box, main.firstChild);
+      }
     }
     box.innerHTML = html;
+    box.scrollIntoView({ block: 'nearest' });
     return box;
   }
 
@@ -5264,7 +5296,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // success page behind the handler's back — a confetti page for a token that was never issued.
     if (el.tagName === 'A') { el.removeAttribute('href'); el.setAttribute('role', 'button'); }
 
-    var running = false;
+    // `running` is the MODULE-level flag on purpose. A `var running` here would shadow it, leaving
+    // the modal's "do not close mid-launch" guard reading a variable that is always false -- the
+    // guard would look present and do nothing.
     el.addEventListener('click', function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
@@ -5310,22 +5344,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
             feeXrp: feeXrp, feeCollector: cfg.feeCollector, liquidityXrp: liqXrp,
           });
 
-          var lines = plan.map(function (s, i) {
-            return (i + 1) + '. ' + esc(s.what) + (s.by === 'user' ? ' <em>(you approve)</em>' : '');
-          }).join('<br>');
+          var userSteps = plan.filter(function (s) { return s.by === 'user'; }).length;
 
-          status(el, '<strong>' + plan.length + ' transactions will be sent.</strong><br>' + lines
-            + '<br><br>The last two permanently disable the issuing account, which is what fixes the '
-            + 'supply. This cannot be undone.<br><br>'
-            + '<button id="lxxGo" style="padding:8px 14px;border-radius:9px;border:0;'
-            + 'background:var(--accent,#f26b1d);color:#fff;font-weight:700;cursor:pointer">'
-            + 'Start the launch</button>');
+          // Straight into it. The page above already asked, so this says what is about to happen
+          // and then does it -- the wallet's own prompts are the remaining chances to say no.
+          var log = [];
+          status(el, '<strong>Launching ' + esc(d.name || 'your token') + '</strong> — '
+            + plan.length + ' transactions, ' + userSteps + ' of which your wallet will ask you '
+            + 'to approve. Keep this tab open.');
 
-          var go = $('#lxxGo');
-          go.addEventListener('click', function () {
-            go.disabled = true;
-            var log = [];
-            return runLaunch({
+          return runLaunch({
               plan: plan,
               onStep: function (i, phase, step) {
                 if (phase === 'start') log.push('· ' + esc(step.what) + '…');
@@ -5351,13 +5379,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
               }
               // A PARTIAL LAUNCH IS REPORTED IN FULL. The user's money has gone somewhere and the
               // one thing they must not be told is "something went wrong".
+              //
+              // The issuer address is shown ONLY when something actually happened. Nothing was
+              // funded if the first prompt failed, so handing over an address and calling it "the
+              // only record" would be telling the user to safeguard an account that does not exist.
+              var tail = res.completed.length
+                ? ('<br>The issuing account is <code>' + esc(issuer.classicAddress)
+                   + '</code> — keep this, it is the only record of a launch that did not finish.')
+                : '<br>Nothing was sent, so nothing was spent.';
               status(el, log.join('<br>') + '<br><br><strong>Stopped: ' + esc(res.error)
                 + '</strong><br>' + res.completed.length + ' of ' + plan.length
-                + ' transactions completed. The issuing account is <code>'
-                + esc(issuer.classicAddress) + '</code> — keep this, it is the only record of a '
-                + 'launch that did not finish.');
+                + ' transactions completed.' + tail);
             });
-          });
         });
       }).catch(function (e) {
         running = false;
