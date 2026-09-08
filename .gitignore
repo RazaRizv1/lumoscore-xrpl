@@ -14,3 +14,6 @@ node_modules/
 !.env.example
 *.key
 _containers_backup/
+
+# wrangler build cache — holds the Cloudflare account id/name, not source
+.wrangler/
