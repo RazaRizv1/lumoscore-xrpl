@@ -1,7 +1,11 @@
 // Wire the dashboard to real XRP Ledger data.
 //
-// Unlike the other pages in this fork there is no inherited Stellar data layer to strip here -- the
-// dashboard shipped with NO data layer at all, so every figure on it was the design's static mock
+// NOTE, 2026-09-08: this file used to say there was no inherited Stellar data layer to strip here.
+// That was true of the OLD fork base. The build now starts from Stellar's current containers, which
+// ship several, and the strip below is why. Keep it in step when Stellar adds another.
+//
+// When the fork was taken the dashboard shipped with NO data layer at all, so every figure on it
+// was the design's static mock
 // sitting in the markup: XRP at $0.245 (which is XLM's price, relabelled), 4,234 assets against
 // 20,362, 4,521 pools against 30,648, and a "Platform Activity" feed of invented transactions
 // animated with a live pulse.
@@ -59,7 +63,7 @@ function removeElement(h, openMarker) {
   return { html: h, removed: 0 };                    // unbalanced: leave the markup alone
 }
 
-let files = 0, pages = 0, trendingDropped = 0, gridFixed = 0, orphansFixed = 0;
+let files = 0, pages = 0, trendingDropped = 0, gridFixed = 0, orphansFixed = 0, stellarLayers = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -73,6 +77,27 @@ for (const dev of ['desktop', 'mobile']) {
     if (!isDashboard(h)) continue;
 
     h = stripById(h, ID).html;                      // idempotent: re-running replaces, never stacks
+
+    // THE INHERITED STELLAR DATA LAYERS.
+    //
+    // The note at the top of this file used to say there was none to strip here. That was true of
+    // the old fork base, which predated them. The build now starts from Stellar's CURRENT
+    // containers, which ship several — and they call endpoints this project does not serve.
+    // Measured on the deployed dashboard: /lxapi/netstats, /lxapi/xlm, /lxapi/poolstats,
+    // /lxapi/pools and /lxapi/blog all 404, repeatedly, on every load.
+    //
+    // The dead requests are the smaller half of the problem. lx-realdata paints the SAME figures
+    // lx-xrpldash paints, so leaving it in place puts two writers on one element and whichever
+    // loses the race owns the screen — the class of bug that is impossible to reproduce on demand.
+    //
+    // Only layers with no UI of their own are listed. lx-dashboxes (the product cards),
+    // lx-swapcalc and lx-qorders own controls the design expects to be there, so they are left
+    // alone until XRPL data is wired into them; removing them would change the design.
+    for (const sid of ['lx-realdata', 'lx-poolwarm', 'lx-dashtop', 'lx-dashblogdata']) {
+      const r = stripById(h, sid);
+      h = r.html;
+      stellarLayers += r.removed;
+    }
 
     // THE TRENDING CARD IS REMOVED, not hidden. It was dropped from the Stellar dashboard and
     // should never have been carried into this one. Taking it out of the markup rather than
@@ -120,7 +145,7 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl dashboard: injected on ' + pages + ' page key(s) across ' + files
-  + ' container(s); removed the trending card from ' + trendingDropped
+  + ' container(s); stripped ' + stellarLayers + ' Stellar data layer(s); removed the trending card from ' + trendingDropped
   + ', closed the grid gap on ' + gridFixed + ' and made ' + orphansFixed
   + ' orphaned lookup(s) safe');
 if (!pages) console.error('  ! no page carried the dashboard markup — nothing was wired');

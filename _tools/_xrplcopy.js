@@ -37,6 +37,23 @@ const COPY = [
   ['the Stellar DEX', 'the XRP Ledger DEX'],
   ['any ticker on Stellar', 'any ticker on the XRP Ledger'],
   ['Platform Activity — Stellar', 'Platform Activity — XRP Ledger'],
+
+  // --- APTOS leftovers that are actually VISIBLE ------------------------------------------------
+  // The design predates Stellar, so "Aptos"/"APT" is still all over the markup — 206 distinct
+  // strings in this build. Almost all of them are MOCK VALUES a data layer overwrites at runtime;
+  // lumoscore.com carries the very same strings (49 on /pools, 44 on /wallet) and you never see
+  // them, because its data layers get there first. Rewriting those here would be wrong: it would
+  // fight the data layer for the same element and only change which stale value flashes.
+  //
+  // So only the two that are demonstrably visible on the built XRPL dashboard are listed, both of
+  // them prose that no data layer rewrites on this build. Measured in the browser, not grepped.
+  // The rest resolve as each XRPL data layer lands — if a mock is still showing, the layer is the
+  // bug, not the copy.
+  ['Launch tokens directly on the Aptos DEX.', 'Launch tokens directly on the XRP Ledger DEX.'],
+  // The header's network chip: <span class="lbl">Network</span><span class="val">Aptos</span>.
+  // Scoped to the element so a bare "Aptos" elsewhere (mock balances, ticker text) is left for its
+  // data layer to replace.
+  ['<span class="val">Aptos</span>', '<span class="val">XRP Ledger</span>'],
   ['STELLAR NATIVE', 'XRP LEDGER NATIVE'],
 
   // --- network fees: the real figure, not just a renamed chain ----------------------------------
