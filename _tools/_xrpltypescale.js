@@ -27,9 +27,19 @@ const STAMP = 'data-lxts';
 // Mask at-rule preludes so their numbers survive untouched, scale what is left, then restore.
 function scaleCss(css) {
   const masked = [];
+  // THE PLACEHOLDER MUST NOT BE VALID CSS. It used to be a bare integer between spaces, and the
+  // restore below then replaced EVERY space-separated integer in the stylesheet, not just the ones
+  // this function wrote. CSS shorthands are full of them, so real declarations were eaten and an
+  // at-rule was spliced into their middle:
+  //     flex:0 0 auto      ->  flex:0@keyframes lxmq auto
+  //     flex:1 1 275px     ->  flex:1@media(max-width:900px)275px
+  //     margin:0 0 33px    ->  margin:0@media (max-width:640px)33px
+  // Nine of those shipped to the XRPL landing page and broke its layout. A __LXMASK_n__ token
+  // cannot occur in a stylesheet, carries no bare integer and no "@", so neither the px scaler nor
+  // the at-rule matcher below can touch it, and the restore is anchored to exactly that token.
   const keep = function (m) {
     masked.push(m);
-    return ' ' + (masked.length - 1) + ' ';
+    return '__LXMASK_' + (masked.length - 1) + '__';
   };
 
   // url(...) IS MASKED FIRST, and this mask exists because its absence CORRUPTED EVERY EMBEDDED
@@ -51,7 +61,7 @@ function scaleCss(css) {
     return out + 'px';
   });
 
-  return scaled.replace(/ (\d+) /g, function (_, i) { return masked[Number(i)]; });
+  return scaled.replace(/__LXMASK_(\d+)__/g, function (_, i) { return masked[Number(i)]; });
 }
 
 // Rewrite every unstamped <style> block in one page's HTML.

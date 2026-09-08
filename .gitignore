@@ -17,3 +17,6 @@ _containers_backup/
 
 # wrangler build cache — holds the Cloudflare account id/name, not source
 .wrangler/
+
+# container snapshots (huge, and regenerable by re-running the transforms)
+_containers_broken_20260908/
