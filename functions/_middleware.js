@@ -445,8 +445,8 @@ function legacyClean(pathname, params){
 
   // the two dynamic routes carry their identifier in the query — promote it into the path
   const asset = params && params.get('asset');
-  if (base === 'lumoscore-dex-asset')      return asset ? '/trade/stellar/' + asset : '/trade/stellar';
-  if (base === 'lumoscore-asset-overview') return asset ? '/trade/stellar/' + asset : '/trade/stellar';
+  if (base === 'lumoscore-dex-asset')      return asset ? '/xrpl/trade/' + asset : '/xrpl/trade';
+  if (base === 'lumoscore-asset-overview') return asset ? '/xrpl/trade/' + asset : '/xrpl/trade';
   // a pool is addressed by its two assets, which ?pool=<id> does not carry — leave it alone
   const pool = params && params.get('pool');
   if (base === 'lumoscore-amm-pool') return pool ? '/pools/stellar/id/' + pool : '/pools/stellar';
@@ -455,7 +455,7 @@ function legacyClean(pathname, params){
   // front door is not a redirect), so the ROUTES loop below never matches "lumoscore-landing" and
   // returned null. That mattered because the wallet gate used to redirect with the bare filename:
   // from /asset/stellar/<ASSET> the browser asked for /asset/stellar/lumoscore-landing.html, no 301
-  // fired, and "/asset/stellar/:asset" then matched with the asset literally being
+  // fired, and "/xrpl/asset/:asset" then matched with the asset literally being
   // "lumoscore-landing.html" — rendering an asset page for an asset that does not exist, i.e. blank.
   if (base === 'lumoscore-landing') return '/';
 
@@ -539,7 +539,7 @@ export async function onRequest(context){
     // "Remove" button on an LP position, which links to ...?pool=<id>&act=withdraw so the pool page
     // opens on the Withdraw tab: the redirect promoted the pool into the path and threw act= away, so
     // the user always landed on Deposit. Drop only the key that was promoted.
-    const promoted = legacy.indexOf('/trade/stellar/') === 0
+    const promoted = legacy.indexOf('/xrpl/trade/') === 0
       || legacy.indexOf('/pools/stellar/id/') === 0;
     if (promoted){
       const keep = new URLSearchParams(url.search);
@@ -556,9 +556,9 @@ export async function onRequest(context){
   // These urls were published in the sitemap and may already be indexed, so this is a 301 rather
   // than a 404: search engines transfer the ranking to the Trade page instead of dropping it.
   // Bare /asset/stellar (no asset) goes to the Trade list.
-  if (url.pathname === '/asset/stellar' || url.pathname.indexOf('/asset/stellar/') === 0){
-    const rest = url.pathname.slice('/asset/stellar'.length);
-    const to = new URL('/trade/stellar' + rest, url.origin);
+  if (url.pathname === '/xrpl/asset' || url.pathname.indexOf('/xrpl/asset/') === 0){
+    const rest = url.pathname.slice('/xrpl/asset'.length);
+    const to = new URL('/xrpl/trade' + rest, url.origin);
     to.search = url.search;
     to.hash = url.hash;
     return Response.redirect(to.toString(), 301);

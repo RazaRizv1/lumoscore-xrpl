@@ -495,14 +495,57 @@
       open();
     }
 
+    // THE DESIGN ALREADY HAS THIS SCREEN — drive it, do not draw another one.
+    //
+    // This used to hand-build a plain panel: the word "Connected", the FULL raw address, a Continue
+    // button. The design ships `.lxw-screen[data-screen="connected"]` with the pulsing green check
+    // (.lxw-cpulse), a wallet icon, a TRUNCATED address, a "network · wallet" meta line and a copy
+    // button — and Stellar's _wallet_realconnect drives exactly that: fill .lxw-acct-ico /
+    // .lxw-acct-addr / .lxw-chipname / .lxw-wnamedone, then flip .lxw-screen to "connected".
+    // Same thing here, so XRPL looks identical to Stellar without a second implementation existing.
+    //
+    // The home target is passed to lxwOpenWallet so the design's own Continue button navigates
+    // through its goHome(); we do not wire that button ourselves either.
+    function designConnected(addr) {
+      // The DESIGN's opener, captured before we replaced window.lxwOpenWallet with our own picker.
+      var mount = window.__lxwDesignOpen;
+      if (typeof mount !== 'function') return false;
+      try { mount('xrpl', '/xrpl/dashboard'); } catch (e) { return false; }
+      var scr = document.querySelectorAll('.lxw-screen');
+      if (!scr.length) return false;
+
+      var w = null, nm = String(get(K.wallet) || '').toLowerCase();
+      for (var j = 0; j < WALLETS.length; j++) {
+        if (nm === WALLETS[j].name.toLowerCase() || nm === WALLETS[j].id) { w = WALLETS[j]; break; }
+      }
+      var ic = document.querySelector('.lxw-acct-ico');
+      if (ic && w) {
+        ic.style.background = w.ico;
+        ic.innerHTML = w.logo
+          ? '<img src="' + w.logo + '" alt="" style="width:100%;height:100%;object-fit:cover;'
+            + 'border-radius:50%;display:block" onerror="this.remove()">'
+          : '';
+      }
+      var aa = document.querySelector('.lxw-acct-addr'); if (aa) aa.textContent = short(addr);
+      var cn = document.querySelector('.lxw-chipname'); if (cn) cn.textContent = 'XRP Ledger';
+      var wd = document.querySelector('.lxw-wnamedone'); if (wd) wd.textContent = (w && w.name) || get(K.wallet) || '';
+
+      for (var i = 0; i < scr.length; i++) {
+        scr[i].toggleAttribute('hidden', scr[i].getAttribute('data-screen') !== 'connected');
+      }
+      return true;
+    }
+
     function done(addr, note) {
+      if (designConnected(addr)) return;
+      // Fallback only for a page that does not ship the design's wallet modal at all.
       build();
       body.innerHTML = '';
       body.appendChild(head('Connected', ''));
       var s = document.createElement('div');
       s.className = 'lxx-state';
       var h4 = document.createElement('h4'); h4.textContent = "You're connected";
-      var a = document.createElement('div'); a.className = 'lxx-addr'; a.textContent = addr;
+      var a = document.createElement('div'); a.className = 'lxx-addr'; a.textContent = short(addr);
       s.appendChild(h4); s.appendChild(a);
       if (note) { var p = document.createElement('p'); p.textContent = note; s.appendChild(p); }
       var b = document.createElement('button');
@@ -570,7 +613,16 @@
   // intercepting clicks alone would still leave routes that open the Aptos list. Overriding it
   // costs nothing and cannot orphan anything: the markup and the script stay where they are, and
   // the function keeps its name and arity.
-  try { window.lxwOpenWallet = function () { openPicker(); }; } catch (e) {}
+  // Keep a handle on the DESIGN's opener before replacing it. designConnected() needs it to mount the
+  // design's own modal shell, and calling the replacement instead is infinite recursion:
+  // lxwOpenWallet -> openPicker -> ui.done -> designConnected -> lxwOpenWallet. (Measured: a real
+  // "Maximum call stack size exceeded" on the live page.)
+  try {
+    if (!window.__lxwDesignOpen && typeof window.lxwOpenWallet === 'function') {
+      window.__lxwDesignOpen = window.lxwOpenWallet;
+    }
+    window.lxwOpenWallet = function () { openPicker(); };
+  } catch (e) {}
 
   // A Xaman sign-in on a phone returns here as a brand-new page load. If a session is remembered,
   // the SDK has to be constructed for 'retrieved' to fire at all -- nothing resumes on its own.

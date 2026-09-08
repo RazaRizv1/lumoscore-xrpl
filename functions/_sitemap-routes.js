@@ -8,8 +8,8 @@ export const SITEMAP_ROUTES = [
   ],
   [
     "/xrpl/trade",
-    "0.6",
-    "weekly"
+    "0.9",
+    "daily"
   ],
   [
     "/xrpl/pools",
