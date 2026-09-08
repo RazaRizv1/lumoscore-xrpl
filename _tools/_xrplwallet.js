@@ -11,6 +11,7 @@
 // replaces rather than stacks.
 const fs = require('fs');
 const { read, getContents } = require(__dirname + '/lib.js');
+const { stripById } = require(__dirname + '/stripscript.js');
 const B = String.fromCharCode(92);
 
 const ID = 'lx-xrplwallet';
@@ -25,7 +26,7 @@ for (const src of [core, page, px]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + px + '\n</' + 'script>';
 
-let files = 0, pages = 0;
+let files = 0, pages = 0, stellarLayers = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -41,6 +42,17 @@ for (const dev of ['desktop', 'mobile']) {
     // skipped every phone -- the most repeated bug class in the Stellar project.
     if (h.indexOf('id="assetsTable"') < 0 && h.indexOf('id="assetList"') < 0) continue;
 
+    // THE STELLAR WALLET LAYER — 118KB of it — was still running here and calling
+    // horizon.stellar.org. It writes .value-side, .value-side .value, .sub-value,
+    // .activity-block and #assetsTable: every element this layer paints. The two fought over the
+    // whole page and the mock won the headline, so "31,108.45 APT" sat above a correctly priced
+    // list of real XRP Ledger holdings.
+    //
+    // Fully superseded by lx-xrplwallet + lx-xrplprices, so it goes rather than being raced.
+    // NOT stripped: lx-swapcalc, lx-qorders and lx-wclaim also carry Stellar calls but own
+    // controls the design expects to exist, so they need XRPL data rather than deletion.
+    { const g = stripById(h, 'lx-walletdata'); h = g.html; stellarLayers += g.removed; }
+
     const re = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
     h = h.replace(re, '');
     const bi = h.lastIndexOf('</' + 'body>');
@@ -54,4 +66,4 @@ for (const dev of ['desktop', 'mobile']) {
   fs.writeFileSync(file, data.slice(0, s) + serialized + data.slice(e), 'utf8');
 }
 
-console.log('xrpl wallet: data layer on ' + pages + ' page key(s) across ' + files + ' container(s)');
+console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); data layer on ' + pages + ' page key(s) across ' + files + ' container(s)');

@@ -101,7 +101,82 @@
         paintChange(cell.chg, ch7);
       }
     }
+
+    // ---- Total Portfolio ---------------------------------------------------------------------------
+    // The design ships this block as a mock — 31,108.45 APT, $12,847.62, +11.08% — and it stayed that
+    // way above a correctly priced list. That is the worst combination: the headline contradicted the
+    // rows beneath it, and only the headline was wrong, so the page looked authoritative while lying
+    // about the number people read first.
+    //
+    // Summed from the SAME rows that were just priced, so the two cannot drift apart.
+    var totUsd = 0, weighted = 0, pricedAny = false;
+    for (var k = 0; k < seq.length; k++) {
+      var it2 = seq[k], bal = 0, u2 = null, c2 = null;
+      if (it2.xrp) {
+        bal = (xrp && xrp.balance) || 0;
+        u2 = data.usd;
+        var xr = data.t['XRP'];
+        c2 = xr ? xr[2] : null;
+      } else {
+        bal = +it2.balance || 0;
+        var r2 = data.t[slug(it2.issuer, it2.currency)];
+        if (r2) { u2 = (data.usd != null) ? r2[0] * data.usd : null; c2 = r2[2]; }
+      }
+      if (u2 == null || !isFinite(u2) || !(bal > 0)) continue;
+      var v2 = bal * u2;
+      totUsd += v2; pricedAny = true;
+      if (c2 != null && isFinite(c2)) weighted += v2 * c2;
+    }
+    if (pricedAny) paintTotal(totUsd, totUsd > 0 ? (weighted / totUsd) : null);
+
     attribution();
+  }
+
+  // Fills the design's own Total Portfolio block. The elements are the design's and are reused in
+  // place — only their text changes, so the type scale, the unit span and the up/down pill keep
+  // whatever styling they shipped with.
+  //
+  // The 7-day figure is VALUE-WEIGHTED from each token's own 7d change, not invented: a holding worth
+  // 90% of the wallet moves the number 90% as much. It assumes the balances were the same a week ago,
+  // which is the same assumption any "portfolio change" makes without a balance history to read.
+  function paintTotal(totUsd, ch7) {
+    var vs = $('.value-side');
+    if (!vs || !data || !(data.usd > 0)) return;
+    var xrpTot = totUsd / data.usd;
+
+    var vEl = vs.querySelector('.value');
+    if (vEl) {
+      // The unit is the design's own span inside .value. NOT matched on .lxp: that class is added by
+      // the Stellar wallet layer, which this build strips, so keying on it found nothing and left the
+      // ticker reading "APT" beside a correct XRP total. The span is the only child here.
+      var unit = vEl.querySelector('span');
+      var first = vEl.firstChild;
+      var txt = xrpTot.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' ';
+      if (first && first.nodeType === 3) first.nodeValue = txt;
+      else vEl.insertBefore(document.createTextNode(txt), vEl.firstChild);
+      if (unit) unit.textContent = 'XRP';
+    }
+
+    var sub = vs.querySelector('.sub-value');
+    if (sub) sub.textContent = '≈ ' + money(totUsd) + ' USD';
+
+    if (ch7 == null || !isFinite(ch7)) return;
+    var pill = vs.querySelector('.delta-pill');
+    if (pill) {
+      var pTxt = (ch7 >= 0 ? '+' : '') + ch7.toFixed(2) + '%';
+      var last = pill.lastChild;
+      if (last && last.nodeType === 3) last.nodeValue = ' ' + pTxt;
+      else pill.appendChild(document.createTextNode(' ' + pTxt));
+      pill.classList.toggle('up', ch7 >= 0);
+      pill.classList.toggle('down', ch7 < 0);
+    }
+    var sec = vs.querySelector('.delta-secondary');
+    if (sec) {
+      // The XRP the change is worth: today's total minus what the same holdings were worth.
+      var was = xrpTot / (1 + ch7 / 100);
+      var d = xrpTot - was;
+      sec.textContent = (d >= 0 ? '+' : '') + d.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' XRP';
+    }
   }
 
   function paintChange(el, v) {

@@ -50,6 +50,12 @@ const COPY = [
   // The rest resolve as each XRPL data layer lands — if a mock is still showing, the layer is the
   // bug, not the copy.
   ['Launch tokens directly on the Aptos DEX.', 'Launch tokens directly on the XRP Ledger DEX.'],
+  // Prose no data layer rewrites on this build: the wallet page heading and the Trade hero.
+  // Measured as visible in the browser, same rule as the two above.
+  ['Your Stellar wallet', 'Your XRP Ledger wallet'],
+  ["Discover, trade, and launch tokens on Aptos's decentralized exchange.",
+   "Discover, trade, and launch tokens on the XRP Ledger's decentralized exchange."],
+  ['<em>Aptos</em>', '<em>XRP Ledger</em>'],
   // The header's network chip: <span class="lbl">Network</span><span class="val">Aptos</span>.
   // Scoped to the element so a bare "Aptos" elsewhere (mock balances, ticker text) is left for its
   // data layer to replace.

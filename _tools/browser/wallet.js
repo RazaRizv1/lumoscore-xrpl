@@ -191,6 +191,139 @@
 
     if (!data.held.length && !data.xrp) note(h, 'Nothing held on this account yet.');
     setMeta(data.held.length, data.pools.length, data.xrp);
+    setChip();
+  }
+
+  // The header chip shipped showing the design's mock address, `0x09c7…a802` — an EVM-shaped string
+  // on an XRP Ledger wallet page, sitting above this account's real balances. Whatever else is wrong
+  // on a page, the address it claims to be showing must be the one that is connected.
+  function setChip() {
+    var a = addr();
+    if (!a) return;
+    var chip = $('.wallet-chip .text') || $('.wallet-chip .addr');
+    if (chip && chip.textContent.trim() !== short(a)) chip.textContent = short(a);
+
+    // THE PAGE HAS MORE THAN ONE HOLDINGS SUMMARY. setMeta writes $('.section-heading .meta'), which
+    // is the FIRST match — and a second one lives in another .section-heading further down, so it kept
+    // the mock "5 holdings · 31,108.45 APT total" while the list beneath it was already correct.
+    // querySelector returning the first of several is the quiet version of this bug; take them all.
+    var d = window.__lxxData;
+    if (!d) return;
+    var n = d.held.length + (d.xrp ? 1 : 0);
+    var line = n + ' holding' + (n === 1 ? '' : 's')
+      + (d.xrp ? (' · ' + fmt(d.xrp.balance, 2) + ' XRP') : '');
+    [].forEach.call(document.querySelectorAll('.section-heading .meta, h2 .meta'), function (m) {
+      // Only summaries, never an activity row's own .meta (which is "From r… · 06:16").
+      if (/holding|APT|Aptos/i.test(m.textContent || '')) m.textContent = line;
+    });
+  }
+
+  // ---- Activity ------------------------------------------------------------------------------------
+  // The design ships thirty rows of invented transactions — "Received USDT from 0x0222…02b2",
+  // "Sell 500 APT @ 0.4128" — dated today and sitting under this account's real balances. That is the
+  // most dangerous thing on the page: a blank section reads as unfinished, a fabricated one reads as
+  // your history. The dashboard's own activity feed was replaced for exactly this reason.
+  //
+  // The design's markup is reused, not replaced: a real .activity-row and .day-divider are kept as
+  // templates and cloned, so every class, icon and layout stays the design's.
+  var TYPES = {
+    Payment: 'Payment', OfferCreate: 'Order', OfferCancel: 'Cancelled order',
+    TrustSet: 'Trustline', AMMDeposit: 'Pool deposit', AMMWithdraw: 'Pool withdrawal',
+    AccountSet: 'Account update', NFTokenMint: 'NFT mint'
+  };
+
+  // An amount is either drops (a bare string) or an issued-currency object.
+  function amt(v) {
+    if (v == null) return null;
+    if (typeof v === 'string') return { value: +v / 1e6, code: 'XRP' };
+    // Through lxx.decodeCurrency so a 40-char hex code renders as its name, exactly as the asset
+    // list above renders it — one decoder, so the two cannot disagree about what a token is called.
+    var d = window.lxx.decodeCurrency(v.currency);
+    return { value: +v.value, code: (d && d.display) || v.currency };
+  }
+
+  function paintActivity(me) {
+    var block = $('.activity-block');
+    if (!block) return;
+    var rowT = block.querySelector('.activity-row');
+    var dayT = block.querySelector('.day-divider');
+    if (!rowT) return;
+    rowT = rowT.cloneNode(true);
+    dayT = dayT ? dayT.cloneNode(true) : null;
+
+    rpc('account_tx', { account: me, limit: 25, ledger_index_min: -1, ledger_index_max: -1 })
+      .then(function (r) {
+        var txs = r.transactions || [];
+        if (!txs.length) return;
+        block.innerHTML = '';
+        var lastDay = '';
+
+        txs.forEach(function (t) {
+          var tx = t.tx || t.tx_json || {};
+          var meta = t.meta || t.metaData || {};
+          if (typeof tx.date !== 'number') return;
+          var when = new Date((tx.date + 946684800) * 1000);
+          var day = when.toDateString();
+
+          if (day !== lastDay && dayT) {
+            lastDay = day;
+            var dv = dayT.cloneNode(true);
+            var today = new Date().toDateString();
+            dv.textContent = (day === today ? 'TODAY · ' : '')
+              + when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+            block.appendChild(dv);
+          }
+
+          var row = rowT.cloneNode(true);
+          var kind = TYPES[tx.TransactionType] || tx.TransactionType || 'Transaction';
+          var incoming = tx.TransactionType === 'Payment' && tx.Destination === me;
+          var other = incoming ? tx.Account : tx.Destination;
+
+          var ico = row.querySelector('.activity-icon');
+          if (ico) { ico.classList.toggle('received', !!incoming); ico.classList.toggle('sent', !incoming); }
+
+          var ty = row.querySelector('.type');
+          if (ty) {
+            var status = ty.querySelector('.status');
+            ty.textContent = (tx.TransactionType === 'Payment' ? (incoming ? 'Received' : 'Sent') : kind) + ' ';
+            if (status) {
+              var ok = (meta.TransactionResult === 'tesSUCCESS');
+              status.textContent = ok ? 'Confirmed' : (meta.TransactionResult || 'Failed');
+              status.classList.toggle('success', ok);
+              ty.appendChild(status);
+            }
+          }
+
+          var mt = row.querySelector('.meta');
+          if (mt) {
+            mt.textContent = (other ? ((incoming ? 'From ' : 'To ') + short(other) + ' · ') : '')
+              + when.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+          }
+
+          var a1 = row.querySelector('.a1');
+          if (a1) {
+            // delivered_amount, never tx.Amount: on a path payment Amount is the MAXIMUM the sender
+            // would allow, not what arrived. Measured elsewhere in this project as a 33% overstatement.
+            var got = amt(meta.delivered_amount || meta.DeliveredAmount || tx.Amount);
+            if (got && isFinite(got.value)) {
+              a1.textContent = (incoming ? '+' : '−') + fmt(got.value, 6) + ' ' + got.code;
+              a1.classList.toggle('up', !!incoming);
+              a1.classList.toggle('down', !incoming);
+            } else {
+              a1.textContent = '';
+            }
+          }
+
+          // The design's second line is a USD conversion, and it shipped as a fixed "≈ $7.42" on
+          // every row. This layer has no price map — prices.js owns that — so the honest thing is to
+          // clear it rather than repeat a number that was never about this transaction. An empty
+          // slot says nothing; a stale one says something false on all 25 rows.
+          var a2 = row.querySelector('.a2');
+          if (a2) a2.textContent = '';
+
+          block.appendChild(row);
+        });
+      }).catch(function () { /* leave the design's block alone rather than empty it on a failure */ });
   }
 
   function load() {
@@ -220,6 +353,7 @@
       data.held = split.held; data.pools = split.pools; data.obligations = split.obligations;
       window.__lxxData = data;
       paint(data);
+      paintActivity(a);
     }).catch(function (e) {
       // An account with no transactions simply does not exist on the ledger yet. Not an error.
       if (/actNotFound/i.test(e.message || '')) { note(h, 'This account is not activated on the XRP Ledger yet.'); return; }
