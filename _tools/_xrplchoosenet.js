@@ -23,13 +23,26 @@ const B = String.fromCharCode(92);
 // `function(u){return o.call(this,lxClean(u));}` whose inner o did not navigate when called on the
 // live page, and a control this central should not depend on another layer's side effect. Cleaning
 // the url is a pure function; assigning location.href is the navigation.
+// WHY IT STILL DID NOTHING after the first version of this shim. The target is 'lumoscore-home.html'
+// = /xrpl = the DASHBOARD, and the dashboard carries lx-authgate: with no wallet in localStorage it
+// does location.replace("/") immediately. So the click navigated, the gate bounced it straight back
+// to the landing page, and the screen never changed. Indistinguishable from a dead button.
+//
+// On Stellar that control opens the network chooser, which leads into connect. Here there is exactly
+// one network, so the equivalent is to open the WALLET PICKER — window.lxc.open(), the XRPL connect
+// layer's own entry point. Once connected, the same control goes where it was pointed.
 const SCRIPT = '<script id="lx-xrplchoosenet">(function(){'
   + 'if(window.lxChooseNetwork)return;'
-  + 'window.lxChooseNetwork=function(target){'
+  + 'function go(target){'
   + 'var t=target||"lumoscore-home.html";'
   + 'try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}'
-  + 'try{ location.href=t; return; }catch(_){}'
-  + 'try{ if(window.__lxNav) window.__lxNav(target||"lumoscore-home.html"); }catch(_){}'
+  + 'try{ location.href=t; }catch(_){}'
+  + '}'
+  + 'window.lxChooseNetwork=function(target){'
+  + 'var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}'
+  + 'if(addr){ go(target); return; }'                     // connected: the gate will let them through
+  + 'try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}'
+  + 'go(target);'                                          // no connect layer on this page — try anyway
   + '};'
   + '})();</'+'script>';
 
