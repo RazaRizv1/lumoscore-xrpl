@@ -5705,7 +5705,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
   var K = {
     addr: 'lumos.address', wallet: 'lumos.wallet', transport: 'lumos.transport',
-    chain: 'lumos.chain', network: 'lumos.network'
+    chain: 'lumos.chain', network: 'lumos.network',
+    // Which wallet was last connected. Same key the Stellar build uses, and deliberately NOT cleared
+    // by forget(): which wallet you last used is the thing worth remembering once you sign out.
+    lastWallet: 'lumos.lastWallet'
   };
 
   function get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
@@ -5730,6 +5733,15 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function store(addr, walletName, transport) {
     set(K.addr, addr); set(K.wallet, walletName); set(K.transport, transport);
     set(K.chain, 'xrpl'); set(K.network, 'mainnet');
+    // Recorded as the wallet ID, not the display name, because that is what the picker compares
+    // against — taking both from the same place is what stops them drifting apart.
+    try {
+      for (var i = 0; i < WALLETS.length; i++) {
+        if (WALLETS[i].name === walletName || WALLETS[i].id === walletName) {
+          set(K.lastWallet, WALLETS[i].id); break;
+        }
+      }
+    } catch (e) {}
     emit();
   }
 
@@ -6106,12 +6118,24 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         badge.className = 'lxx-badge';
         badge.hidden = true;
         b.appendChild(badge);
-        // Detection is async and must never hold up the list being usable.
-        w.status().then(function (s) {
-          if (!s) return;
-          badge.textContent = s;
+
+        // ONE TAG PER ROW, AND "Last used" WINS. The Stellar build settled this in _lastusedbadge:
+        // a row that is both installed and last-used showed "Installed", so the recency tag never
+        // appeared for the wallet you actually use. The row has space for one tag, and "Last used"
+        // is the more useful of the two — it already implies the wallet is installed.
+        var wasLast = false;
+        try { wasLast = !!get(K.lastWallet) && get(K.lastWallet) === w.id; } catch (e) {}
+        if (wasLast) {
+          badge.textContent = 'Last used';
           badge.hidden = false;
-        }).catch(noop);
+        } else {
+          // Detection is async and must never hold up the list being usable.
+          w.status().then(function (s) {
+            if (!s) return;
+            badge.textContent = s;
+            badge.hidden = false;
+          }).catch(noop);
+        }
 
         b.addEventListener('click', function () { run(w); });
         list.appendChild(b);
