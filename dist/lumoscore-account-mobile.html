@@ -4380,63 +4380,7 @@ function ping(){
 if(document.readyState!=="loading")ping(); else document.addEventListener("DOMContentLoaded",ping);
 setInterval(ping,5000);
 window.addEventListener("storage",ping);
-})();</script><script id="lx-actbeacon">(function(){if(window.__lxActB)return;window.__lxActB=1;var SENT={};function addr(){try{return localStorage.getItem("lumos.address")||"";}catch(e){return "";}}function rec(h){try{if(!h||SENT[h])return;if(!/^[0-9a-f]{64}$/i.test(h))return;var a=addr(); if(!/^G[A-Z2-7]{55}$/.test(a))return;SENT[h]=1;fetch("/lxapi/act",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({addr:a,hash:h}),keepalive:true}).catch(function(){});}catch(e){}}function fromBody(t){try{var j=JSON.parse(t);if(j&&j.successful&&j.hash)rec(j.hash);}catch(e){}}function isTx(u){u=String(u||"");return u.indexOf("/transactions")>=0&&u.indexOf("horizon")>=0;}try{var of=window.fetch;window.fetch=function(i,o){var u=(typeof i==="string")?i:(i&&i.url)||"";var m=((o&&o.method)||(i&&i.method)||"GET").toUpperCase();var p=of.apply(this,arguments);try{ if(m==="POST"&&isTx(u)){ p.then(function(r){try{ r.clone().text().then(fromBody).catch(function(){}); }catch(e){}return r;}).catch(function(){}); } }catch(e){}return p;};}catch(e){}try{var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){try{this.__lxM=String(m||"").toUpperCase();this.__lxU=u;}catch(e){}return oo.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){try{ if(this.__lxM==="POST"&&isTx(this.__lxU)){this.addEventListener("load",function(){try{fromBody(this.responseText);}catch(e){}});} }catch(e){}return os.apply(this,arguments);};}catch(e){}})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"lumoscore-home.html"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css" data-lxts="1.1">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8.8px;height:46.2px;padding:0 13.2px;border-radius:13.2px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 15.4px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:26.4px;height:26.4px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:15.4px;height:15.4px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8.8px);right:0;z-index:200;min-width:237.6px;background:var(--surface);border:1px solid var(--border-strong);border-radius:15.4px;padding:6.6px;box-shadow:0 19.8px 55px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:12.1px;padding:9.9px 12.1px;border:none;background:transparent;color:var(--text);border-radius:11px;cursor:pointer;font:600 15.95px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9.9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><script id="lx-nofollow">(function(){
-  var KEEP=[];
-  function own(h){
-    if(!h)return true;
-    if(h===location.host)return true;                       // covers localhost and the staging host
-    h=h.toLowerCase();
-    if(h==="lumoscore.com"||h.slice(-14)===".lumoscore.com")return true;
-    for(var i=0;i<KEEP.length;i++)if(h===KEEP[i])return true;
-    return false;
-  }
-  function stamp(a){
-    var raw=a.getAttribute("href");
-    if(!raw)return;
-    var c=raw.charAt(0);
-    if(c==="#"||c==="/"||c==="?")return;                    // relative: ours by definition
-    var u;
-    try{ u=new URL(a.href,location.href); }catch(_){ return; }
-    // mailto:, tel:, javascript: -- not links a crawler follows, and not ours to annotate
-    if(u.protocol!=="http:"&&u.protocol!=="https:")return;
-    if(own(u.host))return;
-    var rel=(a.getAttribute("rel")||"").split(" ");
-    var out=[],seen={};
-    for(var i=0;i<rel.length;i++){ var t=rel[i]; if(!t||seen[t])continue; seen[t]=1; out.push(t); }
-    if(seen.nofollow)return;                                // already done: no write, no mutation
-    out.push("nofollow");
-    if(!seen.noopener)out.push("noopener");
-    a.setAttribute("rel",out.join(" "));
-  }
-  function sweep(root){
-    var n=(root&&root.querySelectorAll)?root:document;
-    var list=n.querySelectorAll("a[href]");
-    for(var i=0;i<list.length;i++)stamp(list[i]);
-    // the root itself can BE the anchor when one is inserted on its own
-    if(root&&root.tagName==="A")stamp(root);
-  }
-  function boot(){
-    sweep(document);
-    try{
-      // childList for anchors that appear with their data; href for an anchor that is re-pointed
-      // later. NOT rel -- stamp() is idempotent so a rel mutation would be a wasted pass, and this
-      // observer must never react to its own write.
-      new MutationObserver(function(muts){
-        for(var i=0;i<muts.length;i++){
-          var m=muts[i];
-          if(m.type==="attributes"){ if(m.target)stamp(m.target); continue; }
-          for(var j=0;j<m.addedNodes.length;j++){
-            var nd=m.addedNodes[j];
-            if(nd.nodeType===1)sweep(nd);
-          }
-        }
-      }).observe(document.documentElement,
-        {childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
-    }catch(_){}
-  }
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
-  else boot();
-})();</script><script id="lx-qrlib">//---------------------------------------------------------------------
+})();</script><script id="lx-actbeacon">(function(){if(window.__lxActB)return;window.__lxActB=1;var SENT={};function addr(){try{return localStorage.getItem("lumos.address")||"";}catch(e){return "";}}function rec(h){try{if(!h||SENT[h])return;if(!/^[0-9a-f]{64}$/i.test(h))return;var a=addr(); if(!/^G[A-Z2-7]{55}$/.test(a))return;SENT[h]=1;fetch("/lxapi/act",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({addr:a,hash:h}),keepalive:true}).catch(function(){});}catch(e){}}function fromBody(t){try{var j=JSON.parse(t);if(j&&j.successful&&j.hash)rec(j.hash);}catch(e){}}function isTx(u){u=String(u||"");return u.indexOf("/transactions")>=0&&u.indexOf("horizon")>=0;}try{var of=window.fetch;window.fetch=function(i,o){var u=(typeof i==="string")?i:(i&&i.url)||"";var m=((o&&o.method)||(i&&i.method)||"GET").toUpperCase();var p=of.apply(this,arguments);try{ if(m==="POST"&&isTx(u)){ p.then(function(r){try{ r.clone().text().then(fromBody).catch(function(){}); }catch(e){}return r;}).catch(function(){}); } }catch(e){}return p;};}catch(e){}try{var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){try{this.__lxM=String(m||"").toUpperCase();this.__lxU=u;}catch(e){}return oo.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){try{ if(this.__lxM==="POST"&&isTx(this.__lxU)){this.addEventListener("load",function(){try{fromBody(this.responseText);}catch(e){}});} }catch(e){}return os.apply(this,arguments);};}catch(e){}})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"lumoscore-home.html"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css" data-lxts="1.1">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8.8px;height:46.2px;padding:0 13.2px;border-radius:13.2px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 15.4px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:26.4px;height:26.4px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:15.4px;height:15.4px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8.8px);right:0;z-index:200;min-width:237.6px;background:var(--surface);border:1px solid var(--border-strong);border-radius:15.4px;padding:6.6px;box-shadow:0 19.8px 55px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:12.1px;padding:9.9px 12.1px;border:none;background:transparent;color:var(--text);border-radius:11px;cursor:pointer;font:600 15.95px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9.9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><script id="lx-qrlib">//---------------------------------------------------------------------
 //
 // QR Code Generator for JavaScript
 //
@@ -8593,5 +8537,61 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   else boot();
 })();
 
-</script></body>
+</script><script id="lx-nofollow">(function(){
+  var KEEP=[];
+  function own(h){
+    if(!h)return true;
+    if(h===location.host)return true;                       // covers localhost and the staging host
+    h=h.toLowerCase();
+    if(h==="lumoscore.com"||h.slice(-14)===".lumoscore.com")return true;
+    for(var i=0;i<KEEP.length;i++)if(h===KEEP[i])return true;
+    return false;
+  }
+  function stamp(a){
+    var raw=a.getAttribute("href");
+    if(!raw)return;
+    var c=raw.charAt(0);
+    if(c==="#"||c==="/"||c==="?")return;                    // relative: ours by definition
+    var u;
+    try{ u=new URL(a.href,location.href); }catch(_){ return; }
+    // mailto:, tel:, javascript: -- not links a crawler follows, and not ours to annotate
+    if(u.protocol!=="http:"&&u.protocol!=="https:")return;
+    if(own(u.host))return;
+    var rel=(a.getAttribute("rel")||"").split(" ");
+    var out=[],seen={};
+    for(var i=0;i<rel.length;i++){ var t=rel[i]; if(!t||seen[t])continue; seen[t]=1; out.push(t); }
+    if(seen.nofollow)return;                                // already done: no write, no mutation
+    out.push("nofollow");
+    if(!seen.noopener)out.push("noopener");
+    a.setAttribute("rel",out.join(" "));
+  }
+  function sweep(root){
+    var n=(root&&root.querySelectorAll)?root:document;
+    var list=n.querySelectorAll("a[href]");
+    for(var i=0;i<list.length;i++)stamp(list[i]);
+    // the root itself can BE the anchor when one is inserted on its own
+    if(root&&root.tagName==="A")stamp(root);
+  }
+  function boot(){
+    sweep(document);
+    try{
+      // childList for anchors that appear with their data; href for an anchor that is re-pointed
+      // later. NOT rel -- stamp() is idempotent so a rel mutation would be a wasted pass, and this
+      // observer must never react to its own write.
+      new MutationObserver(function(muts){
+        for(var i=0;i<muts.length;i++){
+          var m=muts[i];
+          if(m.type==="attributes"){ if(m.target)stamp(m.target); continue; }
+          for(var j=0;j<m.addedNodes.length;j++){
+            var nd=m.addedNodes[j];
+            if(nd.nodeType===1)sweep(nd);
+          }
+        }
+      }).observe(document.documentElement,
+        {childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
+    }catch(_){}
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
+  else boot();
+})();</script></body>
 </html>
