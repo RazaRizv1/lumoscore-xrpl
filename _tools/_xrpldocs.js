@@ -165,6 +165,22 @@ const FACTS = [
   ["Moving USDC between the XRP Ledger and eight networks over Circle's the bridge.",
     'Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled yet.'],
 
+  // THE TEN ECOSYSTEM POOLS ARE A DIFFERENT TEN ON THIS LEDGER.
+  //
+  // The page named LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and USDC — Stellar
+  // assets, on the XRP Ledger's own rewards documentation, in a sentence telling a reader which
+  // pools pay 100,000 LUMOS a round. Someone could provide liquidity to the wrong pool on the
+  // strength of it.
+  //
+  // The replacements are the pairs `browser/rewards.js` actually pays, which are RAZA's list
+  // confirmed against amm_info — so the docs and the page cannot name different pools. Both the
+  // wrapped and unwrapped forms are listed because the source is hard-wrapped and a re-run over an
+  // already-fixed container must still match.
+  ['LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and USDC',
+    '666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and SOLO'],
+  ['LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and\r\n  USDC',
+    '666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and\r\n  SOLO'],
+
   // Claims about what is live. The Stellar build's launch date is not this build's.
   ['LumosCore has been live on Stellar mainnet since 1 August 2026.',
     'LumosCore on the XRP Ledger is in active development.'],
@@ -320,4 +336,29 @@ console.log('xrpl docs: ' + pages + ' page key(s) across ' + files + ' container
   + tally.facts + ' fact rewrite(s), ' + tally.words + ' word pass(es)');
 const top = Object.keys(tally.per).sort((a, b) => tally.per[b] - tally.per[a]).slice(0, 10);
 for (const k of top) console.log('   x' + String(tally.per[k]).padStart(3) + '  ' + k.slice(0, 58));
-if (!pages) console.error('  ! no docs page matched — check the guard');
+// "No page changed" is the NORMAL state on a re-run, not a fault — the rules have already been
+// applied and re-applying them is a no-op. The old message said "check the guard" every time, which
+// is a warning that cries wolf: read enough times with nothing wrong behind it and a real one gets
+// ignored too.
+//
+// So it distinguishes the two cases. A docs page still carrying Stellar or XLM in its MARKUP is
+// worth a look; the same words inside a <script> are almost always this project's own comments
+// explaining what was changed and why, and rewriting those would be nonsense.
+if (!pages) {
+  let markupHits = 0;
+  for (const dev of ['desktop', 'mobile']) {
+    let d; try { d = read(`lumoscore-xrpl-${dev}.html`); } catch (e) { continue; }
+    const { json: j } = getContents(d);
+    for (const k of Object.keys(j)) {
+      if (k.indexOf('lumoscore-docs') !== 0) continue;
+      const markup = j[k].replace(/<script[\s\S]*?<\/script>/g, ' ').replace(/<style[\s\S]*?<\/style>/g, ' ');
+      if (/\b(Stellar|XLM)\b/.test(markup)) markupHits++;
+    }
+  }
+  if (markupHits) {
+    console.error('  ! nothing rewritten, but ' + markupHits
+      + ' docs page(s) still name Stellar/XLM in their MARKUP — a rule is missing');
+  } else {
+    console.log('   nothing to do: docs markup is already clean (any Stellar/XLM left is in scripts)');
+  }
+}

@@ -1279,224 +1279,7 @@ function ping(){
 if(document.readyState!=="loading")ping(); else document.addEventListener("DOMContentLoaded",ping);
 setInterval(ping,5000);
 window.addEventListener("storage",ping);
-})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><script id="lx-xrplfeerate">
-// Fee tier: 0.2% per trade, 0.1% for holders of 250,000+ LUMOS.
-//
-// THE INHERITED VERSION COULD NEVER GRANT THE DISCOUNT. It looked up the connected address at
-// https://horizon.stellar.org/accounts/<addr> with the STELLAR LUMOS issuer (GB5T2EQC…). On this
-// site `lumos.address` is an r-address, so Horizon answered 404, the layer swallowed it, and the
-// rate stayed at 0.2% for everyone -- forever, silently, with no error anywhere. A holder with a
-// million LUMOS would simply have been charged double.
-//
-// The numbers are unchanged and deliberately so: 0.2% / 0.1% at 250,000 LUMOS, and LUMOS sitting
-// inside a pool still counts toward the threshold. Only the ledger changed.
-//
-// The public surface is kept byte-for-byte compatible with the Stellar layer -- __lxFeeRate,
-// __lxLumosBal, __lxLumosThresh, __lxLumosIssuer, __lxFeeTier(), __lxFeeTierSet, __lxFeeTierRefresh
-// and the 'lx:feetier' event -- because other code on these pages reads all of them.
-(function () {
-  if (window.__lxFrBooted) return;
-  window.__lxFrBooted = 1;
-
-  // Verified on mainnet: this issuer is blackholed (DisableMaster + RegularKey = ACCOUNT_ZERO),
-  // so the supply is fixed and no further LUMOS can ever be issued.
-  var ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
-  var CUR = '4C554D4F53000000000000000000000000000000';       // 'LUMOS' as a 40-char hex currency
-  var THRESH = 250000;
-  var RPC = 'https://xrplcluster.com/';
-
-  if (typeof window.__lxFeeRate !== 'number') window.__lxFeeRate = 0.002;
-  if (!('__lxLumosBal' in window)) window.__lxLumosBal = null;
-  window.__lxLumosThresh = THRESH;
-  window.__lxLumosIssuer = ISS;
-
-  function pub(bal) {
-    window.__lxLumosBal = bal;
-    window.__lxFeeRate = (bal >= THRESH) ? 0.001 : 0.002;
-    try {
-      window.dispatchEvent(new CustomEvent('lx:feetier',
-        { detail: { bal: bal, rate: window.__lxFeeRate, thresh: THRESH } }));
-    } catch (e) {}
-  }
-
-  window.__lxFeeTier = function () {
-    return { bal: window.__lxLumosBal, rate: window.__lxFeeRate, thresh: THRESH };
-  };
-  window.__lxFeeTierSet = pub;
-
-  function rpc(method, params) {
-    return fetch(RPC, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
-      var res = j && j.result;
-      if (!res || res.error) return null;
-      return res;
-    }).catch(function () { return null; });
-  }
-
-  var linesP = {};
-  function lines(addr) {
-    if (!linesP[addr]) {
-      linesP[addr] = rpc('account_lines', { account: addr, limit: 400, ledger_index: 'validated' });
-    }
-    return linesP[addr];
-  }
-
-  var ammP = {};
-  function amm(account) {
-    if (!ammP[account]) ammP[account] = rpc('amm_info', { amm_account: account });
-    return ammP[account];
-  }
-
-  function amountOf(side) {
-    // amm_info returns a string of drops for XRP, or {currency, issuer, value} for a token.
-    if (!side || typeof side === 'string') return null;
-    if (side.currency !== CUR || side.issuer !== ISS) return null;
-    var v = Number(side.value);
-    return isFinite(v) ? v : null;
-  }
-
-  // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
-  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
-  // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
-  function poolLumos(rows, cb) {
-    var lps = [];
-    for (var i = 0; i < rows.length; i++) {
-      var c = rows[i].currency;
-      var bal = Number(rows[i].balance);
-      if (typeof c === 'string' && c.length === 40 && /^03/i.test(c) && bal > 0) lps.push(rows[i]);
-    }
-    lps = lps.slice(0, 25);                       // same cap the Stellar layer used
-    if (!lps.length) { cb(0); return; }
-
-    var left = lps.length, total = 0;
-    lps.forEach(function (lp) {
-      // The LP token's ISSUER is the AMM account itself, which is what amm_info is keyed on.
-      amm(lp.account).then(function (info) {
-        try {
-          var a = info && info.amm;
-          if (a) {
-            var lum = amountOf(a.amount);
-            if (lum == null) lum = amountOf(a.amount2);
-            var supply = a.lp_token ? Number(a.lp_token.value) : 0;
-            var mine = Number(lp.balance);
-            if (lum != null && supply > 0 && isFinite(mine)) total += lum * (mine / supply);
-          }
-        } catch (e) {}
-        if (--left === 0) cb(total);
-      });
-    });
-  }
-
-  function resolve(force) {
-    var me = '';
-    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
-
-    if (!me) {
-      if (window.__lxLumosBal !== null) pub(null);
-      else { window.__lxLumosBal = null; window.__lxFeeRate = 0.002; }
-      return;
-    }
-    if (!force && window.__lxFrFor === me) return;
-    window.__lxFrFor = me;
-    if (force) { try { delete linesP[me]; } catch (e) {} }
-
-    lines(me).then(function (res) {
-      if (!res || !res.lines) { window.__lxFrFor = ''; return; }
-      var rows = res.lines;
-
-      var held = 0;
-      for (var i = 0; i < rows.length; i++) {
-        if (rows[i].currency === CUR && rows[i].account === ISS) {
-          var v = Number(rows[i].balance);
-          // A NEGATIVE balance means this account ISSUES LUMOS; it is an obligation, not a holding.
-          if (isFinite(v) && v > 0) held += v;
-        }
-      }
-      pub(held);
-      if (held >= THRESH) return;                 // already qualified; no need to price the pools
-
-      poolLumos(rows, function (extra) {
-        if (extra > 0 && window.__lxFrFor === me) pub(held + extra);
-      });
-    });
-  }
-
-  window.__lxFeeTierRefresh = function () {
-    var me = '';
-    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
-    if (me) { try { delete linesP[me]; } catch (e) {} }
-    window.__lxFrFor = '';
-    resolve(true);
-  };
-
-  resolve();
-  window.addEventListener('storage', function (e) {
-    if (e && e.key === 'lumos.address') { window.__lxFrFor = ''; resolve(); }
-  });
-  // The address can be written after this runs (connect finishes late, or a redirect returns).
-  setTimeout(resolve, 1200);
-  setTimeout(resolve, 4000);
-})();
-
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/xrpl/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-nofollow">(function(){
-  var KEEP=[];
-  function own(h){
-    if(!h)return true;
-    if(h===location.host)return true;                       // covers localhost and the staging host
-    h=h.toLowerCase();
-    if(h==="lumoscore.com"||h.slice(-14)===".lumoscore.com")return true;
-    for(var i=0;i<KEEP.length;i++)if(h===KEEP[i])return true;
-    return false;
-  }
-  function stamp(a){
-    var raw=a.getAttribute("href");
-    if(!raw)return;
-    var c=raw.charAt(0);
-    if(c==="#"||c==="/"||c==="?")return;                    // relative: ours by definition
-    var u;
-    try{ u=new URL(a.href,location.href); }catch(_){ return; }
-    // mailto:, tel:, javascript: -- not links a crawler follows, and not ours to annotate
-    if(u.protocol!=="http:"&&u.protocol!=="https:")return;
-    if(own(u.host))return;
-    var rel=(a.getAttribute("rel")||"").split(" ");
-    var out=[],seen={};
-    for(var i=0;i<rel.length;i++){ var t=rel[i]; if(!t||seen[t])continue; seen[t]=1; out.push(t); }
-    if(seen.nofollow)return;                                // already done: no write, no mutation
-    out.push("nofollow");
-    if(!seen.noopener)out.push("noopener");
-    a.setAttribute("rel",out.join(" "));
-  }
-  function sweep(root){
-    var n=(root&&root.querySelectorAll)?root:document;
-    var list=n.querySelectorAll("a[href]");
-    for(var i=0;i<list.length;i++)stamp(list[i]);
-    // the root itself can BE the anchor when one is inserted on its own
-    if(root&&root.tagName==="A")stamp(root);
-  }
-  function boot(){
-    sweep(document);
-    try{
-      // childList for anchors that appear with their data; href for an anchor that is re-pointed
-      // later. NOT rel -- stamp() is idempotent so a rel mutation would be a wasted pass, and this
-      // observer must never react to its own write.
-      new MutationObserver(function(muts){
-        for(var i=0;i<muts.length;i++){
-          var m=muts[i];
-          if(m.type==="attributes"){ if(m.target)stamp(m.target); continue; }
-          for(var j=0;j<m.addedNodes.length;j++){
-            var nd=m.addedNodes[j];
-            if(nd.nodeType===1)sweep(nd);
-          }
-        }
-      }).observe(document.documentElement,
-        {childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
-    }catch(_){}
-  }
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
-  else boot();
-})();</script><script id="lx-xrplconnect">
+})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><script id="lx-xrplconnect">
 // XRPL primitives, kept in one place and testable in node.
 //
 // Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
@@ -2462,5 +2245,222 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   else boot();
 })();
 
-</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/xrpl/trade","lumoscore-account":"/xrpl/account","lumoscore-asset-overview":"/xrpl/trade"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/xrpl/account/"+a+h):("/xrpl/account"+h);  if(base==="lumoscore-dex-asset")      return a?("/xrpl/trade/"+a+h):("/xrpl/trade"+h);  if(base==="lumoscore-asset-overview") return a?("/xrpl/trade/"+a+h):("/xrpl/trade"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+</script><script id="lx-xrplfeerate">
+// Fee tier: 0.2% per trade, 0.1% for holders of 250,000+ LUMOS.
+//
+// THE INHERITED VERSION COULD NEVER GRANT THE DISCOUNT. It looked up the connected address at
+// https://horizon.stellar.org/accounts/<addr> with the STELLAR LUMOS issuer (GB5T2EQC…). On this
+// site `lumos.address` is an r-address, so Horizon answered 404, the layer swallowed it, and the
+// rate stayed at 0.2% for everyone -- forever, silently, with no error anywhere. A holder with a
+// million LUMOS would simply have been charged double.
+//
+// The numbers are unchanged and deliberately so: 0.2% / 0.1% at 250,000 LUMOS, and LUMOS sitting
+// inside a pool still counts toward the threshold. Only the ledger changed.
+//
+// The public surface is kept byte-for-byte compatible with the Stellar layer -- __lxFeeRate,
+// __lxLumosBal, __lxLumosThresh, __lxLumosIssuer, __lxFeeTier(), __lxFeeTierSet, __lxFeeTierRefresh
+// and the 'lx:feetier' event -- because other code on these pages reads all of them.
+(function () {
+  if (window.__lxFrBooted) return;
+  window.__lxFrBooted = 1;
+
+  // Verified on mainnet: this issuer is blackholed (DisableMaster + RegularKey = ACCOUNT_ZERO),
+  // so the supply is fixed and no further LUMOS can ever be issued.
+  var ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  var CUR = '4C554D4F53000000000000000000000000000000';       // 'LUMOS' as a 40-char hex currency
+  var THRESH = 250000;
+  var RPC = 'https://xrplcluster.com/';
+
+  if (typeof window.__lxFeeRate !== 'number') window.__lxFeeRate = 0.002;
+  if (!('__lxLumosBal' in window)) window.__lxLumosBal = null;
+  window.__lxLumosThresh = THRESH;
+  window.__lxLumosIssuer = ISS;
+
+  function pub(bal) {
+    window.__lxLumosBal = bal;
+    window.__lxFeeRate = (bal >= THRESH) ? 0.001 : 0.002;
+    try {
+      window.dispatchEvent(new CustomEvent('lx:feetier',
+        { detail: { bal: bal, rate: window.__lxFeeRate, thresh: THRESH } }));
+    } catch (e) {}
+  }
+
+  window.__lxFeeTier = function () {
+    return { bal: window.__lxLumosBal, rate: window.__lxFeeRate, thresh: THRESH };
+  };
+  window.__lxFeeTierSet = pub;
+
+  function rpc(method, params) {
+    return fetch(RPC, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var res = j && j.result;
+      if (!res || res.error) return null;
+      return res;
+    }).catch(function () { return null; });
+  }
+
+  var linesP = {};
+  function lines(addr) {
+    if (!linesP[addr]) {
+      linesP[addr] = rpc('account_lines', { account: addr, limit: 400, ledger_index: 'validated' });
+    }
+    return linesP[addr];
+  }
+
+  var ammP = {};
+  function amm(account) {
+    if (!ammP[account]) ammP[account] = rpc('amm_info', { amm_account: account });
+    return ammP[account];
+  }
+
+  function amountOf(side) {
+    // amm_info returns a string of drops for XRP, or {currency, issuer, value} for a token.
+    if (!side || typeof side === 'string') return null;
+    if (side.currency !== CUR || side.issuer !== ISS) return null;
+    var v = Number(side.value);
+    return isFinite(v) ? v : null;
+  }
+
+  // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
+  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
+  // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
+  function poolLumos(rows, cb) {
+    var lps = [];
+    for (var i = 0; i < rows.length; i++) {
+      var c = rows[i].currency;
+      var bal = Number(rows[i].balance);
+      if (typeof c === 'string' && c.length === 40 && /^03/i.test(c) && bal > 0) lps.push(rows[i]);
+    }
+    lps = lps.slice(0, 25);                       // same cap the Stellar layer used
+    if (!lps.length) { cb(0); return; }
+
+    var left = lps.length, total = 0;
+    lps.forEach(function (lp) {
+      // The LP token's ISSUER is the AMM account itself, which is what amm_info is keyed on.
+      amm(lp.account).then(function (info) {
+        try {
+          var a = info && info.amm;
+          if (a) {
+            var lum = amountOf(a.amount);
+            if (lum == null) lum = amountOf(a.amount2);
+            var supply = a.lp_token ? Number(a.lp_token.value) : 0;
+            var mine = Number(lp.balance);
+            if (lum != null && supply > 0 && isFinite(mine)) total += lum * (mine / supply);
+          }
+        } catch (e) {}
+        if (--left === 0) cb(total);
+      });
+    });
+  }
+
+  function resolve(force) {
+    var me = '';
+    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
+
+    if (!me) {
+      if (window.__lxLumosBal !== null) pub(null);
+      else { window.__lxLumosBal = null; window.__lxFeeRate = 0.002; }
+      return;
+    }
+    if (!force && window.__lxFrFor === me) return;
+    window.__lxFrFor = me;
+    if (force) { try { delete linesP[me]; } catch (e) {} }
+
+    lines(me).then(function (res) {
+      if (!res || !res.lines) { window.__lxFrFor = ''; return; }
+      var rows = res.lines;
+
+      var held = 0;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].currency === CUR && rows[i].account === ISS) {
+          var v = Number(rows[i].balance);
+          // A NEGATIVE balance means this account ISSUES LUMOS; it is an obligation, not a holding.
+          if (isFinite(v) && v > 0) held += v;
+        }
+      }
+      pub(held);
+      if (held >= THRESH) return;                 // already qualified; no need to price the pools
+
+      poolLumos(rows, function (extra) {
+        if (extra > 0 && window.__lxFrFor === me) pub(held + extra);
+      });
+    });
+  }
+
+  window.__lxFeeTierRefresh = function () {
+    var me = '';
+    try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
+    if (me) { try { delete linesP[me]; } catch (e) {} }
+    window.__lxFrFor = '';
+    resolve(true);
+  };
+
+  resolve();
+  window.addEventListener('storage', function (e) {
+    if (e && e.key === 'lumos.address') { window.__lxFrFor = ''; resolve(); }
+  });
+  // The address can be written after this runs (connect finishes late, or a redirect returns).
+  setTimeout(resolve, 1200);
+  setTimeout(resolve, 4000);
+})();
+
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/xrpl/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-nofollow">(function(){
+  var KEEP=[];
+  function own(h){
+    if(!h)return true;
+    if(h===location.host)return true;                       // covers localhost and the staging host
+    h=h.toLowerCase();
+    if(h==="lumoscore.com"||h.slice(-14)===".lumoscore.com")return true;
+    for(var i=0;i<KEEP.length;i++)if(h===KEEP[i])return true;
+    return false;
+  }
+  function stamp(a){
+    var raw=a.getAttribute("href");
+    if(!raw)return;
+    var c=raw.charAt(0);
+    if(c==="#"||c==="/"||c==="?")return;                    // relative: ours by definition
+    var u;
+    try{ u=new URL(a.href,location.href); }catch(_){ return; }
+    // mailto:, tel:, javascript: -- not links a crawler follows, and not ours to annotate
+    if(u.protocol!=="http:"&&u.protocol!=="https:")return;
+    if(own(u.host))return;
+    var rel=(a.getAttribute("rel")||"").split(" ");
+    var out=[],seen={};
+    for(var i=0;i<rel.length;i++){ var t=rel[i]; if(!t||seen[t])continue; seen[t]=1; out.push(t); }
+    if(seen.nofollow)return;                                // already done: no write, no mutation
+    out.push("nofollow");
+    if(!seen.noopener)out.push("noopener");
+    a.setAttribute("rel",out.join(" "));
+  }
+  function sweep(root){
+    var n=(root&&root.querySelectorAll)?root:document;
+    var list=n.querySelectorAll("a[href]");
+    for(var i=0;i<list.length;i++)stamp(list[i]);
+    // the root itself can BE the anchor when one is inserted on its own
+    if(root&&root.tagName==="A")stamp(root);
+  }
+  function boot(){
+    sweep(document);
+    try{
+      // childList for anchors that appear with their data; href for an anchor that is re-pointed
+      // later. NOT rel -- stamp() is idempotent so a rel mutation would be a wasted pass, and this
+      // observer must never react to its own write.
+      new MutationObserver(function(muts){
+        for(var i=0;i<muts.length;i++){
+          var m=muts[i];
+          if(m.type==="attributes"){ if(m.target)stamp(m.target); continue; }
+          for(var j=0;j<m.addedNodes.length;j++){
+            var nd=m.addedNodes[j];
+            if(nd.nodeType===1)sweep(nd);
+          }
+        }
+      }).observe(document.documentElement,
+        {childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
+    }catch(_){}
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
+  else boot();
+})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/xrpl/trade","lumoscore-amm":"/xrpl/pools","lumoscore-launch-review":"/xrpl/launchpad/review","lumoscore-launch-confirm":"/xrpl/launchpad/confirm","lumoscore-launch-token":"/xrpl/launchpad","lumoscore-list-token":"/xrpl/list-your-token","lumoscore-bridge":"/xrpl/bridge","lumoscore-rewards":"/xrpl/rewards","lumoscore-lumos-token":"/xrpl/lumos","lumoscore-wallet":"/xrpl/wallet","lumoscore-home":"/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/xrpl/trade","lumoscore-account":"/xrpl/account","lumoscore-asset-overview":"/xrpl/trade"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/xrpl/account/"+a+h):("/xrpl/account"+h);  if(base==="lumoscore-dex-asset")      return a?("/xrpl/trade/"+a+h):("/xrpl/trade"+h);  if(base==="lumoscore-asset-overview") return a?("/xrpl/trade/"+a+h):("/xrpl/trade"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>
