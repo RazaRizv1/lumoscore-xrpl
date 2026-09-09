@@ -138,14 +138,32 @@ const FACTS = [
   [/Circle's attestation normally takes a few minutes\.\s*Waiting is the only option — neither of us can speed it up\./g,
     'Transfers are not enabled from this page yet, so there is nothing in progress to wait for.'],
 
-  [/\bCCTP\b/g, 'the bridge'],
   [/Circle observes the burn and issues a signed attestation\./g, ''],
 
   // Bridge: this build routes through Axelar and does not move funds yet.
+  //
+  // THESE MUST RUN BEFORE THE BARE `CCTP` RULE, and did not. That rule (now moved to the end of this
+  // table) rewrites the word to "the bridge", so by the time these full sentences were tried the
+  // string they match no longer existed. What shipped was the half-rewritten wreck:
+  //
+  //     "Moving USDC between the XRP Ledger and eight networks over Circle's the bridge."
+  //
+  // — on an indexed docs page, still naming Circle, still counting eight networks, and no longer a
+  // sentence. The specific rule was correct and was silently disabled by a broader one above it,
+  // which is the third time a rule in this project has been switched off by another rule rather
+  // than by a bug in itself.
+  //
+  // GENERAL ORDER FOR THIS TABLE: whole sentences first, single words last. A word rule cannot help
+  // matching inside a sentence rule's text, so the sentence has to get there first.
   ['Moving USDC between Stellar and eight networks over Circle’s CCTP.',
     'Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled yet.'],
   ["Move USDC between Stellar and eight networks over Circle's CCTP.",
     'See which networks the XRP Ledger can reach through Axelar. Transfers are not enabled yet.'],
+  // The already-damaged form, for containers that were built before this ordering was fixed.
+  ['Moving USDC between the XRP Ledger and eight networks over Circle’s the bridge.',
+    'Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled yet.'],
+  ["Moving USDC between the XRP Ledger and eight networks over Circle's the bridge.",
+    'Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled yet.'],
 
   // Claims about what is live. The Stellar build's launch date is not this build's.
   ['LumosCore has been live on Stellar mainnet since 1 August 2026.',
@@ -194,6 +212,10 @@ const FACTS = [
   ['XLM reserve', 'XRP reserve'],
   ['Keeping XLM for fees', 'Keeping XRP for fees'],
   ['where XLM is trading', 'where XRP is trading'],
+
+  // LAST, deliberately — see the note beside the bridge sentences above. This rewrites a single word
+  // and would otherwise reach inside the sentences those rules are trying to match whole.
+  [/\bCCTP\b/g, 'the bridge'],
 ];
 
 // ---- 2. Whole-word swaps, applied only after every fact above has landed. ------------------------

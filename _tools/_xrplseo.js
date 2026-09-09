@@ -80,6 +80,64 @@ const SEO = {
     'Connect a Wallet | LumosCore',
     'Connect an XRP Ledger wallet to trade, pool and bridge. LumosCore never holds your keys.',
   ],
+
+  // ---- THE DOCS, THE BLOG AND THE TWO REMAINING PAGES -------------------------------------------
+  //
+  // Ten base pages were still telling search engines this was a Stellar site — "The five supported
+  // Stellar wallets", "Resting orders on the Stellar order book", "Issuing an asset on Stellar
+  // mainnet", "$250, paid in XLM" — on pages marked index,follow. They were not wrong so much as
+  // absent: this table only rewrites what it names, which is the right default, and nobody had
+  // named them.
+  //
+  // The wording is taken from what each page's BODY now says, not invented here, so the description
+  // and the page cannot describe different products. Where the body was already correct (connect a
+  // wallet reads "The supported XRP Ledger wallets") the description simply matches it.
+  //
+  // TWO FIGURES ARE DELIBERATELY NOT REPEATED. The launch page's "flat $25 cost" is Stellar's price
+  // and this build's is still test pricing, so the description says what it costs rather than a
+  // number that is wrong today and wrong again after the next change. The wallet count is not
+  // repeated either — this build supports two, the old copy claimed five, and a count in a meta
+  // description is a hostage to the next wallet added.
+  'lumoscore-blog': [
+    'Blog — Guides and explainers | LumosCore',
+    'Guides and explainers on trading, liquidity pools, cross-chain transfers and token issuance on the XRP Ledger, from the LumosCore team.',
+  ],
+  'lumoscore-blog-post': [
+    'LumosCore Blog',
+    'How a constant-product liquidity pool prices a trade on the XRP Ledger, what pool shares represent, and what to look at before depositing.',
+  ],
+  'lumoscore-docs-connect-a-wallet': [
+    'Connect a wallet | LumosCore Docs',
+    'The supported XRP Ledger wallets, how connecting works, and what the site can and cannot do.',
+  ],
+  'lumoscore-docs-cross-chain': [
+    'Cross-chain | LumosCore Docs',
+    'Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled from this page yet.',
+  ],
+  'lumoscore-docs-launch-a-token': [
+    'Launch a token | LumosCore Docs',
+    'Issuing an asset on the XRP Ledger: the flow, what it costs and what you receive.',
+  ],
+  'lumoscore-docs-limit-orders': [
+    'Limit orders | LumosCore Docs',
+    'Resting orders on the XRP Ledger’s own order book, why they are free, and how to manage them.',
+  ],
+  'lumoscore-docs-swaps': [
+    'Swaps | LumosCore Docs',
+    'Trading assets on the XRP Ledger: routing, price, slippage and what you approve before signing.',
+  ],
+  'lumoscore-docs-trustlines': [
+    'Trustlines | LumosCore Docs',
+    'Why the XRP Ledger needs a trust line before you can hold an asset, and what it reserves.',
+  ],
+  'lumoscore-list-token': [
+    'List your token | LumosCore',
+    'Apply for a curated listing on LumosCore. $250, paid in XRP, refunded in full if the listing is declined. Reviewed by a person, not a script.',
+  ],
+  'lumoscore-mcp': [
+    'LumosCore MCP — XRP Ledger DeFi for AI Agents | LumosCore',
+    'Connect Claude and other AI assistants to the XRP Ledger via the Model Context Protocol. Query prices, pools and balances in natural language.',
+  ],
 };
 
 const BASE = (k) => k.replace(/-(dark|light|mobile)\.html$/, '').replace(/\.html$/, '');
