@@ -554,6 +554,25 @@
     var isForm = !!$('#tokenTicker');
     if (!isForm && !$('.cost-row')) return;                       // not a launchpad page
 
+    // A REVIEW STEP WITH NO DRAFT DESCRIBES A TOKEN NOBODY ASKED FOR.
+    //
+    // The review and confirm pages are filled from the draft the form hands over, so their markup
+    // ships as the design's placeholder — "Aptos Coin", "$APT", "(900,000,000 APT)". Reached
+    // normally that is invisible, because the draft overwrites all of it. Reached with no draft —
+    // a direct link, a bookmark, a refresh after storage was cleared, a back-navigation from
+    // confirm — the placeholder is what stands, and the page reads as a real review of an Aptos
+    // token about to be minted, priced, with a Launch button under it.
+    //
+    // There is nothing to review without a draft, so it goes back to the step that makes one.
+    if (!isForm) {
+      var draft = null;
+      try { draft = JSON.parse(localStorage.getItem(DRAFT) || 'null'); } catch (e) { draft = null; }
+      if (!draft || !draft.name || !draft.ticker) {
+        try { location.replace('/xrpl/launchpad'); } catch (e) {}
+        return;
+      }
+    }
+
     if (isForm) { wireNext(); wireIcon(); wireNumericFields(); }
 
     // Loud on purpose. Reduced pricing that ships unnoticed is a launchpad that charges 50 cents

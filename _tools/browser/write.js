@@ -569,7 +569,13 @@
         ? 'Each order is cancelled by its own transaction, so you will be asked to approve ' + seqs.length + ' of them.'
         : 'This cannot be undone. Anything already filled stays in your wallet.';
     }
-    if (det && describe) { det.textContent = describe; det.style.display = ''; }
+    // The else matters: this block ships as the design's mock ("921 APT", "+9.2 APT"), so leaving
+    // it alone when there is nothing to describe shows another chain's order as the one about to be
+    // cancelled. Emptied and hidden rather than left standing.
+    if (det) {
+      if (describe) { det.textContent = describe; det.style.display = ''; }
+      else { det.textContent = ''; det.style.display = 'none'; }
+    }
     else if (det) det.style.display = 'none';
 
     // Replaced rather than added to: this modal is reused for every order, and a listener per opening
