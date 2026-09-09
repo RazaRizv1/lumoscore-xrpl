@@ -30,7 +30,7 @@ const STELLAR = 'C:' + path.sep + 'LumosCore';
 
 const CHAIN = [
   '_xrplnav', '_xrplconnect', '_xrplwhead', '_xrplfeerate', '_xrplaunchpad', '_xrpldash', '_xrpldashtop', '_xrpltrade',
-  '_xrpldexasset', '_xrplpools', '_xrplpooldetail', '_xrplaccount', '_xrplwallet', '_xrplrewards',
+  '_xrpldexasset', '_xrplpools', '_xrplpooldetail', '_xrplaccount', '_xrplwallet', '_xrpltrustbtn', '_xrplrewards',
   '_xrplltoken', '_xrplbridge', '_xrplsearch', '_xrplcopy', '_xrplreveal', '_xrplseo',
   '_xrplnetpicker', '_xrplchoosenet', '_xrpldashboxes', '_xrpllisting', '_xrplroutes', '_nofollow',
   '_xrplorphan', '_xrplbridgecopy', '_xrpldocs', '_xrplcopy2', '_xrplstripstellar',
