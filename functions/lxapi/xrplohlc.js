@@ -11,6 +11,8 @@
 // line and an area, not wicks, and sending open/high/low/volume for 180 points would quadruple the
 // payload for values nothing renders. If a candlestick view is ever added, widen this then.
 
+import { tokenId } from './_tokenid.js';
+
 const UP = 'https://api.xrpl.to/api';
 
 // Button label -> what the upstream understands. The upstream accepts 1D|5D|7D|1M|3M|1Y|5Y|ALL.
@@ -39,7 +41,11 @@ export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
 
-  const id = (url.searchParams.get('id') || '').trim().slice(0, 120);
+  // Either the upstream's own id, or the issuer + currency it is derived from — the pool pages know
+  // a reserve's issuer and currency off the ledger but have no ranking row to read an id out of.
+  // See _tokenid.js; the same two forms are accepted by the thumbnail proxy.
+  let id = (url.searchParams.get('id') || '').trim().slice(0, 120);
+  if (!id) id = await tokenId(url.searchParams.get('iss'), url.searchParams.get('cur'));
   if (!id) return json({ ok: false, error: 'no id' }, 60);
 
   const label = (url.searchParams.get('r') || '7D').toUpperCase();

@@ -57,10 +57,12 @@
   // A side is either a drops string (XRP) or { currency, issuer, value }.
   function side(a) {
     if (a == null) return null;
-    if (typeof a === 'string') return { name: 'XRP', amount: Number(a) / 1e6, issuer: null };
+    // `currency` is the RAW code, kept alongside the display name: the chart derives the upstream's
+    // token id from issuer + raw currency, and the decoded name would not hash to anything.
+    if (typeof a === 'string') return { name: 'XRP', amount: Number(a) / 1e6, issuer: null, currency: 'XRP' };
     var name = a.currency;
     try { name = window.lxx.decodeCurrency(a.currency).display; } catch (e) {}
-    return { name: name, amount: Number(a.value), issuer: a.issuer };
+    return { name: name, amount: Number(a.value), issuer: a.issuer, currency: a.currency };
   }
 
   function setStat(match, value, sub) {
@@ -77,6 +79,144 @@
     return false;
   }
 
+  // ---- the Pool Activity chart --------------------------------------------------------------------
+  //
+  // It shipped as the design's mock and nothing ever replaced it: a y-axis reading 3.19M APT down to
+  // 1.65M APT, an x-axis running Sep to Sep, and a 751-character path drawing a year of this pool's
+  // liquidity that never happened. Visible on load, on the page for one specific pool, in another
+  // chain's asset.
+  //
+  // A pool's TVL history is not something the ledger keeps, so that particular series cannot be made
+  // real. Its EXCHANGE RATE can: the price of the pool's issued asset against the other side is the
+  // pair's own history, it is what the chart's shape actually communicates, and /lxapi/xrplohlc
+  // serves it — now keyed on issuer + currency, because a pool reserve has no ranking row to take an
+  // id from. Quoted in XRP where there is an XRP side, matching how the rest of the page denominates
+  // the pair, and in USD for a token/token pool.
+  //
+  // The design's own geometry is reused exactly — same viewBox, same two paths, same five labels
+  // down the right and five months along the bottom — so this is the chart the design drew, with
+  // numbers that are true.
+  var NSVG = 'http://www.w3.org/2000/svg';
+
+  function axisNum(v) {
+    var a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    if (a >= 1) return v.toFixed(2);
+    if (a >= 0.0001) return v.toFixed(5);
+    return v.toPrecision(3);
+  }
+
+  function drawChart(pts, unit) {
+    var wrap = $('.chart-svg-wrap');
+    var svg = wrap && wrap.querySelector('svg');
+    if (!svg || !pts || pts.length < 2) return;
+
+    // THE GEOMETRY IS READ, NOT ASSUMED. This was written against a 400x220 viewBox measured on one
+    // variant; the page actually serves 1000x280, so a hardcoded box drew the whole series into the
+    // left 40% and hung the area fill above the floor. The tell was elementFromPoint returning a
+    // DIV at the centre of the chart instead of the path.
+    //
+    // Everything comes off the design's own labels: the value labels sit at the right edge of the
+    // plot and mark its top and bottom, the month row sits below the floor. So the same code fits
+    // whatever box a variant ships, and there is nothing to keep in step by hand.
+    var vb = (svg.getAttribute('viewBox') || '0 0 400 220').split(/[\s,]+/).map(Number);
+    var W = vb[2] || 400, H = vb[3] || 220;
+
+    // Split the two label sets by POSITION, not by guessing at the right-hand edge. The value
+    // labels run down one column at varying y; the date row shares a single y at the foot. An
+    // x-threshold gets the last date tick wrong the moment it sits far enough right — measured, the
+    // one at x=936 in a 1000-wide box was being written a price.
+    var allText = [].slice.call(svg.querySelectorAll('text'));
+    var footY = Math.max.apply(null, allText.map(function (t) { return parseFloat(t.getAttribute('y')) || 0; }));
+    var yLab = allText.filter(function (t) { return (parseFloat(t.getAttribute('y')) || 0) < footY; });
+    if (!yLab.length) yLab = allText.slice(0, Math.max(1, allText.length - 5));
+
+    var labX = Math.min.apply(null, yLab.map(function (t) { return parseFloat(t.getAttribute('x')) || W; }));
+    var labYs = yLab.map(function (t) { return parseFloat(t.getAttribute('y')) || 0; }).sort(function (a, b) { return a - b; });
+
+    var RIGHT = Math.max(0, W - labX) + 12;
+    var TOP = labYs.length ? labYs[0] : 10;
+    var BOT = labYs.length ? labYs[labYs.length - 1] : (H - 24);
+    var PW = W - RIGHT;
+    var vals = pts.map(function (p) { return p[1]; });
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var rg = (mx - mn) || Math.abs(mx) || 1;
+
+    var d = '', i;
+    for (i = 0; i < pts.length; i++) {
+      var x = (i / (pts.length - 1)) * PW;
+      var y = BOT - ((vals[i] - mn) / rg) * (BOT - TOP);
+      d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+
+    var line = svg.querySelectorAll('path')[1] || svg.querySelectorAll('path')[0];
+    var area = svg.querySelectorAll('path')[0];
+    if (area) area.setAttribute('d', d + ' L' + PW + ' ' + H + ' L0 ' + H + ' Z');
+    if (line && line !== area) line.setAttribute('d', d);
+
+    // The marker dot the design puts at the latest point.
+    var dot = svg.querySelector('circle');
+    if (dot) {
+      dot.setAttribute('cx', String(PW));
+      dot.setAttribute('cy', (BOT - ((vals[vals.length - 1] - mn) / rg) * (BOT - TOP)).toFixed(1));
+    }
+
+    // The value labels, top to bottom, however many the variant ships.
+    yLab.slice().sort(function (p, q) {
+      return (parseFloat(p.getAttribute('y')) || 0) - (parseFloat(q.getAttribute('y')) || 0);
+    }).forEach(function (t, k, arr) {
+      var frac = 1 - (k / Math.max(1, arr.length - 1));
+      t.textContent = axisNum(mn + rg * frac) + (unit ? (' ' + unit) : '');
+    });
+
+    // And the dates along the foot, read off the real timestamps rather than invented.
+    var months = allText.filter(function (t) { return yLab.indexOf(t) < 0; });
+    months.sort(function (p, q) {
+      return (parseFloat(p.getAttribute('x')) || 0) - (parseFloat(q.getAttribute('x')) || 0);
+    }).forEach(function (t, k, arr) {
+      var idx = Math.round((k / Math.max(1, arr.length - 1)) * (pts.length - 1));
+      try {
+        t.textContent = new Date(pts[idx][0]).toLocaleDateString('en-GB', { month: 'short' });
+      } catch (e) {}
+    });
+  }
+
+  // Emptied BEFORE the request goes out, never only on success. The mock is already on screen, so
+  // "leave it alone if the fetch fails" leaves the invented year of history exactly where it was —
+  // the failure path has to remove it, not decline to replace it.
+  function clearChart() {
+    var wrap = $('.chart-svg-wrap');
+    var svg = wrap && wrap.querySelector('svg');
+    if (!svg) return;
+    [].forEach.call(svg.querySelectorAll('path'), function (p) { p.setAttribute('d', ''); });
+    var dot = svg.querySelector('circle');
+    if (dot) dot.setAttribute('r', '0');
+    [].forEach.call(svg.querySelectorAll('text'), function (t) { t.textContent = '—'; });
+  }
+
+  function loadChart(tok, quoteInXrp) {
+    if (!$('.chart-svg-wrap')) return;
+    clearChart();
+    if (!tok || !tok.issuer || !tok.currency) return;
+    var vs = quoteInXrp ? 'XRP' : 'USD';
+    fetch('/lxapi/xrplohlc?iss=' + encodeURIComponent(tok.issuer)
+      + '&cur=' + encodeURIComponent(tok.currency) + '&r=1Y&vs=' + vs)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok || !d.pts || d.pts.length < 2) return;   // leave it rather than half-draw
+        var v = d.pts;
+        if (v.length > 180) {
+          var step = Math.ceil(v.length / 180), out = [];
+          for (var i = 0; i < v.length; i += step) out.push(v[i]);
+          if (out[out.length - 1] !== v[v.length - 1]) out.push(v[v.length - 1]);
+          v = out;
+        }
+        drawChart(v, vs);
+      })
+      .catch(function () { /* the design's frame stays; nothing false is written into it */ });
+  }
+
   function paint(acct, amm) {
     var a = side(amm.amount), b = side(amm.amount2);
     if (!a || !b) return;
@@ -85,6 +225,8 @@
     // denominates a pair.
     var xrpSide = a.name === 'XRP' ? a : (b.name === 'XRP' ? b : null);
     var tok = a.name === 'XRP' ? b : a;
+
+    loadChart(tok, !!xrpSide);
 
     var name = $('.ph-name');
     if (name) name.textContent = a.name + ' / ' + b.name;
