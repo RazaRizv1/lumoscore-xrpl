@@ -72,6 +72,39 @@ function esc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }
 // way a hand-written list of 41 would.
 const SHARED_FILE = /(["'])lumoscore-(mcp|about|blog|blog-post|whitepaper|privacy|terms|support|docs-[a-z0-9-]+?)(-mobile|-dark|-light)?\.html\1/g;
 
+// APP pages linked by design filename, which resolve to nothing.
+//
+// Found by reading every <a href> out of the build and asking the server about each: the $LUMOS page
+// carries a visible "Home" link with href="lumoscore-home.html", which from /xrpl/lumos resolves to
+// /xrpl/lumoscore-home.html — Page not found. Most filename anchors sit in design templates our
+// layers replace before anyone sees them, but "most" is not "all", and the ones that survive are
+// invisible to a reader until they click.
+//
+// Mapped to the same routes the route table serves, so this cannot point somewhere that does not
+// exist. A filename that carries no parameter — an asset page, a pool page, an account page — maps
+// to its LIST, which is what that filename means without one. Pages with no route at all (signin,
+// asset-overview, and the admin set, which is not in the public build) are left alone rather than
+// guessed at.
+const APP_FILE = {
+  'home': '/xrpl/dashboard',
+  'landing': '/',
+  'dex': '/xrpl/trade',
+  'dex-asset': '/xrpl/trade',
+  'amm': '/xrpl/pools',
+  'amm-pool': '/xrpl/pools',
+  'bridge': '/xrpl/bridge',
+  'wallet': '/xrpl/wallet',
+  'rewards': '/xrpl/rewards',
+  'lumos-token': '/xrpl/lumos',
+  'launch-token': '/xrpl/launchpad',
+  'launch-review': '/xrpl/launchpad/review',
+  'launch-confirm': '/xrpl/launchpad/confirm',
+  'list-token': '/xrpl/list-your-token',
+};
+
+const APP_FILE_RE = new RegExp(
+  '(["\'])lumoscore-(' + Object.keys(APP_FILE).join('|') + ')(-mobile|-dark|-light)?\\.html\\1', 'g');
+
 function sharedFileUrl(name) {
   // A blog POST filename carries no slug — there is one design page for every post — so the index
   // is the only honest target. Linking to a guessed slug would be a 404 dressed as a fix.
@@ -80,7 +113,7 @@ function sharedFileUrl(name) {
   return 'https://lumoscore.com/' + name;
 }
 
-let pages = 0, total = 0, files_rewritten = 0;
+let pages = 0, total = 0, files_rewritten = 0, app_rewritten = 0;
 const per = {};
 
 for (const dev of ['desktop', 'mobile']) {
@@ -103,6 +136,13 @@ for (const dev of ['desktop', 'mobile']) {
       return q + sharedFileUrl(name) + q;
     });
 
+    // Longest-first is not needed here: the alternation is anchored by a quote on both sides, so
+    // "lumoscore-launch-token.html" cannot be read as "lumoscore-launch" plus stray text.
+    h = h.replace(APP_FILE_RE, function (_, q, name) {
+      app_rewritten++;
+      return q + APP_FILE[name] + q;
+    });
+
     if (h !== before) { json[k] = h; changed = true; pages++; }
   }
 
@@ -112,7 +152,7 @@ for (const dev of ['desktop', 'mobile']) {
   }
 }
 
-console.log('xrpl routes: ' + total + ' route reference(s) and ' + files_rewritten + ' shared-page filename(s) rewritten across ' + pages + ' page key(s)');
+console.log('xrpl routes: ' + total + ' route reference(s) and ' + files_rewritten + ' shared-page and ' + app_rewritten + ' app filename(s) rewritten across ' + pages + ' page key(s)');
 for (const k of Object.keys(per).sort((a, b) => per[b] - per[a])) {
   console.log('   ' + k.padEnd(18) + ' -> ' + (MAP.find(m => m[0] === k)[1]).padEnd(22) + per[k]);
 }

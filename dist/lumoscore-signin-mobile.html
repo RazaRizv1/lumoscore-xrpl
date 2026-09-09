@@ -1146,11 +1146,11 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
     if(i===3) runLoader();
   }
   function gotoHome(){
-    try{ if(window.top && window.top.lxNavigate){ window.top.lxNavigate(['lumoscore-home.html','lumoscore-home-mobile.html']); return true; } }catch(e){}
+    try{ if(window.top && window.top.lxNavigate){ window.top.lxNavigate(['/xrpl/dashboard','/xrpl/dashboard']); return true; } }catch(e){}
     return false;
   }
   function exit(){
-    try{ if(window.top && window.top.lxNavigate){ window.top.lxNavigate(['lumoscore-landing.html','lumoscore-landing-mobile.html']); return; } }catch(e){}
+    try{ if(window.top && window.top.lxNavigate){ window.top.lxNavigate(['/','/']); return; } }catch(e){}
     show(0);
   }
 
@@ -1489,7 +1489,7 @@ window.addEventListener("storage",ping);
   setTimeout(resolve, 4000);
 })();
 
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"lumoscore-home.html";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-nofollow">(function(){
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/xrpl/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-nofollow">(function(){
   var KEEP=[];
   function own(h){
     if(!h)return true;
