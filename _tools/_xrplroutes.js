@@ -27,6 +27,29 @@ const { read, getContents } = require(__dirname + '/lib.js');
 const B = String.fromCharCode(92);
 
 const MAP = [
+  // THE ONE CHAIN-SUFFIXED ROUTE THAT IS NOT OURS TO KEEP.
+  //
+  // The $LUMOS page carries a network chooser — "Choose a network to see its price, pools and
+  // holders there" — whose single card reads "Stellar · LUMOS · 1B supply". Without this entry the
+  // shorter '/lumos' rule below matched its href and produced "/xrpl/lumos/stellar", which is a
+  // 404: six of them, on the SERVED /xrpl/lumos page for both desktop and mobile, and on the three
+  // dex-asset pages. A markup link check found it; nothing else could, because the other four
+  // chain-suffixed routes are listed here and this one was not.
+  //
+  // It resolves to the MAIN SITE rather than to /xrpl/lumos. The card names the Stellar token and
+  // describes its supply, so sending it to the XRPL page would trade a 404 for a wrong page, which
+  // is worse — the reader would have no way to tell they had been redirected. Checked: that URL
+  // answers 200. Same reasoning as the shared-page block below.
+  // The DAMAGED form has to be listed too, and it is the only form present today. The containers
+  // are gitignored and persist between builds, so the shorter '/lumos' rule has already rewritten
+  // every one of these in place: what is on disk is "/xrpl/lumos/stellar" (4 desktop, 2 mobile) and
+  // the pristine "/lumos/stellar" appears zero times. The rule above cannot match it — the
+  // character before "/lumos" is now the 'l' of xrpl, not a quote — so without this line the fix
+  // would be a no-op that looked applied. Both are kept: the pristine rule is what a rebuild from
+  // clean containers needs, this one is what today's disk needs.
+  ['/xrpl/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
+  ['/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
+
   ['/trade/stellar', '/xrpl/trade'],
   ['/pools/stellar', '/xrpl/pools'],
   ['/account/stellar', '/xrpl/account'],
@@ -154,5 +177,7 @@ for (const dev of ['desktop', 'mobile']) {
 
 console.log('xrpl routes: ' + total + ' route reference(s) and ' + files_rewritten + ' shared-page and ' + app_rewritten + ' app filename(s) rewritten across ' + pages + ' page key(s)');
 for (const k of Object.keys(per).sort((a, b) => per[b] - per[a])) {
-  console.log('   ' + k.padEnd(18) + ' -> ' + (MAP.find(m => m[0] === k)[1]).padEnd(22) + per[k]);
+  // Wide enough for the absolute targets: at 22 the lumoscore.com URLs ran straight into the count
+  // and printed "…/lumos/stellar6".
+  console.log('   ' + k.padEnd(21) + ' -> ' + (MAP.find(m => m[0] === k)[1]).padEnd(38) + per[k]);
 }
