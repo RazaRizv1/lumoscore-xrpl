@@ -6296,6 +6296,31 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return (v == null || !isFinite(v)) ? '—' : Math.round(v).toLocaleString('en-US');
   }
 
+  // The XRP -> USD rate, read once per page from the tokens endpoint — the same source every other
+  // USD figure on this site derives from, so the table cannot disagree with the overview or the
+  // dashboard about what an XRP is worth. Null until it arrives, and null is rendered as an em dash
+  // rather than as a converted number, so a missing rate never invents one.
+  var USD = null;
+
+  function usdText(xrpAmount) {
+    if (USD == null || xrpAmount == null || !isFinite(xrpAmount)) return '—';
+    var v = xrpAmount * USD;
+    if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K';
+    return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+
+  // `pair-sub` is the design's own class — the same one Stellar's liquidity cell uses for its
+  // second line — so the sub-line inherits the design's muted size and colour rather than needing
+  // any CSS of its own.
+  function usdCell(xrpAmount) {
+    var td = el('td');
+    td.appendChild(el('div', null, usdText(xrpAmount)));
+    td.appendChild(el('div', 'pair-sub', amount(xrpAmount) + ' XRP'));
+    return td;
+  }
+
   // Sixth gate of this shape in the project, and the first one on the ROOT element:
   //     html:not(.lx-ammready) #poolsBody, html:not(.lx-ammready) #poolTabs .count
   //         { visibility: hidden }
@@ -6375,9 +6400,22 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     pair.appendChild(wrap);
     tr.appendChild(pair);
 
-    tr.appendChild(el('td', null, amount(p.liq) + ' XRP'));
-    tr.appendChild(el('td', null, amount(p.vol) + ' XRP'));
-    tr.appendChild(el('td', null, amount(p.fees) + ' XRP'));
+    // TWO LINES, LIKE STELLAR — a USD headline over the ledger amount.
+    //
+    // These cells were one line of XRP each, which is why the rows read as cramped next to
+    // lumoscore.com: measured at the same width and the same font size, Stellar's rows were 75px
+    // and these were 58px. The height difference is not styling, it is the missing second line.
+    // Stellar's cell is `<div>$4.56M</div><div class="pair-sub">12.39M XLM + 2.28M USDC</div>`,
+    // and USD is its headline denomination on every one of these three columns.
+    //
+    // THE SUB-LINE IS THE XRP AMOUNT, NOT THE POOL COMPOSITION. Stellar can show "12.39M XLM +
+    // 2.28M USDC" because it has both sides; /lxapi/xrplpools returns a1.v and a2.v as null on
+    // every row, so this build does not know them. Getting them means an amm_info per pool — 100
+    // round-trips to fill one column, the same cost trap as probing a logo per holding. The XRP
+    // amount is the number we actually have, and it is the one the sub-line states.
+    tr.appendChild(usdCell(p.liq));
+    tr.appendChild(usdCell(p.vol));
+    tr.appendChild(usdCell(p.fees));
     tr.appendChild(el('td', null, count(p.holders)));
 
     tr.style.cursor = 'pointer';
@@ -6424,8 +6462,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       if (sub != null) s.appendChild(el('div', 'vs', sub));
       return s;
     }
-    stats.appendChild(stat('Liquidity', amount(p.liq) + ' XRP'));
-    stats.appendChild(stat('24h Vol', amount(p.vol) + ' XRP'));
+    // Same USD-over-XRP treatment as the table. The card's own `vs` slot already exists for a
+    // second line, so this needs no new markup — and doing it here as well is the point: the phone
+    // uses a different container, which is how it has been missed before.
+    stats.appendChild(stat('Liquidity', usdText(p.liq), amount(p.liq) + ' XRP'));
+    stats.appendChild(stat('24h Vol', usdText(p.vol), amount(p.vol) + ' XRP'));
     stats.appendChild(stat('Members', count(p.holders)));
     a.appendChild(stats);
     return a;
@@ -6616,7 +6657,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     paintHeroCopy();
     noteHost(h, 'Reading the XRP Ledger…');
 
-    fetch('/lxapi/xrplpools?n=50').then(function (r) { return r.json(); }).then(function (d) {
+    // BOTH BEFORE RENDERING. The rows now carry a USD headline, and painting them before the rate
+    // lands would draw a full table of em dashes that a later pass would have to rewrite — the
+    // two-writers-on-one-element shape this project keeps getting bitten by. Promise.all costs
+    // nothing here: the tokens response is edge-cached and the two requests overlap.
+    Promise.all([
+      fetch('/lxapi/xrplpools?n=50').then(function (r) { return r.json(); }),
+      fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
+        .then(function (t) { return (t && t.ok && +t.usd > 0) ? +t.usd : null; })
+        .catch(function () { return null; }),
+    ]).then(function (both) {
+      var d = both[0];
+      USD = both[1];
       if (!d || !d.ok || !d.rows.length) { noteHost(h, 'Pool data is unavailable right now.'); return; }
       window.__lxxPoolsData = d;
       h.node.innerHTML = '';

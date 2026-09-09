@@ -205,7 +205,32 @@
   // Emptied BEFORE the request goes out, never only on success. The mock is already on screen, so
   // "leave it alone if the fetch fails" leaves the invented year of history exactly where it was —
   // the failure path has to remove it, not decline to replace it.
+  // SAY WHY THE CHART IS EMPTY.
+  //
+  // loadChart returns without drawing when the pair has fewer than two points — correct, half a
+  // chart is worse than none — but clearChart has already blanked the paths and set every label to
+  // an em dash, so the result was a blank rectangle with no explanation. On a big pair like
+  // XRP/RLUSD the chart draws and nothing looks wrong; on a thin pool like XRP/Laugh there is no
+  // history at all, and that is the page RAZA opened. An empty panel reads as broken.
+  function chartNote(text) {
+    var wrap = $('.chart-svg-wrap');
+    if (!wrap) return;
+    var n = wrap.querySelector('.lxx-chart-note');
+    if (!text) { if (n) n.remove(); return; }
+    if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+    if (!n) {
+      n = document.createElement('div');
+      n.className = 'lxx-chart-note';
+      n.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;'
+        + 'justify-content:center;text-align:center;padding:0 18px;font-size:13.5px;opacity:.6;'
+        + 'pointer-events:none';
+      wrap.appendChild(n);
+    }
+    n.textContent = text;
+  }
+
   function clearChart() {
+    chartNote('');                                     // a stale note must not outlive a redraw
     var wrap = $('.chart-svg-wrap');
     var svg = wrap && wrap.querySelector('svg');
     if (!svg) return;
@@ -224,7 +249,13 @@
       + '&cur=' + encodeURIComponent(tok.currency) + '&r=1Y&vs=' + vs)
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d || !d.ok || !d.pts || d.pts.length < 2) return;   // leave it rather than half-draw
+        if (!d || !d.ok || !d.pts || d.pts.length < 2) {
+          // Still no drawing — half a chart is worse than none — but say so instead of leaving a
+          // blank rectangle. Thin pools genuinely have no traded history; that is a fact about the
+          // pair, not a failure of the page, and the wording says which.
+          chartNote('No price history for this pair yet.');
+          return;
+        }
         var v = d.pts;
         if (v.length > 180) {
           var step = Math.ceil(v.length / 180), out = [];
@@ -234,7 +265,10 @@
         }
         drawChart(v, vs);
       })
-      .catch(function () { /* the design's frame stays; nothing false is written into it */ });
+      // Deliberately a DIFFERENT message from the empty case above. "No price history" is a fact
+      // about the pair; this is our request failing, and telling someone their pool has no history
+      // when the truth is we could not fetch it is a small lie the page has no need to tell.
+      .catch(function () { chartNote('Could not load the price history.'); });
   }
 
   function paint(acct, amm) {
@@ -419,8 +453,35 @@
   // The connected account's balances of both pool assets and of the LP token itself. Without these
   // the MAX buttons and the position panel are guesses, and the design's baked "Balance: 25,420.18"
   // sits above a MAX button that would offer it.
+  // THE DESIGN'S POSITION IS A FABRICATED ONE, AND IT WAS SHOWING TO SIGNED-OUT VISITORS.
+  //
+  // The panel ships baked values: "Position Value $1,247.50" in `.mp-amount` and
+  // "▲ $32.18 (2.65%) · all time" in `.mp-pnl`. Two separate holes let them through:
+  //
+  //   1. loadPosition() returns early when there is no wallet, so on a signed-out page NOTHING ran
+  //      and the whole invented position stayed on screen — a $1,247.50 holding shown to someone
+  //      who is not even connected.
+  //   2. paintMyPosition() overwrites `.mp-amount` but never touched `.mp-pnl`, so even connected
+  //      with no position the page read "No position" beside "▲ $32.18 (2.65%) · all time" — which
+  //      is how RAZA found it.
+  //
+  // Cleared UNCONDITIONALLY and BEFORE any wallet check or fetch, which is the only ordering that
+  // closes both: the mock must not survive a missing wallet, a failed request, or an early return.
+  // The same reason the pool chart is cleared before its fetch rather than on success.
+  function clearMockPosition() {
+    var amt = $('.my-position .mp-amount');
+    if (amt) amt.textContent = addr() ? 'No position' : 'Connect a wallet';
+    var pnl = $('.my-position .mp-pnl');
+    // Replaced wholesale: the "· all time" is a bare text node beside the span, so blanking only
+    // the span would leave the page reading "— · all time".
+    if (pnl) pnl.textContent = '—';
+    var pill = $('.position-share-pill');
+    if (pill) pill.textContent = '0%';
+  }
+
   function loadPosition() {
     var me = addr(), p = window.__lxxPool;
+    clearMockPosition();
     if (!me || !p) return;
     Promise.all([
       rpc('account_info', { account: me, ledger_index: 'validated' }).catch(function () { return null; }),
@@ -715,6 +776,11 @@
     var name = $('.ph-name');
     if (name) name.textContent = 'Reading the XRP Ledger…';
     wireDw();
+
+    // BEFORE the amm_info call, not inside paint(). paint() is the success path, so leaving the
+    // clear there meant a pool that failed to load — a bad address, an RPC wobble — kept the
+    // design's $1,247.50 position on screen under an error message.
+    clearMockPosition();
 
     rpc('amm_info', { amm_account: acct }).then(function (r) {
       if (!r || !r.amm) { fail('That account is not an AMM.'); return; }
