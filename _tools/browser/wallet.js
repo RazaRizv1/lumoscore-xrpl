@@ -67,16 +67,170 @@
     return e;
   }
 
+  // ---- the asset mark ------------------------------------------------------------------------------
+  //
+  // RAZA, 2026-09-08: "in Wallet -> my assets -> the asset logos are missing."
+  //
+  // They were, and the design was never the problem. The container carries the styling for both
+  // marks — the table's `.asset-id .ico.lx-aico`, which paints from a `--ic` custom property and
+  // draws `data-l` in an ::after, and the card's 38px `.asset-ico` disc. This layer simply was not
+  // building either of them: the table row had NO mark at all and used two classes of its own
+  // invention (`.asset-nm`, `.asset-sb`) that the stylesheet has no rules for, which is also why
+  // that column looked unstyled beside every other list on the site.
+  //
+  // Neither mark holds text of its own, and that is what keeps the page's logo engine off them: it
+  // repaints any element carrying one to five characters, and a letter drawn by a pseudo-element is
+  // not text it can see.
+  var XRP_LOGO_ID = '84e5efeb89c4eae8f68188982dc290d8';
+
+  // WHERE THE ID COMES FROM. Every other list on this site takes a logo id from an API row, because
+  // it is listing tokens the API just ranked. This lists what an ACCOUNT holds, and a holding is
+  // often nowhere near any ranking — so there is no row to read it from. The id turns out to be
+  // md5(issuer + "_" + currency), verified against all 50 rows of /lxapi/xrpltokens with no
+  // mismatches, and the edge derives it (JS has no MD5 and Web Crypto omits it). XRP is the native
+  // asset and sits outside that scheme, so its id is the one that has to be written down.
+  function thumb(tok, w) {
+    if (!tok) return '/lxapi/xrplthumb?id=' + XRP_LOGO_ID + '&w=' + w;
+    if (!tok.issuer || !tok.currency) return '';
+    return '/lxapi/xrplthumb?iss=' + encodeURIComponent(tok.issuer)
+      + '&cur=' + encodeURIComponent(tok.currency) + '&w=' + w;
+  }
+
+  // A stable colour per ticker, so a mark waiting on its image is never a grey hole and two
+  // different tokens never read as the same one.
+  function hue(s) {
+    var h = 0; s = String(s || '');
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+    return 'hsl(' + h + ',52%,42%)';
+  }
+
+  // ---- probing, deferred and throttled ------------------------------------------------------------
+  //
+  // 350 HOLDINGS IS A REAL WALLET, and one probe per row fired at once does not work. A browser
+  // keeps about six connections to a host, so the rest queue — and a timeout meant to measure "is
+  // there a logo?" ends up measuring "how long did this wait behind 300 other requests?".
+  //
+  // Measured on an account with 349 trust lines: 310 of 350 rows fell back to a letter. Four of
+  // them were then requested directly — STX, LAWAS, PEPE, WIND — and all four answered 200. Every
+  // one of those marks existed. Nothing was missing; they had simply timed out in the queue, which
+  // would have shipped as "the logos are still missing".
+  //
+  // So a probe waits until its row is near the viewport, and then only a few run at a time. A
+  // wallet shows about ten rows at once, so what you can see resolves immediately and the other
+  // three hundred cost nothing until they are scrolled to.
+  var Q = [], active = 0, MAXQ = 6;
+  function pump() { while (active < MAXQ && Q.length) { active++; (Q.shift())(); } }
+  function done1() { active--; pump(); }
+
+  // Runs cb once, when the element comes within a screen of the viewport.
+  //
+  // MEASURED, NOT OBSERVED, and deliberately so. IntersectionObserver is the obvious tool and was
+  // the first implementation — but if it does not report, nothing is ever probed and EVERY mark
+  // stays a letter, which is a worse version of the bug this is fixing. A feature whose failure
+  // mode is "the thing you asked for never appears" should not be load-bearing, and this one does
+  // not have to be: a rect check on scroll is a few hundred reads, it works in every browser, and
+  // it is directly testable.
+  //
+  // The rows also live inside .assets-card, which is its OWN scroll container — 558px tall over
+  // 28,000px of rows — so the listener is on document in the capture phase, where an inner
+  // container's scroll is seen just as well as the window's.
+  var WAIT = [], sweeping = false, wired = false;
+
+  function sweep() {
+    sweeping = false;
+    if (!WAIT.length) return;
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    var keep = [];
+    for (var i = 0; i < WAIT.length; i++) {
+      var w = WAIT[i];
+      if (!document.contains(w.node)) continue;               // row replaced; drop it
+      var r = w.node.getBoundingClientRect();
+      // Within one screen above or below, and actually laid out.
+      if (r.height > 0 && r.bottom > -400 && r.top < h + 400) w.run();
+      else keep.push(w);
+    }
+    WAIT = keep;
+  }
+
+  // setTimeout, NOT requestAnimationFrame. rAF does not fire while the page is not being rendered,
+  // and `sweeping` is cleared by the sweep itself — so a scheduled frame that never arrives latches
+  // this permanently and no mark is ever probed again. Measured: every row stayed unprobed with the
+  // rAF version. A timer owes nothing to the compositor.
+  function schedule() {
+    if (sweeping) return;
+    sweeping = true;
+    setTimeout(sweep, 16);
+  }
+
+  function near(node, cb) {
+    WAIT.push({ node: node, run: cb });
+    if (!wired) {
+      wired = true;
+      // Capture phase, so an inner container's scroll is seen as well as the window's.
+      document.addEventListener('scroll', schedule, true);
+      window.addEventListener('resize', schedule);
+      // AND a poll, because the scroll listener is an optimisation rather than the mechanism. Rows
+      // are appended after this first runs, layout is not final on the first frame, and a row can
+      // come into view without any scroll at all — a tab switching, a section expanding, the list
+      // being filtered. The poll is what makes "it eventually resolves" true independently of any
+      // event firing; it stops the moment nothing is waiting.
+      var iv = setInterval(function () {
+        if (!WAIT.length) { clearInterval(iv); return; }
+        schedule();
+      }, 400);
+    }
+    schedule();
+  }
+
+  // PROBE, THEN PAINT — never letter-then-logo.
+  //
+  // The obvious shape is to draw the initial at once and replace it when the image lands, and that
+  // is what the Stellar wallet does. It is also precisely the bug just fixed on the Stellar
+  // dashboard: a hundred marks each drawn twice, which reads as the section glitching for seconds
+  // after every load. So a mark is painted once, when its fate is known. The disc keeps its colour
+  // meanwhile, so nothing looks empty, and the initial is drawn if the image fails or is slow.
+  function paintMark(node, setLogo, setLetter, url) {
+    if (!url) { setLetter(); return; }
+    near(node, function () {
+      Q.push(function () {
+        var fired = false, img = new Image();
+        // This now times the REQUEST, not a wait behind three hundred of them.
+        var t = setTimeout(function () {
+          if (fired) return; fired = true; done1(); setLetter();
+        }, 8000);
+        img.onload = function () { if (fired) return; fired = true; clearTimeout(t); done1(); setLogo(url); };
+        img.onerror = function () { if (fired) return; fired = true; clearTimeout(t); done1(); setLetter(); };
+        img.src = url;
+      });
+      pump();
+    });
+  }
+
   // ---- rows, per design ---------------------------------------------------------------------------
-  function tableRow(name, sub, right, rightSub, frozen) {
+  function tableRow(name, sub, right, rightSub, frozen, tok) {
     var tr = document.createElement('tr');
     var c1 = el('td');
+    var aid = el('div', 'asset-id');
+    var ico = el('div', 'ico lx-aico');
+    ico.style.setProperty('--ic', hue(name));
+    try { ico.setAttribute('data-logoed', '1'); } catch (e) {}
+    paintMark(ico, function (u) {
+      ico.style.setProperty('--ic', 'url("' + u + '")');
+      ico.setAttribute('data-l', '');
+      ico.classList.add('lx-din');
+    }, function () {
+      ico.setAttribute('data-l', (name || '?').slice(0, 1).toUpperCase());
+    }, thumb(tok, 48));
+    aid.appendChild(ico);
+    var meta = el('div', 'meta');
     // A ticker is one to five characters, which is precisely what the logo layer hunts for, so the
-    // name cell is claimed the same way the card badge is. "XRP" is not a slot to lose to a repaint.
-    var nm = el('div', 'asset-nm');
+    // name is claimed the same way the card badge is. "XRP" is not a slot to lose to a repaint.
+    var nm = el('div', 'nm');
     plain(nm, name + (frozen ? ' (frozen)' : ''));
-    c1.appendChild(nm);
-    c1.appendChild(el('div', 'asset-sb', sub || ''));
+    meta.appendChild(nm);
+    meta.appendChild(el('div', 'sb', sub || ''));
+    aid.appendChild(meta);
+    c1.appendChild(aid);
     tr.appendChild(c1);
     tr.appendChild(el('td', null, '—'));                 // price: needs a price source
     tr.appendChild(el('td', null, '—'));                 // 7d: later
@@ -88,15 +242,24 @@
     return tr;
   }
 
-  function card(name, sub, right, rightSub, frozen) {
+  function card(name, sub, right, rightSub, frozen, tok) {
     var row = el('div', 'asset-row');
     var top = el('div', 'asset-top');
-    // EVERY ROW'S BADGE READ "L". This builder writes the token's first two letters, but the page's
+    // EVERY ROW'S BADGE READ "L". This builder wrote the token's first two letters, but the page's
     // logo layer repaints any short-text element from the surrounding words, and those words include
     // the site's own name — so XRP, LUMOS, XYIELD and SLT all ended up wearing the same LUMOS "L",
-    // four different tokens rendered as one. plain() claims the element so the letters stand.
+    // four different tokens rendered as one. plain() claims the element so what we draw stands.
     var ico = el('div', 'asset-ico');
-    plain(ico, (name || '?').slice(0, 2).toUpperCase());
+    plain(ico, '');                                   // claim it first: plain() clears background
+    ico.style.background = hue(name);
+    paintMark(ico, function (u) {
+      ico.style.backgroundImage = 'url("' + u + '")';
+      ico.style.backgroundSize = 'cover';
+      ico.style.backgroundPosition = 'center';
+      ico.textContent = '';
+    }, function () {
+      ico.textContent = (name || '?').slice(0, 2).toUpperCase();
+    }, thumb(tok, 48));
     top.appendChild(ico);
     var meta = el('div', 'asset-meta');
     var nr = el('div', 'asset-name-row');
@@ -221,13 +384,14 @@
       var rs = data.xrp.reserved != null
         ? (fmt(data.xrp.spendable, 6) + ' spendable · ' + fmt(data.xrp.reserved, 2) + ' reserved')
         : 'reserve unknown';
-      h.node.appendChild(make('XRP', 'XRP Ledger', fmt(data.xrp.balance, 6) + ' XRP', rs, false));
+      // null marks the native asset: it has no issuer, so its logo id cannot be derived.
+      h.node.appendChild(make('XRP', 'XRP Ledger', fmt(data.xrp.balance, 6) + ' XRP', rs, false, null));
     }
 
     data.held.sort(function (a, b) { return b.balance - a.balance; });
     for (var i = 0; i < data.held.length; i++) {
       var t = data.held[i];
-      h.node.appendChild(make(t.display, short(t.issuer), fmt(t.balance, 6) + ' ' + t.display, '', t.frozen));
+      h.node.appendChild(make(t.display, short(t.issuer), fmt(t.balance, 6) + ' ' + t.display, '', t.frozen, t));
     }
 
     if (!data.held.length && !data.xrp) note(h, 'Nothing held on this account yet.');

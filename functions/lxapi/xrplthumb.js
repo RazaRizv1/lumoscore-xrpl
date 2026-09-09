@@ -23,7 +23,33 @@ export async function onRequest(context) {
 
   // A token id is an md5: exactly 32 hex characters. Validated rather than forwarded, so nothing
   // else can be appended to the upstream path.
-  const id = (url.searchParams.get('id') || '').trim().toLowerCase();
+  let id = (url.searchParams.get('id') || '').trim().toLowerCase();
+
+  // ...and the id is DERIVABLE, which is what lets the wallet draw logos at all.
+  //
+  // Every other list on this site takes the id from an API row (`m`), because it is listing tokens
+  // the API just ranked. The wallet lists what an ACCOUNT holds, straight off account_lines, and a
+  // holding is frequently nowhere near the top of any ranking — so there is no row to take it from,
+  // and one lookup per holding would be dozens of requests to price a single page.
+  //
+  // The id turns out to be md5(issuer + "_" + currencyHex), verified against all 50 rows of
+  // /lxapi/xrpltokens with zero mismatches. So the caller passes what it already knows and this
+  // derives the rest. It is done HERE and not in the page because JS has no built-in MD5 and the
+  // Web Crypto standard does not include it — Cloudflare supports it as an extension to
+  // crypto.subtle.digest, so the edge can do in one line what the browser would need a vendored
+  // hash implementation for.
+  if (!id) {
+    const iss = (url.searchParams.get('iss') || '').trim();
+    const cur = (url.searchParams.get('cur') || '').trim().toUpperCase();
+    // Shapes only, and both are required: an r-address and a currency (a 3-char code or 40 hex).
+    if (/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(iss) && /^([0-9A-F]{40}|[A-Z0-9]{3})$/.test(cur)) {
+      try {
+        const buf = await crypto.subtle.digest('MD5', new TextEncoder().encode(iss + '_' + cur));
+        id = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) { /* falls through to the 400 below */ }
+    }
+  }
+
   if (!/^[0-9a-f]{32}$/.test(id)) {
     return new Response('bad id', { status: 400, headers: { 'cache-control': 'public, max-age=3600' } });
   }
