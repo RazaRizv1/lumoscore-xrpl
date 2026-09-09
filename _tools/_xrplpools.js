@@ -46,16 +46,25 @@ for (const dev of ['desktop', 'mobile']) {
     if (typeof json[key] !== 'string') continue;
     let h = json[key];
 
+    // THE PHONE HAS NO TABLE, AND THAT IS WHY IT HAD NO DATA.
+    //
+    // This looked for `poolsBody` — the desktop table — and injected only there. The mobile pools
+    // page renders a list of .pool-card anchors in `panelAll` and has no poolsBody at all, so it
+    // never received this layer on any build: no script, no real rows, and the design's own mock
+    // left standing. Eight fabricated pools in APT, visible at rest, on the page a phone opens.
+    //
+    // Matched on either container now. browser/pools.js picks whichever the page actually has.
+    const hasList = (x) => x.indexOf('id="poolsBody"') >= 0 || x.indexOf('id="panelAll"') >= 0;
+
     // Strip everywhere it appears; it is the wrong chain on every one of them.
     const gone = stripById(h, 'lx-ammdata');
-    if (!gone.removed && h.indexOf('id="poolsBody"') < 0) continue;
+    if (!gone.removed && !hasList(h)) continue;
     h = gone.html;
     stripped += gone.removed;
 
     h = stripById(h, ID).html;
 
-    // Inject only where the table is.
-    if (h.indexOf('id="poolsBody"') >= 0) {
+    if (hasList(h)) {
       const bi = h.lastIndexOf('</' + 'body>');
       if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
       h = h.slice(0, bi) + SCRIPT + h.slice(bi);

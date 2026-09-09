@@ -85,9 +85,22 @@
     return d;
   }
 
+  // Desktop is a table inside #panelMyPositions; the phone is a list of .pool-card anchors in
+  // #panelMine. Targeting only the first left the phone showing the design's two invented positions
+  // with the tab counting "2" — the same desktop-only assumption that had the whole pools layer
+  // returning on its first line on mobile.
+  function host() {
+    var d = $('#panelMyPositions');
+    var tb = d && d.querySelector('tbody');
+    if (tb) return { node: tb, kind: 'table' };
+    var m = $('#panelMine');
+    if (m) return { node: m, kind: 'cards' };
+    return null;
+  }
+
   function tbody() {
-    var panel = $('#panelMyPositions');
-    return panel ? panel.querySelector('tbody') : null;
+    var h = host();
+    return h && h.kind === 'table' ? h.node : null;
   }
 
   // The count on the My Positions tab, found by ITS OWN tab rather than by position. Taking
@@ -102,13 +115,59 @@
   }
 
   function note(msg) {
-    var tb = tbody(); if (!tb) return;
-    tb.innerHTML = '';
+    var h = host(); if (!h) return;
+    h.node.innerHTML = '';
+    if (h.kind === 'cards') {
+      var d = el('div', null, msg);
+      d.style.cssText = 'padding:22px 6px;text-align:center;opacity:.7';
+      h.node.appendChild(d);
+      return;
+    }
     var tr = document.createElement('tr');
     var td = el('td', null, msg);
     td.colSpan = 7;
     td.style.cssText = 'padding:26px 14px;text-align:center;opacity:.7';
-    tr.appendChild(td); tb.appendChild(tr);
+    tr.appendChild(td); h.node.appendChild(tr);
+  }
+
+  // The phone's card for one position. Same three figures as the table, in the design's own shape.
+  function posCard(i, pos) {
+    var a = el('a', 'pool-card my-pos');
+    a.href = '/xrpl/pools/id/' + encodeURIComponent(pos.account);
+
+    var head = el('div', 'pc-head');
+    var icons = el('div', 'pair-icons');
+    icons.appendChild(disc('a', pos.a.name));
+    icons.appendChild(disc('b', pos.b.name));
+    head.appendChild(icons);
+    var info = el('div', 'pc-info');
+    info.appendChild(el('div', 'pc-name', pos.a.name + ' / ' + pos.b.name));
+    // The design's line here is a deposit date, which the ledger does not record for a position.
+    info.appendChild(el('div', 'pc-sub', 'AMM ' + pos.account.slice(0, 5) + '…' + pos.account.slice(-4)));
+    head.appendChild(info);
+    a.appendChild(head);
+
+    var stats = el('div', 'pc-stats');
+    function stat(label, v, sub) {
+      var s = el('div', 'pc-stat');
+      s.appendChild(el('div', 'l', label));
+      s.appendChild(el('div', 'v', v));
+      if (sub != null) s.appendChild(el('div', 'vs', sub));
+      return s;
+    }
+    stats.appendChild(stat('Your liquidity', fmt(pos.a.amount * pos.share) + ' ' + pos.a.name,
+      fmt(pos.b.amount * pos.share) + ' ' + pos.b.name));
+    stats.appendChild(stat('Pool share', (pos.share * 100).toFixed(pos.share * 100 < 0.01 ? 4 : 3) + '%'));
+    stats.appendChild(stat('Fees earned', '—', 'not on ledger'));
+    a.appendChild(stats);
+
+    var foot = el('div', 'pc-pos-row');
+    var l = el('span', null, 'Tap to manage position');
+    l.style.cssText = 'font-size:11.5px;color:var(--text-soft);font-weight:600';
+    foot.appendChild(l);
+    foot.appendChild(el('span', 'view-arrow', 'VIEW →'));
+    a.appendChild(foot);
+    return a;
   }
 
   function row(i, pos) {
@@ -164,7 +223,7 @@
   }
 
   function load() {
-    if (!$('#panelMyPositions')) return;                 // not the pools page
+    if (!host()) return;                                 // not a page with a positions list
     var me = addr();
     if (!me) { note('Connect a wallet to see your liquidity positions.'); setCount(0); return; }
 
@@ -196,9 +255,10 @@
         })).then(function (all) {
           var pos = all.filter(Boolean).sort(function (x, y) { return y.share - x.share; });
           if (!pos.length) { note('No liquidity positions on this account.'); setCount(0); return; }
-          var tb = tbody(); if (!tb) return;
-          tb.innerHTML = '';
-          for (var i = 0; i < pos.length; i++) tb.appendChild(row(i, pos[i]));
+          var h = host(); if (!h) return;
+          h.node.innerHTML = '';
+          var make = h.kind === 'table' ? row : posCard;
+          for (var i = 0; i < pos.length; i++) h.node.appendChild(make(i, pos[i]));
           setCount(pos.length);
         });
       })

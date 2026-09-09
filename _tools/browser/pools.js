@@ -181,6 +181,70 @@
     return tr;
   }
 
+  // THE PHONE HAS A DIFFERENT CONTAINER, AND IT WAS GETTING NOTHING.
+  //
+  // load() opened with `var tb = $('#poolsBody'); if (!tb) return;` — and the mobile page has no
+  // #poolsBody. It has #panelAll, a list of .pool-card anchors. So on a phone this entire layer
+  // returned on its first line: no real rows, no summary, no overview, no attribution, and the
+  // design's own mock left standing — LUMOS / APT, USDC / APT, CELL / APT, "51,250 APT", eight
+  // fabricated pools with liquidity and volume figures, visible at rest.
+  //
+  // Requiring the desktop container is called out in browser/wallet.js as the most repeated bug in
+  // this project. It is the same one.
+  function card(p, rank) {
+    var a = el('a', 'pool-card');
+    a.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
+
+    var head = el('div', 'pc-head');
+    var icons = el('div', 'pair-icons');
+    // The design's two discs, replaced with the same real logos the table uses.
+    var ia = logoEl(nameOf(p.a1), p.a1 && p.a1.m, 26); ia.classList.add('a');
+    var ib = logoEl(nameOf(p.a2), p.a2 && p.a2.m, 26); ib.classList.add('b');
+    icons.appendChild(ia); icons.appendChild(ib);
+    head.appendChild(icons);
+
+    var info = el('div', 'pc-info');
+    info.appendChild(el('div', 'pc-name', nameOf(p.a1) + ' / ' + nameOf(p.a2)));
+    // The design's second line is a hand-written category ("Native · Utility"). There is no such
+    // classification on this ledger, so it carries the pool's fee — a fact, and the thing a
+    // liquidity provider actually wants beside the pair.
+    info.appendChild(el('div', 'pc-sub', p.fee != null ? (p.fee + '% fee tier') : ''));
+    head.appendChild(info);
+    head.appendChild(el('div', 'pc-idx', '#' + (rank < 10 ? '0' : '') + rank));
+    a.appendChild(head);
+
+    var stats = el('div', 'pc-stats');
+    function stat(label, v, sub) {
+      var s = el('div', 'pc-stat');
+      s.appendChild(el('div', 'l', label));
+      s.appendChild(el('div', 'v', v));
+      if (sub != null) s.appendChild(el('div', 'vs', sub));
+      return s;
+    }
+    stats.appendChild(stat('Liquidity', amount(p.liq) + ' XRP'));
+    stats.appendChild(stat('24h Vol', amount(p.vol) + ' XRP'));
+    stats.appendChild(stat('Members', count(p.holders)));
+    a.appendChild(stats);
+    return a;
+  }
+
+  // Whichever list this page actually has.
+  function listHost() {
+    var tb = $('#poolsBody');
+    if (tb) return { node: tb, kind: 'table' };
+    var m = $('#panelAll');
+    if (m) return { node: m, kind: 'cards' };
+    return null;
+  }
+
+  function noteHost(h, text) {
+    if (h.kind === 'table') { note(h.node, text); return; }
+    h.node.innerHTML = '';
+    var d = el('div', null, text);
+    d.style.cssText = 'padding:22px 6px;text-align:center;opacity:.7';
+    h.node.appendChild(d);
+  }
+
   function note(tb, text) {
     tb.innerHTML = '';
     var tr = document.createElement('tr');
@@ -308,22 +372,23 @@
   }
 
   function load() {
-    var tb = $('#poolsBody');
-    if (!tb) return;                                   // not the Pools page
+    var h = listHost();
+    if (!h) return;                                    // not the Pools page
     lift();
     claimRowClicks();
     paintHeroCopy();
-    note(tb, 'Reading the XRP Ledger…');
+    noteHost(h, 'Reading the XRP Ledger…');
 
     fetch('/lxapi/xrplpools?n=50').then(function (r) { return r.json(); }).then(function (d) {
-      if (!d || !d.ok || !d.rows.length) { note(tb, 'Pool data is unavailable right now.'); return; }
+      if (!d || !d.ok || !d.rows.length) { noteHost(h, 'Pool data is unavailable right now.'); return; }
       window.__lxxPoolsData = d;
-      tb.innerHTML = '';
-      for (var i = 0; i < d.rows.length; i++) tb.appendChild(row(d.rows[i], i + 1));
+      h.node.innerHTML = '';
+      var make = h.kind === 'table' ? row : card;
+      for (var i = 0; i < d.rows.length; i++) h.node.appendChild(make(d.rows[i], i + 1));
       paintSummary(d.summary);
       paintOverview(d);
       attribution(d);
-    }).catch(function () { note(tb, 'Pool data is unavailable right now.'); });
+    }).catch(function () { noteHost(h, 'Pool data is unavailable right now.'); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
