@@ -7713,6 +7713,46 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     buildPager(h, d, pages);
   }
 
+  // THE CONTROLS ROW, AGAINST lumoscore.com AS THE REFERENCE.
+  //
+  // Three separate faults, all visible in the strip beside "All Trading Pairs".
+  //
+  // 1. LAUNCH TOKEN WAS IN THE PAGE AND UNREACHABLE. The `.lx-dctas` block — "How it works?" and
+  //    "Launch Token" — exists here with a correct /xrpl/launchpad href, but it is nested inside
+  //    `.dex-overview`, and an inherited script unconditionally stamps `lx-dexhero-off` on that
+  //    element, which is `display:none`. On Stellar the same script runs and the block is still
+  //    visible, because Stellar's markup has it in `.dex-mk-controls` instead. This is the stale
+  //    container again: the fork carries the OLD design, where these buttons lived in the hero.
+  //    Moved to where the reference has them. Not new UI — the same nodes, re-parented.
+  //
+  // 2. THE FILTER CHIP WORE STELLAR'S LOGO. It ships `<img src="/assets/tokens/xlm.png">`, and
+  //    /assets/tokens holds Stellar assets only — there is no xrp.png to point at. The XRP mark
+  //    comes from the thumb endpoint under xrpl.to's fixed id for XRP, the same source bridge.js
+  //    already uses for it.
+  //
+  // 3. THE SEARCH PLACEHOLDER RAN LONG AND TRUNCATED. Stellar reads "Filter curated pairs" and
+  //    fits; this read "Filter pairs · ticker or address" and was cut off mid-word in the same
+  //    width. Shortened to match. The wording is a judgement call — say the word and it changes.
+  var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+
+  function fixControls() {
+    var ctas = $('.lx-dctas');
+    var controls = $('.dex-mk-controls');
+    if (ctas && controls && !controls.contains(ctas)) {
+      // First child, which is where Stellar has it: ahead of the chips and the search box.
+      controls.insertBefore(ctas, controls.firstChild);
+    }
+
+    var chipImg = $('.dex-mk-filter img');
+    if (chipImg && /xlm\.png/i.test(chipImg.getAttribute('src') || '')) {
+      chipImg.setAttribute('src', XRP_LOGO);
+      chipImg.setAttribute('alt', '');
+    }
+
+    var search = $('#dexMkSearch input') || $('#dexMkSearch');
+    if (search && 'placeholder' in search) search.placeholder = 'Filter pairs';
+  }
+
   function headers() {
     // THE TRADES COLUMN HAD A CELL IN EVERY ROW AND NO HEADER.
     //
@@ -7752,20 +7792,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     }
   }
 
-  function attribution(d) {
-    if (!d || !d.attribution || document.getElementById('lxx-attr-dex')) return;
-    var host = $('.dex-mk-foot') || $('.dex-mk-table-wrap');
-    if (!host) return;
-    var p = el('p'); p.id = 'lxx-attr-dex';
-    p.style.cssText = 'margin:10px 2px 0;font-size:11.5px;opacity:.6;font-weight:500';
-    p.appendChild(document.createTextNode('Market data '));
-    var a = el('a', null, d.attribution);
-    a.href = d.attributionUrl || 'https://xrpl.to';
-    a.target = '_blank'; a.rel = 'noopener';
-    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
-    p.appendChild(a);
-    host.appendChild(p);
-  }
+  // REMOVED ON RAZA'S EXPLICIT INSTRUCTION, 2026-09-09. This used to append
+  // "Market data Data by xrpl.to" under the table.
+  //
+  // The concern was raised before removing it and RAZA confirmed: my notes record xrpl.to's
+  // attribution as a condition of their API terms, which is why the line existed and why the
+  // endpoint still returns `attribution` and `attributionUrl`. That is a commercial decision and
+  // it is RAZA's to make, not mine — but the reason is written here so nobody later reads this as
+  // an oversight and quietly re-adds it, or removes the server fields thinking they are unused.
+  //
+  // Kept as a no-op rather than deleted, so the call sites still read as a deliberate choice.
+  function attribution() { /* attribution intentionally not rendered */ }
 
   // The design carries an anti-flash gate from the Stellar build:
   //     #dexMkTbody:not(.lxd) tr { visibility: hidden }
@@ -7822,6 +7859,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var h = host();
     if (!h) return;                                    // not the Trade page
     headers();
+    fixControls();
     lift();
     claimRowClicks();
     note(h, 'Reading the XRP Ledger…');

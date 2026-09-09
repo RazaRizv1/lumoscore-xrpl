@@ -238,7 +238,48 @@
         + ' — price, order book and holders on the XRP Ledger | LumosCore';
     } catch (e) {}
 
+    // THE ISSUER CARD WAS A DIFFERENT CHAIN'S ACCOUNT ENTIRELY.
+    //
+    // The design ships it filled in, and nothing here ever overwrote it, so every token page showed
+    //     Issuer  0x040…f072      website  circle.com
+    // — an EVM-style address (the full 64-hex hash was sitting in data-copy, so the COPY BUTTON
+    // handed you it) beside Circle's domain, on a page whose issuer is an r-address. That is what
+    // "the page is not loading" looked like: the shell renders, and the identity panel is somebody
+    // else's.
+    var addrEl = $('.item .addr');
+    if (addrEl) {
+      addrEl.setAttribute('data-copy', asset.issuer);
+      addrEl.setAttribute('data-copy-label', asset.code + ' issuer');
+      // Only the text node is replaced, so the design's copy icon stays where it is.
+      var wrote = false;
+      [].forEach.call(addrEl.childNodes, function (n) {
+        if (n.nodeType === 3 && n.nodeValue.trim()) {
+          n.nodeValue = ' ' + shortAddr(asset.issuer);
+          wrote = true;
+        }
+      });
+      if (!wrote) addrEl.appendChild(document.createTextNode(' ' + shortAddr(asset.issuer)));
+    }
+
+    // The website is the issuer's own domain when xrpl.to has one. It is NOT guessed from anything:
+    // an unverified issuer with no domain gets the row removed rather than a plausible-looking
+    // link, because a wrong domain on a token page is how someone ends up on a phishing site.
+    var web = $('.website');
+    if (web) {
+      var dom = d && d.domain ? String(d.domain).replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
+      var txt = false;
+      [].forEach.call(web.childNodes, function (n) {
+        if (n.nodeType === 3 && n.nodeValue.trim()) { n.nodeValue = dom ? (' ' + dom) : ''; txt = true; }
+      });
+      if (!txt && dom) web.appendChild(document.createTextNode(' ' + dom));
+      web.style.display = dom ? '' : 'none';
+    }
+
     paintLabels(asset);
+  }
+
+  function shortAddr(a) {
+    return (a && a.length > 14) ? (a.slice(0, 6) + '…' + a.slice(-4)) : (a || '');
   }
 
   // THE TRADE PANEL WAS NAMING THE WRONG TOKEN ENTIRELY. On the RLUSD page it read "Buy USDC" /

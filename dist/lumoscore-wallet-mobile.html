@@ -9453,26 +9453,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
   // xrpl.to's terms require a visible link wherever this data is shown. Rendered from the payload's
   // own fields so it cannot drift from what the source actually asks for, and inserted once.
-  function attribution() {
-    if (!data || !data.attribution) return;
-    if (document.getElementById('lxx-attr')) return;
-    var host = $('#assetsTable') || $('#assetList');
-    if (!host) return;
-    var anchor = host.closest('section, .card, main') || host.parentElement;
-    if (!anchor) return;
-    var p = document.createElement('p');
-    p.id = 'lxx-attr';
-    p.style.cssText = 'margin:10px 2px 0;font-size:11.5px;opacity:.6;font-weight:500';
-    p.appendChild(document.createTextNode('Prices '));
-    var a = document.createElement('a');
-    a.href = data.attributionUrl || 'https://xrpl.to';
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.textContent = data.attribution;
-    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
-    p.appendChild(a);
-    anchor.appendChild(p);
-  }
+  // REMOVED ON RAZA'S EXPLICIT INSTRUCTION, 2026-09-09 — see the fuller note in browser/trade.js.
+  // The concern that xrpl.to's terms require attribution was raised first and RAZA confirmed. The
+  // endpoint still returns `attribution` and `attributionUrl`, so do not delete those server fields
+  // thinking they are unused. Kept as a no-op so the call site reads as a deliberate choice.
+  function attribution() { /* attribution intentionally not rendered */ }
 
   // A SINGLE ATTEMPT WAS NOT ENOUGH, and the way it failed is the reason this retries.
   //
