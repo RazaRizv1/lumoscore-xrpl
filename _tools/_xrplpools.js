@@ -20,15 +20,19 @@ const B = String.fromCharCode(92);
 const ID = 'lx-xrplpools';
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/pools.js', 'utf8');
+// My Positions. Separate from pools.js because it answers a different question — that file lists
+// the network's pools, this one lists the connected account's own. It needs xrpl-core's LP-token
+// and currency decoders, which are injected above it.
+const mine = fs.readFileSync(__dirname + '/browser/mypositions.js', 'utf8');
 
-for (const src of [core, page]) {
+for (const src of [core, page, mine]) {
   if (src.indexOf('</' + 'script') >= 0) {
     console.error('  a source file contains a closing script tag — aborting');
     process.exit(1);
   }
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + mine + '\n</' + 'script>';
 
 let files = 0, injected = 0, stripped = 0;
 for (const dev of ['desktop', 'mobile']) {
