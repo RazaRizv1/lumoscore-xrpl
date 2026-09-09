@@ -7034,6 +7034,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     setPageInfo(from + 1, to, total);
     buildPager(h, d, pages);
+
+    // Only the rows actually on screen. Asking for all hundred when fifty are shown would double
+    // the upstream cost of a page nobody is looking at yet; page 2 fetches its own when opened, and
+    // the edge cache makes the second visit free.
+    if (h.kind === 'table') loadSparks(d.rows.slice(from, to));
   }
 
   // THE CONTROLS ROW, AGAINST lumoscore.com AS THE REFERENCE.
@@ -7074,6 +7079,80 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     var search = $('#dexMkSearch input') || $('#dexMkSearch');
     if (search && 'placeholder' in search) search.placeholder = 'Filter pairs';
+  }
+
+  // ---- 7d sparklines ------------------------------------------------------------------------------
+  //
+  // This column showed a bare percentage where lumoscore.com draws a curve. The comment at the top
+  // of this file used to say sparklines were omitted deliberately because the feed gives a 7d
+  // PERCENTAGE and not a series — true of the bulk response, and I checked every one of its ~150
+  // fields again before building this. The series exists, just on a different upstream route, and
+  // /lxapi/xrplspark batches it: one browser request for the whole page instead of fifty.
+  //
+  // Drawn with the design's own markup, copied from a real Stellar row:
+  //     <svg class="dex-mk-spark" viewBox="0 0 88 28" preserveAspectRatio="none"><path d="…"></svg>
+  // so it inherits the column's sizing and needs no CSS of its own.
+  //
+  // A row whose series does not arrive KEEPS ITS PERCENTAGE. Nothing is blanked on the way to being
+  // drawn, and a token too thin to have a week of history simply stays as it was.
+  function sparkPath(vals, w, h) {
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+    var span = max - min;
+    // A perfectly flat series has no range to scale into; draw it down the middle rather than
+    // dividing by zero and sending NaN into the path.
+    var mid = h / 2;
+    var d = '';
+    for (var i = 0; i < vals.length; i++) {
+      var x = (i / (vals.length - 1)) * w;
+      var y = span > 0 ? h - ((vals[i] - min) / span) * h : mid;
+      d += (i ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    return d;
+  }
+
+  function drawSpark(cell, vals, up) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'dex-mk-spark');
+    svg.setAttribute('viewBox', '0 0 88 28');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    var p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', sparkPath(vals, 88, 28));
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke-width', '1.5');
+    // Coloured by the week's direction, which is what the number beside it used to say.
+    p.setAttribute('stroke', up ? 'var(--green,#22c55e)' : '#e5484d');
+    svg.appendChild(p);
+    cell.innerHTML = '';
+    cell.appendChild(svg);
+  }
+
+  function loadSparks(rows) {
+    var byId = {};
+    for (var i = 0; i < rows.length; i++) {
+      if (/^[0-9a-f]{32}$/i.test(rows[i].m || '')) byId[rows[i].m.toLowerCase()] = rows[i];
+    }
+    var ids = Object.keys(byId);
+    if (!ids.length) return;
+
+    fetch('/lxapi/xrplspark?ids=' + ids.join(','))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok || !d.series) return;
+        for (var id in d.series) {
+          var t = byId[id];
+          if (!t) continue;
+          // The row is found by the ticker+issuer stamped on it when it was built, so this cannot
+          // paint a curve into the wrong row after a re-sort or a page change.
+          var tr = $('tr[data-tkr="' + (window.CSS && CSS.escape ? CSS.escape(t.n) : t.n)
+            + '"][data-iss="' + t.i + '"]');
+          if (!tr || tr.children.length < 8) continue;
+          var vals = d.series[id];
+          if (!vals || vals.length < 2) continue;
+          drawSpark(tr.children[7], vals, vals[vals.length - 1] >= vals[0]);
+        }
+      })
+      .catch(function () { /* the percentages stay exactly as they are */ });
   }
 
   function headers() {
