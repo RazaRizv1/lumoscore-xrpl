@@ -9531,7 +9531,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     st.textContent = '.lxx-sea-ic{width:30px;height:30px;flex:0 0 30px;border-radius:50%;'
       + 'display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;'
       + 'font-weight:800;color:#fff;background:rgba(255,255,255,.10)}'
-      + '.lxx-sea-note{padding:18px 14px;text-align:center;opacity:.65;font-size:13.5px}';
+      + '.lxx-sea-note{padding:18px 14px;text-align:center;opacity:.65;font-size:13.5px}'
+      // THE ROWS WERE RENDERING AS DEFAULT BROWSER LINKS — blue and underlined.
+      //
+      // The row is an <a>, and the design's `.sp-row` rule sets layout only: display, gap, padding,
+      // cursor. Nothing in it resets link colour or underline, because on Stellar the row also
+      // carries `lx-searow`, added by Stellar's own search layer — and that layer's stylesheet is
+      // not in this build, so the class exists there and nowhere here. Measured on both:
+      // lumoscore.com gives rgb(246,245,243)/none, this build gave rgb(0,0,238)/underline.
+      //
+      // Declared here rather than by adding the Stellar class, so it does not depend on a
+      // stylesheet this build does not ship.
+      + '.sp-row.sp-row--asset{color:inherit;text-decoration:none}';
     document.head.appendChild(st);
   })();
 
@@ -9589,11 +9600,36 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     a.setAttribute('data-chain', 'xrpl');
     a.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
 
-    var ic = logoEl(t.n, t.m, 30);
+    // 36px and the design's own icon classes, which is what Stellar's rows use — ours were 30px
+    // with a class of our own, so the icon column did not line up with the design's spacing.
+    var ic = logoEl(t.n, t.m, 36);
+    ic.className = 'sp-ico lx-spico-on';
     a.appendChild(ic);
 
     var info = el('div', 'sp-info');
     var nameRow = el('div', 'sp-name-row', t.n);
+
+    // The verified badge Stellar shows beside a verified issuer. The payload already carried `vf`
+    // and nothing rendered it, so a verified issuer looked identical to an unverified one — on a
+    // page whose whole job is telling apart tokens that share a ticker.
+    if (t.vf) {
+      var vb = el('span', 'lx-seavfd');
+      vb.setAttribute('title', 'Verified issuer');
+      var NSV = 'http://www.w3.org/2000/svg';
+      var vs = document.createElementNS(NSV, 'svg');
+      vs.setAttribute('viewBox', '0 0 24 24');
+      vs.setAttribute('fill', 'none');
+      vs.setAttribute('stroke', 'currentColor');
+      vs.setAttribute('stroke-width', '3');
+      vs.setAttribute('stroke-linecap', 'round');
+      vs.setAttribute('stroke-linejoin', 'round');
+      var vp = document.createElementNS(NSV, 'path');
+      vp.setAttribute('d', 'M20 6L9 17l-5-5');
+      vs.appendChild(vp);
+      vb.appendChild(vs);
+      nameRow.appendChild(vb);
+    }
+
     if (t.u) nameRow.appendChild(el('span', 'sp-domain', ' ' + t.u));
     info.appendChild(nameRow);
     // The issuer is part of the answer, not decoration: it is the only thing separating two tokens
