@@ -115,8 +115,56 @@
     });
   }
 
+  // THE SOURCE SIDE OF THIS PAGE STILL BELONGED TO ANOTHER CHAIN.
+  //
+  // The page's own first step reads "Your connected network is the source", and the source chip
+  // said **Aptos**, beside a wallet reading **0x0167…7065 · Connected** — an EVM-shaped address,
+  // invented by the design, presented as the address you are bridging out of. Both were visible at
+  // rest, without opening anything. The review step then said "You send 100 BVET Aptos".
+  //
+  // The destination list has been real since this file replaced the CCTP layer; the source was
+  // simply never claimed by anything.
+  var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+
+  function short(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
+  function addr() {
+    try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
+  }
+
+  function paintSource() {
+    var me = addr();
+
+    // The chip naming the source network, and the mark beside it. The design embeds the old chain's
+    // logo as a base64 webp; it is replaced rather than hidden, so the chip keeps its shape.
+    $$('.br-netchip').forEach(function (c) {
+      var nm = c.querySelector('.nm');
+      if (nm) nm.textContent = 'XRP Ledger';
+      var img = c.querySelector('img');
+      if (img) { img.src = XRP_LOGO; img.alt = ''; }
+    });
+
+    // The source wallet. Never a fabricated address: either the one that is connected, or a plain
+    // statement that none is.
+    $$('.br-wallet').forEach(function (w) {
+      var a = w.querySelector('.addr');
+      if (a) a.textContent = me ? short(me) : 'Not connected';
+      var img = w.querySelector('img');
+      if (img) { img.src = XRP_LOGO; img.alt = ''; }
+      // The status word sits beside it and shipped reading "Connected" unconditionally.
+      [].forEach.call(w.children, function (ch) {
+        if (ch.classList && ch.classList.contains('addr')) return;
+        if (/^connected$/i.test((ch.textContent || '').trim())) ch.textContent = me ? 'Connected' : 'Not connected';
+      });
+    });
+
+    // The review step names the two chains either side of the arrow. The second is already right.
+    var s = $$('.br-step .s');
+    if (s[0] && /aptos/i.test(s[0].textContent || '')) s[0].textContent = 'XRP Ledger';
+  }
+
   function load() {
     if (!$('.br-netbox') && !document.getElementById('lxBrPending')) return;   // not this page
+    paintSource();
     fetch('/lxapi/xrplbridge')
       .then(function (r) { return r.json(); })
       .then(function (d) {

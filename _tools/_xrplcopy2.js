@@ -43,6 +43,16 @@ const PHRASES = [
   ['Your Aptos address', 'Your XRP Ledger address'],
   ['Assets on Aptos', 'Assets on the XRP Ledger'],
   ['Connected · Aptos', 'Connected · XRP Ledger'],
+  // THE NETWORK FEE LINE, on 100 blocks across the site. Only the UNIT is wrong: the XRP Ledger's
+  // base fee genuinely is 10 drops, which is 0.00001 XRP, so the figure stands and the asset changes.
+  //
+  // Most of these sit in dialogs a live layer rewrites before anyone reads them — Send and Swap both
+  // do. Create Pool does not, and that is where it was caught: "Network fee ~0.00001 APT" on an
+  // otherwise clean XRP Ledger dialog. Fixing the literal covers the one that is read and is a no-op
+  // wherever a layer would have overwritten it anyway.
+  ['~0.00001 APT', '~0.00001 XRP'],
+  // The search box's own example query, in its hint row.
+  ['asset:APT', 'asset:XRP'],
   // THE LAUNCH SCREENS. "Once your token is minted on the Aptos network" on the review step, and
   // "Your token is now live on the Aptos network" on the confirmation — the two moments where
   // someone has just committed real money to issuing an asset and is being told which chain it
