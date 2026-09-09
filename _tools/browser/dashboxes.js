@@ -47,12 +47,28 @@
   }
   function rate(d) { var r = d && +d.usd; return (isFinite(r) && r > 0) ? r : 0; }
 
-  // ---- Cross-chain: design constants, identical to the Stellar build ------------------------------
-  // The bridge is the same Circle CCTP bridge with the same destination set, so these are not figures
-  // to look up. Written here only because this file is now the single writer for every slot.
-  set('cnet', '10');
-  set('casset', 'USDC');
-  set('cvia', 'Circle CCTP');
+  // ---- Cross-chain -------------------------------------------------------------------------------
+  // THESE WERE COPIED FROM STELLAR AND WERE WRONG. The card read "10 networks · USDC · via Circle
+  // CCTP", carried over on the assumption that the bridge ports. It does not: XRPL bridges through
+  // Wanchain and Axelar (RAZA, 2026-09-06, recorded in XRPL_FACTS.md), which are different contracts
+  // with a different claim model. So the product card on an XRP Ledger dashboard was naming a bridge
+  // this chain does not use, in the confident tone of a fact.
+  //
+  // The destination count comes from the SAME endpoint the bridge page itself lists, so the card and
+  // the page cannot disagree about how many chains are reachable — and it cannot go stale, because
+  // Axelar's own list is what answers. 58 at the time of writing; it is not written down here.
+  //
+  // "Axelar" rather than the "Wanchain and Axelar" in XRPL_FACTS: Axelar is what is actually
+  // implemented and what the bridge page says. Naming a second bridge the build does not use would be
+  // the same kind of claim as the Circle CCTP line this replaced.
+  //
+  // The ASSET stays an em dash on purpose. Transfers are not wired — the bridge does route discovery
+  // only and says so — so there is no asset being moved to name yet.
+  set('cvia', 'Axelar');
+  set('casset', '—');
+  j('/lxapi/xrplbridge').then(function (b) {
+    if (b && b.ok && b.count > 0) set('cnet', num(b.count));
+  }).catch(function () { set('cnet', '—'); });
 
   // ---- Pools + Trade -----------------------------------------------------------------------------
   j('/lxapi/xrplpools').then(function (p) {

@@ -186,8 +186,45 @@
     if (p) p.textContent = 'Ten Ecosystem pools · LUMOS/XRP native pool · holder rewards';
   }
 
+  // The page's prose still described the wrong chain throughout: "Based on your connected Aptos
+  // wallet", "hold LUMOS on Aptos or provide liquidity ... on Aptos — to earn a share every round",
+  // a pool named "LUMOS/APT", and a network selector whose only button said "Aptos".
+  //
+  // The figures beside all of that were already correct XRP Ledger ones, which is what makes this
+  // kind of leftover worth chasing: a reader reconciles the words with the numbers, and the words
+  // are the part that tells them which chain they need to be on to qualify.
+  //
+  // Rewritten by TEXT NODE, so any markup the design wrapped mid-sentence survives untouched.
+  function paintChainCopy() {
+    var sel = '.elig-note, .pdesc, .ns, .prog-desc, .rw-note';
+    [].forEach.call(document.querySelectorAll(sel), function (host) {
+      if (!/Aptos|\bAPT\b|Stellar|\bXLM\b/.test(host.textContent || '')) return;
+      var w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+      var n;
+      while ((n = w.nextNode())) {
+        var v = n.nodeValue;
+        if (!v) continue;
+        n.nodeValue = v
+          .replace(/LUMOS\/APT/g, 'LUMOS/XRP')
+          .replace(/\bon Aptos\b/g, 'on the XRP Ledger')
+          .replace(/\bAptos wallet\b/g, 'XRP Ledger wallet')
+          .replace(/\bAptos\b/g, 'XRP Ledger')
+          .replace(/\bon Stellar\b/g, 'on the XRP Ledger')
+          .replace(/\bStellar\b/g, 'XRP Ledger')
+          .replace(/\bXLM\b/g, 'XRP')
+          .replace(/\bAPT\b/g, 'XRP');
+      }
+      // The network button is a 1-5 character target for the logo layer once it says "XRP Ledger";
+      // claiming it keeps the label from being repainted away.
+      if (host.classList && host.classList.contains('ns')) {
+        try { host.setAttribute('data-logoed', '1'); } catch (e) {}
+      }
+    });
+  }
+
   function load() {
     if (!$('#eligBox') && !$('#repRows')) return;             // not the Rewards page
+    paintChainCopy();
     eligibility();
     report();
     // Connect finishes after this on a cold load, and the address can arrive from another tab.
@@ -195,6 +232,9 @@
       if (e && e.key === 'lumos.address') eligibility();
     });
     setTimeout(eligibility, 2500);
+    // The eligibility box is rebuilt when an address arrives, and it carries the "connected … wallet"
+    // sentence, so the copy pass runs again after each repaint rather than only once at load.
+    setTimeout(paintChainCopy, 2600);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);

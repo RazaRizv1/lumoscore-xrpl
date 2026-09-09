@@ -169,6 +169,67 @@ function spendableXrp(balanceDrops, ownerCount, reserve) {
   return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
 }
 
+// ---- amounts -------------------------------------------------------------------------------------
+// Building the Amount field of a transaction. This lives here, beside the reserve maths and under the
+// same tests, because it was written three separate times in the browser layers — write.js had two
+// copies and pooldetail.js a third — and three copies of the arithmetic that decides how much money
+// moves is three chances for one of them to be wrong on its own.
+//
+// AN XRPL AMOUNT IS ONE OF TWO THINGS and they are not interchangeable:
+//   XRP     a STRING of drops, integer, 1 XRP = 1,000,000 drops
+//   issued  { currency, issuer, value }, value a decimal string
+// Passing a plain number where drops are expected is not a formatting slip: it is off by a factor of
+// a million, and the ledger will happily accept it.
+function toDrops(xrp) {
+  const n = Number(xrp);
+  if (!isFinite(n) || n < 0) return null;
+  // ROUNDED, NEVER TRUNCATED. 0.1 + 0.2 is 0.30000000000000004, and Math.trunc on that class of value
+  // silently shaves a drop off the amount the user typed. Rounding is also what makes the displayed
+  // number and the submitted number agree.
+  const drops = Math.round(n * XRP_DROPS);
+  if (!Number.isSafeInteger(drops)) return null;
+  // String() would render a large enough number in exponent form ("1e+21"), which is not a valid
+  // drops string. The ledger's own maximum is 1e17 drops, so this cannot trigger today — it is here
+  // so that it still cannot if the caller is ever handed a bad number.
+  return String(drops);
+}
+
+// spec is either the string 'XRP', or { currency, issuer } for an issued token.
+function amountFor(spec, value) {
+  if (spec === 'XRP' || (spec && spec.currency === 'XRP' && !spec.issuer)) return toDrops(value);
+  if (!spec || !spec.currency || !spec.issuer) return null;
+  const n = Number(value);
+  if (!isFinite(n) || n < 0) return null;
+  return { currency: spec.currency, issuer: spec.issuer, value: String(n) };
+}
+
+// The pool/asset side of a ledger response, as it comes back from amm_info or an offer: a drops
+// string for XRP, or an object. Returns the { currency, issuer } identity with no value attached,
+// which is the shape Asset/Asset2 take on an AMM transaction.
+function assetOf(raw) {
+  if (typeof raw === 'string') return { currency: 'XRP' };
+  if (!raw || !raw.currency) return null;
+  return { currency: raw.currency, issuer: raw.issuer };
+}
+
+// The least a swap may deliver and still be acceptable. Used as the Amount of a cross-currency
+// payment WITHOUT tfPartialPayment, so the ledger delivers at least this or the whole thing fails.
+function minAfterSlippage(quoted, slippage) {
+  const q = Number(quoted), s = Number(slippage);
+  if (!isFinite(q) || q <= 0) return null;
+  if (!isFinite(s) || s < 0 || s >= 1) return null;        // 1.0 would accept delivering nothing
+  return q * (1 - s);
+}
+
+// The platform fee on an amount. Separate from the display so the number shown and the number taken
+// come from one place — the Stellar Smart Swap was removed because those two disagreed.
+function feeOf(value, rate) {
+  const v = Number(value), r = Number(rate);
+  if (!isFinite(v) || v <= 0) return 0;
+  if (!isFinite(r) || r <= 0) return 0;
+  return v * r;
+}
+
 // ---- balances ------------------------------------------------------------------------------------
 // Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
 function readLines(lines) {
@@ -191,7 +252,8 @@ function readLines(lines) {
 }
 
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
-  TEAM_WALLETS, isTeamWallet, excludeTeam };
+  TEAM_WALLETS, isTeamWallet, excludeTeam,
+  toDrops, amountFor, assetOf, minAfterSlippage, feeOf };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;

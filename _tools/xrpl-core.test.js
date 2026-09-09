@@ -107,6 +107,58 @@ eq('held excludes LP and obligations', r.held.map(h => h.display), ['CSC', 'LUMO
 eq('pool shares separated', r.pools.length, 1);
 eq('issuer obligation not a holding', r.obligations.length, 1);
 
+// ---- amounts -------------------------------------------------------------------------------------
+// The arithmetic that decides how much money a transaction moves. Every case here is one that would
+// have shipped a wrong number, not a wrong type — a bad amount is accepted by the ledger.
+console.log('');
+console.log('=== amounts (what a transaction actually carries) ===');
+
+eq('1 XRP is a drops STRING',        C.toDrops(1), '1000000');
+eq('drops are integers',             C.toDrops(0.0000015), '2');
+// The float case. 0.1 + 0.2 === 0.30000000000000004, and truncating shaves a drop off the amount the
+// user typed — the difference between the number on screen and the number submitted.
+eq('rounds rather than truncates',   C.toDrops(0.1 + 0.2), '300000');
+eq('a whole balance survives',       C.toDrops(15.573581), '15573581');
+eq('zero is legal',                  C.toDrops(0), '0');
+eq('negative is refused',            C.toDrops(-1), null);
+eq('NaN is refused',                 C.toDrops('abc'), null);
+eq('Infinity is refused',            C.toDrops(Infinity), null);
+// Never exponent notation: "1e+21" is not a drops string the ledger will take.
+eq('no exponent form in output',     /e/i.test(C.toDrops(1e14) || ''), false);
+// The safe-integer ceiling, and it is a REFUSAL rather than a wrong number. 9e9 XRP is 9e15 drops,
+// just inside Number's exact-integer range; 1e13 XRP is 1e19 drops, past it, where arithmetic stops
+// being exact. Returning null there is the right failure — the alternative is a plausible-looking
+// amount that is quietly wrong, which is the one outcome this whole file exists to prevent.
+//
+// (Written the other way round at first, asserting a value for the unsafe case. The code was right
+// and the expectation was nonsense.)
+eq('at the safe ceiling',            C.toDrops(9e9), '9000000000000000');
+eq('past it, refuses',               C.toDrops(1e13), null);
+
+eq('XRP amount is a string',         C.amountFor('XRP', 2.5), '2500000');
+eq('issued amount is an object',
+   C.amountFor({ currency: 'USD', issuer: 'rIss' }, 10),
+   { currency: 'USD', issuer: 'rIss', value: '10' });
+eq('issued needs an issuer',         C.amountFor({ currency: 'USD' }, 10), null);
+eq('issued refuses a bad value',     C.amountFor({ currency: 'USD', issuer: 'rIss' }, -3), null);
+
+eq('assetOf on drops is native',     C.assetOf('1000000'), { currency: 'XRP' });
+eq('assetOf keeps issuer, drops value',
+   C.assetOf({ currency: 'USD', issuer: 'rIss', value: '5' }),
+   { currency: 'USD', issuer: 'rIss' });
+
+// Slippage floor: what a swap must deliver or fail. Checked by hand — 100 less 0.5% is 99.5.
+eq('0.5% slippage floor',            C.minAfterSlippage(100, 0.005), 99.5);
+eq('zero slippage is exact',         C.minAfterSlippage(100, 0), 100);
+eq('slippage of 1 refused',          C.minAfterSlippage(100, 1), null);   // would accept nothing
+eq('slippage cannot be negative',    C.minAfterSlippage(100, -0.1), null);
+
+// The fee tiers from the fee memory: 0.2%, or 0.1% for holders of 250k LUMOS.
+eq('0.2% of 5 XRP',                  C.feeOf(5, 0.002), 0.01);
+eq('0.1% of 5 XRP',                  C.feeOf(5, 0.001), 0.005);
+eq('no fee on a zero amount',        C.feeOf(0, 0.002), 0);
+eq('no fee at a zero rate',          C.feeOf(5, 0), 0);
+
 // ---- live ----------------------------------------------------------------------------------------
 (async () => {
   console.log('');

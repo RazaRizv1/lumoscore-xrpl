@@ -121,6 +121,36 @@
   // The table is keyed by ticker+issuer, the same identity the rest of the site uses. The ticker
   // alone is NOT an identity on this ledger any more than it is on Stellar -- several unrelated
   // tokens call themselves USDC -- so the issuer travels with it on the row.
+  // CLICKING A TRADING PAIR DID NOTHING, for the same reason pool rows went to /pools/stellar.
+  //
+  // The design ships window.__lumosNav, a blanket row-navigation layer configured with a LISTTARGET
+  // and CONTAINERNAV, which claims clicks on any row of a list page and routes them through its own
+  // candidate resolver. On this fork that resolver produces Stellar-shaped destinations, so the row
+  // either went somewhere that does not exist or — here — was swallowed and went nowhere at all.
+  //
+  // Ordinary click handlers on the row lose: capture descends from the top, so a document-level
+  // listener always runs first, and an <a href> is simply preventDefaulted. WINDOW capture is the one
+  // phase that runs before any of it. Scoped to the two market containers so nothing else changes.
+  //
+  // The destination is read from data-lxgo on the row rather than from a closure, which is what lets
+  // one handler serve both the desktop table and the phone's card list.
+  function claimRowClicks() {
+    if (window.__lxxTradeNav) return;
+    window.__lxxTradeNav = 1;
+    window.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      // The row's own Trade button and any real control keep their behaviour.
+      if (t.closest('button, a, input, select, [data-copy]')) return;
+      var el2 = t.closest('[data-lxgo]');
+      if (!el2) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.location.href = el2.getAttribute('data-lxgo');
+    }, true);
+  }
+
   function row(t, rank, usd) {
     var tr = document.createElement('tr');
     tr.setAttribute('data-tkr', t.n);
@@ -211,9 +241,9 @@
     c8.appendChild(b);
     tr.appendChild(c8);
 
-    tr.addEventListener('click', function () {
-      window.location.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
-    });
+    // The destination is stamped on the row rather than closed over, so the window-capture claim
+    // below can read it. See claimRowClicks() for why a plain click handler here does nothing.
+    tr.setAttribute('data-lxgo', '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i));
     return tr;
   }
 
@@ -249,9 +279,7 @@
     top.appendChild(right);
 
     card.appendChild(top);
-    card.addEventListener('click', function () {
-      window.location.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
-    });
+    card.setAttribute('data-lxgo', '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i));
     return card;
   }
 
@@ -271,9 +299,7 @@
     var body = el('div', 'dex-mover-body', xrp(t.p) + ' XRP'
       + (usd != null ? ('  ·  ' + money(t.p * usd)) : ''));
     card.appendChild(body);
-    card.addEventListener('click', function () {
-      window.location.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
-    });
+    card.setAttribute('data-lxgo', '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i));
     return card;
   }
 
@@ -368,6 +394,7 @@
     if (!h) return;                                    // not the Trade page
     headers();
     lift();
+    claimRowClicks();
     note(h, 'Reading the XRP Ledger…');
 
     fetch('/lxapi/xrpltokens?n=50').then(function (r) { return r.json(); }).then(function (d) {

@@ -19,12 +19,18 @@ const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/wallet.js', 'utf8');
 // Prices fill columns the wallet layer paints, so they ship together and in this order.
 const px = fs.readFileSync(__dirname + '/browser/prices.js', 'utf8');
+// Signed transactions — Receive QR, Send, Cancel order. LAST, because it reads window.__lxxData for
+// balances and calls window.__lxxReload after a submit; both are published by wallet.js above.
+// The swap pays the platform fee to the collector, so this file carries its address — injected and
+// checksum-verified by xrpladdr.js, never written literally in a browser source.
+const { injectCollector } = require(__dirname + '/xrpladdr.js');
+const wr = injectCollector(fs.readFileSync(__dirname + '/browser/write.js', 'utf8'), 'write.js');
 
-for (const src of [core, page, px]) {
+for (const src of [core, page, px, wr]) {
   if (src.indexOf('</' + 'script') >= 0) { console.error('  a source file contains a closing script tag — aborting'); process.exit(1); }
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + px + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
 
 let files = 0, pages = 0, stellarLayers = 0;
 for (const dev of ['desktop', 'mobile']) {

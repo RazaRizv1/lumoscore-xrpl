@@ -50,6 +50,36 @@
     try { return window.lxx.isAddress(last) ? last : null; } catch (e) { return null; }
   }
 
+  // The account page and the wallet page describe THE SAME ACCOUNT, so they must agree about what it
+  // is worth. This stat used to be a dash with a comment saying prices were "not sourced here" —
+  // true when it was written, and no longer: /lxapi/xrplprices is what the wallet's own total is
+  // built from. Summed the same way, from the same endpoint, so the two pages cannot disagree.
+  //
+  // A missing price is skipped, never counted as zero: a token nobody quotes would otherwise quietly
+  // drag the total down, and a total that is wrong in a knowable direction is worse than one that is
+  // honestly partial. If nothing at all can be priced the dash stays.
+  function paintPortfolioValue(xrp, held) {
+    var slugs = held.map(function (h) { return String(h.issuer || '') + '-' + String(h.currency || ''); });
+    var q = slugs.length ? ('?t=' + encodeURIComponent(slugs.slice(0, 24).join(','))) : '';
+    fetch('/lxapi/xrplprices' + q)
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.ok || !(j.usd > 0)) throw new Error('no rate');
+        var usd = 0, any = false;
+        if (xrp && xrp.balance > 0) { usd += xrp.balance * j.usd; any = true; }
+        held.forEach(function (t) {
+          var row = j.t[String(t.issuer || '') + '-' + String(t.currency || '')];
+          if (!row || !(t.balance > 0)) return;
+          var u = row[0] * j.usd;                       // row[0] is the price in XRP
+          if (!isFinite(u) || u <= 0) return;
+          usd += t.balance * u; any = true;
+        });
+        if (!any) { setStat('portfolio value', '—'); return; }
+        setStat('portfolio value', '$' + Math.round(usd).toLocaleString('en-US'));
+      })
+      .catch(function () { setStat('portfolio value', '—'); });
+  }
+
   function setStat(match, value) {
     var host = $('#accStats');
     if (!host) return;
@@ -223,9 +253,7 @@
       setStat('xrp balance', xrp ? fmt(xrp.balance, 6) + ' XRP' : '—');
       setStat('assets held', String(split.held.length));
       setStat('pool positions', String(split.pools.length));
-      // Portfolio value needs prices for every held token; not sourced here, so it stays a dash
-      // rather than showing the XRP balance dressed up as a total.
-      setStat('portfolio value', '—');
+      paintPortfolioValue(xrp, split.held);
     }).catch(function () {
       tableNote($('#accAssetsTbl'), 'Could not read the XRP Ledger.');
       tableNote($('#accPoolsTbl'), 'Could not read the XRP Ledger.');

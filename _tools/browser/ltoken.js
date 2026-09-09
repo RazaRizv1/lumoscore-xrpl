@@ -90,8 +90,62 @@
     for (var i = 0; i < cs.length; i++) cs[i].classList.add('lxlt');
   }
 
+  // THE PAGE NAMED THREE DIFFERENT CHAINS, none of them this one. Beside a correct XRP Ledger price
+  // and a correct 999.96M supply, the hero read "Native utility token · live on Aptos", the network
+  // chip said "Aptos", the comparison block said "Aptos", and the supply line said "1 billion LUMOS ·
+  // fixed supply on Stellar."
+  //
+  // Those are labels the numbers already contradict, which is the most confusing way for a page to be
+  // wrong: everything measurable is right, and everything that says what you are looking at is not.
+  //
+  // The supply line is corrected to the real figure rather than the round one. 999,955,353 is what the
+  // ledger reports, and the reason it can never change is worth saying outright: the issuer is
+  // BLACKHOLED (DisableMaster + RegularKey = ACCOUNT_ONE), so no more can be minted by anyone, ever.
+  // "1 billion" is a rounding of a number whose exactness is the entire point.
+  function paintChainLabels() {
+    $$('.lh-desc').forEach(function (e) {
+      var t = e.textContent || '';
+      if (/Aptos|Stellar/i.test(t)) {
+        e.textContent = t.replace(/live on Aptos/i, 'live on the XRP Ledger')
+          .replace(/\bAptos\b/g, 'the XRP Ledger').replace(/\bStellar\b/g, 'the XRP Ledger');
+      }
+    });
+    $$('.net-tag, .lt-cmp-chain').forEach(function (e) {
+      if (/Aptos|Stellar/i.test(e.textContent || '')) {
+        try { e.setAttribute('data-logoed', '1'); } catch (_) {}
+        e.textContent = 'XRP Ledger';
+      }
+    });
+    $$('.sub-h').forEach(function (e) {
+      var t = e.textContent || '';
+      if (!/fixed supply/i.test(t)) return;
+      e.textContent = '999,955,353 LUMOS · fixed supply on the XRP Ledger — the issuer is blackholed, '
+        + 'so no more can ever be minted.';
+    });
+
+    // The allocation note is PROSE, and it described the wrong ledger's market: "added, a little at a
+    // time, to LUMOS liquidity on Stellar — the LUMOS/XLM pool and the other LUMOS pairs". The pair
+    // it names does not exist here; the quote asset on this ledger is XRP.
+    //
+    // Rewritten by TEXT NODE so the sentence keeps whatever markup the design wrapped parts of it in
+    // — replacing the block's innerHTML would flatten that and is not needed to change two words.
+    $$('.alloc-note').forEach(function (block) {
+      var w = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+      var nd;
+      while ((nd = w.nextNode())) {
+        var v = nd.nodeValue;
+        if (!v || !/Stellar|XLM/.test(v)) continue;
+        nd.nodeValue = v.replace(/LUMOS\/XLM/g, 'LUMOS/XRP')
+          .replace(/\bon Stellar\b/g, 'on the XRP Ledger')
+          .replace(/\bStellar\b/g, 'the XRP Ledger')
+          .replace(/\bXLM\b/g, 'XRP');
+      }
+    });
+  }
+
   function paint(d) {
     lift();
+    paintChainLabels();
     // ---- hero -------------------------------------------------------------------------------
     var price = $('.hero-price-block .price');
     if (price) price.textContent = d ? usd(d.usd) : '—';

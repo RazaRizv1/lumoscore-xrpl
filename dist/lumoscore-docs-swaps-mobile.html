@@ -2682,7 +2682,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
     </button>
 </header>
 
-  <main class="page"><div class="lxdc"><details class="dc-navbox" open><summary class="dc-navsum"><span class="dc-navsum-k">Documentation</span><span class="dc-navsum-t">Swaps</span></summary><nav class="dc-nav"><input class="dc-filter" id="dcFilter" type="search" autocomplete="off" placeholder="Filter pages" aria-label="Filter documentation pages"><p class="dc-nomatch" id="dcNoMatch" hidden>No pages match.</p><div class="dc-nav-group"><p class="dc-nav-label">Start here</p><a href="/docs/introduction">Introduction</a><a href="/docs/connect-a-wallet">Connect a wallet</a><a href="/docs/fees">Fees</a></div><div class="dc-nav-group"><p class="dc-nav-label">Using LumosCore</p><a href="/docs/swaps" class="dc-on">Swaps</a><a href="/docs/limit-orders">Limit orders</a><a href="/docs/liquidity-pools">Liquidity pools</a><a href="/docs/cross-chain">Cross-chain</a><a href="/docs/wallet">Wallet</a><a href="/docs/trustlines">Trustlines</a><a href="/docs/rewards">Rewards</a></div><div class="dc-nav-group"><p class="dc-nav-label">For issuers</p><a href="/docs/launch-a-token">Launch a token</a><a href="/docs/asset-metadata">Asset metadata</a><a href="/docs/verification">Asset verification</a><a href="/docs/curated-listing">Curated listing</a></div><div class="dc-nav-group"><p class="dc-nav-label">Reference</p><a href="/docs/security">Security</a><a href="/docs/troubleshooting">Troubleshooting</a><a href="/docs/faq">FAQ</a></div></nav></details><div class="dc-main"><div class="dc-head"><p class="dc-crumb">Using LumosCore</p><h1>Swaps</h1><p class="dc-sub">Trading assets on Stellar: routing, price, slippage and what you approve before signing.</p></div><p>A swap exchanges one asset for another in a single Stellar transaction. LumosCore builds it, shows
+  <main class="page"><div class="lxdc"><details class="dc-navbox" open><summary class="dc-navsum"><span class="dc-navsum-k">Documentation</span><span class="dc-navsum-t">Swaps</span></summary><nav class="dc-nav"><input class="dc-filter" id="dcFilter" type="search" autocomplete="off" placeholder="Filter pages" aria-label="Filter documentation pages"><p class="dc-nomatch" id="dcNoMatch" hidden>No pages match.</p><div class="dc-nav-group"><p class="dc-nav-label">Start here</p><a href="/docs/introduction">Introduction</a><a href="/docs/connect-a-wallet">Connect a wallet</a><a href="/docs/fees">Fees</a></div><div class="dc-nav-group"><p class="dc-nav-label">Using LumosCore</p><a href="/docs/swaps" class="dc-on">Swaps</a><a href="/docs/limit-orders">Limit orders</a><a href="/docs/liquidity-pools">Liquidity pools</a><a href="/docs/cross-chain">Cross-chain</a><a href="/docs/wallet">Wallet</a><a href="/docs/trustlines">Trustlines</a><a href="/docs/rewards">Rewards</a></div><div class="dc-nav-group"><p class="dc-nav-label">For issuers</p><a href="/docs/launch-a-token">Launch a token</a><a href="/docs/asset-metadata">Asset metadata</a><a href="/docs/verification">Asset verification</a><a href="/docs/curated-listing">Curated listing</a></div><div class="dc-nav-group"><p class="dc-nav-label">Reference</p><a href="/docs/security">Security</a><a href="/docs/troubleshooting">Troubleshooting</a><a href="/docs/faq">FAQ</a></div></nav></details><div class="dc-main"><div class="dc-head"><p class="dc-crumb">Using LumosCore</p><h1>Swaps</h1><p class="dc-sub">Trading assets on the XRP Ledger: routing, price, slippage and what you approve before signing.</p></div><p>A swap exchanges one asset for another in a single XRP Ledger transaction. LumosCore builds it, shows
   you what you will receive, and hands it to your wallet to sign. The trade settles on the ledger in
   a few seconds.</p>
 
@@ -2700,10 +2700,10 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
 
 <h2 id="how-the-price-is-found"><a class="dc-anchor" href="#how-the-price-is-found" aria-label="Link to this section">#</a>How the price is found</h2>
 
-<p>Stellar has two independent sources of liquidity, and a swap can use either:</p>
+<p>The XRP Ledger has two independent sources of liquidity, and a swap can use either:</p>
 
 <ul>
-  <li><strong>The order book.</strong> Stellar has a native on-chain order book. If someone has a
+  <li><strong>The order book.</strong> The XRP Ledger has a native on-chain order book. If someone has a
     resting offer at a better price, your trade takes it.</li>
   <li><strong>Liquidity pools.</strong> Constant-product pools that quote a price from their
     reserves. These charge their own 0.3%, which goes to the pool's liquidity providers.</li>
@@ -2714,7 +2714,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
 
 <div class="dc-note">
   <p class="dc-note-h">Thin markets move</p>
-  <p>Stellar carries assets of every size. On a small pair, a modest order can move the price
+  <p>The XRP Ledger carries assets of every size. On a small pair, a modest order can move the price
     noticeably — that is price impact, not a fee, and it is shown before you sign. If it looks
     wrong, trade a smaller amount and watch how it changes.</p>
 </div>
@@ -2732,12 +2732,12 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
 
 <p>LumosCore charges <span class="dc-num">0.2%</span> of the traded amount, or
   <span class="dc-num">0.1%</span> if you hold 250,000 LUMOS or more — see <a href="/docs/fees">Fees</a>.
-  On top of that sit the Stellar network fee, which is a fraction of a cent, and the pool's own 0.3%
+  On top of that sit the XRP Ledger network fee, which is a fraction of a cent, and the pool's own 0.3%
   if your trade routes through a pool rather than the order book.</p>
 
 <h2 id="before-you-trade-something-unfamiliar"><a class="dc-anchor" href="#before-you-trade-something-unfamiliar" aria-label="Link to this section">#</a>Before you trade something unfamiliar</h2>
 
-<p>Check the issuer. A ticker on Stellar is not unique and cannot be trusted on its own — several
+<p>Check the issuer. A ticker on the XRP Ledger is not unique and cannot be trusted on its own — several
   hundred different assets call themselves USDC. Assets that have passed the
   <a href="/docs/verification">domain handshake</a> carry a mark; that mark tells you the asset is
   who it claims to be, and nothing about whether it is a good investment.</p>
@@ -3160,7 +3160,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <nav class="menu-links"><div class="menu-user"><div class="mu-link"><span class="mu-av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 7l2-3h12l2 3"/><circle cx="17" cy="13" r="1.3"/></svg></span><span class="mu-meta"><span class="mu-name">0x068d…1e1c</span><span class="mu-sub">Connected · Aptos</span></span></div><button class="mu-gear" type="button" aria-label="Disconnect"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button></div><div class="menu-group" data-lxnav="1">Products</div><a href="/xrpl" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="5" rx="1.6"/><rect x="13" y="11" width="8" height="10" rx="1.6"/><rect x="3" y="14" width="8" height="7" rx="1.6"/></svg>Dashboard</a><a href="/xrpl/trade" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 6v3"/><rect x="6" y="9" width="4" height="6" rx="1"/><path d="M8 15v3"/><path d="M16 4v2"/><rect x="14" y="6" width="4" height="9" rx="1"/><path d="M16 15v3"/></svg>Trade</a><a href="/xrpl/pools" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A11 11 0 0 0 14 3c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a7 7 0 0 1-11.9 5"/></svg>Pools</a><a href="/xrpl/bridge" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 1.5 12 4 15"/><path d="M20 9l2.5 3L20 15"/><path d="M2.5 12h19"/></svg>Bridge</a><a href="/xrpl/launchpad" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.9 12.9 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>Launchpad</a><div class="menu-group">Discover</div><a href="#" data-open-search><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</a><div class="menu-group">Account</div><a href="/xrpl/wallet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2.5"/><path d="M17 12.5h.01M2 10h20"/></svg>Wallet</a><a href="/xrpl/rewards"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9"/><path d="M12 8S10.5 3 8 3a2.5 2.5 0 0 0 0 5M12 8s1.5-5 4-5a2.5 2.5 0 0 1 0 5"/></svg>Rewards</a><a href="lumoscore-mcp-mobile.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.9 4.9l2.8 2.8"/><path d="M16.3 16.3l2.8 2.8"/><path d="M2 12h4"/><path d="M18 12h4"/><circle cx="12" cy="12" r="3"/></svg>MCP</a><a href="/xrpl/lumos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.75 1.75 0 0 1 0 3.5h-3a1.75 1.75 0 0 0 0 3.5h4"/></svg>LUMOS Token</a></nav>
+    <nav class="menu-links"><div class="menu-user"><div class="mu-link"><span class="mu-av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 7l2-3h12l2 3"/><circle cx="17" cy="13" r="1.3"/></svg></span><span class="mu-meta"><span class="mu-name">0x068d…1e1c</span><span class="mu-sub">Connected · XRP Ledger</span></span></div><button class="mu-gear" type="button" aria-label="Disconnect"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button></div><div class="menu-group" data-lxnav="1">Products</div><a href="/xrpl" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="5" rx="1.6"/><rect x="13" y="11" width="8" height="10" rx="1.6"/><rect x="3" y="14" width="8" height="7" rx="1.6"/></svg>Dashboard</a><a href="/xrpl/trade" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 6v3"/><rect x="6" y="9" width="4" height="6" rx="1"/><path d="M8 15v3"/><path d="M16 4v2"/><rect x="14" y="6" width="4" height="9" rx="1"/><path d="M16 15v3"/></svg>Trade</a><a href="/xrpl/pools" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A11 11 0 0 0 14 3c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a7 7 0 0 1-11.9 5"/></svg>Pools</a><a href="/xrpl/bridge" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 1.5 12 4 15"/><path d="M20 9l2.5 3L20 15"/><path d="M2.5 12h19"/></svg>Bridge</a><a href="/xrpl/launchpad" data-lxnav="1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.9 12.9 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>Launchpad</a><div class="menu-group">Discover</div><a href="#" data-open-search><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Search</a><div class="menu-group">Account</div><a href="/xrpl/wallet"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2.5"/><path d="M17 12.5h.01M2 10h20"/></svg>Wallet</a><a href="/xrpl/rewards"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9"/><path d="M12 8S10.5 3 8 3a2.5 2.5 0 0 0 0 5M12 8s1.5-5 4-5a2.5 2.5 0 0 1 0 5"/></svg>Rewards</a><a href="lumoscore-mcp-mobile.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.9 4.9l2.8 2.8"/><path d="M16.3 16.3l2.8 2.8"/><path d="M2 12h4"/><path d="M18 12h4"/><circle cx="12" cy="12" r="3"/></svg>MCP</a><a href="/xrpl/lumos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.75 1.75 0 0 1 0 3.5h-3a1.75 1.75 0 0 0 0 3.5h4"/></svg>LUMOS Token</a></nav>
   
     <div class="menu-foot">
       <div class="menu-theme-row">
@@ -3182,13 +3182,13 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
         <button class="sp-close-btn" id="spCloseBtn" aria-label="Close">Cancel</button>
       </div>
       <div class="sp-body">
-        <div class="sp-section-head"><h4>Assets on Aptos <span class="count" id="spAssetCount">(12)</span></h4></div>
+        <div class="sp-section-head"><h4>Assets on the XRP Ledger <span class="count" id="spAssetCount">(12)</span></h4></div>
         <div class="sp-filters" id="spFilters">
           <button class="sp-filter-pill" data-chain="xrpl">
-            <span class="ch-ico xrpl">X</span> Aptos
+            <span class="ch-ico xrpl">X</span> XRP Ledger
           </button>
           <button class="sp-filter-pill" data-chain="stellar">
-            <span class="ch-ico stellar"><span style="display:inline-flex;width:10px;height:10px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,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" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span></span> Aptos
+            <span class="ch-ico stellar"><span style="display:inline-flex;width:10px;height:10px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,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" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span></span> the XRP Ledger
           </button>
           <button class="sp-filter-clear" id="spClearFilter" style="display:none">Clear</button>
         </div>
@@ -4146,7 +4146,7 @@ window.addEventListener('resize',move);requestAnimationFrame(move);setTimeout(mo
   // Naming it is: the sub-line reads "LOBSTR · Stellar", and falls back to the id itself for a wallet
   // this map has not been taught, which is still better than saying nothing.
   var NAMES={lobstr:"LOBSTR",freighter:"Freighter",rabet:"Rabet",albedo:"Albedo",xbull:"xBull",
-    walletconnect:"WalletConnect",wc:"WalletConnect",hana:"Hana",xaman:"Xaman",gem:"Gem",
+    walletconnect:"WalletConnect",wc:"WalletConnect",hana:"Hana",xaman:"Xaman",gem:"GemWallet",gemwallet:"GemWallet",
     hashpack:"HashPack",kabila:"Kabila",crossmark:"Crossmark",ready:"Ready"};
   function walletId(){
     var id="";
@@ -4194,7 +4194,7 @@ window.addEventListener('resize',move);requestAnimationFrame(move);setTimeout(mo
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
   else boot();
-})();</script><style id="lx-whead-css">/*lxts:1.1*/.lx-topwallet.lx-tw-disc{background:var(--accent,#ea6a2c)!important;border-color:var(--accent,#ea6a2c)!important;color:#fff!important;justify-content:center;padding:0 22px;gap:8.8px}.lx-topwallet.lx-tw-disc:hover{background:#d85f22!important;border-color:#d85f22!important}.lx-tw-cbtn{display:inline-flex;align-items:center;gap:8.8px;font:700 14.9px/1 "Hanken Grotesk",system-ui,sans-serif;color:#fff;letter-spacing:.01em}.lx-tw-cbtn svg{width:16px;height:16px}.lx-launch{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 15.4px;border-radius:10px;border:1px solid var(--accent,#ea6a2c);background:var(--accent,#ea6a2c);color:#fff;font:700 14.3px/1 "Hanken Grotesk",system-ui,sans-serif;white-space:nowrap;cursor:pointer;flex-shrink:0}.lx-launch:active{background:#d85f22;border-color:#d85f22}.lx-topwallet .lx-tw-addr:empty{display:inline-block;width:86px;height:11px;border-radius:6px;background:var(--border);opacity:.5;animation:lxTwSk 1.15s ease-in-out infinite}.lx-topwallet .lx-tw-copy[data-copy=""]{visibility:hidden}@keyframes lxTwSk{0%,100%{opacity:.28}50%{opacity:.6}}.avatar-sm.lx-mav{width:auto!important;height:auto!important;border-radius:999px;background:var(--surface-2,#1b1c22)!important;border:1px solid var(--border);display:inline-flex;align-items:center;gap:7.7px;padding:5.5px 11px 5.5px 6.6px;font-size:0;color:transparent}.avatar-sm.lx-mav::before{content:"";width:20px;height:20px;border-radius:50%;flex:0 0 auto;background:var(--lx-netlogo) center/cover no-repeat}.avatar-sm.lx-mav::after{content:attr(data-addr);font:700 12.7px/1 "JetBrains Mono",ui-monospace,monospace;color:var(--text)}@media (max-width:560px){.appbar .logo{flex:0 0 auto!important;overflow:visible!important;min-width:0}.appbar .logo .logo-text{overflow:visible!important}.appbar .avatar-sm.lx-mav{flex:0 0 auto!important;min-width:0;overflow:visible}.appbar .logo{min-width:0;flex:0 1 auto;overflow:hidden}@media(max-width:430px){.appbar{padding-left:11px!important;padding-right:11px!important;gap:6.6px!important}.appbar .avatar-sm.lx-mav{gap:6.6px!important;padding-left:5.5px!important;padding-right:9.9px!important}.appbar .avatar-sm.lx-mav::after{font-size:13.2px!important}.appbar .avatar-sm.lx-mav::before{width:18px!important;height:18px!important}@media(max-width:390px){.appbar .logo-text{display:none!important}}}.appbar .avatar-sm.lx-mav::after{overflow:hidden;max-width:100%;white-space:nowrap}.appbar .avatar-sm.lx-mav{white-space:nowrap}}.topbar .search-box input{font-family:"Hanken Grotesk",sans-serif!important;line-height:26.4px!important}html:not(.lx-hdrdone) .avatar-sm{visibility:hidden!important}.mu-av.lx-mav-net{background:var(--lx-netlogo) center/cover no-repeat!important}.mu-av.lx-mav-net>svg{display:none!important}</style><script id="lx-whead">(function(){var NET="aptos";function actNet(){try{return localStorage.getItem("lumos.chain")||NET;}catch(_){return NET;}}var PLUG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v6"/></svg>';var ARROW='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';function ls(k){try{return localStorage.getItem(k);}catch(_){return null;}}function trunc(a){a=String(a||"");return a.length>14?a.slice(0,6)+"\u2026"+a.slice(-4):a;}function sync(){var wallet=ls("lumos.wallet"),addr=ls("lumos.address");var on=!!(wallet||addr);mobileMenu(on,addr);var chip=document.querySelector(".lx-topwallet");if(!chip){mobileLaunch(on);if(addr)fixOwnAddrCopies(addr);return;}if(on){if(chip.getAttribute("data-lxdisc")){if(chip.getAttribute("data-lxorig")!=null)chip.innerHTML=chip.getAttribute("data-lxorig");chip.removeAttribute("data-lxdisc");chip.classList.remove("lx-tw-disc");chip.style.removeProperty("background");chip.style.removeProperty("border-color");chip.style.removeProperty("color");}if(addr){var ae=chip.querySelector(".lx-tw-addr");if(ae)ae.textContent=trunc(addr);var cps=chip.querySelectorAll("[data-copy]");for(var ci=0;ci<cps.length;ci++){if(cps[ci].getAttribute("data-copy")!==addr)cps[ci].setAttribute("data-copy",addr);}if(chip.hasAttribute("data-copy")&&chip.getAttribute("data-copy")!==addr)chip.setAttribute("data-copy",addr);fixOwnAddrCopies(addr);}}else{if(chip.getAttribute("data-lxorig")==null)chip.setAttribute("data-lxorig",chip.innerHTML);chip.setAttribute("data-lxdisc","1");chip.classList.add("lx-tw-disc");chip.setAttribute("title","Launch the app");chip.style.setProperty("background","#ea6a2c","important");chip.style.setProperty("border-color","#ea6a2c","important");chip.style.setProperty("color","#fff","important");chip.innerHTML='<span class="lx-tw-cbtn">Launch App'+ARROW+'</span>';}}function mobileLaunch(on){try{var av=document.querySelector(".avatar-sm");if(!av)return;var btn=document.querySelector(".lx-launch");if(on){if(btn)btn.remove();av.style.display="";try{av.style.visibility="";}catch(_e3){}return;}av.style.display="none";if(btn)return;btn=document.createElement("button");btn.type="button";btn.className="lx-launch";btn.setAttribute("data-lxdisc","1");btn.setAttribute("title","Launch the app");btn.innerHTML="Launch App"+ARROW;if(av.parentNode)av.parentNode.insertBefore(btn,av);}catch(_){}}function mobileMenu(on,addr){try{var los=document.querySelectorAll(".nx-logout,.mu-gear[aria-label=Disconnect]");for(var i=0;i<los.length;i++)los[i].style.display=on?"":"none";var mn=document.querySelector(".mu-name"),ms=document.querySelector(".mu-sub");if(mn)mn.textContent=on&&addr?trunc(addr):(on?"":"Not connected");if(ms)ms.textContent=on?("Connected \u00b7 "+netLabel()):"Tap to connect a wallet";var row=(mn||ms);row=row&&row.closest?(row.closest(".mu-acct")||row.closest(".menu-acct")||row.closest(".mu-row")||(row.parentElement&&row.parentElement.parentElement)):null;if(row&&row.style)row.style.display=on?"":"none";var av=document.querySelector(".mu-av");if(av){av.style.setProperty("--lx-netlogo",NETLOGO);av.classList.add("lx-mav-net");}var sm=document.querySelector(".avatar-sm");if(sm){if(on&&addr){sm.style.setProperty("--lx-netlogo",NETLOGO);sm.setAttribute("data-addr",trunc(addr));sm.classList.add("lx-mav");}else{sm.classList.remove("lx-mav");sm.removeAttribute("data-addr");}try{sm.style.visibility="";}catch(_e2){}}try{document.documentElement.classList.add("lx-hdrdone");}catch(_e){}}catch(_){}}var NETLOGO='url("/assets/tokens/xlm.png")';function netLabel(){var n=actNet();return n?n.charAt(0).toUpperCase()+n.slice(1):"Stellar";}function fixOwnAddrCopies(addr){if(!addr)return;try{var all=document.querySelectorAll("[data-copy]");for(var i=0;i<all.length;i++){var el=all[i],v=el.getAttribute("data-copy")||"";if(!/^0x[0-9a-fA-F]{32,}$/.test(v))continue;var ownAddr=(el.getAttribute("data-copy-label")||"").toLowerCase().indexOf("wallet address")>=0||!!(el.closest&&(el.closest(".lx-topwallet")||el.closest(".wallet-chip")||el.closest(".hero-id-row")||el.closest("#modalReceive")));if(ownAddr)el.setAttribute("data-copy",addr);}}catch(_){}}window.addEventListener("click",function(e){try{var t=e.target&&e.target.closest?e.target.closest("[data-copy]"):null;if(!t)return;var a=ls("lumos.address");if(!a)return;var v=t.getAttribute("data-copy")||"";if(!/^0x[0-9a-fA-F]{32,}$/.test(v))return;var own=(t.getAttribute("data-copy-label")||"").toLowerCase().indexOf("wallet address")>=0||!!(t.closest(".lx-topwallet")||t.closest(".wallet-chip")||t.closest(".hero-id-row")||t.closest("#modalReceive"));if(own)t.setAttribute("data-copy",a);}catch(_){}},true);[700,1500,3000].forEach(function(ms){setTimeout(function(){try{fixOwnAddrCopies(ls("lumos.address"));}catch(_){}},ms);});window.addEventListener("click",function(e){var t=e.target;if(!t||!t.closest)return;var dc=t.closest(".lx-topwallet[data-lxdisc=\"1\"]")||t.closest(".lx-launch");if(dc){e.preventDefault();e.stopImmediatePropagation();try{sessionStorage.setItem("lumos.connDest","home");}catch(_){}if(window.lxChooseNetwork)window.lxChooseNetwork();else if(window.lxwOpenWallet)window.lxwOpenWallet(actNet());return;}var lo=t.closest(".nx-logout")||t.closest(".mu-gear[aria-label=Disconnect]");if(lo){e.preventDefault();e.stopImmediatePropagation();try{localStorage.removeItem("lumos.wallet");localStorage.removeItem("lumos.address");localStorage.removeItem("lumos.network");}catch(_){}try{location.replace("/");}catch(_){try{location.href="/";}catch(__){sync();}}return;}},true);if(document.readyState!=="loading")sync();else document.addEventListener("DOMContentLoaded",sync);setTimeout(function(){try{document.documentElement.classList.add("lx-hdrdone");var _sm=document.querySelector(".avatar-sm");if(_sm)_sm.style.visibility="";}catch(_){}},2500);setTimeout(sync,300);})();</script><script id="lx-poolwarm">(function(){try{function warmRate(){ try{ fetch("/lxapi/xlm").catch(function(){}); }catch(_){} }function warmPoolStats(){ try{ fetch("/lxapi/poolstats").catch(function(){}); }catch(_){} }function warmAll(){ warmRate(); setTimeout(warmPoolStats,600); }if(window.requestIdleCallback)requestIdleCallback(function(){setTimeout(warmAll,1200);},{timeout:5000});else setTimeout(warmAll,2000);if(document.querySelector("#poolsBody")||document.querySelector("#panelAll"))return;var tries=0;function hit(){if(tries++>=4)return;fetch("/lxapi/pools?per=1&page=1",{cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.warming){ setTimeout(hit,4000); }}).catch(function(){});}function start(){ try{ hit(); }catch(_){} }if(window.requestIdleCallback)requestIdleCallback(function(){setTimeout(start,2500);},{timeout:6000});else setTimeout(start,3500);}catch(_){}})();</script><style id="lx-mobfix">html,body{overscroll-behavior:none}</style><script id="lx-mobnav">(function(){
+})();</script><style id="lx-whead-css">/*lxts:1.1*/.lx-topwallet.lx-tw-disc{background:var(--accent,#ea6a2c)!important;border-color:var(--accent,#ea6a2c)!important;color:#fff!important;justify-content:center;padding:0 22px;gap:8.8px}.lx-topwallet.lx-tw-disc:hover{background:#d85f22!important;border-color:#d85f22!important}.lx-tw-cbtn{display:inline-flex;align-items:center;gap:8.8px;font:700 14.9px/1 "Hanken Grotesk",system-ui,sans-serif;color:#fff;letter-spacing:.01em}.lx-tw-cbtn svg{width:16px;height:16px}.lx-launch{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 15.4px;border-radius:10px;border:1px solid var(--accent,#ea6a2c);background:var(--accent,#ea6a2c);color:#fff;font:700 14.3px/1 "Hanken Grotesk",system-ui,sans-serif;white-space:nowrap;cursor:pointer;flex-shrink:0}.lx-launch:active{background:#d85f22;border-color:#d85f22}.lx-topwallet .lx-tw-addr:empty{display:inline-block;width:86px;height:11px;border-radius:6px;background:var(--border);opacity:.5;animation:lxTwSk 1.15s ease-in-out infinite}.lx-topwallet .lx-tw-copy[data-copy=""]{visibility:hidden}@keyframes lxTwSk{0%,100%{opacity:.28}50%{opacity:.6}}.avatar-sm.lx-mav{width:auto!important;height:auto!important;border-radius:999px;background:var(--surface-2,#1b1c22)!important;border:1px solid var(--border);display:inline-flex;align-items:center;gap:7.7px;padding:5.5px 11px 5.5px 6.6px;font-size:0;color:transparent}.avatar-sm.lx-mav::before{content:"";width:20px;height:20px;border-radius:50%;flex:0 0 auto;background:var(--lx-netlogo) center/cover no-repeat}.avatar-sm.lx-mav::after{content:attr(data-addr);font:700 12.7px/1 "JetBrains Mono",ui-monospace,monospace;color:var(--text)}@media (max-width:560px){.appbar .logo{flex:0 0 auto!important;overflow:visible!important;min-width:0}.appbar .logo .logo-text{overflow:visible!important}.appbar .avatar-sm.lx-mav{flex:0 0 auto!important;min-width:0;overflow:visible}.appbar .logo{min-width:0;flex:0 1 auto;overflow:hidden}@media(max-width:430px){.appbar{padding-left:11px!important;padding-right:11px!important;gap:6.6px!important}.appbar .avatar-sm.lx-mav{gap:6.6px!important;padding-left:5.5px!important;padding-right:9.9px!important}.appbar .avatar-sm.lx-mav::after{font-size:13.2px!important}.appbar .avatar-sm.lx-mav::before{width:18px!important;height:18px!important}@media(max-width:390px){.appbar .logo-text{display:none!important}}}.appbar .avatar-sm.lx-mav::after{overflow:hidden;max-width:100%;white-space:nowrap}.appbar .avatar-sm.lx-mav{white-space:nowrap}}.topbar .search-box input{font-family:"Hanken Grotesk",sans-serif!important;line-height:26.4px!important}html:not(.lx-hdrdone) .avatar-sm{visibility:hidden!important}.mu-av.lx-mav-net{background:var(--lx-netlogo) center/cover no-repeat!important}.mu-av.lx-mav-net>svg{display:none!important}</style><script id="lx-whead">(function(){var NET="xrpl";function actNet(){try{return localStorage.getItem("lumos.chain")||NET;}catch(_){return NET;}}var PLUG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v6"/></svg>';var ARROW='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';function ls(k){try{return localStorage.getItem(k);}catch(_){return null;}}function trunc(a){a=String(a||"");return a.length>14?a.slice(0,6)+"\u2026"+a.slice(-4):a;}function sync(){var wallet=ls("lumos.wallet"),addr=ls("lumos.address");var on=!!(wallet||addr);mobileMenu(on,addr);var chip=document.querySelector(".lx-topwallet");if(!chip){mobileLaunch(on);if(addr)fixOwnAddrCopies(addr);return;}if(on){if(chip.getAttribute("data-lxdisc")){if(chip.getAttribute("data-lxorig")!=null)chip.innerHTML=chip.getAttribute("data-lxorig");chip.removeAttribute("data-lxdisc");chip.classList.remove("lx-tw-disc");chip.style.removeProperty("background");chip.style.removeProperty("border-color");chip.style.removeProperty("color");}if(addr){var ae=chip.querySelector(".lx-tw-addr");if(ae)ae.textContent=trunc(addr);var cps=chip.querySelectorAll("[data-copy]");for(var ci=0;ci<cps.length;ci++){if(cps[ci].getAttribute("data-copy")!==addr)cps[ci].setAttribute("data-copy",addr);}if(chip.hasAttribute("data-copy")&&chip.getAttribute("data-copy")!==addr)chip.setAttribute("data-copy",addr);fixOwnAddrCopies(addr);}}else{if(chip.getAttribute("data-lxorig")==null)chip.setAttribute("data-lxorig",chip.innerHTML);chip.setAttribute("data-lxdisc","1");chip.classList.add("lx-tw-disc");chip.setAttribute("title","Launch the app");chip.style.setProperty("background","#ea6a2c","important");chip.style.setProperty("border-color","#ea6a2c","important");chip.style.setProperty("color","#fff","important");chip.innerHTML='<span class="lx-tw-cbtn">Launch App'+ARROW+'</span>';}}function mobileLaunch(on){try{var av=document.querySelector(".avatar-sm");if(!av)return;var btn=document.querySelector(".lx-launch");if(on){if(btn)btn.remove();av.style.display="";try{av.style.visibility="";}catch(_e3){}return;}av.style.display="none";if(btn)return;btn=document.createElement("button");btn.type="button";btn.className="lx-launch";btn.setAttribute("data-lxdisc","1");btn.setAttribute("title","Launch the app");btn.innerHTML="Launch App"+ARROW;if(av.parentNode)av.parentNode.insertBefore(btn,av);}catch(_){}}function mobileMenu(on,addr){try{var los=document.querySelectorAll(".nx-logout,.mu-gear[aria-label=Disconnect]");for(var i=0;i<los.length;i++)los[i].style.display=on?"":"none";var mn=document.querySelector(".mu-name"),ms=document.querySelector(".mu-sub");if(mn)mn.textContent=on&&addr?trunc(addr):(on?"":"Not connected");if(ms)ms.textContent=on?("Connected \u00b7 "+netLabel()):"Tap to connect a wallet";var row=(mn||ms);row=row&&row.closest?(row.closest(".mu-acct")||row.closest(".menu-acct")||row.closest(".mu-row")||(row.parentElement&&row.parentElement.parentElement)):null;if(row&&row.style)row.style.display=on?"":"none";var av=document.querySelector(".mu-av");if(av){av.style.setProperty("--lx-netlogo",NETLOGO);av.classList.add("lx-mav-net");}var sm=document.querySelector(".avatar-sm");if(sm){if(on&&addr){sm.style.setProperty("--lx-netlogo",NETLOGO);sm.setAttribute("data-addr",trunc(addr));sm.classList.add("lx-mav");}else{sm.classList.remove("lx-mav");sm.removeAttribute("data-addr");}try{sm.style.visibility="";}catch(_e2){}}try{document.documentElement.classList.add("lx-hdrdone");}catch(_e){}}catch(_){}}var NETLOGO='url("/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=64")';function netLabel(){return "XRP Ledger";}function fixOwnAddrCopies(addr){if(!addr)return;try{var all=document.querySelectorAll("[data-copy]");for(var i=0;i<all.length;i++){var el=all[i],v=el.getAttribute("data-copy")||"";if(!/^0x[0-9a-fA-F]{32,}$/.test(v))continue;var ownAddr=(el.getAttribute("data-copy-label")||"").toLowerCase().indexOf("wallet address")>=0||!!(el.closest&&(el.closest(".lx-topwallet")||el.closest(".wallet-chip")||el.closest(".hero-id-row")||el.closest("#modalReceive")));if(ownAddr)el.setAttribute("data-copy",addr);}}catch(_){}}window.addEventListener("click",function(e){try{var t=e.target&&e.target.closest?e.target.closest("[data-copy]"):null;if(!t)return;var a=ls("lumos.address");if(!a)return;var v=t.getAttribute("data-copy")||"";if(!/^0x[0-9a-fA-F]{32,}$/.test(v))return;var own=(t.getAttribute("data-copy-label")||"").toLowerCase().indexOf("wallet address")>=0||!!(t.closest(".lx-topwallet")||t.closest(".wallet-chip")||t.closest(".hero-id-row")||t.closest("#modalReceive"));if(own)t.setAttribute("data-copy",a);}catch(_){}},true);[700,1500,3000].forEach(function(ms){setTimeout(function(){try{fixOwnAddrCopies(ls("lumos.address"));}catch(_){}},ms);});window.addEventListener("click",function(e){var t=e.target;if(!t||!t.closest)return;var dc=t.closest(".lx-topwallet[data-lxdisc=\"1\"]")||t.closest(".lx-launch");if(dc){e.preventDefault();e.stopImmediatePropagation();try{sessionStorage.setItem("lumos.connDest","home");}catch(_){}if(window.lxChooseNetwork)window.lxChooseNetwork();else if(window.lxwOpenWallet)window.lxwOpenWallet(actNet());return;}var lo=t.closest(".nx-logout")||t.closest(".mu-gear[aria-label=Disconnect]");if(lo){e.preventDefault();e.stopImmediatePropagation();try{localStorage.removeItem("lumos.wallet");localStorage.removeItem("lumos.address");localStorage.removeItem("lumos.network");}catch(_){}try{location.replace("/");}catch(_){try{location.href="/";}catch(__){sync();}}return;}},true);if(document.readyState!=="loading")sync();else document.addEventListener("DOMContentLoaded",sync);setTimeout(function(){try{document.documentElement.classList.add("lx-hdrdone");var _sm=document.querySelector(".avatar-sm");if(_sm)_sm.style.visibility="";}catch(_){}},2500);setTimeout(sync,300);})();</script><style id="lx-mobfix">html,body{overscroll-behavior:none}</style><script id="lx-mobnav">(function(){
   if(window.__lxNavWired)return; window.__lxNavWired=1;
   var t0=null, lastTap=null;
   window.addEventListener("touchstart",function(e){
@@ -4261,319 +4261,7 @@ function ping(){
 if(document.readyState!=="loading")ping(); else document.addEventListener("DOMContentLoaded",ping);
 setInterval(ping,5000);
 window.addEventListener("storage",ping);
-})();</script><script id="lx-actbeacon">(function(){if(window.__lxActB)return;window.__lxActB=1;var SENT={};function addr(){try{return localStorage.getItem("lumos.address")||"";}catch(e){return "";}}function rec(h){try{if(!h||SENT[h])return;if(!/^[0-9a-f]{64}$/i.test(h))return;var a=addr(); if(!/^G[A-Z2-7]{55}$/.test(a))return;SENT[h]=1;fetch("/lxapi/act",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({addr:a,hash:h}),keepalive:true}).catch(function(){});}catch(e){}}function fromBody(t){try{var j=JSON.parse(t);if(j&&j.successful&&j.hash)rec(j.hash);}catch(e){}}function isTx(u){u=String(u||"");return u.indexOf("/transactions")>=0&&u.indexOf("horizon")>=0;}try{var of=window.fetch;window.fetch=function(i,o){var u=(typeof i==="string")?i:(i&&i.url)||"";var m=((o&&o.method)||(i&&i.method)||"GET").toUpperCase();var p=of.apply(this,arguments);try{ if(m==="POST"&&isTx(u)){ p.then(function(r){try{ r.clone().text().then(fromBody).catch(function(){}); }catch(e){}return r;}).catch(function(){}); } }catch(e){}return p;};}catch(e){}try{var oo=XMLHttpRequest.prototype.open,os=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(m,u){try{this.__lxM=String(m||"").toUpperCase();this.__lxU=u;}catch(e){}return oo.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){try{ if(this.__lxM==="POST"&&isTx(this.__lxU)){this.addEventListener("load",function(){try{fromBody(this.responseText);}catch(e){}});} }catch(e){}return os.apply(this,arguments);};}catch(e){}})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"lumoscore-home.html"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><script id="lx-wclaim">(function(){
-  if(window.__lxWClaim)return; window.__lxWClaim=1;
-  var H="https://horizon.stellar.org";
-  function me(){ try{ return localStorage.getItem("lumos.address")||""; }catch(_){ return ""; } }
-  function j(u){ return fetch(u).then(function(r){ if(!r.ok)throw new Error(r.status); return r.json(); }); }
-  function esc(s){return (String(s==null?"":s).replace(/[&<>"]/g,function(c){
-    return c==="&"?"&amp;":c==="<"?"&lt;":c===">"?"&gt;":"&quot;"; })).split(String.fromCharCode(39)).join("&#39;");}
-  function amt(n){ n=+n||0; if(n>=1000)return n.toLocaleString("en-US",{maximumFractionDigits:2});
-    if(n>=1)return String(+n.toFixed(4)); return String(+n.toFixed(7)); }
-  function shortG(a){ a=String(a||""); return a.length>12?(a.slice(0,4)+"\u2026"+a.slice(-4)):a; }
-  function ago(t){ var s=Math.max(0,(Date.now()-new Date(t).getTime())/1000);
-    if(s<3600)return Math.floor(s/60)+"m ago"; if(s<86400)return Math.floor(s/3600)+"h ago";
-    return Math.floor(s/86400)+"d ago"; }
-  function say(m){ try{ if(window.lxToast)window.lxToast(m); }catch(_){} }
-
-  // Horizon writes an asset as "native" or "CODE:ISSUER".
-  function parseAsset(a){
-    if(!a||a==="native")return {code:"XLM",issuer:"",native:true};
-    var p=String(a).split(":"); return {code:p[0],issuer:p[1]||"",native:false};
-  }
-
-  // Is this predicate open RIGHT NOW? Stellar predicates nest, so this walks them. Anything it does
-  // not recognise is treated as claimable and left to the network to refuse -- the ledger is the
-  // authority here, and refusing to offer a claim we could have made is the worse error.
-  function open(p){
-    if(!p)return true;
-    if(p.unconditional)return true;
-    var now=Date.now();
-    if(p.abs_before)return now < new Date(p.abs_before).getTime();
-    if(p.abs_before_epoch)return now < (+p.abs_before_epoch*1000);
-    if(p.rel_before)return true;                       // relative to close time; not knowable here
-    if(p.not)return !open(p.not);
-    if(p.and&&p.and.length)return p.and.every(open);
-    if(p.or&&p.or.length)return p.or.some(open);
-    return true;
-  }
-  function mine(rec,addr){
-    var cs=(rec&&rec.claimants)||[];
-    for(var i=0;i<cs.length;i++)if(cs[i].destination===addr)return cs[i];
-    return null;
-  }
-
-  // NEVER claimable is not the same as NOT YET, and only the second is worth a row. Checked against
-  // real data: the dICE airdrops list thousands of accounts as claimants with the predicate
-  // {"not":{"unconditional":true}} -- the senders reclaim clause, which can never be true for the
-  // recipient. Listing fifty of those as "Locked" would bury a real pending payment under noise, and
-  // offering a Claim button on one would be worse: it can only ever fail.
-  function never(p){
-    if(!p)return false;
-    if(p.not)return !!p.not.unconditional;
-    if(p.and&&p.and.length)return p.and.some(never);
-    if(p.or&&p.or.length)return p.or.every(never);
-    return false;
-  }
-  var CB=[], loaded=false;
-  function load(){
-    var addr=me(); if(!addr)return Promise.resolve([]);
-    return j(H+"/claimable_balances?claimant="+addr+"&limit=50&order=desc")
-      .then(function(d){ var all=((d&&d._embedded&&d._embedded.records)||[]);
-        CB=all.filter(function(r){ var c2=mine(r,addr); return c2&&!never(c2.predicate); });
-        loaded=true; return CB; })
-      .catch(function(){ loaded=true; CB=[]; return CB; });
-  }
-
-  // Same palette and same hash as the wallet's own fallback discs, borrowed from _walletdata.js when it
-  // is on the page so the two can never drift, with a local copy for the case where it is not.
-  var WCCOL=["#6366f1","#8b5cf6","#ec4899","#f59e0b","#10b981","#06b6d4","#ef4444","#84cc16"];
-  function wcCol(s){ try{ if(window.__lxColFor)return window.__lxColFor(s); }catch(_){}
-    var h=0; s=String(s||""); for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0; return WCCOL[h%WCCOL.length]; }
-  function xlmLogo(a){ return a.native?"/assets/tokens/xlm.png":""; }
-  // Borrowed from _walletdata.js when it is on the page, so the two lists cannot diverge; the local
-  // copy is the same markup and is only reached if that script is absent.
-  function meta(a){
-    if(a.native||!a.code||!a.issuer)return "";
-    try{ if(window.__lxAssetMeta)return window.__lxAssetMeta(a.code,a.issuer,false); }catch(_){}
-    return '<span class="lx-ameta"><span class="lx-hd" data-hd="'+esc(a.issuer)+'"></span>'
-      +'<a class="lx-vasset" href="/xrpl/trade/'+encodeURIComponent(a.code)+'-'+encodeURIComponent(a.issuer)+'">View asset</a></span>';
-  }
-
-  function rows(){
-    var addr=me();
-    if(!CB.length){
-      return '<div class="lx-wcnote">'+(loaded
-        ? "Nothing is waiting to be claimed. Payments sent to you as a claimable balance will appear here."
-        : "Looking for claimable payments\u2026")+'</div>';
-    }
-    return CB.map(function(r){
-      var a=parseAsset(r.asset), c=mine(r,addr), ok=open(c&&c.predicate);
-      var who=r.sponsor?('from <span class="lx-wcaddr">'+esc(shortG(r.sponsor))+'</span>'):"";
-      var when=r.last_modified_time?ago(r.last_modified_time):"";
-      var sub=[who,esc(when)].filter(Boolean).join(" \u00b7 ");
-      // #6: the same disc every other list on this page uses. data-lxc/data-lxi are what the shared
-      // resolver in _walletdata.js reads -- it checks its cache, then looks the issuer up on
-      // stellar.expert for a toml logo, then paints --lxlogo. Until (or unless) that answers, the disc
-      // is a deterministic colour from the code with its initial on it, which is the site's existing
-      // fallback rather than a second invention. XLM is local and needs no lookup.
-      var _lg=xlmLogo(a);
-      var _ic='<span class="lx-wcico"'
-        +(a.native?'':(' data-lxc="'+esc(a.code)+'" data-lxi="'+esc(a.issuer)+'"'))
-        +' data-l="'+esc(a.code.slice(0,1).toUpperCase())+'"'
-        +' style="'+(_lg?('--lxlogo:url('+_lg+')')
-                        :('--lxlogo:linear-gradient('+wcCol(a.code+a.issuer)+','+wcCol(a.code+a.issuer)+')'))+'"></span>';
-      return '<div class="lx-wcrow'+(ok?"":" locked")+'" data-cb="'+esc(r.id)+'"'
-        +' data-code="'+esc(a.code)+'" data-iss="'+esc(a.issuer)+'" data-nat="'+(a.native?"1":"0")+'">'
-        +_ic
-        +'<div class="lx-wcmain"><div class="lx-wcname">'+esc(a.code)+'</div>'
-        +'<div class="lx-wcsub">'+(sub||"claimable balance")+'</div>'
-        // #3: same provenance line as the open orders -- the issuer's home domain, resolved after the
-        // row is on screen by the shared lxFillHd, plus a way through to the asset's own page. A code
-        // on its own says nothing about who issued it.
-        +meta(a)
-        +'</div>'
-        +'<div class="lx-wcamt"><span class="a">'+amt(r.amount)+'</span><span class="u">'+esc(a.code)+'</span></div>'
-        +(ok?'<button class="lx-wcbtn" type="button"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M4 21h16"></path></svg>Claim</button>'
-            :'<button class="lx-wcbtn" type="button" disabled title="This balance is not claimable yet">Locked</button>')
-        +'</div>';
-    }).join("");
-  }
-
-  // The Open orders tab was stamped with whatever count existed when the bar was built -- before the
-  // offers had loaded -- and nothing moved it afterwards, so it read 3 beside a heading saying 10
-  // active. The offers list is published by _walletdata.js; this follows it. Bounded poll, because the
-  // tab can be built before that fetch returns.
-  function syncOrders(){
-    try{ var offs=window.__lxOffers; if(!offs||offs.length==null)return;
-      var tb=document.querySelectorAll(".lx-wctab");
-      for(var i=0;i<tb.length;i++){ if(tb[i].getAttribute("data-t")==="orders"){
-        var c=tb[i].querySelector(".cnt");
-        if(c&&c.textContent!==String(offs.length))c.textContent=String(offs.length);
-        break; } }
-    }catch(_){}
-  }
-  function startOrdersSync(){
-    if(window.__lxWcOS)return; window.__lxWcOS=1;
-    var n=0, iv=setInterval(function(){ syncOrders(); if(++n>40)clearInterval(iv); },500);
-  }
-  function paint(){
-    var panel=document.querySelector(".lx-wcpanel-claim");
-    if(panel)panel.innerHTML='<div class="lx-wclist">'+rows()+'</div>';
-    var tab=document.querySelector('.lx-wctab[data-t="claim"] .cnt');
-    if(tab)tab.textContent=String(CB.length);
-    syncOrders();
-    // These rows arrive after their own Horizon fetch, which normally lands after _walletdata.js has
-    // finished its timed heal passes -- so ask for one now rather than hoping to be in time for theirs.
-    try{ if(panel&&window.__lxHealLogos)window.__lxHealLogos(panel); }catch(_){}
-    try{ if(panel&&window.__lxFillHd)window.__lxFillHd(panel); }catch(_){}
-  }
-
-  function claim(btn){
-    var row=btn.closest(".lx-wcrow"); if(!row)return;
-    var id=row.getAttribute("data-cb"), code=row.getAttribute("data-code"),
-        iss=row.getAttribute("data-iss"), nat=row.getAttribute("data-nat")==="1";
-    if(!window.lxStellar||!window.lxSign){ say("Wallet not ready \u2014 reload and try again"); return; }
-    btn.disabled=true; var lbl=btn.textContent; btn.textContent="Confirm in wallet\u2026";
-    var addr=me();
-    window.lxStellar().then(function(S){
-      return j(H+"/accounts/"+addr).then(function(acc){
-        var PP=S.Networks.PUBLIC;
-        var tb=new S.TransactionBuilder(new S.Account(addr,acc.sequence),{fee:"1000",networkPassphrase:PP});
-        // A claim of a non-native asset needs a trustline for it, and someone receiving an asset for
-        // the first time does not have one. Same transaction, so it is still one signature.
-        if(!nat){
-          var has=(acc.balances||[]).some(function(b){
-            return b.asset_code===code&&b.asset_issuer===iss; });
-          if(!has)tb.addOperation(S.Operation.changeTrust({asset:new S.Asset(code,iss)}));
-        }
-        tb.addOperation(S.Operation.claimClaimableBalance({balanceId:id}));
-        var tx=tb.setTimeout(180).build();
-        var p=window.lxSign(tx.toXDR(),S);
-        if(window.lxTimeout)p=window.lxTimeout(p,200000,"Signing timed out \u2014 open your wallet and try again");
-        return p.then(function(signed){
-          if(!signed)throw new Error("Signing cancelled");
-          btn.textContent="Submitting\u2026";
-          return fetch(H+"/transactions",{method:"POST",
-            headers:{"Content-Type":"application/x-www-form-urlencoded"},
-            body:"tx="+encodeURIComponent(signed)}).then(function(r){ return r.json(); });
-        });
-      });
-    }).then(function(res){
-      if(res&&(res.successful||res.hash)){
-        btn.textContent="Claimed \u2713";
-        say("Claimed "+row.querySelector(".lx-wcamt").textContent);
-        // Gone from the ledger, so gone from the list -- and the balances above are now wrong.
-        CB=CB.filter(function(x){ return x.id!==id; });
-        setTimeout(function(){ paint(); },900);
-        setTimeout(function(){ try{ location.reload(); }catch(_){} },1600);
-        return;
-      }
-      var x=res&&res.extras&&res.extras.result_codes;
-      throw new Error(x?(window.lxTxMsg?window.lxTxMsg(x,"The claim"):JSON.stringify(x)):"Claim failed");
-    }).catch(function(e){
-      btn.disabled=false; btn.textContent=lbl;
-      say("Claim failed \u2014 "+((e&&e.message)||e));
-    });
-  }
-
-  function select(which){
-    var tabs=document.querySelectorAll(".lx-wctab");
-    for(var i=0;i<tabs.length;i++)tabs[i].classList.toggle("active",tabs[i].getAttribute("data-t")===which);
-    var o=document.querySelector(".lx-wcpanel-orders"), c=document.querySelector(".lx-wcpanel-claim");
-    if(o){ if(which==="orders")o.removeAttribute("hidden"); else o.setAttribute("hidden",""); }
-    if(c){ if(which==="claim")c.removeAttribute("hidden"); else c.setAttribute("hidden",""); }
-    try{ localStorage.setItem("lumos.wcTab",which); }catch(_){}
-  }
-
-  function build(){
-    // #8 (batch 5): the phone wraps these cards in .insights-stack and the DESKTOP wraps the same
-    // three in .insights-rail. Keying on the phone name meant the tabs only ever appeared on a phone.
-    var stack=document.querySelector(".insights-stack,.insights-rail");
-    if(!stack||document.querySelector(".lx-wctabs"))return false;
-    // The two cards this replaces, found by what they SAY rather than by position -- the stack is
-    // rebuilt by the page and the order is not ours to rely on.
-    var cards=[].slice.call(stack.querySelectorAll(".insight-card"));
-    var ordersCard=null, poolsCard=null;
-    cards.forEach(function(c){
-      var t=((c.querySelector(".ttl")||{}).textContent||"").trim();
-      if(/open orders/i.test(t))ordersCard=c;
-      if(/liquidity pools/i.test(t))poolsCard=c;
-    });
-    if(!ordersCard&&!poolsCard)return false;
-    var nOrders="0";
-    if(ordersCard){
-      var hl=((ordersCard.querySelector(".headline")||{}).textContent||"").match(/\d+/);
-      if(hl)nOrders=hl[0];
-    }
-    if(ordersCard)ordersCard.style.display="none";
-    if(poolsCard)poolsCard.style.display="none";
-
-    var bar=document.createElement("div");
-    bar.className="asset-tabs-row lx-wctabs";
-    // lx-wcgroup is load-bearing, not decoration.
-//
-// Reusing the design's .asset-tabs class was right for the LOOK -- it is why these tabs match the
-// Assets / Liq Pools pair exactly -- but it put a SECOND .asset-tabs group on the page, and two
-// separate count-writers address that class by INDEX: [0] gets the holdings count, [1] the pool
-// count. Those indexes silently became my two tabs. The result was an account with 43 assets and 392
-// pool positions rendering as "Open orders 31 / Claimable payments 392", while the design's real
-// tabs kept their mock 5 and 2 because nothing wrote to them any more.
-//
-// The marker lets those writers exclude this group by name instead of hoping about ordering.
-bar.innerHTML='<div class="asset-tabs lx-wcgroup">'
-      +'<button class="lx-wctab active" type="button" data-t="orders">Open orders'
-      +' <span class="cnt">'+nOrders+'</span></button>'
-      +'<button class="lx-wctab" type="button" data-t="claim">Claimable payments'
-      +' <span class="cnt">0</span></button>'
-      +'</div>';
-
-    // The orders list the page already builds becomes the first panel; the second is ours.
-    var orders=document.querySelector(".orders-block");
-    var host=orders?orders.parentNode:stack.parentNode;
-    var anchor=orders||stack.nextSibling;
-
-    var pOrders=document.createElement("div"); pOrders.className="lx-wcpanel lx-wcpanel-orders";
-    var pClaim=document.createElement("div"); pClaim.className="lx-wcpanel lx-wcpanel-claim";
-    pClaim.setAttribute("hidden","");
-
-    host.insertBefore(bar,anchor);
-    startOrdersSync();
-    host.insertBefore(pOrders,anchor);
-    if(orders)pOrders.appendChild(orders);
-    // #16: the PHONE renders its open orders through a different element -- .orders-stack, built by
-    // _mobwallet.js -- which is a direct child of <main> and was never moved in here. So the tab showed
-    // the desktop container, empty, saying "No open orders", while the real list sat further down the
-    // page under a second "Open Orders" heading of its own. Two lists, one of them wrong, on one screen.
-    //
-    // Its heading comes with it, because that is where Cancel all lives; only the duplicate title text is
-    // dropped, since the tab immediately above already says "Open orders" and carries the count.
-    var mstack=document.querySelector(".orders-stack");
-    if(mstack&&!pOrders.contains(mstack)){
-      var mhead=null, sib=mstack.previousElementSibling;
-      if(sib&&/open orders/i.test((sib.textContent||""))&&sib.querySelector("h2,h3"))mhead=sib;
-      if(mhead){
-        var h=mhead.querySelector("h2,h3");
-        if(h)h.classList.add("lx-wchide");
-        pOrders.appendChild(mhead);
-      }
-      pOrders.appendChild(mstack);
-    }
-    // NOT an else on the phone branch. ".orders-stack" ships as a CSS RULE on desktop but never as an
-    // element, so mstack was null there, the else fired, and innerHTML destroyed the .orders-block that
-    // had just been moved in one line above -- leaving "No open orders." beside a tab correctly badged
-    // 2. The account had two live offers the whole time; only the container holding them was erased.
-    //
-    // The note belongs to one condition only: nothing was placed in the panel by either branch.
-    if(!pOrders.children.length)pOrders.innerHTML='<div class="lx-wclist"><div class="lx-wcnote">No open orders.</div></div>';
-    host.insertBefore(pClaim,pOrders.nextSibling);
-
-    paint();
-    // #17: the wallet always opens on Open orders now. It used to restore whichever tab was last used,
-    // so anyone who had looked at a claimable payment once landed there on every later visit -- and
-    // open orders are the list with money at stake and an action attached, so that is the wrong one to
-    // hide behind a remembered preference. The choice is still stored; it just no longer decides this.
-    return true;
-  }
-
-  document.addEventListener("click",function(e){
-    var t=e.target; if(!t||!t.closest)return;
-    var tab=t.closest(".lx-wctab");
-    if(tab){ e.preventDefault(); select(tab.getAttribute("data-t")); return; }
-    var b=t.closest(".lx-wcbtn");
-    if(b&&!b.disabled){ e.preventDefault(); e.stopPropagation(); claim(b); }
-  },true);
-
-  function boot(){
-    if(!me())return;
-    // The insights stack and the orders block are both built by the page's own data layer, so this
-    // waits for them rather than assuming they exist yet.
-    var n=0,iv=setInterval(function(){ if(build()||++n>40)clearInterval(iv); },250);
-    load().then(paint);
-  }
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
-  else boot();
-})();</script><script id="lx-xrplfeerate">
+})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"lumoscore-home.html"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><script id="lx-xrplfeerate">
 // Fee tier: 0.2% per trade, 0.1% for holders of 250,000+ LUMOS.
 //
 // THE INHERITED VERSION COULD NEVER GRANT THE DISCOUNT. It looked up the connected address at
@@ -4906,6 +4594,67 @@ function spendableXrp(balanceDrops, ownerCount, reserve) {
   return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
 }
 
+// ---- amounts -------------------------------------------------------------------------------------
+// Building the Amount field of a transaction. This lives here, beside the reserve maths and under the
+// same tests, because it was written three separate times in the browser layers — write.js had two
+// copies and pooldetail.js a third — and three copies of the arithmetic that decides how much money
+// moves is three chances for one of them to be wrong on its own.
+//
+// AN XRPL AMOUNT IS ONE OF TWO THINGS and they are not interchangeable:
+//   XRP     a STRING of drops, integer, 1 XRP = 1,000,000 drops
+//   issued  { currency, issuer, value }, value a decimal string
+// Passing a plain number where drops are expected is not a formatting slip: it is off by a factor of
+// a million, and the ledger will happily accept it.
+function toDrops(xrp) {
+  const n = Number(xrp);
+  if (!isFinite(n) || n < 0) return null;
+  // ROUNDED, NEVER TRUNCATED. 0.1 + 0.2 is 0.30000000000000004, and Math.trunc on that class of value
+  // silently shaves a drop off the amount the user typed. Rounding is also what makes the displayed
+  // number and the submitted number agree.
+  const drops = Math.round(n * XRP_DROPS);
+  if (!Number.isSafeInteger(drops)) return null;
+  // String() would render a large enough number in exponent form ("1e+21"), which is not a valid
+  // drops string. The ledger's own maximum is 1e17 drops, so this cannot trigger today — it is here
+  // so that it still cannot if the caller is ever handed a bad number.
+  return String(drops);
+}
+
+// spec is either the string 'XRP', or { currency, issuer } for an issued token.
+function amountFor(spec, value) {
+  if (spec === 'XRP' || (spec && spec.currency === 'XRP' && !spec.issuer)) return toDrops(value);
+  if (!spec || !spec.currency || !spec.issuer) return null;
+  const n = Number(value);
+  if (!isFinite(n) || n < 0) return null;
+  return { currency: spec.currency, issuer: spec.issuer, value: String(n) };
+}
+
+// The pool/asset side of a ledger response, as it comes back from amm_info or an offer: a drops
+// string for XRP, or an object. Returns the { currency, issuer } identity with no value attached,
+// which is the shape Asset/Asset2 take on an AMM transaction.
+function assetOf(raw) {
+  if (typeof raw === 'string') return { currency: 'XRP' };
+  if (!raw || !raw.currency) return null;
+  return { currency: raw.currency, issuer: raw.issuer };
+}
+
+// The least a swap may deliver and still be acceptable. Used as the Amount of a cross-currency
+// payment WITHOUT tfPartialPayment, so the ledger delivers at least this or the whole thing fails.
+function minAfterSlippage(quoted, slippage) {
+  const q = Number(quoted), s = Number(slippage);
+  if (!isFinite(q) || q <= 0) return null;
+  if (!isFinite(s) || s < 0 || s >= 1) return null;        // 1.0 would accept delivering nothing
+  return q * (1 - s);
+}
+
+// The platform fee on an amount. Separate from the display so the number shown and the number taken
+// come from one place — the Stellar Smart Swap was removed because those two disagreed.
+function feeOf(value, rate) {
+  const v = Number(value), r = Number(rate);
+  if (!isFinite(v) || v <= 0) return 0;
+  if (!isFinite(r) || r <= 0) return 0;
+  return v * r;
+}
+
 // ---- balances ------------------------------------------------------------------------------------
 // Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
 function readLines(lines) {
@@ -4928,7 +4677,8 @@ function readLines(lines) {
 }
 
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
-  TEAM_WALLETS, isTeamWallet, excludeTeam };
+  TEAM_WALLETS, isTeamWallet, excludeTeam,
+  toDrops, amountFor, assetOf, minAfterSlippage, feeOf };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -5075,8 +4825,41 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (c) c.textContent = n == null ? '' : '(' + n + ')';
   }
 
+  // The design's search is multi-chain and groups its results behind per-chain filter pills. This
+  // build searches ONE ledger, so the only pill that can mean anything is the XRP Ledger one — and
+  // what actually shipped was a pill reading "Aptos (9)" carrying data-chain="hedera", from the
+  // design's own scrambled chain-name map. Clicking it filtered to a chain with no results, and the
+  // (9) was a count of rows that are not in the list.
+  //
+  // Removed rather than relabelled: renaming it would still leave a filter for something this build
+  // does not search. Every row this layer creates is stamped data-chain="xrpl", so anything else is
+  // by definition not ours.
+  // CALLING THIS ONCE PER RENDER IS NOT ENOUGH: the design rebuilds its filter row after results
+  // land, so the pill reappeared immediately after being removed. Watched instead, the same way the
+  // launchpad watches its cost panel — the container is observed and any foreign pill is taken out
+  // whenever it is put back.
+  function dropForeignFilters() {
+    [].forEach.call(document.querySelectorAll('.sp-filter-pill'), function (b) {
+      var c = (b.getAttribute('data-chain') || '').toLowerCase();
+      if (c && c !== 'xrpl' && b.parentNode) b.parentNode.removeChild(b);
+    });
+  }
+
+  function watchFilters() {
+    if (window.__lxxSeaFilterWatch || !window.MutationObserver) return;
+    var host = $('.sp-filters');
+    if (!host) return;
+    window.__lxxSeaFilterWatch = 1;
+    // Removing a child mutates the container, so the observer re-enters. It is self-limiting because
+    // the second pass finds nothing foreign left and mutates nothing — the same reasoning the
+    // launchpad's cost observer relies on.
+    new MutationObserver(dropForeignFilters).observe(host, { childList: true, subtree: true });
+    dropForeignFilters();
+  }
+
   function render(list, d) {
     list.innerHTML = '';
+    watchFilters();
     if (!d.rows.length) { note(list, 'No XRP Ledger token matches that.'); setCount(0); return; }
     for (var i = 0; i < d.rows.length; i++) list.appendChild(rowFor(d.rows[i]));
     setCount(d.rows.length);
@@ -5088,6 +4871,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (q.length < MIN) { note(list, 'Type at least ' + MIN + ' characters.'); setCount(null); return; }
 
     var mine = ++seq;
+    watchFilters();
     note(list, 'Searching the XRP Ledger…');
     fetch('/lxapi/xrplsearch?q=' + encodeURIComponent(q))
       .then(function (r) { return r.json(); })
@@ -5363,6 +5147,67 @@ function spendableXrp(balanceDrops, ownerCount, reserve) {
   return { balance: bal, reserved: locked, spendable: Math.max(0, bal - locked) };
 }
 
+// ---- amounts -------------------------------------------------------------------------------------
+// Building the Amount field of a transaction. This lives here, beside the reserve maths and under the
+// same tests, because it was written three separate times in the browser layers — write.js had two
+// copies and pooldetail.js a third — and three copies of the arithmetic that decides how much money
+// moves is three chances for one of them to be wrong on its own.
+//
+// AN XRPL AMOUNT IS ONE OF TWO THINGS and they are not interchangeable:
+//   XRP     a STRING of drops, integer, 1 XRP = 1,000,000 drops
+//   issued  { currency, issuer, value }, value a decimal string
+// Passing a plain number where drops are expected is not a formatting slip: it is off by a factor of
+// a million, and the ledger will happily accept it.
+function toDrops(xrp) {
+  const n = Number(xrp);
+  if (!isFinite(n) || n < 0) return null;
+  // ROUNDED, NEVER TRUNCATED. 0.1 + 0.2 is 0.30000000000000004, and Math.trunc on that class of value
+  // silently shaves a drop off the amount the user typed. Rounding is also what makes the displayed
+  // number and the submitted number agree.
+  const drops = Math.round(n * XRP_DROPS);
+  if (!Number.isSafeInteger(drops)) return null;
+  // String() would render a large enough number in exponent form ("1e+21"), which is not a valid
+  // drops string. The ledger's own maximum is 1e17 drops, so this cannot trigger today — it is here
+  // so that it still cannot if the caller is ever handed a bad number.
+  return String(drops);
+}
+
+// spec is either the string 'XRP', or { currency, issuer } for an issued token.
+function amountFor(spec, value) {
+  if (spec === 'XRP' || (spec && spec.currency === 'XRP' && !spec.issuer)) return toDrops(value);
+  if (!spec || !spec.currency || !spec.issuer) return null;
+  const n = Number(value);
+  if (!isFinite(n) || n < 0) return null;
+  return { currency: spec.currency, issuer: spec.issuer, value: String(n) };
+}
+
+// The pool/asset side of a ledger response, as it comes back from amm_info or an offer: a drops
+// string for XRP, or an object. Returns the { currency, issuer } identity with no value attached,
+// which is the shape Asset/Asset2 take on an AMM transaction.
+function assetOf(raw) {
+  if (typeof raw === 'string') return { currency: 'XRP' };
+  if (!raw || !raw.currency) return null;
+  return { currency: raw.currency, issuer: raw.issuer };
+}
+
+// The least a swap may deliver and still be acceptable. Used as the Amount of a cross-currency
+// payment WITHOUT tfPartialPayment, so the ledger delivers at least this or the whole thing fails.
+function minAfterSlippage(quoted, slippage) {
+  const q = Number(quoted), s = Number(slippage);
+  if (!isFinite(q) || q <= 0) return null;
+  if (!isFinite(s) || s < 0 || s >= 1) return null;        // 1.0 would accept delivering nothing
+  return q * (1 - s);
+}
+
+// The platform fee on an amount. Separate from the display so the number shown and the number taken
+// come from one place — the Stellar Smart Swap was removed because those two disagreed.
+function feeOf(value, rate) {
+  const v = Number(value), r = Number(rate);
+  if (!isFinite(v) || v <= 0) return 0;
+  if (!isFinite(r) || r <= 0) return 0;
+  return v * r;
+}
+
 // ---- balances ------------------------------------------------------------------------------------
 // Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
 function readLines(lines) {
@@ -5385,7 +5230,8 @@ function readLines(lines) {
 }
 
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
-  TEAM_WALLETS, isTeamWallet, excludeTeam };
+  TEAM_WALLETS, isTeamWallet, excludeTeam,
+  toDrops, amountFor, assetOf, minAfterSlippage, feeOf };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;

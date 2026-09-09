@@ -163,6 +163,9 @@
     if (ch7 == null || !isFinite(ch7)) return;
     var pill = vs.querySelector('.delta-pill');
     if (pill) {
+      // wallet.js hides this while the mock is cleared, so it has to be un-hidden here rather than
+      // left invisible with correct text inside it.
+      pill.style.visibility = '';
       var pTxt = (ch7 >= 0 ? '+' : '') + ch7.toFixed(2) + '%';
       var last = pill.lastChild;
       if (last && last.nodeType === 3) last.nodeValue = ' ' + pTxt;
@@ -230,14 +233,43 @@
     anchor.appendChild(p);
   }
 
-  function start() {
+  // A SINGLE ATTEMPT WAS NOT ENOUGH, and the way it failed is the reason this retries.
+  //
+  // The Total Portfolio headline ships as a mock: 31,108.45 APT. This layer is what replaces it, so
+  // any path where this layer quietly stops leaves that fabricated Aptos figure standing as the
+  // largest number on the page, above ten real XRP Ledger holdings. There were two such paths, and
+  // both ended in `return` with nothing logged:
+  //
+  //   * the fetch fails or the upstream is briefly rate-limited -> data stays null, forever;
+  //   * the fetch SUCCEEDS but resolves before wallet.js has painted its rows -> apply() finds no
+  //     targets, returns, and is never called again.
+  //
+  // Measured: the page settled correctly at ~2.1s on one load and was still showing the mock nine
+  // seconds into another. That is the signature of a race, not of a broken endpoint.
+  //
+  // So: retry the fetch a few times with a widening gap, and once data is in, keep re-applying until
+  // the rows it needs actually exist. Both loops are bounded — a page that genuinely has no prices
+  // ends up with em dashes and a blank total, which is the honest outcome, not a made-up one.
+  function start(attempt) {
     if (!$('#assetsTable') && !$('#assetList')) return;      // not a wallet page
+    attempt = attempt || 1;
     var held = (window.__lxxData && window.__lxxData.held) || [];
     var slugs = held.map(function (h) { return slug(h.issuer, h.currency); });
     fetchPrices(slugs).then(function (j) {
-      if (!j) return;                                        // leave the dashes; say nothing false
+      if (!j) {
+        if (attempt < 4) setTimeout(function () { start(attempt + 1); }, attempt * 1500);
+        return;                                              // then leave the dashes; say nothing false
+      }
       data = j;
       apply();
+      // apply() is a no-op until the rows are on the page. Watch for them rather than assume.
+      var n = 0;
+      var t = setInterval(function () {
+        if (++n > 20) { clearInterval(t); return; }           // ~10s
+        if (!targets().length) return;
+        clearInterval(t);
+        apply();
+      }, 500);
     });
   }
 

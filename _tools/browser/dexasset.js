@@ -16,6 +16,7 @@
 
   var RPC = 'https://xrplcluster.com/';
   var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
   function el(tag, cls, text) {
     var e = document.createElement(tag);
@@ -236,6 +237,69 @@
       document.title = asset.code + (d && d.user ? ' by ' + d.user : '')
         + ' — price, order book and holders on the XRP Ledger | LumosCore';
     } catch (e) {}
+
+    paintLabels(asset);
+  }
+
+  // THE TRADE PANEL WAS NAMING THE WRONG TOKEN ENTIRELY. On the RLUSD page it read "Buy USDC" /
+  // "Sell USDC", with "APT" on the pay side and "USDC" on the receive side, beside a holder filter
+  // offering "10+ XLM / 100+ XLM / 1000+ XLM" and a pair label reading "LUMOS / XLM".
+  //
+  // Every one of those is the design's mock, and every one is a different chain's asset. The left of
+  // the page was correct — real price, real order book, real stats — which is what made this easy to
+  // walk past: the panel people actually trade in was the part still describing Aptos and Stellar.
+  //
+  // These are LABELS, not data: the panel's behaviour is unchanged, it is told which token it is on.
+  function paintLabels(asset) {
+    var code = asset.code;
+
+    // Buy / Sell buttons name the token being traded, not the quote asset.
+    $$('.dxa-side-btn').forEach(function (b) {
+      var sell = b.classList.contains('sell');
+      // Written as a text node so the button keeps whatever the design put inside it.
+      var t = (sell ? 'Sell ' : 'Buy ') + code;
+      if (b.textContent.trim() !== t) b.textContent = t;
+    });
+
+    // The two asset chips are the pay side and the receive side, and which is which flips with
+    // Buy/Sell: buying spends XRP to get the token, selling spends the token to get XRP.
+    //
+    // Scoped PER CARD rather than by a global index. The page carries more than one trade card (the
+    // desktop panel and the phone's), so indexing every .dxa-trade-asset on the page would read the
+    // Buy/Sell state of one card and apply it to the other — and with only one card visible at a
+    // time, the wrong one is the one nobody would notice was wrong.
+    var cards = $$('.dxa-trade-card');
+    if (!cards.length) cards = [document];
+    cards.forEach(function (card) {
+      var sellActive = !!card.querySelector('.dxa-side-btn.sell.active');
+      var order = sellActive ? [code, 'XRP'] : ['XRP', code];
+      $$('.dxa-trade-asset', card).forEach(function (c, i) {
+        if (i > 1) return;
+        // data-logoed keeps the logo layer from eating a 1-5 character ticker.
+        try { c.setAttribute('data-logoed', '1'); c.removeAttribute('data-logo'); c.style.background = ''; } catch (e) {}
+        c.textContent = order[i];
+      });
+    });
+
+    $$('.lxad-pair').forEach(function (p) { p.textContent = code + ' / XRP'; });
+
+    // Holder-size filters are denominated in the quote asset.
+    $$('.chip').forEach(function (c) {
+      var t = (c.textContent || '');
+      if (/\bXLM\b/.test(t)) c.textContent = t.replace(/\bXLM\b/g, 'XRP');
+    });
+  }
+
+  // The Buy/Sell toggle is the design's own, so the chips are re-labelled whenever it changes rather
+  // than only on load — otherwise switching to Sell leaves the pay side still saying XRP.
+  function watchSide(asset) {
+    if (window.__lxxSideWatch) return;
+    window.__lxxSideWatch = 1;
+    document.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest && e.target.closest('.dxa-side-btn');
+      if (!b) return;
+      setTimeout(function () { paintLabels(asset); }, 0);   // after the design flips .active
+    }, true);
   }
 
   function note(text) {
@@ -259,6 +323,12 @@
 
     lift();
     note('Reading the XRP Ledger…');
+
+    // The panel's labels do not depend on the stats feed, so they are set from the URL's asset right
+    // away and re-set when the Buy/Sell toggle moves. A failing feed must not leave the trade panel
+    // naming another chain's token.
+    paintLabels(asset);
+    watchSide(asset);
 
     // Details and book are independent: a token with no market still has an identity, and a book
     // is still a book if the stats feed is down. One failing must not blank the other.

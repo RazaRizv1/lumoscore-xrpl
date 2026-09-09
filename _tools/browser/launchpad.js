@@ -113,6 +113,47 @@
 
   var xrpUsd = null;
 
+  // THE MOCK COSTS WERE ON SCREEN FOR TEN SECONDS. Correcting these figures needs the live XRP price,
+  // so until that lands the design's own numbers stand — and the design's numbers are
+  // "Token creation 34.70 APT", "Total 173.50 APT". A launch page quoting a price in another chain's
+  // asset, for long enough to read and act on, is the mock-value trap in its most expensive form:
+  // someone budgets for it, or decides it is too expensive, before the real 3.13 XRP arrives.
+  //
+  // So the VALUES are hidden until they are true. Only the `.v` cells — the labels, the layout and
+  // the panel all stay, so the row reads as loading rather than broken, and nothing moves when the
+  // real figure lands. Injected as a stylesheet rather than per-element so it applies before the
+  // first paint, and lifted by a class the moment paintCosts() has written real numbers.
+  (function gateCosts() {
+    if (document.getElementById('lxx-costgate')) return;
+    var st = document.createElement('style');
+    st.id = 'lxx-costgate';
+    st.textContent = 'html:not(.lxx-costready) .cost-row .v,'
+      + 'html:not(.lxx-costready) .cost-total .v{visibility:hidden}';
+    (document.head || document.documentElement).appendChild(st);
+    // A hard stop, so a failed price fetch cannot leave the panel blank forever.
+    //
+    // THE FIRST VERSION OF THIS JUST LIFTED THE GATE, which was a bad trade: when the price was slow
+    // the timeout fired, the gate opened, and the mock everyone was being protected from — "Total
+    // 173.50 APT" — appeared and stayed. That is worse than the flash it replaced, because it does
+    // not correct itself. Caught by re-running the page sweep, which found the APT figures visible
+    // again ten seconds in.
+    //
+    // So the timeout BLANKS the values first and only then reveals them. An em dash says the figure
+    // is not available; the mock says a launch costs 173.50 of an asset this chain does not use.
+    setTimeout(function () {
+      if (document.documentElement.classList.contains('lxx-costready')) return;   // real ones landed
+      ['create', 'liq', 'pool', 'total'].forEach(function (k) {
+        var cell = costCell(k);
+        if (cell) cell.textContent = '—';
+      });
+      liftCosts();
+    }, 8000);
+  })();
+
+  function liftCosts() {
+    try { document.documentElement.classList.add('lxx-costready'); } catch (e) {}
+  }
+
   function fmtXrp(v) {
     return (v < 10 ? v.toFixed(2) : v.toFixed(1)) + ' XRP';
   }
@@ -177,6 +218,7 @@
     // Published so the review page can check it against the connected wallet's actual balance.
     // One number, computed once, so the quote and the sufficiency check can never disagree.
     window.__lxxLaunchTotalXrp = totalXrp;
+    liftCosts();                       // real figures are in; show the panel
   }
 
   // The extra liquidity is a FORM INPUT on one page and a DRAFT FIELD on the other. Reading only the

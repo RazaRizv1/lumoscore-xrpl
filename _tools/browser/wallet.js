@@ -71,7 +71,11 @@
   function tableRow(name, sub, right, rightSub, frozen) {
     var tr = document.createElement('tr');
     var c1 = el('td');
-    c1.appendChild(el('div', 'asset-nm', name + (frozen ? ' (frozen)' : '')));
+    // A ticker is one to five characters, which is precisely what the logo layer hunts for, so the
+    // name cell is claimed the same way the card badge is. "XRP" is not a slot to lose to a repaint.
+    var nm = el('div', 'asset-nm');
+    plain(nm, name + (frozen ? ' (frozen)' : ''));
+    c1.appendChild(nm);
     c1.appendChild(el('div', 'asset-sb', sub || ''));
     tr.appendChild(c1);
     tr.appendChild(el('td', null, '—'));                 // price: needs a price source
@@ -87,10 +91,18 @@
   function card(name, sub, right, rightSub, frozen) {
     var row = el('div', 'asset-row');
     var top = el('div', 'asset-top');
-    top.appendChild(el('div', 'asset-ico', (name || '?').slice(0, 2).toUpperCase()));
+    // EVERY ROW'S BADGE READ "L". This builder writes the token's first two letters, but the page's
+    // logo layer repaints any short-text element from the surrounding words, and those words include
+    // the site's own name — so XRP, LUMOS, XYIELD and SLT all ended up wearing the same LUMOS "L",
+    // four different tokens rendered as one. plain() claims the element so the letters stand.
+    var ico = el('div', 'asset-ico');
+    plain(ico, (name || '?').slice(0, 2).toUpperCase());
+    top.appendChild(ico);
     var meta = el('div', 'asset-meta');
     var nr = el('div', 'asset-name-row');
-    nr.appendChild(el('span', 'asset-name', name + (frozen ? ' (frozen)' : '')));
+    var anm = el('span', 'asset-name');
+    plain(anm, name + (frozen ? ' (frozen)' : ''));
+    nr.appendChild(anm);
     meta.appendChild(nr);
     meta.appendChild(el('div', 'asset-sub', sub || ''));
     top.appendChild(meta);
@@ -134,10 +146,27 @@
   // BOTH: the flag, for the design's own pass() when it runs after us, and the class, for when it has
   // already run. Called before the first note(), so the loading and error messages are visible too --
   // they live inside the gated container.
+  // THE SAME TRAP HAS A SECOND DOOR, and stripping the Stellar layer is what closed it. lx-walletdata
+  // is gone but its STYLESHEET stays -- a stripped script takes its markup and its logic with it and
+  // leaves every rule it relied on standing. Four of those rules wait on a class only that script ever
+  // set:
+  //     body:not(.lx-wd-ready) .value-side .sub-value          { visibility: hidden }
+  //     body:not(.lx-wd-ready) .asset-tabs .cnt                { visibility: hidden }
+  //     body:not(.lx-wd-ready) h2 .meta, h3 .meta              { visibility: hidden }
+  //     body:not(.lx-wd-ready) .insight-card ... .headline,.sub{ visibility: hidden }
+  //
+  // So the USD sub-total, all four tab counts and the holdings summary were computed correctly, written
+  // correctly, and invisible -- reading them back through the DOM returned the right strings the whole
+  // time, which is exactly why this survived several rounds of checking. Only a screenshot showed the
+  // tabs with no numbers on them.
+  //
+  // This layer fills those elements now, so it raises the flag for them, the same way it does the
+  // mobile one directly above.
   function lift() {
     try {
       window.__lxWalletReady = 1;
       document.body.classList.add('lxmw-ready');
+      document.body.classList.add('lx-wd-ready');
     } catch (e) {}
   }
 
@@ -158,13 +187,25 @@
   }
 
   function setMeta(held, pools, xrp) {
-    var m = $('.section-heading .meta');
     var n = held + (xrp ? 1 : 0);
-    if (m) {
-      m.textContent = n + ' holding' + (n === 1 ? '' : 's')
-        + (xrp ? (' · ' + fmt(xrp.balance, 2) + ' XRP') : '');
-    }
-    var cnt = document.querySelectorAll('.asset-tabs .cnt');
+    // The summary line is NOT written here any more. This used to take $('.section-heading .meta') —
+    // the first match — and the first .section-heading on this page is Open Orders, so the holdings
+    // summary landed on the orders section while My Assets kept its mock. setChip() writes every
+    // summary, scoped to the headings that are actually about holdings; doing it in one place is what
+    // stops the two from disagreeing.
+    // THE COUNTS WERE CROSS-WIRED. '.asset-tabs .cnt' also matches the two tabs buildTabs() inserts —
+    // Open orders and Claimable payments — and they come FIRST in the DOM. So [0] and [1] were writing
+    // the holdings count into "Open orders" and the pool count into "Claimable payments", which is why
+    // this account showed "Open orders 10" (its 10 holdings) and "Claimable payments 0" (its 0 pools),
+    // while Assets and Liq Pools kept the design's 5 and 2. Every number on that row was wrong and two
+    // of them looked plausible.
+    //
+    // Excluded by .lx-wcgroup, the marker buildTabs() stamps on its own group. Stellar carries the
+    // identical guard for the identical reason; matching its name keeps one contract across both
+    // builds rather than two selectors that happen to agree today.
+    var cnt = [].filter.call(document.querySelectorAll('.asset-tabs .cnt'), function (c) {
+      return !(c.closest && c.closest('.lx-wcgroup'));
+    });
     if (cnt[0]) cnt[0].textContent = String(n);
     if (cnt[1]) cnt[1].textContent = String(pools);
   }
@@ -192,6 +233,62 @@
     if (!data.held.length && !data.xrp) note(h, 'Nothing held on this account yet.');
     setMeta(data.held.length, data.pools.length, data.xrp);
     setChip();
+    clearTotalMock();
+    revealAll();
+  }
+
+  // Releases the page's card-reveal gate on the containers this layer fills.
+  //
+  // The design fades sections in on scroll. Its driver takes a snapshot of what to watch ONCE, at
+  // DOMContentLoaded, and drops anything that is hidden at that instant — so an element the wallet
+  // gates until its data lands is never observed, and when the gate finally lifts the reveal rule is
+  // still holding it at opacity 0. Nothing re-runs. The section is then invisible for good.
+  //
+  // .assets-card is where that landed: the whole My Assets card, 560px of correct, priced, real
+  // holdings, on a blank screen. It answers every DOM query — ten rows, right numbers, opacity 1 on
+  // the rows themselves — because the zero is on the container. That is why this needed a screenshot
+  // to find and could not have been caught by reading the page.
+  //
+  // Safe to call broadly: this only clears an opacity gate. An element hidden for a real reason —
+  // display:none on the inactive Liq Pools panel — stays hidden, because that is a different rule.
+  function revealAll() {
+    var SEL = '.hero, .insight-card, .assets-card, .lp-card, .orders-block, .orders-stack';
+    [].forEach.call(document.querySelectorAll(SEL), reveal);
+  }
+
+  // Blanks the Total Portfolio headline the moment real rows are painted.
+  //
+  // prices.js fills this block properly, but it needs a price fetch first, so for roughly two seconds
+  // the largest number on the page read "31,108.45 APT" — a fabricated Aptos figure sitting above ten
+  // real XRP Ledger holdings. Worse, when that fetch is slow or fails the mock never gets overwritten
+  // at all: on one load it was still showing nine seconds in, which is indefinitely as far as anyone
+  // reading the page is concerned.
+  //
+  // So the mock is cleared here rather than merely overwritten later. An em dash reads as "not in yet"
+  // and is self-evidently not a balance; a stale number from another chain reads as your money. This
+  // layer knows the holdings but not their prices, so it cannot fill the total itself — it can only
+  // make sure nothing false occupies the slot while prices.js is on its way.
+  function clearTotalMock() {
+    var vs = $('.value-side');
+    if (!vs || vs.getAttribute('data-lxxcleared')) return;
+    var v = vs.querySelector('.value');
+    if (v) {
+      var unit = v.querySelector('span');
+      var first = v.firstChild;
+      if (first && first.nodeType === 3) first.nodeValue = '— ';
+      if (unit) unit.textContent = 'XRP';
+    }
+    var sub = vs.querySelector('.sub-value');
+    if (sub) sub.textContent = '';
+    var pill = vs.querySelector('.delta-pill');
+    if (pill) { pill.style.visibility = 'hidden'; }
+    var sec = vs.querySelector('.delta-secondary');
+    if (sec) sec.textContent = '';
+    vs.setAttribute('data-lxxcleared', '1');
+
+    // prices.js may already have fetched and given up because this list was still empty when its
+    // response landed. Nudging it here closes that race from the side that knows the rows now exist.
+    try { if (window.__lxxPricesApply) window.__lxxPricesApply(); } catch (e) {}
   }
 
   // The header chip shipped showing the design's mock address, `0x09c7…a802` — an EVM-shaped string
@@ -214,8 +311,329 @@
       + (d.xrp ? (' · ' + fmt(d.xrp.balance, 2) + ' XRP') : '');
     [].forEach.call(document.querySelectorAll('.section-heading .meta, h2 .meta'), function (m) {
       // Only summaries, never an activity row's own .meta (which is "From r… · 06:16").
-      if (/holding|APT|Aptos/i.test(m.textContent || '')) m.textContent = line;
+      if (!/holding|APT|Aptos/i.test(m.textContent || '')) return;
+      // AND ONLY THE ONES ABOUT HOLDINGS. Matching on the mock's text alone was too loose: the Open
+      // Orders heading shipped its own meta reading "3,442 APT", which matched, so that section
+      // announced "10 holdings · 15.57 XRP" above a list of orders. The test has to be what the
+      // section IS, not what its placeholder happened to say.
+      var head = m.closest('.section-heading, h2, h3');
+      // The heading's title WITHOUT its own .meta. Reading head.textContent whole was circular: the
+      // meta is inside the heading, so once anything had written "10 holdings" into it, the heading
+      // matched /holding/ and kept qualifying on every later pass — the guard authorised exactly the
+      // write it was meant to prevent.
+      var title = '';
+      if (head) {
+        [].forEach.call(head.childNodes, function (nd) {
+          if (nd.nodeType === 1 && nd.classList && nd.classList.contains('meta')) return;
+          title += (nd.textContent || '') + ' ';
+        });
+      }
+      if (!/asset|holding|portfolio|balance/i.test(title)) {
+        // Not a holdings summary — but it still held an Aptos figure ("3,442 APT") that nothing on
+        // this build fills. Leaving it would trade one wrong number for another, so it is emptied.
+        if (/APT|Aptos/i.test(m.textContent || '')) m.textContent = '';
+        return;
+      }
+      m.textContent = line;
     });
+  }
+
+  // ---- Open orders and Claimable -------------------------------------------------------------------
+  // Both tabs were driven by Stellar layers (lx-qorders, lx-wclaim) that queried horizon.stellar.org
+  // and could only ever come back empty here. Those are stripped; these read the XRP Ledger.
+  //
+  // THE TABS ARE NOT IN THE MARKUP, which cost a deploy to learn. Reading the built page for
+  // ".lx-wctab" found it and I took that for design markup — but every hit was a CSS rule and this
+  // file's own selector. On Stellar the bar is BUILT AT RUNTIME by _walletclaim.js, so stripping that
+  // layer took the Open orders and Claimable tabs off the page entirely, and the painters below had
+  // nothing to write into. The check that would have caught it is querySelector in a live page, not
+  // grep in a built one: markup you can find in the HTML and markup a script creates look identical
+  // in a text search and are opposites in the DOM.
+  //
+  // So the bar is rebuilt here, structurally identical to Stellar's — same classes, same copy, same
+  // two insight cards folded away — which is why it inherits lx-qorders-css and lx-wclaim-css and
+  // looks the same. This is a port of the same layer, not a new design.
+  //
+  // "Claimable payments" is Stellar's claimable-balance feature, which this ledger does not have. A
+  // CHECK is the real equivalent: a payment addressed to you that you have to cash, which is what the
+  // label already describes. So the tab keeps its name and counts checks.
+  function selectTab(which) {
+    var tabs = document.querySelectorAll('.lx-wctab');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle('active', tabs[i].getAttribute('data-t') === which);
+    }
+    var o = $('.lx-wcpanel-orders'), c = $('.lx-wcpanel-claim');
+    if (o) { if (which === 'orders') o.removeAttribute('hidden'); else o.setAttribute('hidden', ''); }
+    if (c) { if (which === 'claim') c.removeAttribute('hidden'); else c.setAttribute('hidden', ''); }
+  }
+
+  function buildTabs() {
+    // The desktop wraps these three cards in .insights-rail and the phone in .insights-stack. Both,
+    // or the tabs appear on one device only.
+    var stack = $('.insights-stack,.insights-rail');
+    if (!stack || $('.lx-wctabs')) return;
+
+    // Found by what they SAY, not by position: the stack's order is the design's to change.
+    var cards = [].slice.call(stack.querySelectorAll('.insight-card'));
+    var ordersCard = null, poolsCard = null;
+    cards.forEach(function (c) {
+      var t = ((c.querySelector('.ttl') || {}).textContent || '').trim();
+      if (/open orders/i.test(t)) ordersCard = c;
+      if (/liquidity pools/i.test(t)) poolsCard = c;
+    });
+    if (!ordersCard && !poolsCard) return;
+    // These two shipped reading "3 Active" and "3,442 APT" — mock figures on an XRP Ledger account.
+    // The tabs replace them and carry the real counts, so the mocks go with the cards.
+    if (ordersCard) ordersCard.style.display = 'none';
+    if (poolsCard) poolsCard.style.display = 'none';
+
+    var bar = document.createElement('div');
+    bar.className = 'asset-tabs-row lx-wctabs';
+    // lx-wcgroup is load-bearing, and it is Stellar's own fix for the bug this file hit independently:
+    // reusing .asset-tabs is what makes these tabs match the Assets / Liq Pools pair exactly, but it
+    // puts a SECOND .asset-tabs group on the page, and setMeta addresses that class by index. The
+    // marker lets it exclude this group by name instead of hoping about DOM order.
+    bar.innerHTML = '<div class="asset-tabs lx-wcgroup">'
+      + '<button class="lx-wctab active" type="button" data-t="orders">Open orders'
+      + ' <span class="cnt">0</span></button>'
+      + '<button class="lx-wctab" type="button" data-t="claim">Claimable payments'
+      + ' <span class="cnt">0</span></button>'
+      + '</div>';
+    bar.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('.lx-wctab');
+      if (b) selectTab(b.getAttribute('data-t'));
+    });
+
+    // The orders list the page already ships becomes the first panel; the second is ours. Desktop
+    // ships .orders-block, the phone ships .orders-stack — take whichever is here.
+    var orders = $('.orders-block') || $('.orders-stack');
+    var host = orders ? orders.parentNode : stack.parentNode;
+    var anchor = orders || stack.nextSibling;
+
+    var pOrders = document.createElement('div'); pOrders.className = 'lx-wcpanel lx-wcpanel-orders';
+    var pClaim = document.createElement('div'); pClaim.className = 'lx-wcpanel lx-wcpanel-claim';
+    pClaim.setAttribute('hidden', '');
+
+    host.insertBefore(bar, anchor);
+    host.insertBefore(pOrders, anchor);
+    if (orders) {
+      // The list's own heading comes with it where there is one, so the tab does not end up floating
+      // above a section title that repeats what the tab already says. Only the duplicated title text
+      // is hidden; anything else in that header (a Cancel all control) stays reachable.
+      var head = orders.previousElementSibling;
+      if (head && /open orders/i.test(head.textContent || '') && head.querySelector('h2,h3')) {
+        var hh = head.querySelector('h2,h3');
+        if (hh) hh.style.display = 'none';
+        pOrders.appendChild(head);
+      }
+      pOrders.appendChild(orders);
+    }
+    host.insertBefore(pClaim, pOrders.nextSibling);
+    pClaim.innerHTML = '<div class="lx-wclist"><div class="lx-wcnote"></div></div>';
+
+    // Always opens on Open orders: it is the list with money at stake and an action attached.
+    selectTab('orders');
+  }
+
+  function setTab(which, n) {
+    var t = document.querySelector('.lx-wctab[data-t="' + which + '"] .cnt');
+    if (t) t.textContent = String(n);
+  }
+
+  // Fills one cloned .order-row from one account_offers entry.
+  //
+  // WRITTEN AFTER FLATTENING IT ONCE. The first version set .order-pair's textContent, which replaced
+  // the two token circles, the pair name and the Buy/Sell pill with a single string — the row rendered
+  // as "997,393.739396 XYIELD → 9,973.937392 XRP Price 0.0142 APT Amount 10,000 USDT" because the real
+  // pair had eaten the design's structure while the three mock columns beside it were never touched.
+  // Every field the design ships gets written or removed here; none is left holding another chain's
+  // numbers, and none is written by destroying the element that held it.
+  //
+  // XRPL semantics: an offer says "I give taker_gets, I want taker_pays". From the owner's side that
+  // is always a SELL of taker_gets, so the pill is fixed — there is no buy-side offer to mirror.
+  // Sets short text on an element the LOGO ENGINE would otherwise claim.
+  //
+  // The page carries a 76KB unnamed layer (window.__lumosLogoEngine) that treats ANY element holding
+  // one to five characters as a ticker badge: it paints a logo into the background and empties the
+  // text. It re-runs a few seconds after load, so writing the text once is not enough.
+  //
+  // It cost a deploy to find, because the failure looks like nothing. The Buy/Sell pill came back
+  // EMPTY with a Tether logo behind it — the mock row said "10,000 USDT", the engine had already
+  // claimed that row's pill and stamped data-logo="USDT" on it, and cloning the row as a template
+  // carried the stamp onto every real order. Setting .textContent afterwards was undone on the
+  // engine's next pass, because its own test short-circuits on that attribute:
+  //     if (el.getAttribute('data-logo')) return true;
+  //
+  // So the stamp is what has to go, not just the text. Once it is gone the element is judged on its
+  // content, and neither "Sell" nor a single letter matches any symbol it knows, so it is left alone.
+  function plain(el, text) {
+    try {
+      el.removeAttribute('data-logo');
+      el.style.background = '';
+      el.style.backgroundImage = '';
+      // data-logoed is the engine's OWN "already handled, leave alone" marker — it skips such nodes
+      // exactly as it skips an <svg> or an <img>. Claiming the element with its own contract is a far
+      // better opt-out than smuggling an SVG in to look unappetising, and it survives its re-runs.
+      el.setAttribute('data-logoed', '1');
+    } catch (e) {}
+    el.textContent = text;
+  }
+
+  function orderRow(tpl, o) {
+    var row = tpl.cloneNode(true);
+
+    // data-oid IS WHAT MAKES THE ROW VISIBLE, and its absence is invisible in every way that matters.
+    // The design ships an anti-flash gate:
+    //     .orders-block .order-row:not([data-oid]) { display: none }
+    // whose job is to keep the mock rows hidden until a data layer vouches for one by stamping it. So
+    // a row can be in the DOM, opacity 1, visibility visible, every field correct — and occupy zero
+    // pixels. It read as a working desktop panel through the DOM and as an empty gap on screen, and
+    // only measuring the rendered box found it. The offer sequence is the ledger's own id for the
+    // offer, so it is what the row is stamped with.
+    row.setAttribute('data-oid', String(o.seq));
+
+    var gets = amt(o.taker_gets), pays = amt(o.taker_pays);
+    var gc = gets ? gets.code : '?', pc = pays ? pays.code : '?';
+
+    var nm = row.querySelector('.pair-text .name');
+    if (nm) nm.textContent = gc + ' / ' + pc;
+    // Desktop puts the pill inside .pair-text as .side; the phone puts it beside .order-pair as
+    // .order-side. Same two modifier classes, different element — so the class is rebuilt from
+    // whichever base name this layout uses rather than hardcoding one of them.
+    var side = row.querySelector('.pair-text .side, .order-side');
+    if (side) {
+      side.className = (side.classList.contains('order-side') ? 'order-side' : 'side') + ' sell';
+      plain(side, 'Sell');
+    }
+
+    // The two circles ship carrying APT and USDT artwork. There is no logo source wired here yet, so
+    // they fall back to the design's own lettered treatment rather than keep another chain's tokens.
+    var ico = row.querySelectorAll('.pair-ico .b');
+    [gc, pc].forEach(function (code, i) {
+      if (!ico[i]) return;
+      plain(ico[i], code.charAt(0).toUpperCase());
+      ico[i].style.fontSize = '11px';
+    });
+
+    var cols = row.querySelectorAll('.order-details .col');
+    var price = (gets && pays && gets.value) ? (pays.value / gets.value) : null;
+    var vals = [
+      price != null ? fmt(price, 6) + ' ' + pc : '—',
+      gets ? fmt(gets.value, 6) + ' ' + gc : '—',
+      pays ? fmt(pays.value, 6) + ' ' + pc : '—'
+    ];
+    for (var i = 0; i < cols.length && i < 3; i++) {
+      var v = cols[i].querySelector('.v');
+      if (v) v.textContent = vals[i];
+    }
+
+    // The design shows "42% filled" over a progress bar. The XRP Ledger does not publish that: an
+    // offer on the books reports only what REMAINS of it, so there is no original size to measure a
+    // fill against. A bar with a number nobody can derive is worse than no bar, so it is removed.
+    var prog = row.querySelector('.order-progress-wrap');
+    if (prog && prog.parentNode) prog.parentNode.removeChild(prog);
+
+    // Cancel is live now: browser/write.js picks the click up off this row and cancels by data-oid,
+    // which is why that attribute is the offer's own sequence number rather than a display index.
+    // It was disabled here while no signing path existed; re-enabled with that path, not before.
+    return row;
+  }
+
+  // Releases an element from the page's card-reveal gate.
+  //
+  // The design fades sections in on scroll:
+  //     html.lcm-ready .orders-block:not([data-lcm-done]) { opacity: 0; transform: translateY(8px) }
+  // with a driver that adds .lcm-on when the element comes into view. buildTabs() moves .orders-block
+  // into a new panel, and after that move the driver never released it — so the panel sat at opacity 0
+  // holding a correctly built, correctly sized, fully painted order row that nobody could see. The row
+  // even answered elementFromPoint, because a transparent element is still hit-testable; the only
+  // measurement that showed the truth was its computed opacity.
+  //
+  // data-lcm-done is the gate's own "already handled" attribute, so setting it opts the element out
+  // rather than fighting the rule, and .lcm-on covers the case where the driver has since run.
+  function reveal(node) {
+    if (!node) return;
+    try {
+      node.setAttribute('data-lcm-done', '1');
+      node.classList.add('lcm-on');
+    } catch (e) {}
+  }
+
+  function paintOrders(me) {
+    rpc('account_offers', { account: me, ledger_index: 'validated', limit: 50 })
+      .then(function (r) {
+        var offers = r.offers || [];
+        setTab('orders', offers.length);
+
+        // The Open Orders heading ships its own summary reading "3 active". Nothing filled it, so it
+        // sat directly above a tab correctly badged "Open orders 1" — two counts of the same thing,
+        // side by side, disagreeing, with the invented one in the larger type.
+        [].forEach.call(document.querySelectorAll('.section-heading'), function (sh) {
+          var m = sh.querySelector('.meta');
+          if (!m) return;
+          var title = '';
+          [].forEach.call(sh.childNodes, function (nd) {
+            if (nd === m || (nd.contains && nd.contains(m))) {
+              // walk into the wrapper but skip the meta itself
+              [].forEach.call(nd.childNodes || [], function (k) { if (k !== m) title += (k.textContent || '') + ' '; });
+              return;
+            }
+            title += (nd.textContent || '') + ' ';
+          });
+          if (/open orders/i.test(title)) {
+            m.textContent = offers.length + ' active';
+          }
+        });
+
+        // TWO LAYOUTS, AND ONLY ONE OF THEM WAS WIRED. Desktop lists orders as .order-row inside
+        // .orders-block; the phone lists them as .order-card inside .orders-stack — different
+        // container, different item, same fields. Keying on the desktop pair alone meant the phone
+        // showed the tab correctly badged "Open orders 1" above a completely empty panel: the count
+        // came from the ledger, the list came from markup that was never found, and nothing errored.
+        var block = $('.lx-wcpanel-orders .orders-block') || $('.lx-wcpanel-orders .orders-stack')
+          || $('.orders-block') || $('.orders-stack');
+        if (!block) return;
+        var rowT = block.querySelector('.order-row, .order-card');
+        if (!rowT) return;
+        rowT = rowT.cloneNode(true);
+        block.innerHTML = '';
+
+        if (!offers.length) {
+          var d = el('div', 'lx-wcnote', 'No open orders on this account.');
+          block.appendChild(d);
+          reveal(block);
+          return;
+        }
+        offers.forEach(function (o) {
+          block.appendChild(orderRow(rowT, o));
+        });
+        reveal(block);
+      }).catch(function () { /* leave the design's block rather than empty it on a dropped request */ });
+  }
+
+  function paintClaimable(me) {
+    rpc('account_objects', { account: me, ledger_index: 'validated', type: 'check', limit: 50 })
+      .then(function (r) {
+        var checks = (r.account_objects || []).filter(function (c) {
+          return c.Destination === me;                    // checks written TO you, not by you
+        });
+        setTab('claim', checks.length);
+
+        var note = $('.lx-wcpanel-claim .lx-wcnote');
+        if (!note) return;
+        if (!checks.length) {
+          // The inherited copy described Stellar claimable balances. Say what this ledger does.
+          note.textContent = 'Nothing is waiting to be claimed. Checks written to you on the XRP Ledger will appear here.';
+          return;
+        }
+        var list = note.parentElement;
+        list.innerHTML = '';
+        checks.forEach(function (c) {
+          var got = amt(c.SendMax);
+          list.appendChild(el('div', 'lx-wcnote',
+            'Check from ' + short(c.Account) + (got ? (' — up to ' + fmt(got.value, 6) + ' ' + got.code) : '')));
+        });
+      }).catch(function () {});
   }
 
   // ---- Activity ------------------------------------------------------------------------------------
@@ -353,7 +771,13 @@
       data.held = split.held; data.pools = split.pools; data.obligations = split.obligations;
       window.__lxxData = data;
       paint(data);
+      // Before the painters and before setMeta's second pass: buildTabs moves .orders-block into a
+      // panel and stamps .lx-wcgroup, and both of those are things the writers below look for.
+      buildTabs();
+      setMeta(data.held.length, data.pools.length, data.xrp);
       paintActivity(a);
+      paintOrders(a);
+      paintClaimable(a);
     }).catch(function (e) {
       // An account with no transactions simply does not exist on the ledger yet. Not an error.
       if (/actNotFound/i.test(e.message || '')) { note(h, 'This account is not activated on the XRP Ledger yet.'); return; }

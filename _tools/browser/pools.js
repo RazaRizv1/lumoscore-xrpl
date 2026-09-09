@@ -17,6 +17,7 @@
   window.__lxxPools = 1;
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
   var NS = 'http://www.w3.org/2000/svg';
 
   function el(tag, cls, text) {
@@ -103,14 +104,63 @@
     try { document.documentElement.classList.add('lx-ammready'); } catch (e) {}
   }
 
+  // EVERY POOL ROW 404'd, and the cause was a layer that was never ours.
+  //
+  // The design ships a blanket navigation helper, window.__lumosNav, configured with
+  //     LISTTARGET = 'amm-pool'   // blanket row target for pure list pages
+  //     CONTAINERNAV = true       // allow container-signal row nav
+  // so it claims a click on ANY row of a list page and routes it through lxNavigate/lxClean, which
+  // resolve to the Stellar route shape — /pools/<chain>, with the chain defaulting to "stellar"
+  // because this build is not one they know. On the XRP Ledger fork that destination does not exist,
+  // so every pool row landed on Page not found.
+  //
+  // Three things did NOT fix it, and each ruled something out: a plain click handler (it answers
+  // later and wins), the same handler in capture on the row (capture descends from the top, so a
+  // document-level listener still runs first), and a real <a href> (it preventDefaults the anchor).
+  // The trace that settled it recorded the click reaching the anchor with the correct href, then an
+  // unload, then arrival at /pools/stellar with the pools page as referrer — one navigation, decided
+  // by a handler, not by the browser or the server.
+  //
+  // WINDOW capture is the earliest phase there is: it runs before any document-level listener, so
+  // stopImmediatePropagation here settles the question before anything else is consulted. Scoped
+  // strictly to clicks inside #poolsBody, so no other navigation on the page is affected.
+  function claimRowClicks() {
+    if (window.__lxxPoolNav) return;
+    window.__lxxPoolNav = 1;
+    window.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var tr = t.closest('#poolsBody tr');
+      if (!tr) return;
+      var a = tr.querySelector('a.pool-pair');
+      if (!a) return;
+      // Let a genuine modifier-click (new tab, new window) behave normally.
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.location.href = a.getAttribute('href');
+    }, true);
+  }
+
   function row(p, rank) {
     var tr = document.createElement('tr');
 
     tr.appendChild(el('td', null, String(rank)));
 
     var pair = el('td');
-    var wrap = el('div', 'pool-pair');
-    wrap.style.cssText = 'display:flex;align-items:center;gap:7px';
+    // A REAL ANCHOR, not a scripted navigation. Setting window.location from a click handler here was
+    // being overridden: every row click ended on /pools/stellar — the Stellar route shape
+    // /pools/<chain>/id/<id> with the chain defaulting to "stellar" — even from a capture-phase
+    // listener that stopped propagation, and even though assigning the same URL outside a click
+    // navigates correctly. Something inherited answers the click later and wins.
+    //
+    // An anchor sidesteps the argument entirely: the browser navigates natively, and the site's own
+    // link-cleaning handler only rewrites hrefs matching lumoscore-*.html, so it leaves this one
+    // alone. It is also how the Stellar build links its pool rows, so this is the shape the rest of
+    // the page already expects — and it gives the row middle-click and open-in-new-tab for free.
+    var wrap = el('a', 'pool-pair');
+    wrap.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
+    wrap.style.cssText = 'display:flex;align-items:center;gap:7px;color:inherit;text-decoration:none';
     wrap.appendChild(logoEl(nameOf(p.a1), p.a1 && p.a1.m, 22));
     wrap.appendChild(logoEl(nameOf(p.a2), p.a2 && p.a2.m, 22));
     wrap.appendChild(el('span', null, nameOf(p.a1) + ' / ' + nameOf(p.a2)));
@@ -128,10 +178,6 @@
     tr.appendChild(el('td', null, count(p.holders)));
 
     tr.style.cursor = 'pointer';
-    tr.addEventListener('click', function () {
-      // The pool detail route takes the two assets; the AMM account is the stable identifier.
-      window.location.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
-    });
     return tr;
   }
 
@@ -169,6 +215,83 @@
     }
   }
 
+  // The "Market Overview" card, which the summary painter above never reached because it keys on
+  // different classes. Every one of its four rows was the design's mock, in the wrong asset:
+  //
+  //   Total Liquidity  12.7M APT ≈ $5.32M   (really 28.6M XRP)
+  //   Active Pools     100 · "+4 in past 7 days"   (really 30,663; the 7-day delta has no source)
+  //   24h Volume       $21,483.83 · "51,250 APT swapped"   (really 470,740 XRP)
+  //   Participants     11,274 · "Unique LP wallets"
+  //
+  // PARTICIPANTS IS SET TO A DASH, not a number. Who holds an LP token is not something a public node
+  // will enumerate — the pool detail page already says so in as many words — so 11,274 is not a stale
+  // figure, it is an invented one, and replacing it with a different invented one would be no better.
+  // The same goes for "+4 in past 7 days": nothing here knows what the count was a week ago.
+  // The page's own strapline read "Provide liquidity and earn fees on Stellar's on-chain AMM pools",
+  // above a table of XRP Ledger AMMs. Rewritten by text node so the design's markup is untouched.
+  function paintHeroCopy() {
+    $$('.dex-hero-sub').forEach(function (p) {
+      if (!/Stellar|Aptos/i.test(p.textContent || '')) return;
+      var w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+      var n;
+      while ((n = w.nextNode())) {
+        if (!n.nodeValue) continue;
+        n.nodeValue = n.nodeValue.replace(/Stellar's/gi, 'the XRP Ledger’s')
+          .replace(/\bStellar\b/gi, 'the XRP Ledger').replace(/\bAptos\b/gi, 'the XRP Ledger');
+      }
+    });
+  }
+
+  function paintOverview(d) {
+    var s = d && d.summary;
+    if (!s) return;
+    var rows = $$('.amm-snapshot-row');
+    if (!rows.length) return;
+
+    // The USD rate lives on the tokens endpoint, the same one every other USD figure on this site is
+    // derived from, so the overview cannot disagree with the rest of the page about what an XRP is.
+    fetch('/lxapi/xrpltokens').then(function (r) { return r.json(); }).then(function (t) {
+      return (t && t.ok && +t.usd > 0) ? +t.usd : null;
+    }).catch(function () { return null; }).then(function (usd) {
+      rows.forEach(function (row) {
+        var label = ((row.querySelector('.amm-snapshot-label') || {}).textContent || '').trim().toLowerCase();
+        var val = row.querySelector('.amm-snapshot-value');
+        var vsub = row.querySelector('.amm-snapshot-vsub');
+        var sub = row.querySelector('.amm-snapshot-sub');
+
+        function setVal(text, unit) {
+          if (!val) return;
+          val.textContent = text;
+          if (unit) {
+            var u = document.createElement('span');
+            u.className = 'unit';
+            // data-logoed: a three-letter ticker is exactly what the logo layer claims.
+            try { u.setAttribute('data-logoed', '1'); } catch (e) {}
+            u.textContent = unit;
+            val.appendChild(u);
+          }
+        }
+
+        // Matched anywhere in the label, not at position 0: the row reads "Total Liquidity", so an
+        // indexOf(...) === 0 test silently skipped it and left 12.7M APT sitting beside three
+        // corrected rows — the one wrong figure in a block that otherwise looked freshly filled.
+        if (label.indexOf('liquidity') >= 0) {
+          setVal(amount(s.liquidity), 'XRP');
+          if (vsub) vsub.textContent = usd ? ('≈ $' + Math.round(s.liquidity * usd).toLocaleString('en-US')) : '';
+        } else if (label.indexOf('active pools') === 0) {
+          setVal(d.total != null ? count(d.total) : '—');
+          if (sub) sub.textContent = 'Across the XRP Ledger';   // no week-ago figure to compare with
+        } else if (label.indexOf('24h volume') === 0) {
+          setVal(amount(s.vol24), 'XRP');
+          if (sub) sub.textContent = usd ? ('≈ $' + Math.round(s.vol24 * usd).toLocaleString('en-US') + ' swapped') : 'past 24 hours';
+        } else if (label.indexOf('participant') === 0) {
+          setVal('—');
+          if (sub) sub.textContent = 'Not published by a public node';
+        }
+      });
+    });
+  }
+
   function attribution(d) {
     if (!d || !d.attribution || document.getElementById('lxx-attr-pools')) return;
     var host = $('#panelAllPools') || $('#panelAll');
@@ -188,6 +311,8 @@
     var tb = $('#poolsBody');
     if (!tb) return;                                   // not the Pools page
     lift();
+    claimRowClicks();
+    paintHeroCopy();
     note(tb, 'Reading the XRP Ledger…');
 
     fetch('/lxapi/xrplpools?n=50').then(function (r) { return r.json(); }).then(function (d) {
@@ -196,6 +321,7 @@
       tb.innerHTML = '';
       for (var i = 0; i < d.rows.length; i++) tb.appendChild(row(d.rows[i], i + 1));
       paintSummary(d.summary);
+      paintOverview(d);
       attribution(d);
     }).catch(function () { note(tb, 'Pool data is unavailable right now.'); });
   }

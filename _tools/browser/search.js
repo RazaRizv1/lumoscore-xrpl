@@ -137,8 +137,41 @@
     if (c) c.textContent = n == null ? '' : '(' + n + ')';
   }
 
+  // The design's search is multi-chain and groups its results behind per-chain filter pills. This
+  // build searches ONE ledger, so the only pill that can mean anything is the XRP Ledger one — and
+  // what actually shipped was a pill reading "Aptos (9)" carrying data-chain="hedera", from the
+  // design's own scrambled chain-name map. Clicking it filtered to a chain with no results, and the
+  // (9) was a count of rows that are not in the list.
+  //
+  // Removed rather than relabelled: renaming it would still leave a filter for something this build
+  // does not search. Every row this layer creates is stamped data-chain="xrpl", so anything else is
+  // by definition not ours.
+  // CALLING THIS ONCE PER RENDER IS NOT ENOUGH: the design rebuilds its filter row after results
+  // land, so the pill reappeared immediately after being removed. Watched instead, the same way the
+  // launchpad watches its cost panel — the container is observed and any foreign pill is taken out
+  // whenever it is put back.
+  function dropForeignFilters() {
+    [].forEach.call(document.querySelectorAll('.sp-filter-pill'), function (b) {
+      var c = (b.getAttribute('data-chain') || '').toLowerCase();
+      if (c && c !== 'xrpl' && b.parentNode) b.parentNode.removeChild(b);
+    });
+  }
+
+  function watchFilters() {
+    if (window.__lxxSeaFilterWatch || !window.MutationObserver) return;
+    var host = $('.sp-filters');
+    if (!host) return;
+    window.__lxxSeaFilterWatch = 1;
+    // Removing a child mutates the container, so the observer re-enters. It is self-limiting because
+    // the second pass finds nothing foreign left and mutates nothing — the same reasoning the
+    // launchpad's cost observer relies on.
+    new MutationObserver(dropForeignFilters).observe(host, { childList: true, subtree: true });
+    dropForeignFilters();
+  }
+
   function render(list, d) {
     list.innerHTML = '';
+    watchFilters();
     if (!d.rows.length) { note(list, 'No XRP Ledger token matches that.'); setCount(0); return; }
     for (var i = 0; i < d.rows.length; i++) list.appendChild(rowFor(d.rows[i]));
     setCount(d.rows.length);
@@ -150,6 +183,7 @@
     if (q.length < MIN) { note(list, 'Type at least ' + MIN + ' characters.'); setCount(null); return; }
 
     var mine = ++seq;
+    watchFilters();
     note(list, 'Searching the XRP Ledger…');
     fetch('/lxapi/xrplsearch?q=' + encodeURIComponent(q))
       .then(function (r) { return r.json(); })

@@ -102,6 +102,21 @@
     // The label said "XRP Ledger price", which is the blind replacement of "Stellar price" and reads
     // as a price for the ledger itself. The asset is XRP.
     setPill('price', d && d.usd != null ? ('$' + Number(d.usd).toFixed(4)) : '—', 'XRP price');
+
+    // AND THEN MAKE IT VISIBLE. The stripped Stellar layer left its stylesheet behind, and that
+    // stylesheet contains, unconditionally:
+    //     .status-row { opacity: 0 }
+    // Its script used to raise that back to 1 once it had filled the row; the script is gone and the
+    // rule is not. So the whole network-stats strip — Assets 20,367, Pools 30,662, XRP price, all of
+    // it correct and freshly written — was painted into an invisible element on every dashboard load.
+    //
+    // Nothing revealed it either: this is NOT the scroll-reveal gate, which lifts by itself when a
+    // section comes into view. Scrolling the entire page and re-measuring left it at zero.
+    //
+    // Set as an inline style so it beats the sheet, and only here — after the real numbers are in,
+    // never before, so the row cannot flash the design's mock figures on its way to being right.
+    var row = $('.status-row');
+    if (row) row.style.setProperty('opacity', '1', 'important');
   }
 
   // ---- LUMOS activity --------------------------------------------------------------------------
@@ -276,6 +291,11 @@
       .then(function (d) {
         if (!d || !d.ok) { paintStats(null, null); return; }
         window.__lxxDashData = d;
+        // Announced so the price panel above can show the SAME rate this row is about to paint.
+        // It reads the published payload rather than asking for its own: the endpoint is sampled,
+        // so two calls a second apart return rates that differ in the last digit — and the panel's
+        // headline sits directly above the "XRP price" pill, where that difference is visible.
+        try { window.dispatchEvent(new CustomEvent('lxx:dashdata')); } catch (e) {}
         return fetch('/lxapi/xrplpools?n=1')
           .then(function (r) { return r.json(); })
           .then(function (p) { paintStats(d, p && p.ok ? p.total : null); })
