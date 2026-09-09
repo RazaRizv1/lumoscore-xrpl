@@ -255,8 +255,169 @@
       .catch(function () { /* the card stays dashed, which is the honest default */ });
   }
 
+  // ---- the issuer address, and who holds the token ------------------------------------------------
+  //
+  // Three separate pieces of this page were still the design's mock, and one of them was visible
+  // without opening anything:
+  //
+  //   * the address row read "XRP Ledger  0x0e5e…32bc" — an EVM-shaped address under an XRP Ledger
+  //     label, with a full 66-character 0x value behind it;
+  //   * "Holders breakdown — 3,208 total" with an invented distribution, on a page whose own stat
+  //     card two panels up says 1,200;
+  //   * five top holders, each an 0x address tagged "Aptos · 1.48% of supply".
+  //
+  // ALL OF IT IS COMPUTABLE, exactly, from one place: the issuer's own trust lines. A trust line to
+  // the issuer IS a holding, so account_lines on ISS enumerates every holder with their balance —
+  // seen from the issuer, which owes them, so the balances come back negative. Paged, because there
+  // are more than one page of them.
+  var RPC = 'https://xrplcluster.com/';
+  function rpc(method, params) {
+    return fetch(RPC, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] })
+    }).then(function (r) { return r.json(); });
+  }
+
+  function shortAddr(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
+
+  // Token quantities, in the compact form the design uses beside each holder ("29.6M").
+  function amount(v) {
+    if (v == null || !isFinite(v)) return '—';
+    var a = Math.abs(v);
+    if (a >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    if (a >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return String(Math.round(v));
+  }
+
+  function paintIssuer() {
+    $$('.addr-value').forEach(function (e) {
+      e.textContent = shortAddr(ISS);
+      e.setAttribute('data-full', ISS);
+      e.setAttribute('title', ISS);
+    });
+    // The copy control beside it carried the mock value too, so it copied an address for another
+    // chain to the clipboard.
+    $$('.addr-row [data-copy]').forEach(function (b) { b.setAttribute('data-copy', ISS); });
+  }
+
+  // "1M+ LUMOS", "1M – 5M", "250K – 1M", "Under 250K" -> the range each row counts.
+  //
+  // The first two OVERLAP as the design ships them, so every holder over 5M would be counted twice
+  // and the four rows would not sum to the total. Relabelled to "5M+ LUMOS", which is the only
+  // reading that makes the set disjoint and matches the descending order of the rest.
+  function bucketRange(label) {
+    var s = String(label || '').replace(/\s+/g, ' ').trim();
+    function num(t) {
+      var m = /([\d.]+)\s*([KM])?/i.exec(t); if (!m) return null;
+      var v = parseFloat(m[1]);
+      if (/k/i.test(m[2] || '')) v *= 1e3;
+      if (/m/i.test(m[2] || '')) v *= 1e6;
+      return v;
+    }
+    if (/^under/i.test(s)) return { lo: 0, hi: num(s) };
+    var parts = s.split(/[–-]/);
+    if (parts.length === 2) return { lo: num(parts[0]), hi: num(parts[1]) };
+    return { lo: num(s), hi: Infinity };
+  }
+
+  function paintHolders(list) {
+    if (!list) return;
+    var total = list.length;
+
+    $$('.h-head .meta').forEach(function (e) { e.textContent = total.toLocaleString('en-US') + ' total'; });
+
+    var rows = $$('.wsize-row');
+    // Disjoint tiers, top row first — see bucketRange.
+    if (rows[0]) {
+      var l0 = rows[0].querySelector('.wsize-label');
+      if (l0 && /^1M\+/i.test((l0.textContent || '').trim())) l0.textContent = '5M+ LUMOS';
+    }
+    rows.forEach(function (row) {
+      var lab = row.querySelector('.wsize-label');
+      var cnt = row.querySelector('.wsize-count');
+      var fill = row.querySelector('.wsize-bar .fill');
+      if (!lab || !cnt) return;
+      var r = bucketRange(lab.textContent);
+      if (!r || r.lo == null) { cnt.textContent = '—'; return; }
+      var n = 0;
+      for (var i = 0; i < list.length; i++) {
+        var b = list[i].bal;
+        if (b >= r.lo && (r.hi == null || b < r.hi)) n++;
+      }
+      cnt.textContent = n.toLocaleString('en-US');
+      if (fill) fill.style.width = Math.max(1, Math.round(n / Math.max(1, total) * 100)) + '%';
+    });
+
+    // The top holders. Percentages are of the ISSUED supply — the sum of what every holder holds —
+    // which is what "% of supply" means for a token whose issuer is blackholed and can mint no more.
+    var issued = 0;
+    for (var k = 0; k < list.length; k++) issued += list[k].bal;
+    var top = list.slice().sort(function (a, b) { return b.bal - a.bal; });
+    $$('.top-holders .holder-row').forEach(function (row, i) {
+      var h = top[i];
+      var info = row.querySelector('.info');
+      var chain = row.querySelector('.chain');
+      if (!h) { row.style.display = 'none'; return; }
+      row.style.display = '';
+      // The address sits in .info as its own text/element; the first non-.chain child holds it.
+      var addrEl = info && [].slice.call(info.children).filter(function (c) {
+        return !c.classList || !c.classList.contains('chain');
+      })[0];
+      if (addrEl) { addrEl.textContent = shortAddr(h.addr); addrEl.setAttribute('title', h.addr); }
+      if (chain) {
+        var pct = issued > 0 ? (h.bal / issued * 100) : 0;
+        // Rebuilt rather than assigned into: the row ships a mark inside .chain, and replacing the
+        // whole textContent would take it with it.
+        var mark = chain.querySelector('.b-ico');
+        chain.textContent = '';
+        if (mark) chain.appendChild(mark);
+        chain.appendChild(document.createTextNode(' XRP Ledger · ' + pct.toFixed(2) + '% of supply'));
+      }
+
+      // AND THE BALANCE BESIDE IT. Filling the percentage alone left "32.08% of supply" against the
+      // mock's "29.6M LUMOS" — two numbers about the same holder that cannot both be true, which is
+      // a worse read than either mock alone. The USD figure uses the same price the hero shows, so
+      // the page cannot value the same token two ways.
+      var hold = row.querySelector('.holdings');
+      var vEl = hold && hold.querySelector('.v');
+      var pEl = hold && hold.querySelector('.pct');
+      if (vEl) vEl.textContent = amount(h.bal) + ' LUMOS';
+      if (pEl) {
+        var px = window.__lxxLumos && window.__lxxLumos.usd;
+        pEl.textContent = (px != null && isFinite(px)) ? usd(h.bal * px) : '—';
+      }
+    });
+  }
+
+  // Paged, with a hard stop: a marker loop that never terminates would hammer the node.
+  function loadHolders() {
+    if (!$('.h-card') && !$('.top-holders')) return;             // not a page with these
+    var acc = [], marker = null, pages = 0;
+    function page() {
+      var p = { account: ISS, limit: 400, ledger_index: 'validated' };
+      if (marker) p.marker = marker;
+      rpc('account_lines', p).then(function (r) {
+        var res = r && r.result;
+        var lines = (res && res.lines) || [];
+        for (var i = 0; i < lines.length; i++) {
+          var l = lines[i];
+          if (l.currency !== CUR) continue;
+          var v = Math.abs(Number(l.balance));
+          if (v > 0) acc.push({ addr: l.account, bal: v });
+        }
+        marker = res && res.marker;
+        if (marker && ++pages < 15) return page();
+        paintHolders(acc);
+      }).catch(function () { /* leave the card as it is rather than half-write it */ });
+    }
+    page();
+  }
+
   function load() {
     if (!$('.hero-price-block') && !$('.lh-stats')) return;      // not this page
+    paintIssuer();
+    loadHolders();
     loadPools();
     fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(ISS + '-' + CUR))
       .then(function (r) { return r.json(); })
