@@ -31,6 +31,15 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
+  // textContent for anything off the ledger: a currency name is arbitrary bytes from a public chain
+  // and anyone can issue one containing markup.
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
   function usd(v) {
     if (v == null || !isFinite(v)) return '—';
     if (v === 0) return '$0';
@@ -121,6 +130,34 @@
       if (!/fixed supply/i.test(t)) return;
       e.textContent = '999,955,353 LUMOS · fixed supply on the XRP Ledger — the issuer is blackholed, '
         + 'so no more can ever be minted.';
+    });
+
+    // THE SAME SENTENCE LIVES UNDER OTHER CLASSES, and the phone has none of them as `.sub-h`. Left
+    // to the rule above, a phone opening the XRP Ledger's own token page read
+    //     "Supply distribution — 1 billion LUMOS · fixed supply on Stellar."
+    // and, below it, "Fixed supply of 1,000,000,000 LUMOS" against an issued 999,955,353.
+    //
+    // Rewritten by TEXT NODE and by substitution rather than by replacing each block's text: these
+    // sentences continue past the part that is wrong ("...issuer key locked. Allocation is..."), and
+    // assigning textContent would take the rest of the sentence with it.
+    var SUPPLY_FIX = [
+      [/\b1 billion LUMOS\b/gi, '999,955,353 LUMOS'],
+      [/\b1,000,000,000 LUMOS\b/g, '999,955,353 LUMOS'],
+      [/\bon (Stellar|Aptos)\b/gi, 'on the XRP Ledger'],
+    ];
+    $$('.sect-head .sub, .supply-totem .note, .supply-note, .lt-supply').forEach(function (e) {
+      var w = document.createTreeWalker(e, NodeFilter.SHOW_TEXT), n;
+      while ((n = w.nextNode())) {
+        var t = n.nodeValue;
+        // NO KEYWORD GATE. It was `/supply|Stellar|Aptos/`, which skipped the one node that mattered:
+        // the sentence is split as "Fixed supply of " + <strong>1,000,000,000 LUMOS</strong> + ",
+        // issuer key locked", so the node holding the figure contains none of those words. The
+        // replacements below are already specific enough to be their own filter.
+        if (!t) continue;
+        var out = t;
+        for (var i = 0; i < SUPPLY_FIX.length; i++) out = out.replace(SUPPLY_FIX[i][0], SUPPLY_FIX[i][1]);
+        if (out !== t) n.nodeValue = out;
+      }
     });
 
     // The allocation note is PROSE, and it described the wrong ledger's market: "added, a little at a
@@ -244,6 +281,84 @@
 
   // How many AMM pools hold LUMOS. /lxapi/xrplpools?issuer= narrows the upstream's 30,648 pools to
   // the ones with a LUMOS side; `total` is the count, independent of the page size asked for.
+  // THE PHONE'S "All LUMOS pools" LIST. The desktop page renders a table that browser/pools.js
+  // fills; the phone renders `#poolList` of `.pool-item` anchors, which nothing filled — so it
+  // showed ten invented pools, "LUMOS / APT", each pill reading "Aptos" and each anchor carrying
+  // data-chain="stellar", on the XRP Ledger's own token page.
+  //
+  // Same data the count above already fetched, so this costs no extra request.
+  function poolItem(p) {
+    var a = el('a', 'pool-item');
+    a.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
+    a.setAttribute('data-chain', 'xrpl');
+
+    var icons = el('div', 'pair-icons');
+    icons.style.cssText = 'width:36px;height:26px';
+    function disc(cls, nm, left) {
+      var d = el('div', cls, String(nm || '?').slice(0, 1).toUpperCase());
+      try { d.setAttribute('data-logoed', '1'); } catch (e) {}
+      d.style.cssText = 'width:26px;height:26px;border-color:var(--surface);'
+        + 'background:' + hueOf(nm) + (left ? ';left:13px' : '');
+      return d;
+    }
+    var n1 = poolName(p.a1), n2 = poolName(p.a2);
+    icons.appendChild(disc('a', n1, false));
+    icons.appendChild(disc('b', n2, true));
+    a.appendChild(icons);
+
+    var info = el('div', 'info');
+    info.appendChild(el('div', 'pair-name', n1 + ' / ' + n2));
+    var meta = el('div', 'meta-row');
+    var pill = el('span', 'chain-pill', 'XRP Ledger');
+    try { pill.setAttribute('data-logoed', '1'); } catch (e) {}
+    meta.appendChild(pill);
+    if (p.fee != null) meta.appendChild(el('span', 'incent-pill native', p.fee + '% fee'));
+    info.appendChild(meta);
+    var stats = el('div', 'stats-row');
+    function st(label, v) {
+      var d = document.createElement('div');
+      d.appendChild(el('span', 'label', label));
+      d.appendChild(el('span', 'v', v));
+      return d;
+    }
+    stats.appendChild(st('TVL', amount(p.liq) + ' XRP'));
+    stats.appendChild(st('24H', amount(p.vol) + ' XRP'));
+    info.appendChild(stats);
+    a.appendChild(info);
+
+    var act = el('div', 'right-actions');
+    act.appendChild(el('span', 'trade-btn', 'View pool'));
+    a.appendChild(act);
+    return a;
+  }
+
+  function poolName(x) {
+    if (!x) return '?';
+    if (x.c === 'XRP' || x.code === 'XRP') return 'XRP';
+    var c = x.n || x.name || x.code || x.c || '';
+    try { if (/^[0-9A-F]{40}$/i.test(c)) c = window.lxx.decodeCurrency(c).display; } catch (e) {}
+    return c || '?';
+  }
+
+  function hueOf(s) {
+    var h = 0; s = String(s || '');
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+    return 'hsl(' + h + ',52%,42%)';
+  }
+
+  function paintPoolList(rows) {
+    var host = $('#poolList');
+    if (!host) return;                                  // desktop renders a table instead
+    host.innerHTML = '';
+    if (!rows.length) {
+      var d = el('div', null, 'No LUMOS pools found on the XRP Ledger.');
+      d.style.cssText = 'padding:20px 6px;text-align:center;opacity:.7';
+      host.appendChild(d);
+      return;
+    }
+    for (var i = 0; i < Math.min(rows.length, 10); i++) host.appendChild(poolItem(rows[i]));
+  }
+
   function loadPools() {
     fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(ISS))
       .then(function (r) { return r.json(); })
@@ -251,6 +366,7 @@
         if (!d || !d.ok || d.total == null) return;
         state.pools = d.total;
         paint(window.__lxxLumos || null);         // repaint the two places the count appears
+        paintPoolList(d.rows || []);
       })
       .catch(function () { /* the card stays dashed, which is the honest default */ });
   }
