@@ -432,7 +432,8 @@ const ROUTES = [
   ['/xrpl/lumos',                'lumoscore-lumos-token.html'],
   ['/xrpl/wallet',               'lumoscore-wallet.html'],
   ['/xrpl/dashboard',            'lumoscore-home.html'],
-  ['/xrpl',                      'lumoscore-home.html'],   // bare /xrpl lands on the dashboard
+  // NOTE: bare '/xrpl' is deliberately NOT a route. It 301s to /xrpl/dashboard via ALIASES, so the
+  // dashboard has exactly one address. Adding it back here would resurrect the duplicate.
 ];
 
 // Case: fixed segments are lowercase, but an asset segment must keep its case — yUSDC and YUSDC are
@@ -444,6 +445,15 @@ const ROUTES = [
 const ALIASES = [
   ['/blogs/*', '/blog/:splat'],
   ['/blogs',   '/blog'],
+
+  // ONE URL FOR THE DASHBOARD, NOT TWO.
+  //
+  // `/xrpl` used to be a ROUTE serving lumoscore-home.html, so both /xrpl and /xrpl/dashboard
+  // answered 200 with the same page. Two urls for one page is a duplicate the canonical has to
+  // paper over, the nav and the connect shim both point at /xrpl/dashboard, and it is the url a
+  // visitor actually landed on — which is how it was reported. A 301 makes /xrpl an entrance
+  // rather than a second address.
+  ['/xrpl', '/xrpl/dashboard'],
 ];
 
 const CASE_FIXES = [

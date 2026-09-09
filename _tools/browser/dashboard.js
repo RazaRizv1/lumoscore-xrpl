@@ -135,10 +135,36 @@
     }).then(function (r) { return r.json(); });
   }
 
+  // The RAW currency and the issuer are kept, not just the display name. The logo lookup is keyed on
+  // md5(issuer + "_" + currencyHex), so a decoded "LUMOS" cannot address it — dropping these two
+  // fields is why the feed had no icons.
   function amountOf(a) {
     if (a == null) return null;
-    if (typeof a === 'string') return { v: Number(a) / 1e6, c: 'XRP' };   // drops
-    return { v: Number(a.value), c: curName(a.currency) };
+    if (typeof a === 'string') return { v: Number(a) / 1e6, c: 'XRP', raw: 'XRP', i: '' };  // drops
+    return { v: Number(a.value), c: curName(a.currency), raw: a.currency, i: a.issuer || '' };
+  }
+
+  // XRP is the one token whose id is not derived — xrpl.to gives it a fixed one.
+  var XRP_ID = '84e5efeb89c4eae8f68188982dc290d8';
+
+  // The inline asset chip Stellar's feed uses: span.act-inl.lx-actasset painted with a
+  // background-image. Same classes on purpose, so it inherits the design's sizing and spacing
+  // rather than needing any CSS of its own.
+  function assetChip(a) {
+    var s = document.createElement('span');
+    s.className = 'act-inl lx-actasset';
+    s.setAttribute('data-c', a.c || '');
+    s.setAttribute('data-i', a.i || '');
+    s.setAttribute('data-l', String(a.c || '?').slice(0, 1).toUpperCase());
+    // The logo healer repaints any element holding one to five characters, which every ticker is.
+    // data-lxpainted is its own skip marker — this slot is painted here.
+    s.setAttribute('data-lxpainted', '1');
+    var url = (a.raw === 'XRP' && !a.i)
+      ? '/lxapi/xrplthumb?id=' + XRP_ID + '&w=48'
+      : (a.i ? '/lxapi/xrplthumb?iss=' + encodeURIComponent(a.i)
+               + '&cur=' + encodeURIComponent(a.raw || a.c) + '&w=48' : '');
+    if (url) s.style.backgroundImage = 'url("' + url + '")';
+    return s;
   }
 
   // Token amounts are written with a decimal exponent, and 1000000000000000e65 -- 1e80, the largest
@@ -167,7 +193,14 @@
         // SendMax is also a maximum, so it names the asset paid in without claiming a quantity.
         text = (spent && spent.c && spent.c !== got.c ? spent.c + ' → ' : '') + amtStr(got);
       }
-      return { cls: 'swap', type: 'Swap through the LUMOS pool', meta: text };
+      // `parts` carries the assets so the row can draw a logo beside each one, the way Stellar's
+      // feed does. `meta` stays as the plain-text fallback for anything that cannot render parts.
+      var pp = [];
+      if (got) {
+        if (spent && spent.c && spent.c !== got.c) { pp.push({ a: spent, nameOnly: true }, ' → '); }
+        pp.push({ a: got });
+      }
+      return { cls: 'swap', type: 'Swap through the LUMOS pool', meta: text, parts: pp };
     }
 
     if (type === 'AMMDeposit') return { cls: 'lp', type: 'Liquidity added', meta: 'LUMOS/XRP pool' };
@@ -180,6 +213,7 @@
       return {
         cls: 'swap', type: 'DEX offer',
         meta: (pays && gets) ? (amtStr(gets) + ' → ' + amtStr(pays)) : '',
+        parts: (pays && gets) ? [{ a: gets }, ' → ', { a: pays }] : [],
       };
     }
     if (type === 'OfferCancel') return { cls: 'swap', type: 'DEX offer cancelled', meta: '' };
@@ -221,7 +255,18 @@
     info.appendChild(t);
     var m = document.createElement('div');
     m.className = 'meta';
-    m.textContent = d.meta;
+    // Draw the assets with their logos when we know them, exactly as Stellar's feed does; fall back
+    // to the plain string for transaction types that name no asset.
+    if (d.parts && d.parts.length) {
+      for (var pi = 0; pi < d.parts.length; pi++) {
+        var p = d.parts[pi];
+        if (typeof p === 'string') { m.appendChild(document.createTextNode(p)); continue; }
+        m.appendChild(assetChip(p.a));
+        m.appendChild(document.createTextNode(p.nameOnly ? p.a.c : amtStr(p.a)));
+      }
+    } else {
+      m.textContent = d.meta;
+    }
     info.appendChild(m);
     row.appendChild(info);
 
@@ -253,7 +298,11 @@
       var pulse = h3.querySelector('.live-pulse');
       h3.textContent = '';
       if (pulse) h3.appendChild(pulse);
-      h3.appendChild(document.createTextNode('LUMOS pool activity'));
+      // MATCHES STELLAR, which reads "Platform Activity — Stellar". This said "LUMOS pool activity"
+      // because the feed is account_tx on the LUMOS/XRP AMM account, and I did not want a heading
+      // claiming more than the data supports. RAZA's call is that it matches the Stellar heading,
+      // and the chain suffix is the design's own pattern.
+      h3.appendChild(document.createTextNode('Platform Activity — XRP Ledger'));
     }
 
     var note = function (msg) {
@@ -272,7 +321,7 @@
     }).then(function (j) {
       var res = j && j.result;
       var list = (res && res.transactions) || [];
-      if (!list.length) { note('No recent LUMOS pool activity.'); return; }
+      if (!list.length) { note('No recent activity.'); return; }
       host.innerHTML = '';
       for (var i = 0; i < list.length; i++) {
         // A transaction that failed still enters a ledger. Showing one as activity would report a
@@ -281,7 +330,7 @@
         if (meta && meta.TransactionResult && meta.TransactionResult !== 'tesSUCCESS') continue;
         host.appendChild(activityRow(list[i]));
       }
-      if (!host.children.length) note('No recent LUMOS pool activity.');
+      if (!host.children.length) note('No recent activity.');
     }).catch(function () {
       note('Could not read the XRP Ledger.');
     });

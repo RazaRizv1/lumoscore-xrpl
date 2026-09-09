@@ -60,10 +60,5 @@ export const SITEMAP_ROUTES = [
     "/xrpl/dashboard",
     "0.6",
     "weekly"
-  ],
-  [
-    "/xrpl",
-    "0.6",
-    "weekly"
   ]
 ];

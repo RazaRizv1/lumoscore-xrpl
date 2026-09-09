@@ -307,6 +307,28 @@
   // that still said XLM. Set explicitly here: this layer decides what the numbers are quoted in, so
   // it is the thing that should label them.
   function headers() {
+    // THE TRADES COLUMN HAD A CELL IN EVERY ROW AND NO HEADER.
+    //
+    // The design's static markup ships eight th's and no Trades column; on Stellar a layer inserts
+    // it at runtime, which is why lumoscore.com/trade/stellar shows nine headers over nine cells.
+    // This layer emits a trades cell (c4, between volume and liquidity) and never added the header,
+    // so the table ran 8 headers over 9 cells and every label from Liquidity rightward sat one
+    // column left of its data — "Liquidity" over the trade count, "7d Trend" over the high/low, and
+    // the 7d percentage under no header at all. That is the messed-up right-hand side.
+    //
+    // The class already carries `th-trades{text-align:right!important}` in the design stylesheet,
+    // so this is restoring a column the design accounted for, not adding one.
+    var tbl = $('.dex-mk-table');
+    if (tbl && !tbl.querySelector('th.th-trades')) {
+      var volTh = tbl.querySelector('th.th-vol');
+      if (volTh && volTh.parentNode) {
+        var tth = document.createElement('th');
+        tth.className = 'th-trades';
+        tth.textContent = 'Trades (24h)';
+        volTh.parentNode.insertBefore(tth, volTh.nextSibling);
+      }
+    }
+
     var map = { 'th-price': 'Last Price (XRP)', 'th-change': '24h Change (XRP)',
       'th-hl': 'Day High / Low (XRP)' };
     for (var k in map) {

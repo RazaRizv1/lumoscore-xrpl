@@ -16,11 +16,11 @@
 /xrpl/lumos                               /lumoscore-lumos-token  200
 /xrpl/wallet                              /lumoscore-wallet  200
 /xrpl/dashboard                           /lumoscore-home  200
-/xrpl                                     /lumoscore-home  200
 
 # forgive capitalised entry points
 /blogs/*                                  /blog/:splat  301
 /blogs                                    /blog  301
+/xrpl                                     /xrpl/dashboard  301
 /Trade/*                                  /trade/:splat  301
 /Pools/*                                  /pools/:splat  301
 /Bridge                                   /bridge  301
