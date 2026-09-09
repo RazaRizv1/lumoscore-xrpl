@@ -858,16 +858,57 @@
 
           var row = rowT.cloneNode(true);
           var kind = TYPES[tx.TransactionType] || tx.TransactionType || 'Transaction';
-          var incoming = tx.TransactionType === 'Payment' && tx.Destination === me;
+
+          // A PAYMENT HAS THREE RELATIONSHIPS TO THIS ACCOUNT, NOT TWO.
+          //
+          // This read `incoming = Destination === me` and treated everything else as sent — so a
+          // payment that merely RIPPLES THROUGH the account, where it is neither the sender nor the
+          // recipient, landed in the "Sent" branch. Seen on the LUMOS pool account: the ledger says
+          // the sender was rVVaR…, and the row said "Sent · To rVVaR…". It reported a payment the
+          // account did not make, named the actual sender as the recipient, and signed the amount
+          // as if it had left this wallet.
+          //
+          // An AMM or issuer account does this constantly, and any account whose trust line is used
+          // as a path hop does it occasionally — so it is uncommon rather than rare, and "you sent
+          // money" is not a thing to be casually wrong about on a wallet page.
+          //
+          // Pass-through is now its own case: the delivered amount belongs to the destination, not
+          // to this account, so it carries no sign and no up/down colour, and both parties are
+          // named rather than one of them being cast as the counterparty.
+          // FOUR, in fact — the fourth being a payment from this account TO this account.
+          //
+          // That is not an oddity here, it is how a swap is expressed on this ledger, and it is
+          // exactly what this project's own swap builds: a cross-currency Payment to self. Treating
+          // "destination is me" as received labelled every one of them "Received · From <your own
+          // address>" — measured, 14 rows of it on one account. A user swapping on LumosCore would
+          // see their own swaps described as money arriving from themselves.
+          //
+          // The dashboard feed already calls these swaps and shows what was given beside what
+          // arrived; this now matches it, so the same transaction reads the same way in both feeds.
+          var isPayment = tx.TransactionType === 'Payment';
+          var self = isPayment && tx.Account === me && tx.Destination === me;
+          var incoming = isPayment && !self && tx.Destination === me;
+          var outgoing = isPayment && !self && tx.Account === me;
+          var through = isPayment && !self && !incoming && !outgoing;
           var other = incoming ? tx.Account : tx.Destination;
 
           var ico = row.querySelector('.activity-icon');
-          if (ico) { ico.classList.toggle('received', !!incoming); ico.classList.toggle('sent', !incoming); }
+          if (ico) {
+            // A pass-through is neither, so it takes the design's neutral swap colour rather than
+            // the green of money arriving or the red of money leaving.
+            ico.classList.toggle('received', !!incoming);
+            ico.classList.toggle('sent', !incoming && !through && !self);
+            ico.classList.toggle('swap', !!(through || self));
+          }
 
           var ty = row.querySelector('.type');
           if (ty) {
             var status = ty.querySelector('.status');
-            ty.textContent = (tx.TransactionType === 'Payment' ? (incoming ? 'Received' : 'Sent') : kind) + ' ';
+            ty.textContent = (isPayment
+              ? (self ? 'Swap'
+                : incoming ? 'Received'
+                : through ? 'Routed through' : 'Sent')
+              : kind) + ' ';
             if (status) {
               var ok = (meta.TransactionResult === 'tesSUCCESS');
               status.textContent = ok ? 'Confirmed' : (meta.TransactionResult || 'Failed');
@@ -876,21 +917,42 @@
             }
           }
 
+          // delivered_amount, never tx.Amount: on a path payment Amount is the MAXIMUM the sender
+          // would allow, not what arrived — measured elsewhere in this project as a 33%
+          // overstatement. Computed once here because both the meta line and the figure need it.
+          var got0 = amt(meta.delivered_amount || meta.DeliveredAmount || tx.Amount);
+
           var mt = row.querySelector('.meta');
           if (mt) {
-            mt.textContent = (other ? ((incoming ? 'From ' : 'To ') + short(other) + ' · ') : '')
+            // A pass-through names BOTH ends: neither of them is this account's counterparty, and
+            // picking one to show would be the same mistake in smaller print.
+            // A swap names the two assets, not the two addresses — both of which are you. SendMax is
+            // a maximum rather than a quantity, so only its CODE is used; the figure on the right is
+            // the delivered amount, which is exact.
+            var give = self ? amt(tx.SendMax) : null;
+            var who = self
+              ? ((give && give.code && got0 && got0.code && give.code !== got0.code)
+                  ? (give.code + ' → ' + got0.code + ' · ') : '')
+              : through
+              ? (tx.Account && tx.Destination
+                  ? (short(tx.Account) + ' → ' + short(tx.Destination) + ' · ') : '')
+              : (other ? ((incoming ? 'From ' : 'To ') + short(other) + ' · ') : '');
+            mt.textContent = who
               + when.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
           }
 
           var a1 = row.querySelector('.a1');
           if (a1) {
-            // delivered_amount, never tx.Amount: on a path payment Amount is the MAXIMUM the sender
-            // would allow, not what arrived. Measured elsewhere in this project as a 33% overstatement.
-            var got = amt(meta.delivered_amount || meta.DeliveredAmount || tx.Amount);
+            var got = got0;
             if (got && isFinite(got.value)) {
-              a1.textContent = (incoming ? '+' : '−') + fmt(got.value, 6) + ' ' + got.code;
+              // No sign on a pass-through or a swap. On a pass-through the delivered amount is what
+              // the DESTINATION received and this account's balance nets out across the hop; on a
+              // swap one asset was given for another, so a lone "+" would report half of it. A "−"
+              // in either case reads as money that left this wallet.
+              var sign = (through || self) ? '' : (incoming ? '+' : '−');
+              a1.textContent = sign + fmt(got.value, 6) + ' ' + got.code;
               a1.classList.toggle('up', !!incoming);
-              a1.classList.toggle('down', !incoming);
+              a1.classList.toggle('down', !incoming && !through && !self);
             } else {
               a1.textContent = '';
             }
