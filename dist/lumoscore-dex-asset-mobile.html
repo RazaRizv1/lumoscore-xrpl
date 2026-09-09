@@ -9397,6 +9397,116 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
   }
 
+  // THE SWAP PANEL IS THE DESIGN'S, AND NOTHING IN THIS LAYER EVER WIRED IT.
+  //
+  // What it was showing, live, under an XRP Ledger heading — every value the template's Aptos mock:
+  //     Rate          1 APT = 0.23659 USDC
+  //     Min received  23.541 USDC
+  //     Network fee   0.00001 APT
+  // with the pay and receive boxes pre-filled 100 and 23.659. A trading panel quoting a rate for
+  // the wrong chain, from numbers nobody computed, is the worst thing that was left on this page:
+  // it does not look like placeholder text.
+  //
+  // Treated the same way as Create Pool, on RAZA's call: state what we actually know, em-dash what
+  // we do not, empty the invented amounts, and disable the action with a label that says why.
+  // Building a real quote — pricing against the order book, slippage, price impact — is a feature,
+  // and this build has never round-tripped a signature.
+  //
+  // Deliberately NOT touched: "Slippage tolerance" is a user setting rather than a quote, and the
+  // trading-fee row is owned by the fee layer and already reads correctly.
+  function setSumRow(label, value) {
+    var rows = $$('.dxa-tsum-row');
+    for (var i = 0; i < rows.length; i++) {
+      var kids = rows[i].children;
+      if (kids.length < 2) continue;
+      if ((kids[0].textContent || '').trim().toLowerCase() !== label) continue;
+      kids[kids.length - 1].textContent = value;
+    }
+  }
+
+  function markSwapUnwired(asset, priceXrp) {
+    if (window.__lxxSwapUnwired) return;
+    window.__lxxSwapUnwired = 1;
+
+    // The two facts we can state. The rate is the page's own live price, and 10 drops is the XRP
+    // Ledger's base transaction fee — both real, neither computed from a quote.
+    setSumRow('rate', (priceXrp != null && isFinite(priceXrp))
+      ? ('1 ' + asset.code + ' = ' + xrp(priceXrp) + ' XRP') : '—');
+    setSumRow('network fee', '0.00001 XRP');
+    setSumRow('price impact', '—');
+    setSumRow('min received', '—');
+    // The LIMIT pane is the same panel's other tab and carries its own mock: "Filled when
+    // APT/USDC ≤ 4.18". It is hidden until the tab is clicked, which is exactly why it survived the
+    // first pass — a check that only reads what is on screen cannot see it.
+    setSumRow('filled when', '—');
+
+    // The invented amounts. Emptied rather than zeroed: a 0 reads as a computed quote.
+    $$('.dxa-trade-card input').forEach(function (i) {
+      try { i.value = ''; i.setAttribute('placeholder', '0.00'); } catch (e) {}
+    });
+
+    // NOT A TIMER FIGHT. The first version set `disabled` and relabelled the button, then re-applied
+    // on an 800ms interval. It lost: the design owns this button and rewrites its text and its
+    // disabled state from the connection state continuously, so the marker attribute was still on
+    // the element while the text read "Connect wallet" and `disabled` was false. Two timers writing
+    // one element is a race, and the one that ships last wins at random.
+    //
+    // So nothing here writes the button's own text or disabled flag. Three things that cannot be
+    // undone by a re-render instead:
+    //
+    //   1. CSS, injected once. A stylesheet rule is not something their render loop touches, and
+    //      pointer-events:none means the control cannot be operated however it is relabelled.
+    //   2. A capture-phase listener on WINDOW, which beats any handler bound later or on document —
+    //      the same reason the row-click hijack had to be caught there. This is what actually
+    //      guarantees no order is ever submitted from this page.
+    //   3. Our own note beside the button, saying why. The design does not know this element
+    //      exists, so it survives — and a control that simply does nothing, with no explanation,
+    //      is the failure mode this project has already been bitten by.
+    if (!document.getElementById('lxx-dxa-off-css')) {
+      var st = document.createElement('style');
+      st.id = 'lxx-dxa-off-css';
+      // `button.` prefix, not a bare class. pointer-events took effect at equal specificity but
+      // opacity did not — the design carries its own !important opacity on this button, and among
+      // !important declarations of equal specificity the later one wins. One extra element in the
+      // selector settles it without touching the design's stylesheet.
+      st.textContent = 'button.dxa-trade-cta{opacity:.55!important;pointer-events:none!important}'
+        + '.lxx-dxa-offnote{margin:8px 2px 0;font-size:13px;line-height:1.5;opacity:.75;text-align:center}';
+      document.head.appendChild(st);
+    }
+
+    window.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest && e.target.closest('.dxa-trade-cta');
+      if (!b) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }, true);
+
+    $$('.dxa-trade-cta').forEach(function (b) {
+      // `data-lxdis="1"` is the design's OWN disabled marker — the stylesheet already carries
+      // `.dxa-trade-cta[data-lxdis="1"]{opacity:.55}` — so this is the hook it expects for this
+      // state, and it is the right thing to set whatever else happens.
+      //
+      // MEASURED, AND HONEST ABOUT IT: the button still renders at full opacity. Another layer
+      // writes `opacity:1!important;cursor:pointer!important` as an INLINE style and rewrites it
+      // continuously, and inline !important outranks both the design's rule and ours. Chasing it
+      // with our own timer is the race this code deliberately stepped out of.
+      //
+      // The dimming is the only thing lost. The control is genuinely inert — pointer-events:none
+      // from the injected sheet, and the capture-phase listener above means no click reaches any
+      // handler — and the note below says so in words, which is what a reader actually needs.
+      try {
+        b.setAttribute('data-lxdis', '1');
+        b.style.setProperty('opacity', '.55', 'important');
+        b.style.setProperty('cursor', 'not-allowed', 'important');
+      } catch (e) {}
+
+      if (b.parentNode && !b.parentNode.querySelector('.lxx-dxa-offnote')) {
+        var n = el('div', 'lxx-dxa-offnote', 'Trading from this page is not enabled yet.');
+        b.parentNode.insertBefore(n, b.nextSibling);
+      }
+    });
+  }
+
   function load() {
     var asks = $('#dxaObAsks') || $('#mdxaObAsks');
     if (!asks) return;                                  // not this page
@@ -9413,6 +9523,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     paintLabels(asset);
     watchSide(asset);
 
+    // BEFORE the feeds, not after. These rows carry another chain's numbers until something
+    // overwrites them, so the window between load and the first response is exactly when a reader
+    // would see "1 APT = 0.23659 USDC". The rate is filled in below once a real price arrives.
+    markSwapUnwired(asset, null);
+
     // Details and book are independent: a token with no market still has an identity, and a book
     // is still a book if the stats feed is down. One failing must not blank the other.
     fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(asset.issuer + '-' + currencyOf(asset.code)))
@@ -9421,6 +9536,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         window.__lxxAssetData = (d && d.ok) ? d : null;
         paintHeader(asset, window.__lxxAssetData);
         paintStats(window.__lxxAssetData);
+        // The one quote figure that is real: the page's own live price, same source as the header.
+        // `price`, not `p` — the payload names it in full, and reading the wrong key here would
+        // have left the rate on an em dash while looking like it had been wired.
+        var p = window.__lxxAssetData && window.__lxxAssetData.price;
+        if (p != null && isFinite(p)) {
+          setSumRow('rate', '1 ' + asset.code + ' = ' + xrp(p) + ' XRP');
+        }
       })
       .catch(function () { paintHeader(asset, null); paintStats(null); });
 
