@@ -140,11 +140,14 @@
   // 90% of the wallet moves the number 90% as much. It assumes the balances were the same a week ago,
   // which is the same assumption any "portfolio change" makes without a balance history to read.
   function paintTotal(totUsd, ch7) {
-    var vs = $('.value-side');
+    // Resolved by wallet.js, which is injected just above this file, because the phone's hero uses
+    // different class names entirely — see the note on totalBlock() there. Keying on `.value-side`
+    // meant this returned immediately on mobile and the design's fabricated total stood.
+    var vs = (window.lxxTotals && window.lxxTotals()) || null;
     if (!vs || !data || !(data.usd > 0)) return;
     var xrpTot = totUsd / data.usd;
 
-    var vEl = vs.querySelector('.value');
+    var vEl = vs.value;
     if (vEl) {
       // The unit is the design's own span inside .value. NOT matched on .lxp: that class is added by
       // the Stellar wallet layer, which this build strips, so keying on it found nothing and left the
@@ -157,11 +160,11 @@
       if (unit) unit.textContent = 'XRP';
     }
 
-    var sub = vs.querySelector('.sub-value');
+    var sub = vs.sub;
     if (sub) sub.textContent = '≈ ' + money(totUsd) + ' USD';
 
     if (ch7 == null || !isFinite(ch7)) return;
-    var pill = vs.querySelector('.delta-pill');
+    var pill = vs.pill;
     if (pill) {
       // wallet.js hides this while the mock is cleared, so it has to be un-hidden here rather than
       // left invisible with correct text inside it.
@@ -173,7 +176,7 @@
       pill.classList.toggle('up', ch7 >= 0);
       pill.classList.toggle('down', ch7 < 0);
     }
-    var sec = vs.querySelector('.delta-secondary');
+    var sec = vs.secondary;
     if (sec) {
       // The XRP the change is worth: today's total minus what the same holdings were worth.
       var was = xrpTot / (1 + ch7 / 100);

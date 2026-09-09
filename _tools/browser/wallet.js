@@ -432,23 +432,49 @@
   // and is self-evidently not a balance; a stale number from another chain reads as your money. This
   // layer knows the holdings but not their prices, so it cannot fill the total itself — it can only
   // make sure nothing false occupies the slot while prices.js is on its way.
-  function clearTotalMock() {
+  // THE HERO'S TOTAL EXISTS IN TWO SHAPES, and only one was ever addressed.
+  //
+  // Desktop is `.value-side` wrapping `.value` / `.sub-value`. The PHONE has no `.value-side` at
+  // all — it is `.portfolio-value` (with the unit in a `.unit` span) and `.portfolio-sub`. So both
+  // the clear below and prices.js's paintTotal returned on their first line, and a phone showed the
+  // design's mock permanently: "31,108.45 APT" as the largest number on the page, "≈ $12,847.62
+  // USD" under it, "+11.08%" and "+3,114.20 APT" beside it. Four fabricated figures describing
+  // someone's holdings, on the wallet page, in another chain's asset, and never replaced.
+  //
+  // Resolved in ONE place and published, because prices.js needs exactly the same four elements and
+  // two copies of this lookup is two things to update when a variant changes.
+  function totalBlock() {
     var vs = $('.value-side');
-    if (!vs || vs.getAttribute('data-lxxcleared')) return;
-    var v = vs.querySelector('.value');
+    if (vs && vs.querySelector('.value')) {
+      return {
+        root: vs, value: vs.querySelector('.value'), sub: vs.querySelector('.sub-value'),
+        pill: vs.querySelector('.delta-pill'), secondary: vs.querySelector('.delta-secondary')
+      };
+    }
+    var pv = $('.portfolio-value');
+    if (!pv) return null;
+    return {
+      root: pv.parentElement || pv, value: pv, sub: $('.portfolio-sub'),
+      pill: $('.delta-pill'), secondary: $('.delta-secondary')
+    };
+  }
+  try { window.lxxTotals = totalBlock; } catch (e) {}
+
+  function clearTotalMock() {
+    var b = totalBlock();
+    if (!b || b.root.getAttribute('data-lxxcleared')) return;
+    var v = b.value;
     if (v) {
       var unit = v.querySelector('span');
       var first = v.firstChild;
       if (first && first.nodeType === 3) first.nodeValue = '— ';
+      else v.insertBefore(document.createTextNode('— '), v.firstChild);
       if (unit) unit.textContent = 'XRP';
     }
-    var sub = vs.querySelector('.sub-value');
-    if (sub) sub.textContent = '';
-    var pill = vs.querySelector('.delta-pill');
-    if (pill) { pill.style.visibility = 'hidden'; }
-    var sec = vs.querySelector('.delta-secondary');
-    if (sec) sec.textContent = '';
-    vs.setAttribute('data-lxxcleared', '1');
+    if (b.sub) b.sub.textContent = '';
+    if (b.pill) { b.pill.style.visibility = 'hidden'; }
+    if (b.secondary) b.secondary.textContent = '';
+    b.root.setAttribute('data-lxxcleared', '1');
 
     // prices.js may already have fetched and given up because this list was still empty when its
     // response landed. Nudging it here closes that race from the side that knows the rows now exist.
