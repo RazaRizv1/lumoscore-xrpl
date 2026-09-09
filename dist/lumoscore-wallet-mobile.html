@@ -9127,10 +9127,73 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }).catch(function () { /* leave the design's block alone rather than empty it on a failure */ });
   }
 
+  // THE PORTFOLIO CHART IS THE DESIGN'S, AND NOTHING HERE EVER WIRED IT.
+  //
+  // This layer never touched the hero chart, so what shipped was the template's drawing: a plotted
+  // line, a readout, and an axis reading "May 16 · May 18 · May 20 · May 22" — four months stale,
+  // above a value that reads an em dash. A chart with dates on it is read as history, and this one
+  // is not the account's history; it is not anyone's.
+  //
+  // Honest rather than removed, on the same call as the swap panel and Create Pool. A real one
+  // needs balance history, and the XRP Ledger does not hand that over — it has to be reconstructed
+  // by replaying account_tx, which is a feature, not a fix.
+  //
+  // The timeframe buttons are left alone deliberately: they are the design's, they change nothing
+  // now, and the note directly under the chart is what explains the panel.
+  function clearMockChart() {
+    var side = $('.chart-side') || document;
+    var axis = side.querySelector ? side.querySelector('.chart-axis') : null;
+    if (axis) axis.textContent = '';                     // the stale May dates
+
+    var svg = $('.mini-chart') || (side.querySelector && side.querySelector('svg'));
+    if (svg && svg.querySelectorAll) {
+      [].forEach.call(svg.querySelectorAll('path'), function (p) { p.setAttribute('d', ''); });
+      [].forEach.call(svg.querySelectorAll('circle'), function (c) { c.setAttribute('r', '0'); });
+    }
+
+    var host2 = svg && svg.parentElement;
+    if (host2 && !host2.querySelector('.lxx-wchart-note')) {
+      if (getComputedStyle(host2).position === 'static') host2.style.position = 'relative';
+      var n = document.createElement('div');
+      n.className = 'lxx-wchart-note';
+      n.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;'
+        + 'justify-content:center;text-align:center;padding:0 18px;font-size:13.5px;opacity:.6;'
+        + 'pointer-events:none';
+      n.textContent = 'Portfolio history is not available yet.';
+      host2.appendChild(n);
+    }
+  }
+
+  // THE MONEY DIALOGS CARRY THE DESIGN'S BALANCES, AND ONLY ONE OF THEM GETS REWRITTEN.
+  //
+  // write.js sets `.field-label .meta` for the FROM field only — by design, it is the field a MAX
+  // button reads. Every other one keeps what the template shipped, and the template's numbers are
+  // another chain's: measured in the Send dialog, "Balance: 25,420.18 APT" and
+  // "Balance: 4,200.00 USDC" sat beside the real "Balance: 0.923838 XRP".
+  //
+  // Hidden today, because the picker currently offers only XRP. That is not a reason to leave them:
+  // a wrong balance inside a dialog that moves money is one selector change away from being read,
+  // and this project has already shipped mock that was invisible right up until it was not.
+  //
+  // Blanked, not deleted, and blanked at LOAD so write.js still fills in the ones it owns whenever
+  // a dialog opens — the design's element stays exactly where the layer expects to find it.
+  function clearMockBalances() {
+    // querySelectorAll directly: this file defines `$` and NOT `$$`. Written as `$$` first, which
+    // `node -c` accepts happily — it is a runtime reference, not a syntax error — and it would have
+    // thrown inside load() and taken the whole wallet page down with it.
+    [].forEach.call(document.querySelectorAll('.field-label .meta'), function (m) {
+      if (/Balance:/i.test(m.textContent || '')) m.textContent = 'Balance: —';
+    });
+  }
+
   function load() {
     var h = host();
     if (!h) return;                                      // not a wallet page
     lift();
+    // Before the wallet check: the mock must not survive a signed-out page or a failed read, the
+    // same ordering the pool page needed.
+    clearMockChart();
+    clearMockBalances();
     var a = addr();
     if (!a) { note(h, 'Connect a wallet to see your balances.'); return; }
 
