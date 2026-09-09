@@ -6947,6 +6947,95 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // The design's column headers name the quote asset, and the page composes them from a variable
   // that still said XLM. Set explicitly here: this layer decides what the numbers are quoted in, so
   // it is the thing that should label them.
+  // ---- pagination --------------------------------------------------------------------------------
+  //
+  // THE PAGER WAS THE DESIGN'S, AND IT WAS FURNITURE. Clicking "2" did nothing at all: this layer
+  // fetched 50 rows, rendered all of them, and never touched the buttons. The numbers under them
+  // were the template's own and did not even agree with each other — "Showing 1–50 of 142 pairs"
+  // beside eight page buttons, which would be 400 rows.
+  //
+  // Rebuilt from the real row count. The design's markup is reused exactly as it ships — First,
+  // Prev, numbers, an ellipsis, Next, Last — so nothing new is introduced; only how many buttons
+  // there are and what they do.
+  var PER = 50;
+  var pageNo = 1;
+
+  function setPageInfo(from, to, total) {
+    var shown = $('#dexMkShown');
+    if (shown) shown.textContent = from + '–' + to;
+    // The total is the SECOND <strong> in the line and carries no id of its own:
+    //   Showing <strong id="dexMkShown">1–50</strong> of <strong>142</strong> pairs
+    // querySelectorAll, not `$$` — this file defines `$` only. Written as `$$` first, exactly as in
+    // wallet.js an hour earlier; `node -c` passes it both times because it is a runtime reference.
+    var strongs = document.querySelectorAll('.dex-mk-page-info strong');
+    if (strongs.length > 1) strongs[strongs.length - 1].textContent = String(total);
+  }
+
+  function buildPager(h, d, pages) {
+    var pager = $('.dex-mk-pager');
+    if (!pager) return;
+
+    // Keep the design's own First/Prev/Next/Last buttons — they carry its icons — and rebuild only
+    // the numbers between them.
+    var kids = [].slice.call(pager.children);
+    var first = kids[0], prev = kids[1];
+    var next = kids[kids.length - 2], last = kids[kids.length - 1];
+    kids.forEach(function (k) { if (k !== first && k !== prev && k !== next && k !== last) k.remove(); });
+
+    function numBtn(n) {
+      var b = document.createElement('button');
+      b.className = 'dex-mk-pgbtn' + (n === pageNo ? ' active' : '');
+      b.textContent = String(n);
+      b.addEventListener('click', function () { renderPage(h, d, n); });
+      return b;
+    }
+    // ASCENDING. Each insert lands immediately before `next`, so a descending loop stacks the
+    // numbers backwards — it shipped once reading "2 1", which the page-2 check caught.
+    for (var n = 1; n <= pages; n++) pager.insertBefore(numBtn(n), next);
+
+    function nav(btn, target, disabled) {
+      if (!btn) return;
+      var clone = btn.cloneNode(true);            // drops any listener a previous render attached
+      btn.parentNode.replaceChild(clone, btn);
+      clone.disabled = !!disabled;
+      clone.style.opacity = disabled ? '.4' : '';
+      if (!disabled) clone.addEventListener('click', function () { renderPage(h, d, target); });
+    }
+    nav(first, 1, pageNo === 1);
+    nav(prev, pageNo - 1, pageNo === 1);
+    nav(next, pageNo + 1, pageNo === pages);
+    nav(last, pages, pageNo === pages);
+
+    // The whole pager is pointless with one page, and the design has no state for that.
+    pager.style.display = pages > 1 ? '' : 'none';
+  }
+
+  function renderPage(h, d, n) {
+    var total = d.rows.length;
+
+    // NO PAGER, NO PAGING. The phone build has no .dex-mk-pager at all — checked on the served
+    // page at 375px: pagerPresent false, a card list and no table. Paging a list with no controls
+    // would have hidden rows 51-100 behind a button that does not exist, which is worse than what
+    // was there before this change (it fetched 50 and showed all 50). So the phone shows the whole
+    // hundred and the desktop pages them.
+    var paged = !!$('.dex-mk-pager');
+    var per = paged ? PER : total;
+    var pages = Math.max(1, Math.ceil(total / per));
+    pageNo = Math.min(Math.max(1, n), pages);
+
+    var from = (pageNo - 1) * per;
+    var to = Math.min(from + per, total);
+
+    h.node.innerHTML = '';
+    var make = h.kind === 'table' ? row : mkCard;
+    // The rank passed through is the ABSOLUTE position, so page 2 starts at #51 rather than
+    // restarting at #1 — the number means "51st by volume", not "first row I drew".
+    for (var i = from; i < to; i++) h.node.appendChild(make(d.rows[i], i + 1, d.usd));
+
+    setPageInfo(from + 1, to, total);
+    buildPager(h, d, pages);
+  }
+
   function headers() {
     // THE TRADES COLUMN HAD A CELL IN EVERY ROW AND NO HEADER.
     //
@@ -7060,17 +7149,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     claimRowClicks();
     note(h, 'Reading the XRP Ledger…');
 
-    fetch('/lxapi/xrpltokens?n=50').then(function (r) { return r.json(); }).then(function (d) {
+    // n=100, which is the endpoint's own ceiling — the worker takes one upstream page of 100 and
+    // clamps with Math.min(100, ...). It is also parity with Stellar: lumoscore.com/trade/stellar
+    // shows exactly two pages of 50, so matching it costs no extra upstream request. Asking for
+    // more would mean additional pages against xrpl.to's 333-a-day budget, which is a bigger
+    // decision than a pager.
+    fetch('/lxapi/xrpltokens?n=100').then(function (r) { return r.json(); }).then(function (d) {
       reveal();
       if (!d || !d.ok || !d.rows.length) { note(h, 'Market data is unavailable right now.'); return; }
       window.__lxxTradeData = d;
 
-      h.node.innerHTML = '';
-      var make = h.kind === 'table' ? row : mkCard;
-      for (var i = 0; i < d.rows.length; i++) h.node.appendChild(make(d.rows[i], i + 1, d.usd));
-
-      var shown = $('#dexMkShown');
-      if (shown) shown.textContent = '1–' + d.rows.length;
+      renderPage(h, d, 1);
 
       var grid = $('#dexMoverGrid') || $('#mdxMoverList');
       if (grid) {
