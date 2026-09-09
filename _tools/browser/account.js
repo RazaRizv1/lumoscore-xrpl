@@ -213,7 +213,14 @@
     var sub = $('#accSub');
     if (sub) sub.textContent = a;
     var net = $('#accNet');
-    if (net) net.textContent = 'XRP Ledger';
+    // The TITLE too, not just the text. This line used to set only textContent, so the badge kept
+    // the design's tooltip naming the OTHER chain — hovering the network badge on an XRP Ledger
+    // account page showed it. A tooltip is invisible to every check that reads rendered text, which
+    // is why it survived: the visible text here was already right.
+    //
+    // The wrong value is deliberately not written out in this comment. A sweep for that literal
+    // should find real markup, not this explanation of why there is none.
+    if (net) { net.textContent = 'XRP Ledger'; net.setAttribute('title', 'XRP Ledger'); }
 
     tableNote($('#accAssetsTbl'), 'Reading the XRP Ledger…');
     tableNote($('#accPoolsTbl'), 'Reading the XRP Ledger…');

@@ -28,7 +28,7 @@ for (const src of [core, page]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
 
-let files = 0, pages = 0;
+let files = 0, pages = 0, netTitles = 0;
 const removed = {};
 for (const k of KILL) removed[k] = 0;
 
@@ -53,6 +53,17 @@ for (const dev of ['desktop', 'mobile']) {
 
     h = stripById(h, ID).html;
 
+    // AND THE SAME TOOLTIP IN THE MARKUP. account.js now sets this title at runtime, but the served
+    // html is what a crawler and a JS-disabled reader get, and it said title="Stellar" on an XRP
+    // Ledger account page. Scoped to the accNet id so no other title is touched, and both orders of
+    // the two attributes are handled because the design's markup order is not ours to rely on.
+    for (const [from, to] of [
+      ['id="accNet" title="Stellar"', 'id="accNet" title="XRP Ledger"'],
+      ['title="Stellar" id="accNet"', 'title="XRP Ledger" id="accNet"'],
+    ]) {
+      if (h.indexOf(from) >= 0) { h = h.split(from).join(to); netTitles++; }
+    }
+
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
     json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
@@ -63,6 +74,7 @@ for (const dev of ['desktop', 'mobile']) {
   fs.writeFileSync(file, data.slice(0, s) + serialized + data.slice(e), 'utf8');
 }
 
-console.log('xrpl account: injected on ' + pages + ' page key(s) across ' + files + ' container(s)');
+console.log('xrpl account: injected on ' + pages + ' page key(s) across ' + files
+  + ' container(s); retitled ' + netTitles + ' network badge(s)');
 for (const k of KILL) console.log('  stripped ' + k + ': ' + removed[k] + ' block(s)');
 if (!pages) console.error('  ! no page carried id="accAssetsTbl" — nothing was wired');
