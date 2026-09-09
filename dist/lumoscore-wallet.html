@@ -12286,7 +12286,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       var inEl = $('.field-amt input', f.from);
       var outEl = $('.field-amt input', f.to);
       var amount = parseFloat(String(inEl && inEl.value).replace(/,/g, ''));
-      if (!(amount > 0)) { if (outEl) outEl.value = ''; swapQuote = null; return; }
+      // Emptying the amount must take the quote with it: a rate left standing from the previous
+      // keystroke is a rate for a trade that is no longer on screen.
+      if (!(amount > 0)) { if (outEl) outEl.value = ''; swapQuote = null; clearSwapQuote(m); swapSay(''); return; }
       if (swapFrom.code === swapTo.code && swapFrom.issuer === swapTo.issuer) {
         swapSay('Pick two different assets.', 'bad'); swapQuote = null; return;
       }
@@ -12454,12 +12456,35 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     }).catch(function () { return 0; });     // no route for the fee: never charge a made-up amount
   }
 
+  // CLEAR THE MOCK QUOTE BEFORE ANYONE CAN READ IT.
+  //
+  // The summary rows are only written when a quote lands, and a quote needs an amount typed — so
+  // until then the dialog stood with the design's Aptos mock in it: "1 APT = 0.4128 USDC", "Route
+  // APT -> USDC (Direct)", "Network fee ~0.00001 APT". A fabricated exchange rate, in another
+  // chain's asset, on the screen where someone decides whether to trade.
+  //
+  // Same reasoning as clearing the portfolio headline in wallet.js: an em dash reads as "not in
+  // yet" and is self-evidently not a rate; a stale number reads as the price you will get.
+  function clearSwapQuote(m) {
+    $$('.swap-rate span', m).forEach(function (sp, i) {
+      sp.innerHTML = '';
+      sp.appendChild(document.createTextNode(i === 0 ? 'Rate ' : 'Slippage: '));
+      var st = document.createElement('strong');
+      st.textContent = i === 0 ? '—' : (SLIP * 100).toFixed(1) + '%';
+      sp.appendChild(st);
+    });
+    swapInfoRow(m, 'route', '—');
+    swapInfoRow(m, 'price impact', '—');
+    swapInfoRow(m, 'network fee', '~0.000012 XRP');
+  }
+
   function wireSwap() {
     swapModals().forEach(function (m) {
       if (m.getAttribute('data-lxw') === '1') return;
       var f = swapFields(m);
       if (!f.from || !f.to) return;
       m.setAttribute('data-lxw', '1');
+      clearSwapQuote(m);
 
       var picks = $$('.asset-pick', m);
       if (picks[0]) picks[0].addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); swapMenu(picks[0], 'from'); });
