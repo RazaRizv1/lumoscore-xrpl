@@ -598,17 +598,16 @@ export async function onRequest(context){
   if (!hit) {
     const passthrough = await next();
     // THE CANONICAL ONLY PROTECTS ROUTED PAGES, and this build ships ~50 that are deliberately NOT
-    // routed: the docs, blog, about, whitepaper and legal pages. See ROUTES in extract_site.js —
-    // they exist once for the company, are already live on the main site, and a second routed copy
-    // here would compete with the originals.
+    // routed: the docs, blog, about, whitepaper and legal pages. See the ROUTES table — they exist
+    // once for the company, are already live on the main site, and a second routed copy here would
+    // compete with the originals.
     //
     // They are still DEPLOYED, though, and on a preview host they are reachable by filename
     // (/lumoscore-docs-swaps answers 200), carry `index, follow`, and have no canonical — because
-    // canonicals are injected on the routed path above, which these never reach. So the one thing
+    // canonicals are injected on the routed path below, which these never reach. So the one thing
     // PRIMARY_ORIGIN exists to prevent was happening for exactly the pages that are pure duplicates.
     //
-    // Keyed on the ORIGIN, so this is inert on lumoscore.com and cannot suppress the real site: if
-    // this project is ever served from the primary origin, the header stops being added.
+    // Keyed on the ORIGIN, so this is inert on the primary domain and cannot suppress the real site.
     try {
       if (url.origin !== PRIMARY_ORIGIN
           && (passthrough.headers.get('content-type') || '').indexOf('text/html') >= 0) {

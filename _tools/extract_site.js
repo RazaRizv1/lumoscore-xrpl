@@ -1041,7 +1041,29 @@ export async function onRequest(context){
   const hit = match(url.pathname);
 
   // not a page route -> let Pages serve it as usual
-  if (!hit) return next();
+  if (!hit) {
+    const passthrough = await next();
+    // THE CANONICAL ONLY PROTECTS ROUTED PAGES, and this build ships ~50 that are deliberately NOT
+    // routed: the docs, blog, about, whitepaper and legal pages. See the ROUTES table — they exist
+    // once for the company, are already live on the main site, and a second routed copy here would
+    // compete with the originals.
+    //
+    // They are still DEPLOYED, though, and on a preview host they are reachable by filename
+    // (/lumoscore-docs-swaps answers 200), carry \`index, follow\`, and have no canonical — because
+    // canonicals are injected on the routed path below, which these never reach. So the one thing
+    // PRIMARY_ORIGIN exists to prevent was happening for exactly the pages that are pure duplicates.
+    //
+    // Keyed on the ORIGIN, so this is inert on the primary domain and cannot suppress the real site.
+    try {
+      if (url.origin !== PRIMARY_ORIGIN
+          && (passthrough.headers.get('content-type') || '').indexOf('text/html') >= 0) {
+        const tagged = new Response(passthrough.body, passthrough);
+        tagged.headers.set('x-robots-tag', 'noindex, nofollow');
+        return tagged;
+      }
+    } catch (e) { /* a header we could not set is not worth failing the request over */ }
+    return passthrough;
+  }
 
   const isMobile = MOBILE.test(request.headers.get('user-agent') || '');
   const wantMobile = isMobile && HAS_MOBILE.has(hit.mobile);
