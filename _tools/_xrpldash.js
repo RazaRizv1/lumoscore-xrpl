@@ -68,7 +68,7 @@ function removeElement(h, openMarker) {
   return { html: h, removed: 0 };                    // unbalanced: leave the markup alone
 }
 
-let files = 0, pages = 0, trendingDropped = 0, gridFixed = 0, orphansFixed = 0, stellarLayers = 0;
+let files = 0, pages = 0, trendingDropped = 0, gridFixed = 0, orphansFixed = 0, stellarLayers = 0, pillsCleared = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -154,6 +154,41 @@ for (const dev of ['desktop', 'mobile']) {
       if (h.indexOf(bad) >= 0 && h.indexOf(good) < 0) { h = h.split(bad).join(good); orphansFixed++; }
     }
 
+    // THE STATIC PILLS STILL CARRIED ANOTHER CHAIN'S NUMBERS.
+    //
+    // paintStats rewrites this row at runtime, and the row is invisible until it does, so nothing
+    // wrong was ever on screen. But the SHIPPED MARKUP said, on a page whose robots meta is
+    // "index, follow":
+    //     Assets 4,234 | Pools 4,521 | Volume 12,532,325 APT | Aptos price $0.245
+    // Aptos volume and an Aptos label on an XRP Ledger dashboard, and $0.245 is XLM's old price
+    // wearing a third chain's name. That is crawlable content, and it is what anyone reading with
+    // JavaScript disabled gets. Real values are 20,367 assets and 30,684 pools.
+    //
+    // It was also load-bearing in a way nobody chose. The row stays hidden ONLY because the
+    // stripped Stellar stylesheet left `.status-row{opacity:0}` behind and paintStats is what
+    // raises it — see the comment there. Deleting that orphaned rule is a completely reasonable
+    // tidy, and it would put the mock on screen on every load. An em dash in the markup means the
+    // safety stops depending on a leftover bug still being there.
+    //
+    // A LABEL IS ONLY TOUCHED WHERE IT NAMES THE WRONG CHAIN. setPill matches on a lowercased
+    // SUBSTRING ('price'), so 'Aptos price' -> 'XRP price' still matches and the runtime is
+    // unaffected; 'Assets', 'Pools' and 'Volume' are already right and keep their text. The
+    // Network/XRP Ledger pill is correct as shipped and is deliberately not in this table.
+    //
+    // Both prior forms are listed so a re-run is a no-op rather than a rewrite, the same reason
+    // _xrplwhead accepts multiple prior forms.
+    for (const [from, to] of [
+      ['Aptos price', 'XRP price'], ['XRP price', 'XRP price'],
+      ['Assets', 'Assets'], ['Pools', 'Pools'], ['Volume', 'Volume'],
+    ]) {
+      const re = new RegExp('(<span class="lbl">)' + from
+        + '(</span>\\s*<span class="val">)[^<]*(</span>)', 'g');
+      h = h.replace(re, function (_m, open, mid, close) {
+        pillsCleared++;
+        return open + to + mid + '—' + close;
+      });
+    }
+
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
     json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
@@ -167,5 +202,5 @@ for (const dev of ['desktop', 'mobile']) {
 console.log('xrpl dashboard: injected on ' + pages + ' page key(s) across ' + files
   + ' container(s); stripped ' + stellarLayers + ' Stellar data layer(s); removed the trending card from ' + trendingDropped
   + ', closed the grid gap on ' + gridFixed + ' and made ' + orphansFixed
-  + ' orphaned lookup(s) safe');
+  + ' orphaned lookup(s) safe; cleared ' + pillsCleared + ' static pill(s) carrying another chain figure');
 if (!pages) console.error('  ! no page carried the dashboard markup — nothing was wired');
