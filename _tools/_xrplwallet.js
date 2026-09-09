@@ -16,6 +16,9 @@ const B = String.fromCharCode(92);
 
 const ID = 'lx-xrplwallet';
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
+// Explorer links, shared with the dashboard so the Bithomp base URL exists once. Before wallet.js,
+// which calls window.lxxExplorer while building each activity row.
+const xp = fs.readFileSync(__dirname + '/browser/explorer.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/wallet.js', 'utf8');
 // Prices fill columns the wallet layer paints, so they ship together and in this order.
 const px = fs.readFileSync(__dirname + '/browser/prices.js', 'utf8');
@@ -26,11 +29,11 @@ const px = fs.readFileSync(__dirname + '/browser/prices.js', 'utf8');
 const { injectCollector } = require(__dirname + '/xrpladdr.js');
 const wr = injectCollector(fs.readFileSync(__dirname + '/browser/write.js', 'utf8'), 'write.js');
 
-for (const src of [core, page, px, wr]) {
+for (const src of [core, xp, page, px, wr]) {
   if (src.indexOf('</' + 'script') >= 0) { console.error('  a source file contains a closing script tag — aborting'); process.exit(1); }
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + xp + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
 
 let files = 0, pages = 0, stellarLayers = 0;
 for (const dev of ['desktop', 'mobile']) {

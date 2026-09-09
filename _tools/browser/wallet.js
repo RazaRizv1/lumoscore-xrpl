@@ -903,6 +903,14 @@
           var a2 = row.querySelector('.a2');
           if (a2) a2.textContent = '';
 
+          // The explorer mark, at the end of the row — the same one the dashboard feed carries, so
+          // both feeds on the site open the same explorer from the same place.
+          try {
+            var xl = window.lxxExplorer && window.lxxExplorer.link(
+              window.lxxExplorer.txHash(t), 'View this transaction on Bithomp');
+            if (xl) row.appendChild(xl);
+          } catch (e) {}
+
           block.appendChild(row);
         });
       }).catch(function () { /* leave the design's block alone rather than empty it on a failure */ });

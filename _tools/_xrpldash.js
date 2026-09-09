@@ -19,13 +19,18 @@ const B = String.fromCharCode(92);
 
 const ID = 'lx-xrpldash';
 const page = fs.readFileSync(__dirname + '/browser/dashboard.js', 'utf8');
+// Explorer links. FIRST, because the feed calls window.lxxExplorer while building each row. Shared
+// with the wallet so the Bithomp base URL exists exactly once in the project.
+const xp = fs.readFileSync(__dirname + '/browser/explorer.js', 'utf8');
 
-if (page.indexOf('</' + 'script') >= 0) {
-  console.error('  dashboard.js contains a closing script tag — aborting');
-  process.exit(1);
+for (const src of [page, xp]) {
+  if (src.indexOf('</' + 'script') >= 0) {
+    console.error('  a source file contains a closing script tag — aborting');
+    process.exit(1);
+  }
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + page + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + xp + '\n' + page + '\n</' + 'script>';
 
 // The dashboard is identified by markup it alone carries. `.status-row` also appears on other
 // pages, so the activity feed is required as well -- guarding on one of them wired six pages the

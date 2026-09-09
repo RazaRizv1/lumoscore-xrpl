@@ -230,6 +230,15 @@
     time.textContent = ago(date);
     row.appendChild(time);
 
+    // The explorer mark, at the end of the row. The stylesheet for it came across with the design
+    // (`.activity-feed-row .lx-actlink`, faded until the row is hovered) and had nothing to style,
+    // because this feed stopped at the timestamp.
+    try {
+      var xl = window.lxxExplorer && window.lxxExplorer.link(
+        window.lxxExplorer.txHash(entry), 'View this transaction on Bithomp');
+      if (xl) row.appendChild(xl);
+    } catch (e) {}
+
     return row;
   }
 
