@@ -136,7 +136,22 @@ for (const dev of ['desktop', 'mobile']) {
       ['function renderTrending(period) {',
         "function renderTrending(period) {\n    if (!document.getElementById('trendingList')) return;"],
     ]) {
-      if (h.indexOf(bad) >= 0) { h = h.split(bad).join(good); orphansFixed++; }
+      // IDEMPOTENCE. The second rule's replacement CONTAINS its own search string — it appends a
+      // guard to a function opening — so on the next build it matched again and appended a SECOND
+      // copy. It had done that on every build since it was written: six copies of the guard were
+      // sitting in the shipped dashboard by the time a re-run of the chain was diffed. A duplicated
+      // guard is harmless, which is exactly why nothing ever surfaced it, and six is not a ceiling,
+      // it is the number of builds so far.
+      //
+      // The gate is DERIVED from the rule rather than written by hand: a replacement that starts
+      // with its search string is appending a suffix, so every already-appended copy comes off
+      // before the rule is applied once. Hand-written skip-gates have three times in this project
+      // silently disabled a rule that was still needed — deriving it cannot fall out of step.
+      if (good.startsWith(bad)) {
+        const applied = bad + good.slice(bad.length);
+        while (h.indexOf(applied) >= 0) h = h.split(applied).join(bad);
+      }
+      if (h.indexOf(bad) >= 0 && h.indexOf(good) < 0) { h = h.split(bad).join(good); orphansFixed++; }
     }
 
     const bi = h.lastIndexOf('</' + 'body>');

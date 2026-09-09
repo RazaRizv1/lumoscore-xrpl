@@ -34,7 +34,21 @@ const B = String.fromCharCode(92);
 const SCRIPT = '<script id="lx-xrplchoosenet">(function(){'
   + 'if(window.lxChooseNetwork)return;'
   + 'function go(target){'
-  + 'var t=target||"lumoscore-home.html";'
+  // The default target is written as the ROUTE, not as the design filename it means.
+  //
+  // It used to say "lumoscore-home.html", and _xrplroutes rewrote it to "/xrpl/dashboard" on every
+  // build — 128 of them, one per page this shim lands on, which was the ENTIRE "route references
+  // rewritten" figure on a chain re-run. That is not a cosmetic complaint: a re-run of the chain is
+  // supposed to report zero, and permanent noise is what stops anyone noticing when a real drift
+  // appears. It was also a live ordering hazard — running this transform ad-hoc AFTER _xrplroutes
+  // left the filename in place, and then the fallback depended on lxCleanUrl being loaded to resolve.
+  //
+  // The route is the one _xrplroutes maps 'home' to (APP_FILE in _tools/_xrplroutes.js). Requiring
+  // that module to read it is not an option — requiring it RUNS the transform.
+  //
+  // This is not a dead default: of the call sites in the built site, 96 pass no argument at all,
+  // 15 pass location.href and only 6 name a target. This line is what almost every one of them uses.
+  + 'var t=target||"/xrpl/dashboard";'
   + 'try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}'
   + 'try{ location.href=t; }catch(_){}'
   + '}'
