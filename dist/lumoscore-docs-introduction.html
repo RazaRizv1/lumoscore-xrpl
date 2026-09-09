@@ -5701,6 +5701,7 @@ window.addEventListener('resize',moveRail);requestAnimationFrame(moveRail);setTi
     return null;
   }
   function rowTarget(el){
+    if(el.closest('.modal-overlay,[data-modal],[role="dialog"]')) return null;
     if(!CONTAINERNAV && !LISTTARGET) return null;
     var r=el.closest('tr,li,[class*="row"],[class*="pair"],[class*="item"],[class*="card"]'); if(!r) return null;
     if(CONTAINERNAV){ var n=r,hop=0; while(n&&hop<7){ var s=((n.id||'')+' '+(typeof n.className==='string'?n.className:'')).toLowerCase();

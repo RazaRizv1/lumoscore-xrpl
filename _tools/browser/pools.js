@@ -371,11 +371,45 @@
     host.appendChild(p);
   }
 
+  // CREATE POOL IS NOT WIRED, AND THE DIALOG NOW SAYS SO.
+  //
+  // Nothing in this project references #createPoolModal: the asset dropdown is gated to
+  // `.lx-cpitem` entries that the stripped Stellar layer used to build and nothing builds now, so it
+  // opens EMPTY, and the submit button has no handler at all. AMMCreate exists in this codebase only
+  // inside the launchpad's mint sequence, where a pool is seeded as part of issuing a token.
+  //
+  // So the dialog opened, offered nothing to pick, and still showed a live "Create Pool & Add
+  // Liquidity" button. browser/bridge.js states the rule for this exact situation — "a button that
+  // looks like it works, on a page about moving money, is the worst thing this file could ship" —
+  // and does the same thing: disable the control and relabel it. No new markup, no new dialog; the
+  // design's own button, saying what is true.
+  //
+  // Building it is a real feature (an AMMCreate the user signs, seeding a live pool with real
+  // funds), and no signature has round-tripped on this build yet. That is RAZA's call, not a gap to
+  // paper over with a picker that leads to a dead button.
+  function markCreatePoolUnwired() {
+    var m = $('#createPoolModal');
+    if (!m || m.getAttribute('data-lxxunwired')) return;
+    m.setAttribute('data-lxxunwired', '1');
+    $$('button', m).forEach(function (b) {
+      var t = (b.textContent || '').trim().toLowerCase();
+      if (!/create pool|add liquidity/.test(t)) return;
+      try {
+        b.setAttribute('disabled', 'disabled');
+        b.setAttribute('aria-disabled', 'true');
+        b.style.opacity = '.55';
+        b.style.pointerEvents = 'none';
+        b.textContent = 'Pool creation is not enabled yet';
+      } catch (e) {}
+    });
+  }
+
   function load() {
     var h = listHost();
     if (!h) return;                                    // not the Pools page
     lift();
     claimRowClicks();
+    markCreatePoolUnwired();
     paintHeroCopy();
     noteHost(h, 'Reading the XRP Ledger…');
 
