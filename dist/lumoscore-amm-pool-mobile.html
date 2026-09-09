@@ -6384,6 +6384,26 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return { name: name, amount: Number(a.value), issuer: a.issuer, currency: a.currency };
   }
 
+  // The phone has no `.ph-price` wrapper — the figure sits in a block whose heading reads "Pool
+  // Price". Found by that heading rather than by a class, because the class is `.value`, which is
+  // far too common to select on directly.
+  function priceBlock(which) {
+    var sel = which === 'value' ? '.value' : '.sub, .s';
+    var labels = $$('div, span, h3, h4');
+    for (var i = 0; i < labels.length; i++) {
+      var t = (labels[i].textContent || '').trim();
+      if (t.length > 40 || !/^pool price/i.test(t)) continue;
+      // Climb from the label until an ancestor actually holds the figure. `closest('div')` was
+      // wrong: on a label that is itself a div it returns that same element, which contains only
+      // the words "Pool Price" — so the lookup found nothing and the mock stood.
+      for (var n = labels[i]; n && n !== document.body; n = n.parentElement) {
+        var found = n.querySelector(sel);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
   function setStat(match, value, sub) {
     var cells = $$('.ph-stat');
     for (var i = 0; i < cells.length; i++) {
@@ -6561,10 +6581,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     }
 
     var price = xrpSide && tok && tok.amount ? (xrpSide.amount / tok.amount) : null;
-    var pv = $('.ph-price .v');
+    // The phone labels this block "Pool Price" and puts the figure in `.value` / `.sub`, not
+    // `.ph-price .v` / `.s`. Without the fallback it kept the design's "0.000713 APT".
+    var pv = $('.ph-price .v') || $('.ph-price .value');
+    if (!pv) pv = priceBlock('value');
     if (pv) pv.textContent = price != null ? (num(price, 6) + ' XRP') : '—';
     var feePct = amm.trading_fee != null ? (amm.trading_fee / 1000) : null;
-    var ps = $('.ph-price .s');
+    var ps = $('.ph-price .s') || $('.ph-price .sub');
+    if (!ps) ps = priceBlock('sub');
     // The trading fee is a RATE, so it rides with the price rather than in a cell labelled
     // 'Fees Collected (24h)' -- which is an amount. Putting 0.625% there read as 0.625 XRP earned.
     if (ps) ps.textContent = (price != null ? ('per ' + tok.name) : '')
@@ -6578,8 +6602,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var lp = amm.lp_token ? Number(amm.lp_token.value) : null;
     // Both of these are 24h AMOUNTS the ledger does not keep. Saying so beats filling them with a
     // rate or a supply figure that happens to be nearby.
-    setStat('volume', '—', 'not kept by the ledger');
-    setStat('fees collected', '—', 'not kept by the ledger');
+    setStat('vol', '—', 'not kept by the ledger');
+    setStat('fees', '—', 'not kept by the ledger');
     setStat('participant', '—', lp != null ? (num(lp, 2) + ' LP tokens outstanding') : '');
 
     // The RAW ledger amounts ride along beside the display ones. side() turns them into names and
@@ -6995,8 +7019,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var ps = $('.ph-price .s');
     if (ps) ps.textContent = msg;
     setStat('liquidity', '—', '');
-    setStat('volume', '—', '');
-    setStat('fees collected', '—', '');
+    setStat('vol', '—', '');
+    setStat('fees', '—', '');
     setStat('participant', '—', '');
     participants(msg);
   }
