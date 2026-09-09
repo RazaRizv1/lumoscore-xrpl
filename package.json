@@ -8,6 +8,7 @@
     "serve": "node serve.js 8082",
     "test": "node _tools/xrpl-core.test.js",
     "predeploy": "node _tools/predeploy_check.js",
-    "deploy": "npx wrangler pages deploy dist --project-name=lumoscore-xrpl --branch=main --commit-dirty=true"
+    "deploy": "npx wrangler pages deploy dist --project-name=lumoscore-xrpl --branch=main --commit-dirty=true",
+    "idem": "node _tools/idempotence_check.js"
   }
 }
