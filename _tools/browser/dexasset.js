@@ -131,6 +131,55 @@
       var nodes = document.querySelectorAll(sels[i]);
       for (var j = 0; j < nodes.length; j++) nodes[j].classList.add('lxda');
     }
+    safetyNet();
+  }
+
+  // THE WHOLE PAGE IS REVEALED BY A TRANSITION, AND A TRANSITION CAN FAIL TO RUN.
+  //
+  // Measured on the served page: `.dxa-grid` — which contains the name, the issuer card, the chart
+  // and the trade panel, i.e. everything — sits at computed opacity 0 with two CSSTransitions
+  // (opacity and transform, 550ms) reported as `running` at currentTime 0. The tabs bar and the
+  // Recent Exchanges panel are the same, via `[data-lcmu]{opacity:0}` lifted by `.lcmu-in`.
+  //
+  // So the page's VISIBILITY depends on an animation completing. That is fail-closed: when the
+  // transition does not run, the markup is perfect, the data is correct, there is no console error,
+  // and the reader sees nothing. This project has shipped that exact outage before —
+  // prefers-reduced-motion masking a deleted card-reveal driver, 2026-08-14 — and the rule written
+  // down afterwards was that a mechanism whose failure mode is "the feature never happens" must not
+  // be load-bearing.
+  //
+  // ONLY A NET, NOT AN OVERRIDE. It runs once, late, and forces opacity only on elements STILL at
+  // zero — so where the animation works it has already finished and this changes nothing, and the
+  // design's fade is preserved. Content beats choreography when the two disagree.
+  //
+  // Deliberately a timer and not requestAnimationFrame: rAF is exactly the kind of frame-driven
+  // mechanism that is not firing when this situation arises.
+  function safetyNet() {
+    if (window.__lxxDxaNet) return;
+    window.__lxxDxaNet = 1;
+    setTimeout(function () {
+      var main = document.querySelector('main') || document.body;
+      var nodes = main.querySelectorAll('.dxa-grid, [data-lcmu], .dxa-trade-card, .tabs-bar, .panel');
+      for (var i = 0; i < nodes.length; i++) {
+        try {
+          var n = nodes[i];
+          if (getComputedStyle(n).opacity !== '0') continue;          // the reveal did its job
+
+          // SETTING opacity IS NOT ENOUGH, and the first version of this net proved it: the trade
+          // card lifted and the grid did not. A CSS transition sits ABOVE !important in the cascade,
+          // so a transition frozen at its from-value keeps winning however the inline style is
+          // written. (Recorded in this project before as "a stuck transition outranking
+          // !important".) The transition has to be ENDED, not out-shouted.
+          n.style.setProperty('transition', 'none', 'important');
+          if (n.getAnimations) {
+            var as = n.getAnimations();
+            for (var k = 0; k < as.length; k++) { try { as[k].finish(); } catch (_) {} }
+          }
+          n.style.setProperty('opacity', '1', 'important');
+          n.style.setProperty('transform', 'none', 'important');
+        } catch (e) {}
+      }
+    }, 1500);
   }
 
   function paintBook(node, list, side) {
