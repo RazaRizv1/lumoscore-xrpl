@@ -637,17 +637,34 @@
     }
   }
 
-  // REMOVED ON RAZA'S EXPLICIT INSTRUCTION, 2026-09-09. This used to append
-  // "Market data Data by xrpl.to" under the table.
+  // ATTRIBUTION. Removed on instruction 2026-09-09, RESTORED on instruction 2026-09-10.
   //
-  // The concern was raised before removing it and RAZA confirmed: my notes record xrpl.to's
-  // attribution as a condition of their API terms, which is why the line existed and why the
-  // endpoint still returns `attribution` and `attributionUrl`. That is a commercial decision and
-  // it is RAZA's to make, not mine — but the reason is written here so nobody later reads this as
-  // an oversight and quietly re-adds it, or removes the server fields thinking they are unused.
+  // What changed in between was the evidence, not the opinion. The first removal was decided against
+  // a note of mine saying attribution was "contractually required". The next day, building the
+  // sparklines, xrpl.to's own API returned this in its response body, verbatim:
   //
-  // Kept as a no-op rather than deleted, so the call sites still read as a deliberate choice.
-  function attribution() { /* attribution intentionally not rendered */ }
+  //     Required: display a visible link to https://xrpl.to on any surface showing this data —
+  //     <a href="https://xrpl.to">Data by xrpl.to</a>. Terms: https://xrpl.to/docs
+  //
+  // That is the provider stating the condition itself, and by then this page was showing MORE of
+  // their data than when it came out — the whole 7d sparkline column arrives from them.
+  //
+  // So it is back, and the endpoints were left returning `attribution` / `attributionUrl` through
+  // the removal, which is why restoring it is this one function rather than an archaeology exercise.
+  function attribution(d) {
+    if (!d || !d.attribution || document.getElementById('lxx-attr-dex')) return;
+    var host = $('.dex-mk-foot') || $('.dex-mk-table-wrap');
+    if (!host) return;
+    var p = el('p'); p.id = 'lxx-attr-dex';
+    p.style.cssText = 'margin:10px 2px 0;font-size:11.5px;opacity:.6;font-weight:500';
+    p.appendChild(document.createTextNode('Market data '));
+    var a = el('a', null, d.attribution);
+    a.href = d.attributionUrl || 'https://xrpl.to';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
+    p.appendChild(a);
+    host.appendChild(p);
+  }
 
   // The design carries an anti-flash gate from the Stellar build:
   //     #dexMkTbody:not(.lxd) tr { visibility: hidden }

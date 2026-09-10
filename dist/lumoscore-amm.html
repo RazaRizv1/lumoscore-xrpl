@@ -6432,11 +6432,23 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
   }
 
-  // REMOVED ON RAZA'S EXPLICIT INSTRUCTION, 2026-09-09 — see the fuller note in browser/trade.js.
-  // The concern that xrpl.to's terms require attribution was raised first and RAZA confirmed. The
-  // endpoint still returns `attribution` and `attributionUrl`, so do not delete those server fields
-  // thinking they are unused. Kept as a no-op so the call site reads as a deliberate choice.
-  function attribution() { /* attribution intentionally not rendered */ }
+  // Removed on instruction 2026-09-09, RESTORED on instruction 2026-09-10 once xrpl.to's own API
+  // was found stating the requirement verbatim in its response body — see the fuller note in
+  // browser/trade.js.
+  function attribution(d) {
+    if (!d || !d.attribution || document.getElementById('lxx-attr-pools')) return;
+    var host = $('#panelAllPools') || $('#panelAll');
+    if (!host) return;
+    var p = el('p'); p.id = 'lxx-attr-pools';
+    p.style.cssText = 'margin:10px 2px 0;font-size:11.5px;opacity:.6;font-weight:500';
+    p.appendChild(document.createTextNode('Pool data '));
+    var a = el('a', null, d.attribution);
+    a.href = d.attributionUrl || 'https://xrpl.to';
+    a.target = '_blank'; a.rel = 'noopener';
+    a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
+    p.appendChild(a);
+    host.appendChild(p);
+  }
 
   // CREATE POOL IS NOT WIRED, AND THE DIALOG NOW SAYS SO.
   //
