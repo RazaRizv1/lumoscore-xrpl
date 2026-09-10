@@ -36,6 +36,24 @@ const PHRASES = [
     'Only send XRP and XRP Ledger assets to this address'],
   ['Trustlines let you hold non-native assets on Aptos',
     'Trustlines let you hold issued assets on the XRP Ledger'],
+
+  // THE TRUSTLINE COST, on the $LUMOS page's own trustline dialog — the one the "LUMOS Trustline
+  // gate" opens. It read "Reserves 0.5 APT from your account": another chain's asset AND another
+  // chain's number, in the sentence that tells someone what opening a trust line will cost them.
+  //
+  // 0.2 XRP is the owner-reserve increment, and a trust line is one owned object. Read off the
+  // ledger, not from documentation: server_info reports base 1 / inc 0.2 today, and the wallet layer
+  // takes the live value for anything it calculates. Only this piece of static prose states it as a
+  // constant — if an amendment ever moves it, this line is what goes stale, and it is the reason the
+  // figure appears exactly once rather than being repeated across the site.
+  ['Reserves 0.5 APT from your account', 'Reserves 0.2 XRP from your account'],
+
+  // A route label in the same dialog family, naming the pay side as Aptos.
+  ['APT → LUMOS (Direct)', 'XRP → LUMOS (Direct)'],
+
+  // The design's baked balance, sitting above a MAX button in a dialog that moves money. Blanked
+  // rather than invented, exactly as the wallet's own field-label balances were.
+  ['Balance: 25,420.18 APT', 'Balance: —'],
   ['Initialize a new pool on Aptos AMM', 'Initialize a new pool on the XRP Ledger AMM'],
   ['Launch tokens on the Aptos DEX', 'Launch tokens on the XRP Ledger DEX'],
   ['Trade pairs on Aptos DEX', 'Trade pairs on the XRP Ledger DEX'],
@@ -90,6 +108,51 @@ let files = 0, pages = 0, hits = 0;
 const per = {};
 const unseen = new Set(PHRASES.map(function (p) { return p[0]; }));
 
+// COPY THAT LIVES INSIDE A SCRIPT, and the narrow exception it needs.
+//
+// The rule below is "never script bodies", and that is the right default: script text is logic and
+// ledger data, and a blanket rewrite there is how a real token coded XLM or an issuer genuinely
+// named "Stellar Lumens" would get mangled.
+//
+// But the $LUMOS trustline dialog is written by the design's OWN script:
+//     if (sub) sub.textContent = 'Reserves 0.5 APT from your account';
+// so fixing the markup achieved nothing — the script puts the Aptos wording back the moment the
+// dialog opens, which is why the phrase survived a pass that reported 74 replacements.
+//
+// Handled as an explicit list of EXACT QUOTED LITERALS rather than by relaxing the rule: each entry
+// includes the surrounding quote characters, so it can only ever match a complete string literal
+// that the design authored, never a fragment of an identifier or a value read from an API.
+const SCRIPT_LITERALS = [
+  ["'Reserves 0.5 APT from your account'", "'Reserves 0.2 XRP from your account'"],
+  ['"Reserves 0.5 APT from your account"', '"Reserves 0.2 XRP from your account"'],
+];
+
+// [regex with a leading capture group, replacement]. The capture is whatever preceded the match and
+// is put back untouched — it exists only to prove the match was not part of a bigger number.
+const GUARDED = [
+  [/(^|[^0-9.])0\.5 APT/g, '0.2 XRP'],
+];
+
+let scriptFixes = 0;
+
+// Every rule's search string, so the page-level gate above can never skip a page a rule would have
+// matched. Built from the rule tables rather than typed out.
+const TRIGGERS = PHRASES.map(function (p) { return p[0]; })
+  .concat(SCRIPT_LITERALS.map(function (p) { return p[0]; }))
+  .concat(['Aptos']);                       // rewriteBare works on the bare word
+
+function rewriteScriptLiterals(html) {
+  return html.replace(/<script\b[\s\S]*?<\/script>/gi, function (block) {
+    let b = block;
+    for (const [from, to] of SCRIPT_LITERALS) {
+      if (b.indexOf(from) < 0) continue;
+      b = b.split(from).join(to);
+      scriptFixes++;
+    }
+    return b;
+  });
+}
+
 // Rewrite only TEXT between tags: never attributes, never script or style bodies.
 function rewriteText(html) {
   let out = '', i = 0, changed = 0;
@@ -123,6 +186,14 @@ const GATE = (function () {
     const w = String(from).split(/[^A-Za-z]+/).filter(Boolean)[0];
     if (w) words.add(w);
   }
+  // The GUARDED rules have to feed the gate as well, or a chunk that only one of them matches is
+  // skipped before it is ever tested. "0.5 APT" happens to survive today because another phrase
+  // contributes the word APT — that is luck, not derivation, and this file's whole point is that a
+  // gate which does not come from the rules eventually disagrees with them.
+  for (const [re] of GUARDED) {
+    const w = String(re.source).split(/[^A-Za-z]+/).filter(Boolean)[0];
+    if (w) words.add(w);
+  }
   return new RegExp([...words].join('|'));
 })();
 
@@ -138,6 +209,24 @@ function applyPhrases(text) {
     unseen.delete(from);
     s = parts.join(to);
   }
+
+  // GUARDED RULES, for a phrase that is a SUBSTRING OF A LARGER NUMBER.
+  //
+  // "Each trustline reserves <strong>0.5 APT</strong> from your account" is real prose on 30 pages,
+  // and the figure sits alone inside its own tag — so the text chunk here is exactly "0.5 APT" and
+  // a plain rule would fix it. But the same eight characters also occur inside "−340.5 APT", a mock
+  // activity amount, three times in MARKUP where a plain rule would reach it and quietly produce
+  // "−340.2 XRP" — a corrupted number rather than a corrected one.
+  //
+  // Measured before writing the rule: 30 standalone, 3 digit-prefixed. Hence the lookbehind-by-hand.
+  for (const [re, to] of GUARDED) {
+    s = s.replace(re, function (m0, pre) {
+      n++;
+      per[String(re)] = (per[String(re)] || 0) + 1;
+      return pre + to;
+    });
+  }
+
   return { s: s, n: n };
 }
 
@@ -187,10 +276,30 @@ for (const dev of ['desktop', 'mobile']) {
   for (const key of Object.keys(json)) {
     if (typeof json[key] !== 'string') continue;
     const before = json[key];
-    if (before.indexOf('Aptos') < 0) continue;
-    const a = rewriteText(before);
+
+    // THE OUTER GATE IS DERIVED TOO, and it was not.
+    //
+    // It read `before.indexOf('Aptos') < 0 -> continue`, which is the exact hand-written gate this
+    // file already warns about thirty lines up — the note about "Extra APT" being silently skipped.
+    // The warning was written for the INNER gate and the outer one was left as it was, so it stayed
+    // a live example of the thing it cautions against: the trustline literal says
+    // "Reserves 0.5 APT", with no "Aptos" anywhere in it, so any page carrying that string and not
+    // the word would have been skipped without a sound.
+    //
+    // Now the trigger list comes from the rules themselves and cannot fall out of step with them.
+    if (!TRIGGERS.some(function (t) { return before.indexOf(t) >= 0; })) continue;
+
+    // The script-literal count has to travel INTO `total`, not just into the summary line. It did
+    // not at first, and `if (!total) continue` then threw the rewritten page away: the build
+    // cheerfully reported "+3 in script literals" while writing none of them to disk, because the
+    // markup half of that page had nothing left to change.
+    const sBefore = scriptFixes;
+    const withScripts = rewriteScriptLiterals(before);
+    const sDone = scriptFixes - sBefore;
+
+    const a = rewriteText(withScripts);
     const b = rewriteBare(a.html);
-    const total = a.n + b.n;
+    const total = a.n + b.n + sDone;
     if (!total) continue;
     json[key] = b.html;
     hits += total;
@@ -204,7 +313,7 @@ for (const dev of ['desktop', 'mobile']) {
   }
 }
 
-console.log('xrpl copy pass: ' + hits + ' replacement(s) on ' + pages + ' page key(s) across '
+console.log('xrpl copy pass: ' + hits + ' replacement(s) (+' + scriptFixes + ' in script literals) on ' + pages + ' page key(s) across '
   + files + ' container(s)');
 for (const k of Object.keys(per).sort((a, b) => per[b] - per[a])) {
   console.log('   x' + String(per[k]).padStart(4) + '  ' + k.slice(0, 62));
