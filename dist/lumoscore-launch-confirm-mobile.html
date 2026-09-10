@@ -4925,10 +4925,120 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
   }
 
+  // Paint the confirmation from what mint.js actually recorded.
+  //
+  // BY TEXT SUBSTITUTION, not by selector. The placeholders are scattered across .result-name, .sub,
+  // .desc, .mono-mini and a couple of unclassed spans — "in APT / APT pool", "seeded with 900M APT
+  // · 69.4 APT" — and targeting each one is a list that goes stale the moment the design moves a
+  // node. Replacing the known placeholder STRINGS in the page's text nodes reaches all of them and
+  // cannot miss one that moved.
+  //
+  // "Aptos Coin" is replaced BEFORE the bare ticker, or the word Aptos would be half-rewritten into
+  // "XRP Coin" by the shorter rule.
+  function paintConfirm() {
+    var res = null;
+    try { res = JSON.parse(localStorage.getItem('lumos.launch.result') || 'null'); } catch (e) {}
+
+    var addr = '';
+    try { addr = localStorage.getItem('lumos.address') || ''; } catch (e) {}
+    var shortAddr = addr && addr.length > 12 ? (addr.slice(0, 6) + '…' + addr.slice(-4)) : addr;
+
+    // NO RESULT MEANS NOBODY JUST LAUNCHED ANYTHING, and this page's headline is "Launched
+    // Successfully! Your token is now live on the XRP Ledger". Em-dashing the fields is not enough:
+    // the first version of this did exactly that and left a success announcement standing over
+    // "— / XRP pool seeded with 900M —", which still tells a visitor something happened.
+    //
+    // Same call the review step already makes for a missing draft — there is nothing to confirm
+    // without a result, so it goes back to the step that makes one.
+    if (!res || !(res.name || res.ticker || res.currency)) {
+      try { location.replace('/xrpl/launchpad'); } catch (e) {}
+      return;
+    }
+
+    var name = (res && res.name) || '—';
+    var tick = (res && (res.ticker || res.currency)) || '—';
+    var who = shortAddr || '—';
+
+    var iss = (res && res.issuer) || '';
+    var shortIss = iss && iss.length > 12 ? (iss.slice(0, 6) + '…' + iss.slice(-4)) : (iss || '—');
+    var hash = (res && res.hashes && res.hashes[0]) || '';
+    var shortHash = hash ? (hash.slice(0, 7) + '…' + hash.slice(-6)) : '—';
+
+    // ORDER MATTERS, AND SO DOES NOT TREATING EVERY "APT" THE SAME.
+    //
+    // The first pass here replaced every APT with the new token's ticker and produced
+    // "in SWEEP / SWEEP pool" and "seeded with 900M SWEEP · 69.4 SWEEP" — nonsense in the first
+    // case and a WRONG STATEMENT in the second, because that 69.4 is the native amount, not the
+    // token's. On the design the placeholder token IS the native asset, so the same three letters
+    // mean two different things depending on where they sit. The composite phrases are therefore
+    // rewritten before the bare ticker rule ever runs.
+    var pairs = [
+      ['Aptos Coin', name],
+      ['0x0a72…c5e5', who],                        // the wallet that approved, not the issuer
+
+      // The pool is the new token against the NATIVE asset.
+      ['APT / APT pool', tick + ' / XRP pool'],
+      // …and the second amount on the seeded line is the native side.
+      [/·\s*([\d.,]+)\s*APT\b/g, '· $1 XRP'],
+
+      [/\bAPT\b/g, tick],
+
+      // Any remaining 0x placeholder on this page is an ISSUER field — there are two, under
+      // "ISSUER" and "Asset issuer" — and the approving wallet was already handled above.
+      [/0x[0-9a-fA-F]{2,}…[0-9a-fA-F]{2,}/g, shortIss],
+      // The design's fake transaction hash.
+      [/\ba8c3f2d…91bd2e\b/g, shortHash],
+    ];
+
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    for (var n = walker.nextNode(); n; n = walker.nextNode()) {
+      var p = n.parentNode;
+      if (!p || p.tagName === 'SCRIPT' || p.tagName === 'STYLE') continue;
+      if (n.nodeValue && n.nodeValue.trim()) nodes.push(n);
+    }
+    for (var i = 0; i < nodes.length; i++) {
+      var v = nodes[i].nodeValue, before = v;
+      for (var j = 0; j < pairs.length; j++) {
+        var from = pairs[j][0], to = pairs[j][1];
+        v = (typeof from === 'string') ? v.split(from).join(to) : v.replace(from, to);
+      }
+      if (v !== before) nodes[i].nodeValue = v;
+    }
+
+    // The issuer address, which is the one thing on this page a person must be able to keep. It is
+    // recorded by mint.js and had nowhere to appear.
+    if (res && res.issuer) {
+      var host = $('.result-name');
+      if (host && host.parentNode && !$('.lxx-issuer-line')) {
+        var d = document.createElement('div');
+        d.className = 'lxx-issuer-line';
+        d.style.cssText = 'margin-top:6px;font-size:12.5px;opacity:.75;'
+          + 'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all';
+        d.textContent = 'Issuer ' + res.issuer;
+        host.parentNode.insertBefore(d, host.nextSibling);
+      }
+    }
+  }
+
   function load() {
     // The cost panel exists on BOTH the form and the review step, so the guard cannot be the form's
     // ticker field -- that is what left the review page quoting 173.50 XRP.
     var isForm = !!$('#tokenTicker');
+
+    // THE CONFIRMATION PAGE WAS EXCLUDED BY THIS GUARD, and the comment directly below has always
+    // said the confirm page is filled from the draft. It never was: confirm has no #tokenTicker and
+    // no .cost-row, so load() returned on the first line and nothing on that page was ever painted.
+    //
+    // What shipped instead, VISIBLY, on the screen shown immediately after someone has spent real
+    // money issuing a token:
+    //     Aptos Coin ·  APT  ·  in APT / APT pool
+    //     Approved with XRP Ledger wallet 0x0a72…c5e5
+    //     APT / APT pool seeded with 900M APT · 69.4 APT
+    // Another chain's token name, another chain's ticker, and an EVM address for the wallet that
+    // approved it. mint.js has been writing `lumos.launch.result` all along and nothing read it.
+    if ($('.result-name')) { paintConfirm(); return; }
+
     if (!isForm && !$('.cost-row')) return;                       // not a launchpad page
 
     // A REVIEW STEP WITH NO DRAFT DESCRIBES A TOKEN NOBODY ASKED FOR.
