@@ -93,6 +93,22 @@ const PHRASES = [
     + 'of an asset you have no trust line for simply fails rather than waiting. Add the trust line '
     + 'first, then cash the Check.'],
 
+  // FOUND BY SWEEPING THE FIVE PAGES NOBODY HAD LOOKED AT — bridge, launchpad, rewards, $LUMOS and
+  // account. Not one of these is visible on load; every one lives in a dialog or a help panel, which
+  // is why looking at the pages found nothing and a markup scan found all of it.
+
+  // Bridge, the "how it works" step. Names the source chain as Aptos on an XRP Ledger bridge.
+  ['(Aptos and your destination network)', '(the XRP Ledger and your destination network)'],
+
+  // Launchpad, the additional-liquidity help. The page where someone commits real money to an
+  // issuance, telling them to add another chain's asset to the pool.
+  // BOTH PHRASINGS, because the phone's copy is not the desktop's: "to THE initial liquidity pool"
+  // on desktop and "to YOUR initial liquidity pool" on mobile. Fixing one left the other shipping,
+  // which is the same mobile-container trap that has caught this project before — the counts said
+  // 2 pages fixed and 1 still matching, and that single leftover was the phone.
+  ['Add extra APT to the initial liquidity pool', 'Add extra XRP to the initial liquidity pool'],
+  ['Add extra APT to your initial liquidity pool', 'Add extra XRP to your initial liquidity pool'],
+
   ['Aptos wallet', 'XRP Ledger wallet'],
   ['Aptos DEX', 'XRP Ledger DEX'],
   ['Aptos AMM', 'XRP Ledger AMM'],
@@ -133,12 +149,36 @@ const GUARDED = [
   [/(^|[^0-9.])0\.5 APT/g, '0.2 XRP'],
 ];
 
+// LITERALS THAT INCLUDE THEIR OWN TAG, because the text alone is too dangerous to match.
+//
+// The launchpad's amount field carries `<span class="input-suffix">APT</span>` — the UNIT beside a
+// box someone types a number into. The text chunk is the three letters "APT", and a phrase rule for
+// that would rewrite every APT on the site, including ones inside prose the list above handles
+// deliberately. Anchoring to the class turns an unsafe rule into an exact one.
+const MARKUP_LITERALS = [
+  ['class="input-suffix">APT<', 'class="input-suffix">XRP<'],
+];
+
+let markupFixes = 0;
+
+function rewriteMarkupLiterals(html) {
+  let h = html;
+  for (const [from, to] of MARKUP_LITERALS) {
+    if (h.indexOf(from) < 0) continue;
+    const parts = h.split(from);
+    markupFixes += parts.length - 1;
+    h = parts.join(to);
+  }
+  return h;
+}
+
 let scriptFixes = 0;
 
 // Every rule's search string, so the page-level gate above can never skip a page a rule would have
 // matched. Built from the rule tables rather than typed out.
 const TRIGGERS = PHRASES.map(function (p) { return p[0]; })
   .concat(SCRIPT_LITERALS.map(function (p) { return p[0]; }))
+  .concat(MARKUP_LITERALS.map(function (p) { return p[0]; }))
   .concat(['Aptos']);                       // rewriteBare works on the bare word
 
 function rewriteScriptLiterals(html) {
@@ -293,9 +333,9 @@ for (const dev of ['desktop', 'mobile']) {
     // not at first, and `if (!total) continue` then threw the rewritten page away: the build
     // cheerfully reported "+3 in script literals" while writing none of them to disk, because the
     // markup half of that page had nothing left to change.
-    const sBefore = scriptFixes;
-    const withScripts = rewriteScriptLiterals(before);
-    const sDone = scriptFixes - sBefore;
+    const sBefore = scriptFixes, mBefore = markupFixes;
+    const withScripts = rewriteMarkupLiterals(rewriteScriptLiterals(before));
+    const sDone = (scriptFixes - sBefore) + (markupFixes - mBefore);
 
     const a = rewriteText(withScripts);
     const b = rewriteBare(a.html);
@@ -313,7 +353,7 @@ for (const dev of ['desktop', 'mobile']) {
   }
 }
 
-console.log('xrpl copy pass: ' + hits + ' replacement(s) (+' + scriptFixes + ' in script literals) on ' + pages + ' page key(s) across '
+console.log('xrpl copy pass: ' + hits + ' replacement(s) (+' + scriptFixes + ' script, +' + markupFixes + ' tag-bound) on ' + pages + ' page key(s) across '
   + files + ' container(s)');
 for (const k of Object.keys(per).sort((a, b) => per[b] - per[a])) {
   console.log('   x' + String(per[k]).padStart(4) + '  ' + k.slice(0, 62));
