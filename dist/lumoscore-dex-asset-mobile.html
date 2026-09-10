@@ -9305,11 +9305,23 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return '$' + (v / 1e9).toFixed(2) + 'B';
   }
 
+  // THE PHONE LABELS THESE CELLS DIFFERENTLY, and an exact match silently skipped one.
+  //
+  // Desktop reads "24h volume"; the phone reads just "Volume". The comparison was `=== name`, so on
+  // mobile that cell was never found, never painted, and kept the design's mock — displaying
+  // "4.14M APT" beside three cells that HAD been painted, which is the most convincing way for a
+  // wrong number to appear: surrounded by right ones.
+  //
+  // Matched either way round now, so a shorter phone label finds a longer desktop key. Scoped to
+  // .stat-cell, where the label set is small and unambiguous.
   function cellByLabel(name) {
     var cells = document.querySelectorAll('.stat-cell');
+    var want = String(name).toLowerCase();
     for (var i = 0; i < cells.length; i++) {
       var l = cells[i].querySelector('.lbl');
-      if (l && l.textContent.trim().toLowerCase() === name) return cells[i];
+      if (!l) continue;
+      var got = l.textContent.trim().toLowerCase();
+      if (got === want || got.indexOf(want) >= 0 || want.indexOf(got) >= 0) return cells[i];
     }
     return null;
   }
@@ -9426,8 +9438,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function paintLabels(asset) {
     var code = asset.code;
 
-    // Buy / Sell buttons name the token being traded, not the quote asset.
-    $$('.dxa-side-btn').forEach(function (b) {
+    // Buy / Sell buttons name the token being traded, not the quote asset. Substring selector for
+    // the same reason as the chips below: the phone's are `.mdxa-side-btn`.
+    $$('[class*="dxa-side-btn"]').forEach(function (b) {
       var sell = b.classList.contains('sell');
       // Written as a text node so the button keeps whatever the design put inside it.
       var t = (sell ? 'Sell ' : 'Buy ') + code;
@@ -9441,12 +9454,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // desktop panel and the phone's), so indexing every .dxa-trade-asset on the page would read the
     // Buy/Sell state of one card and apply it to the other — and with only one card visible at a
     // time, the wrong one is the one nobody would notice was wrong.
+    // THE PHONE PREFIXES THESE CLASSES, so every desktop selector here matched nothing on mobile
+    // and the pay-side chip kept reading "APT" under "You pay" — on the panel someone trades in.
+    // Measured at 375px: `.dxa-trade-card` absent, `.dxa-trade-asset` count 0, and the real element
+    // is `.mdxa-trade-asset` inside `.mdxa-pane-swap`.
+    //
+    // `[class*="dxa-trade-asset"]` matches BOTH, because "mdxa-trade-asset" contains the desktop
+    // name as a substring — the phone's naming is the desktop's with a letter in front, so one
+    // selector covers the pair instead of two lists that drift apart.
     var cards = $$('.dxa-trade-card');
+    if (!cards.length) cards = $$('.mdxa-pane-swap');
     if (!cards.length) cards = [document];
     cards.forEach(function (card) {
-      var sellActive = !!card.querySelector('.dxa-side-btn.sell.active');
+      var sellActive = !!card.querySelector('[class*="dxa-side-btn"].sell.active');
       var order = sellActive ? [code, 'XRP'] : ['XRP', code];
-      $$('.dxa-trade-asset', card).forEach(function (c, i) {
+      $$('[class*="dxa-trade-asset"]', card).forEach(function (c, i) {
         if (i > 1) return;
         // data-logoed keeps the logo layer from eating a 1-5 character ticker.
         try { c.setAttribute('data-logoed', '1'); c.removeAttribute('data-logo'); c.style.background = ''; } catch (e) {}
@@ -9469,7 +9491,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (window.__lxxSideWatch) return;
     window.__lxxSideWatch = 1;
     document.addEventListener('click', function (e) {
-      var b = e.target && e.target.closest && e.target.closest('.dxa-side-btn');
+      var b = e.target && e.target.closest && e.target.closest('[class*="dxa-side-btn"]');
       if (!b) return;
       setTimeout(function () { paintLabels(asset); }, 0);   // after the design flips .active
     }, true);
@@ -9512,6 +9534,31 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       if ((kids[0].textContent || '').trim().toLowerCase() !== label) continue;
       kids[kids.length - 1].textContent = value;
     }
+  }
+
+  // TWO BLOCKS THAT EXIST ONLY ON THE PHONE, and neither was ever painted.
+  //
+  // Found by re-checking today's trade-asset work at 375px rather than trusting the desktop pass:
+  //
+  //   * `.ohlc-strip` — "O 4.55 APT  H 4.62 APT  L 4.54 APT  C 4.60 APT". Four fabricated prices in
+  //     another chain's asset, across the top of the chart. There is no desktop equivalent, which is
+  //     exactly why it survived.
+  //   * `.asset-description` — 251 characters describing USD Coin and Circle, shown on the RLUSD
+  //     page. Not merely the wrong chain: the wrong company's prose under someone else's token.
+  //
+  // Both are BLANKED rather than invented. /lxapi/xrpltoken carries no open/close and no description
+  // — the fields simply are not in the payload — so there is nothing honest to put there. An em dash
+  // says "not known"; leaving the design's text says something false and specific.
+  function paintMobileOnly() {
+    var strip = $('.ohlc-strip');
+    if (strip) {
+      $$('.v', strip).forEach(function (v) { v.textContent = '—'; });
+    }
+
+    // Removed, not emptied: an empty paragraph leaves a gap where a description was, and there is
+    // no description to have. If a source is ever added, this is the hook to fill instead.
+    var desc = $('.asset-description');
+    if (desc && desc.parentNode) desc.parentNode.removeChild(desc);
   }
 
   function markSwapUnwired(asset, priceXrp) {
@@ -9617,6 +9664,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // overwrites them, so the window between load and the first response is exactly when a reader
     // would see "1 APT = 0.23659 USDC". The rate is filled in below once a real price arrives.
     markSwapUnwired(asset, null);
+    paintMobileOnly();
 
     // Details and book are independent: a token with no market still has an identity, and a book
     // is still a book if the stats feed is down. One failing must not blank the other.
