@@ -6809,21 +6809,34 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     c0.appendChild(cell);
     tr.appendChild(c0);
 
-    // 1: last price, in XRP with the dollar value under it
+    // 1: last price. The denomination toggle SWAPS the headline and the sub-line rather than hiding
+    //    one of them — the same thing lumoscore.com does, checked by clicking it: XLM mode reads
+    //    "5.6406 / $1.0000" and $ mode reads "$1.0000 / 5.6406 XLM".
     var c1 = el('td');
-    var pr = el('div', 'dex-mk-price', xrp(t.p));
-    if (usd != null) {
-      var sub = el('span', 'sub');
-      sub.appendChild(el('span', 'lc-money', money(t.p * usd)));
-      pr.appendChild(sub);
+    var pr;
+    if (DEN === 'usd' && usd != null) {
+      pr = el('div', 'dex-mk-price');
+      pr.appendChild(el('span', 'lc-money', money(t.p * usd)));
+      var subx = el('span', 'sub', xrp(t.p) + ' XRP');
+      pr.appendChild(subx);
+    } else {
+      pr = el('div', 'dex-mk-price', xrp(t.p));
+      if (usd != null) {
+        var sub = el('span', 'sub');
+        sub.appendChild(el('span', 'lc-money', money(t.p * usd)));
+        pr.appendChild(sub);
+      }
     }
     c1.appendChild(pr);
     tr.appendChild(c1);
 
-    // 2: 24h change
+    // 2: 24h change, IN THE CHOSEN DENOMINATION — a different number, not a relabel.
+    //    A token priced in XRP can be flat in dollars while XRP itself moves, and Stellar shows
+    //    exactly that: USDC reads +6.59% against XLM and +0.00% against the dollar on the same row.
     var c2 = el('td');
-    var ch = el('div', 'dex-mk-change', pct(t.d) || '—');
-    if (t.d != null) ch.style.color = t.d >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
+    var dv = changeIn(t.d);
+    var ch = el('div', 'dex-mk-change', pct(dv) || '—');
+    if (dv != null) ch.style.color = dv >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
     c2.appendChild(ch);
     tr.appendChild(c2);
 
@@ -7062,6 +7075,75 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   //    width. Shortened to match. The wording is a judgement call — say the word and it changes.
   var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
 
+  // ---- the $ / XRP denomination toggle -------------------------------------------------------------
+  //
+  // Stellar's markup ships this control; ours does not. `.lx-dnsw` exists in this build as CSS ONLY,
+  // because Stellar's own dex layer BUILDS the element at runtime and that layer is stripped here —
+  // so the styling was inherited and the thing it styles never existed. Built here to match, which
+  // is why it needs no CSS of its own.
+  //
+  // What it actually does, established by clicking the real one rather than guessing from the
+  // aria-label: the price cell swaps its headline and sub-line, the 24h change becomes a DIFFERENT
+  // NUMBER computed in the chosen denomination, and the two column headers relabel. Nothing else in
+  // the table moves — volume, liquidity and high/low stay as they are on Stellar too.
+  var DEN = 'xrp';
+
+  // XRP's own 24h move, needed to express a token's change in dollars. Without it the $ column
+  // would silently show the XRP-denominated number under a $ heading, which is worse than not
+  // having the toggle at all — so `changeIn` returns null and the cell reads an em dash instead.
+  var XRP24 = null;
+
+  function changeIn(d) {
+    if (DEN !== 'usd') return d;
+    if (d == null || XRP24 == null) return null;
+    // Composed, not added: a token up 10% against an XRP that is down 5% is not up 5% in dollars.
+    return ((1 + d / 100) * (1 + XRP24 / 100) - 1) * 100;
+  }
+
+  function denomLabel() { return DEN === 'usd' ? '($)' : '(XRP)'; }
+
+  function buildDenToggle(h, d) {
+    var controls = $('.dex-mk-controls');
+    if (!controls || $('.lx-dnsw')) return;
+
+    var wrap = el('div', 'lx-dnsw');
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Show price change in');
+
+    function mk(mode, label) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('data-dn', mode);
+      b.textContent = label;
+      b.addEventListener('click', function () {
+        if (DEN === mode) return;
+        DEN = mode;
+        paintDenToggle();
+        headers();
+        renderPage(h, d, pageNo);              // same page, re-denominated
+      });
+      return b;
+    }
+    wrap.appendChild(mk('usd', '$'));
+    wrap.appendChild(mk('xrp', 'XRP'));
+
+    // After the filter chips and before the search box, which is where Stellar has it.
+    var search = $('#dexMkSearch');
+    if (search && search.parentNode === controls) controls.insertBefore(wrap, search);
+    else controls.appendChild(wrap);
+
+    paintDenToggle();
+  }
+
+  function paintDenToggle() {
+    var btns = document.querySelectorAll('.lx-dnsw button');
+    for (var i = 0; i < btns.length; i++) {
+      var on = btns[i].getAttribute('data-dn') === DEN;
+      btns[i].setAttribute('aria-pressed', on ? 'true' : 'false');
+      btns[i].classList.toggle('on', on);      // `.lx-dnsw button.on` is already styled here
+    }
+  }
+
   function fixControls() {
     var ctas = $('.lx-dctas');
     var controls = $('.dex-mk-controls');
@@ -7177,7 +7259,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }
     }
 
-    var map = { 'th-price': 'Last Price (XRP)', 'th-change': '24h Change (XRP)',
+    // Price and change follow the denomination toggle; high/low does NOT, because it does not on
+    // Stellar either — its header still reads (XLM) in $ mode.
+    var map = { 'th-price': 'Last Price ' + denomLabel(), 'th-change': '24h Change ' + denomLabel(),
       'th-hl': 'Day High / Low (XRP)' };
     for (var k in map) {
       var th = $('.dex-mk-table th.' + k);
@@ -7275,6 +7359,19 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       if (!d || !d.ok || !d.rows.length) { note(h, 'Market data is unavailable right now.'); return; }
       window.__lxxTradeData = d;
 
+      // XRP's own 24h move, for the dollar-denominated change column. Fire-and-forget: the toggle
+      // is usable immediately in XRP mode, and if this never lands the $ column shows em dashes
+      // rather than the XRP number wearing a $ heading.
+      fetch('/lxapi/xrplprices?codes=XRP')
+        .then(function (r) { return r.json(); })
+        .then(function (pj) {
+          var e = pj && pj.t && pj.t.XRP;
+          if (e && isFinite(e[1])) XRP24 = Number(e[1]);
+          if (DEN === 'usd') renderPage(h, d, pageNo);
+        })
+        .catch(function () {});
+
+      buildDenToggle(h, d);
       renderPage(h, d, 1);
 
       var grid = $('#dexMoverGrid') || $('#mdxMoverList');
