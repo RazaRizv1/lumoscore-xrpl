@@ -468,15 +468,41 @@
   // Cleared UNCONDITIONALLY and BEFORE any wallet check or fetch, which is the only ordering that
   // closes both: the mock must not survive a missing wallet, a failed request, or an early return.
   // The same reason the pool chart is cleared before its fetch rather than on success.
+  // THE PHONE HAS ITS OWN POSITION PANEL, with its own class family, and it kept the whole mock.
+  //
+  // Desktop is `.my-position` / `.mp-*`; the phone is `.my-position-m` / `.mpm-*`. Every selector
+  // here named only the first, so at 375px the panel still read:
+  //     Position Value 0.18%  $1,247.50  ▲ $32.18 (2.65%) · all time
+  //     LUMOS 874,521   APT 623.40   Earned fees +$8.92   LP tokens 23,415.82
+  // on a pool where nothing is held, with another chain's asset in it.
+  //
+  // NOTE THIS IS NOT THE PREFIX RELATIONSHIP dexasset.js could exploit: "mpm-amount" does not
+  // contain "mp-amount", so `[class*="mp-amount"]` would miss it entirely. Each family has to be
+  // named, which is precisely why one of them was forgotten.
+  function bothPos(desktopSuffix, phoneSuffix) {
+    return $$('.my-position .mp-' + desktopSuffix + ', .my-position-m .mpm-' + (phoneSuffix || desktopSuffix));
+  }
+
   function clearMockPosition() {
-    var amt = $('.my-position .mp-amount');
-    if (amt) amt.textContent = addr() ? 'No position' : 'Connect a wallet';
-    var pnl = $('.my-position .mp-pnl');
+    var connected = addr();
+    bothPos('amount').forEach(function (a) {
+      a.textContent = connected ? 'No position' : 'Connect a wallet';
+    });
+
     // Replaced wholesale: the "· all time" is a bare text node beside the span, so blanking only
     // the span would leave the page reading "— · all time".
-    if (pnl) pnl.textContent = '—';
-    var pill = $('.position-share-pill');
-    if (pill) pill.textContent = '0%';
+    bothPos('pnl').forEach(function (p) { p.textContent = '—'; });
+    // The phone puts the delta straight into .pnl-up/.pnl-down with no .mpm-pnl wrapper.
+    $$('.my-position-m .pnl-up, .my-position-m .pnl-down').forEach(function (p) { p.textContent = '—'; });
+
+    $$('.position-share-pill, .my-position-m .mpm-share').forEach(function (s) { s.textContent = '0%'; });
+
+    // Amounts, fees and the asset tickers. The tickers matter as much as the numbers: leaving them
+    // is how "APT" ends up labelling a row on an XRP Ledger pool.
+    $$('.my-position-m .mpm-asset-amt, .my-position-m .mpm-fee-val').forEach(function (v) {
+      v.textContent = '—';
+    });
+    $$('.my-position-m .mpm-asset-name').forEach(function (n) { n.textContent = '—'; });
   }
 
   function loadPosition() {
@@ -556,20 +582,26 @@
     if (!p) return;
     var share = (p.lpSupply > 0 && p.myLp > 0) ? (p.myLp / p.lpSupply) : 0;
 
-    var amts = $$('.my-position .mp-asset-amt');
+    // BOTH PANELS. Every selector below used to name the desktop family only, so a real position
+    // painted on desktop and never reached the phone at all — the phone would have shown the
+    // cleared placeholder no matter what the account actually held.
+    var amts = bothPos('asset-amt');
     [[p.a, p.balAmt = p.a.amount * share], [p.b, p.b.amount * share]].forEach(function (x, i) {
       if (amts[i]) amts[i].textContent = num(x[1], 6);
     });
-    $$('.my-position .mp-asset-name').forEach(function (n, i) {
-      n.textContent = i === 0 ? p.a.name : p.b.name;
+    bothPos('asset-name').forEach(function (n, i) {
+      // Two panels means up to four elements, so the index is taken per pair rather than absolutely.
+      n.textContent = (i % 2 === 0) ? p.a.name : p.b.name;
     });
-    var fees = $$('.my-position .mp-fee-val');
+    var fees = bothPos('fee-val');
     if (fees[0]) fees[0].textContent = '—';
     if (fees[1]) fees[1].textContent = num(p.myLp, 6);
-    var pill = $('.position-share-pill');
-    if (pill) pill.textContent = share > 0 ? ((share * 100).toFixed(4) + '%') : '0%';
-    var amt = $('.my-position .mp-amount');
-    if (amt) amt.textContent = share > 0 ? (num(p.myLp, 4) + ' LP') : 'No position';
+    $$('.position-share-pill, .my-position-m .mpm-share').forEach(function (pill) {
+      pill.textContent = share > 0 ? ((share * 100).toFixed(4) + '%') : '0%';
+    });
+    bothPos('amount').forEach(function (amt) {
+      amt.textContent = share > 0 ? (num(p.myLp, 4) + ' LP') : 'No position';
+    });
   }
 
   function dwInputs() {
