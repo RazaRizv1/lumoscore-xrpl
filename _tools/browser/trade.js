@@ -1,7 +1,7 @@
 // Trade page: the XRP Ledger's most-traded tokens.
 //
 // THIS REPLACES A LAYER THAT WAS ACTIVELY WRONG, not one that was merely missing. Before this, the
-// inherited `lx-dexmain` was still running on /xrpl/trade and filling the market table from Horizon:
+// inherited `lx-dexmain` was still running on /trade/xrpl and filling the market table from Horizon:
 // 36 rows of real STELLAR assets -- USDC/circle.com, SHX/stronghold.co, yXLM, AQUA -- priced in XLM,
 // under a page titled "Trade on the XRP Ledger DEX". Live, plausible and entirely the wrong chain.
 // That is worse than the blank wallet page, which at least showed nothing.
@@ -29,10 +29,24 @@
     return e;
   }
 
+  // PLAIN DECIMALS, as lumoscore.com's price columns print them (RAZA 2026-09-15: "in Last Price column, we're not using
+  // this notation") — "0.00000000000764", never "7.64e-12". Four significant digits, like the rest of the column.
+  // SUBSCRIPT ZEROS for the very small (RAZA 2026-09-15: "instead of 0.00000000000000000070 just use subscript notation"):
+  // 0.0₁₈70 — the subscript counts the zeros after the decimal point, then four significant digits.
+  function subZero(v) {
+    var ex = v.toExponential(3).split('e');
+    var zeros = -parseInt(ex[1], 10) - 1;
+    var m = ex[0].replace('.', '').replace(/0+$/, '');
+    if (m.length < 2) m += '0';
+    var SUB = '₀₁₂₃₄₅₆₇₈₉';
+    return '0.0' + String(zeros).split('').map(function (ch) { return SUB.charAt(+ch); }).join('') + m;
+  }
+  function tiny(v) { return v < 1e-8 ? subZero(v) : v.toFixed(Math.min(20, Math.ceil(-Math.log10(v)) + 3)); }
+
   function money(v) {
     if (v == null || !isFinite(v)) return '—';
     if (v === 0) return '$0';
-    if (v < 0.000001) return '$' + v.toExponential(2);
+    if (v < 0.000001) return '$' + tiny(v);
     if (v < 0.01) return '$' + v.toPrecision(3);
     if (v < 1000) return '$' + v.toFixed(2);
     if (v < 1e6) return '$' + (v / 1e3).toFixed(1) + 'K';
@@ -41,7 +55,7 @@
 
   function xrp(v) {
     if (v == null || !isFinite(v)) return '—';
-    if (v < 0.000001) return v.toExponential(2);
+    if (v > 0 && v < 0.000001) return tiny(v);
     if (v < 1) return v.toPrecision(4);
     if (v < 1e6) return v.toLocaleString('en-US', { maximumFractionDigits: 4 });
     return (v / 1e6).toFixed(2) + 'M';
@@ -140,6 +154,20 @@
     window.addEventListener('click', function (e) {
       var t = e.target;
       if (!t || !t.closest) return;
+
+      // SORTING HAS TO BE HANDLED HERE, not on the header itself. A listener bound to the `th` never
+      // gets the chance: the design claims clicks anywhere in a list page on WINDOW CAPTURE and
+      // routes them through its own resolver, so the first click on "Last Price" reloaded the page
+      // instead of sorting it. Window capture is the only phase early enough — the same reason the
+      // row navigation below lives here rather than on the rows.
+      var th = t.closest('th.lx-sortable');
+      if (th) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        onSortClick(th);
+        return;
+      }
+
       // The row's own Trade button and any real control keep their behaviour.
       if (t.closest('button, a, input, select, [data-copy]')) return;
       var el2 = t.closest('[data-lxgo]');
@@ -149,6 +177,17 @@
       e.stopImmediatePropagation();
       window.location.href = el2.getAttribute('data-lxgo');
     }, true);
+  }
+
+  // THE VERIFIED TICK lumoscore.com draws beside a trusted issuer (RAZA 2026-09-15: "add verified tick on trusted
+  // XRPL assets"): its own span and glyph, styled by the inherited .lx-vtick rule. xrpl.to's verified flag decides,
+  // the same flag the search rows already use.
+  function vtick() {
+    var s = document.createElement('span');
+    s.className = 'lx-vtick';
+    s.title = 'Verified issuer';
+    s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    return s;
   }
 
   function row(t, rank, usd) {
@@ -163,7 +202,10 @@
     var ic = logoEl(t.n, t.m, 32);
     cell.appendChild(ic);
     var nm = el('div', 'dex-mk-pair-name');
-    nm.appendChild(el('div', 'dex-mk-pair-head', t.n));
+    var head = el('div', 'dex-mk-pair-head', t.n);
+    // LUMOS is this project's own token and its issuer is blackholed; the upstream's verified flag does not carry it.
+    if (t.vf || t.i === 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha') head.appendChild(vtick());
+    nm.appendChild(head);
     if (t.u) nm.appendChild(el('div', 'sub', t.u));
     cell.appendChild(nm);
     c0.appendChild(cell);
@@ -238,7 +280,10 @@
 
     // 7: 7d trend -- the percentage, not a drawn curve. See the note at the top of this file.
     var c7 = el('td');
-    var w = el('div', 'dex-mk-change', pct(t.w) || '—');
+    // EMPTY UNTIL THE CURVE ARRIVES (RAZA 2026-09-15: "In 7D Trend, it shows percentage for split second then fixes to the
+    // graph"). The percentage waits on the cell and is written only if no series comes back for this row.
+    var w = el('div', 'dex-mk-change', '');
+    w.setAttribute('data-lxpct', pct(t.w) || '—');
     if (t.w != null) w.style.color = t.w >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
     c7.appendChild(w);
     tr.appendChild(c7);
@@ -249,14 +294,14 @@
     b.type = 'button';
     b.addEventListener('click', function (ev) {
       ev.stopPropagation();
-      window.location.href = '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i);
+      window.location.href = '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i);
     });
     c8.appendChild(b);
     tr.appendChild(c8);
 
     // The destination is stamped on the row rather than closed over, so the window-capture claim
     // below can read it. See claimRowClicks() for why a plain click handler here does nothing.
-    tr.setAttribute('data-lxgo', '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i));
+    tr.setAttribute('data-lxgo', '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i));
     return tr;
   }
 
@@ -278,21 +323,36 @@
     var meta = el('div', 'mdx-mk-meta');
     var nameRow = el('div', 'mdx-mk-name-row');
     nameRow.appendChild(el('span', 'mdx-mk-name', t.n));
+    if (t.vf) nameRow.appendChild(vtick());
     if (t.u) nameRow.appendChild(el('span', 'mdx-mk-domain', t.u));
     meta.appendChild(nameRow);
-    var vol = el('div', 'mdx-mk-vol', 'Vol ' + xrp(t.v) + ' XRP');
+    // THE PHONE IGNORED THE DENOMINATION AND DISAGREED WITH THE DESKTOP. This card hard-coded the
+    // XRP price and the XRP-denominated change while the table honoured DEN, so at the same moment
+    // RLUSD read "-0.09%" on a desktop and "+4.56%" on a phone — the same token, the same second,
+    // two different 24h figures, because one was measured against the dollar and the other against
+    // an XRP that had moved 4.6%.
+    //
+    // USD is what lumoscore.com's phone build shows — read off it directly: "Vol $964.04K",
+    // "$1.0000 +0.11%", and no denomination toggle on that breakpoint either. So the card follows
+    // DEN like the table does, which makes the two devices agree and matches main.
+    //
+    // `usd` was already a parameter here and was simply never used.
+    var usdOn = (DEN === 'usd' && usd != null);
+
+    var vol = el('div', 'mdx-mk-vol', 'Vol ' + (usdOn ? money(t.v * usd) : (xrp(t.v) + ' XRP')));
     if (t.x != null) vol.appendChild(el('span', 'mdx-mk-trades', count(t.x) + ' trades'));
     meta.appendChild(vol);
     top.appendChild(meta);
 
     var right = el('div', 'mdx-mk-right');
-    right.appendChild(el('div', 'mdx-mk-price', xrp(t.p) + ' XRP'));
-    var p = el('div', 'mdx-mk-pct ' + (t.d != null && t.d < 0 ? 'down' : 'up'), pct(t.d) || '—');
+    right.appendChild(el('div', 'mdx-mk-price', usdOn ? money(t.p * usd) : (xrp(t.p) + ' XRP')));
+    var dv = changeIn(t.d);
+    var p = el('div', 'mdx-mk-pct ' + (dv != null && dv < 0 ? 'down' : 'up'), pct(dv) || '—');
     right.appendChild(p);
     top.appendChild(right);
 
     card.appendChild(top);
-    card.setAttribute('data-lxgo', '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i));
+    card.setAttribute('data-lxgo', '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i));
     return card;
   }
 
@@ -312,7 +372,7 @@
     var body = el('div', 'dex-mover-body', xrp(t.p) + ' XRP'
       + (usd != null ? ('  ·  ' + money(t.p * usd)) : ''));
     card.appendChild(body);
-    card.setAttribute('data-lxgo', '/xrpl/trade/' + encodeURIComponent(t.n + '-' + t.i));
+    card.setAttribute('data-lxgo', '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i));
     return card;
   }
 
@@ -382,8 +442,137 @@
     pager.style.display = pages > 1 ? '' : 'none';
   }
 
+  // ---- the filter box ------------------------------------------------------------------------------
+  //
+  // THIS BOX HAD NEVER BEEN WIRED TO XRP LEDGER DATA. Its only handler was the design's, which
+  // filtered the Aptos sample array — so typing in it did not "break" the table, it REPLACED the
+  // table with twelve EVM-issued mock rows. Both halves of that were RAZA's report, filed as two
+  // separate complaints ("search broken", "these aren't xrpl assets"), and they were one bug.
+  //
+  // Disabling the mock renderer removes the wrong rows and leaves the box inert, so the handler has
+  // to exist here. Matched to Stellar's scope: ticker, issuer name, and issuer address.
+  var QUERY = '';
+
+  // ---- sortable columns ----------------------------------------------------------------------------
+  //
+  // lumoscore.com/trade/stellar sorts on five headers and this build sorted on none — the last thing
+  // left in "still not fully like on Stellar" for this table. The STYLING was already here: an
+  // inherited stylesheet carries `.dex-mk-table thead th.lx-sortable{cursor:pointer…}`, `.lx-son`
+  // for the active column and `.lx-sarrow` for the glyph, complete with a comment explaining which
+  // five columns take a click. Only the script that applied those classes was stripped, so the fork
+  // had the affordance's CSS and none of its behaviour — the stripped-layer pattern once more.
+  //
+  // Behaviour read off the live control rather than guessed: the first click on a column sorts
+  // DESCENDING, Volume is the default and opens showing ▼, and the rank column RENUMBERS to the
+  // current view (sorting Stellar by price gives #1 yBTC, #2 ETH, #3 yETH). I had numbered the
+  // filtered view by absolute volume rank on the reasoning that a rank which renumbers is worse than
+  // none; Stellar does the opposite, and Stellar is the spec here.
+  var SORT = { key: 'v', dir: -1 };
+
+  // Columns in DOM order, so the header wiring and the sort key cannot drift apart.
+  var COLS = [
+    null,                       // 0 Asset
+    { th: 'th-price', key: 'p' },
+    { th: 'th-change', key: 'd' },   // ordering by the XRP change matches ordering by the $ change:
+    { th: 'th-vol', key: 'v' },      // changeIn() is monotonic in d for a fixed XRP24
+    { th: 'th-trades', key: 'x' },
+    { th: 'th-tvl', key: 't' },
+  ];
+
+  function visible(d) {
+    var rows = d.rows;
+
+    if (QUERY) {
+      var q = QUERY.toLowerCase();
+      rows = rows.filter(function (t) {
+        return String(t.n || '').toLowerCase().indexOf(q) >= 0
+          || String(t.u || '').toLowerCase().indexOf(q) >= 0
+          || String(t.i || '').toLowerCase().indexOf(q) >= 0;
+      });
+    } else {
+      rows = rows.slice();                       // never sort the source array in place
+    }
+
+    var k = SORT.key, dir = SORT.dir;
+    rows.sort(function (a, b) {
+      var x = a[k], y = b[k];
+      // A missing figure is not a zero. Nulls sink to the bottom in BOTH directions, so ascending by
+      // volume opens on the smallest real number rather than on a wall of em dashes.
+      var xn = (x == null || !isFinite(x)), yn = (y == null || !isFinite(y));
+      if (xn && yn) return 0;
+      if (xn) return 1;
+      if (yn) return -1;
+      return x < y ? -dir : (x > y ? dir : 0);
+    });
+    return rows;
+  }
+
+  function paintSortHeads() {
+    var tbl = $('.dex-mk-table');
+    if (!tbl) return;
+    COLS.forEach(function (c) {
+      if (!c) return;
+      var th = tbl.querySelector('thead th.' + c.th);
+      if (!th) return;
+      var on = SORT.key === c.key;
+      th.classList.toggle('lx-son', on);
+      var ar = th.querySelector('.lx-sarrow');
+      if (ar) ar.textContent = on ? (SORT.dir < 0 ? '▼' : '▲') : '⇅';
+    });
+  }
+
+  // Marks the columns and draws their arrows. The CLICK is claimed in claimRowClicks() — see the note
+  // there for why a listener on the header cannot work on this page.
+  function wireSort() {
+    var tbl = $('.dex-mk-table');
+    if (!tbl) return;
+    COLS.forEach(function (c) {
+      if (!c) return;
+      var th = tbl.querySelector('thead th.' + c.th);
+      if (!th) return;
+      th.classList.add('lx-sortable');
+      if (!th.querySelector('.lx-sarrow')) th.appendChild(el('span', 'lx-sarrow', '⇅'));
+    });
+    paintSortHeads();
+  }
+
+  function onSortClick(th) {
+    var c = null;
+    for (var i = 0; i < COLS.length; i++) {
+      if (COLS[i] && th.classList.contains(COLS[i].th)) { c = COLS[i]; break; }
+    }
+    if (!c) return;
+    // Same column flips direction; a new column starts descending, which is what the live one does.
+    if (SORT.key === c.key) SORT.dir = -SORT.dir;
+    else { SORT.key = c.key; SORT.dir = -1; }
+
+    var h = host(), d = window.__lxxTradeData;
+    if (h && d && d.rows) renderPage(h, d, 1);
+  }
+
+  function wireSearch(h, d) {
+    var input = $('#dexMkSearch') || $('#mdxMkSearch');
+    if (!input || input.getAttribute('data-lxq') === '1') return;
+    input.setAttribute('data-lxq', '1');
+    input.addEventListener('input', function () {
+      QUERY = String(input.value || '').trim();
+      renderPage(h, d, 1);                 // back to page 1: page 4 of a 2-page result is nothing
+    });
+  }
+
   function renderPage(h, d, n) {
-    var total = d.rows.length;
+    var rows = visible(d);
+    var total = rows.length;
+    paintSortHeads();
+
+    // A filter that matches nothing is a real answer and needs to say so, rather than leaving the
+    // last result on screen looking like a match.
+    if (!total) {
+      note(h, 'No pair matches “' + QUERY + '”.');
+      setPageInfo(0, 0, 0);
+      buildPager(h, d, 1);
+      return;
+    }
 
     // NO PAGER, NO PAGING. The phone build has no .dex-mk-pager at all — checked on the served
     // page at 375px: pagerPresent false, a card list and no table. Paging a list with no controls
@@ -402,7 +591,9 @@
     var make = h.kind === 'table' ? row : mkCard;
     // The rank passed through is the ABSOLUTE position, so page 2 starts at #51 rather than
     // restarting at #1 — the number means "51st by volume", not "first row I drew".
-    for (var i = from; i < to; i++) h.node.appendChild(make(d.rows[i], i + 1, d.usd));
+    // Rank is the position in the CURRENT view, renumbering on sort and on filter, because that is
+    // what the live Stellar table does — checked by clicking its Last Price header.
+    for (var i = from; i < to; i++) h.node.appendChild(make(rows[i], i + 1, d.usd));
 
     setPageInfo(from + 1, to, total);
     buildPager(h, d, pages);
@@ -410,7 +601,7 @@
     // Only the rows actually on screen. Asking for all hundred when fifty are shown would double
     // the upstream cost of a page nobody is looking at yet; page 2 fetches its own when opened, and
     // the edge cache makes the second visit free.
-    if (h.kind === 'table') loadSparks(d.rows.slice(from, to));
+    if (h.kind === 'table') loadSparks(rows.slice(from, to));
   }
 
   // THE CONTROLS ROW, AGAINST lumoscore.com AS THE REFERENCE.
@@ -418,7 +609,7 @@
   // Three separate faults, all visible in the strip beside "All Trading Pairs".
   //
   // 1. LAUNCH TOKEN WAS IN THE PAGE AND UNREACHABLE. The `.lx-dctas` block — "How it works?" and
-  //    "Launch Token" — exists here with a correct /xrpl/launchpad href, but it is nested inside
+  //    "Launch Token" — exists here with a correct /launchpad href, but it is nested inside
   //    `.dex-overview`, and an inherited script unconditionally stamps `lx-dexhero-off` on that
   //    element, which is `display:none`. On Stellar the same script runs and the block is still
   //    visible, because Stellar's markup has it in `.dex-mk-controls` instead. This is the stale
@@ -434,6 +625,9 @@
   //    fits; this read "Filter pairs · ticker or address" and was cut off mid-word in the same
   //    width. Shortened to match. The wording is a judgement call — say the word and it changes.
   var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+  // This project's own token, which the market's top hundred does not carry yet.
+  var LUMOS_ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  var LUMOS_CUR = '4C554D4F53000000000000000000000000000000';
 
   // ---- the $ / XRP denomination toggle -------------------------------------------------------------
   //
@@ -446,7 +640,20 @@
   // aria-label: the price cell swaps its headline and sub-line, the 24h change becomes a DIFFERENT
   // NUMBER computed in the chosen denomination, and the two column headers relabel. Nothing else in
   // the table moves — volume, liquidity and high/low stay as they are on Stellar too.
+  // Dollars first, because that is what lumoscore.com/trade/stellar does: read off the live control
+  // there, the `$` button carries `.on` and `XLM` does not. This build had it the other way round.
+  //
+  // The cost is a visible one and worth stating: a token's change IN DOLLARS needs XRP's own 24h move,
+  // which arrives on a second request, so the 24h column reads em dashes until it lands (and keeps
+  // reading them if it never does). The alternative — printing the XRP-denominated change under a $
+  // heading — is a wrong number rather than a missing one, so the gap stays.
+  //
+  // CORRECTED 2026-09-15: that reading was wrong. Stellar's default is XLM — `denom()` in its dex layer
+  // returns "xlm" unless `lumos.dexDenom` says otherwise — and the "$ on" observation above was a
+  // remembered choice in that browser's storage. So XRP leads here, and the choice is remembered under
+  // the same key, exactly as there. RAZA saw the mismatch as "a font color and size difference".
   var DEN = 'xrp';
+  try { var _dn = localStorage.getItem('lumos.dexDenom'); if (_dn === 'usd' || _dn === 'xrp') DEN = _dn; } catch (e) {}
 
   // XRP's own 24h move, needed to express a token's change in dollars. Without it the $ column
   // would silently show the XRP-denominated number under a $ heading, which is worse than not
@@ -487,8 +694,12 @@
     wrap.appendChild(mk('usd', '$'));
     wrap.appendChild(mk('xrp', 'XRP'));
 
-    // After the filter chips and before the search box, which is where Stellar has it.
-    var search = $('#dexMkSearch');
+    // After the filter chips and before the search box, which is where Stellar has it. The previous
+    // version looked up `#dexMkSearch` — the INPUT, whose parent is `.dex-mk-search` and never
+    // `.dex-mk-controls` — so the ownership test failed every time and the toggle silently fell
+    // through to appendChild, landing after the search box instead of before it. The wrapper is what
+    // sits in the controls row, so that is what to measure against.
+    var search = $('.dex-mk-search');
     if (search && search.parentNode === controls) controls.insertBefore(wrap, search);
     else controls.appendChild(wrap);
 
@@ -512,14 +723,65 @@
       controls.insertBefore(ctas, controls.firstChild);
     }
 
+    // FOUR DEAD CHIPS. Stables / Memes / Utility filter on `p.cat`, a field that exists only on the
+    // design's Aptos sample rows — no XRP Ledger token carries it, so each of these can only ever
+    // produce an empty table. "LumosCore native" has no meaning here either. lumoscore.com/trade/stellar
+    // removes exactly these four and leaves one chip standing; read off the live control, its filter
+    // row holds a single button. Matched here, same kill list.
+    //
+    // The label stays "All" rather than Stellar's "Curated": that row is Stellar's curated list, and
+    // this one is the top of the XRP Ledger market by volume. Copying the word would be copying a
+    // claim, not a layout.
+    var kill = { native: 1, stables: 1, memes: 1, utility: 1 };
+    var chips = document.querySelectorAll('.dex-mk-filter, .mdx-mk-filter');
+    for (var c = 0; c < chips.length; c++) {
+      var f = (chips[c].getAttribute('data-filter') || '').toLowerCase();
+      if (kill[f] && chips[c].parentNode) chips[c].parentNode.removeChild(chips[c]);
+    }
+    // If the chip that was active happened to be one of the four, nothing is selected and the row
+    // reads as having no state at all. Stellar guards the same way.
+    if (!$('.dex-mk-filter.active, .mdx-mk-filter.active')) {
+      var first = $('.dex-mk-filter, .mdx-mk-filter');
+      if (first) first.classList.add('active');
+    }
+
+    // Hidden on Stellar — `getComputedStyle(#dexHiwBtn).display` is "none" there, so the row opens
+    // with Launch Token and nothing else. Here it was showing the full "How it works?" anchor, which
+    // is the extra element in RAZA's "Launch Token All Filter pairs $ XRP". Hidden rather than
+    // removed, and given a title, so whatever is bound to it survives.
+    var hiw = $('#dexHiwBtn');
+    if (hiw) {
+      hiw.style.display = 'none';
+      if (!hiw.getAttribute('title')) {
+        hiw.setAttribute('title', 'How it works');
+        hiw.setAttribute('aria-label', 'How it works');
+      }
+    }
+
     var chipImg = $('.dex-mk-filter img');
     if (chipImg && /xlm\.png/i.test(chipImg.getAttribute('src') || '')) {
       chipImg.setAttribute('src', XRP_LOGO);
       chipImg.setAttribute('alt', '');
     }
+    // SAME BOX, SMALLER MARK. Both builds draw this image at 22px, but Stellar's xlm.png is a thin glyph
+    // with room around it while xrpl.to's XRP thumb is a solid disc edge to edge — so at the same size the
+    // XRP mark reads visibly bigger (RAZA 2026-09-15). Inset to 16px inside the unchanged 22px slot.
+    if (chipImg && chipImg.getAttribute('src') === XRP_LOGO) {
+      chipImg.style.cssText = 'width:16px!important;height:16px!important;margin:3px;border-radius:50%';
+    }
+
+    // "CURATED", AS ON STELLAR — RAZA 2026-09-15, reversing the earlier "All". The chip's text is the
+    // text node after its icon, so only that node is rewritten and the icon stays.
+    // (No $$ helper in this file — an undefined one threw here and stopped the whole table rendering.)
+    [].slice.call(document.querySelectorAll('.dex-mk-filter, .mdx-mk-filter')).forEach(function (chip) {
+      if ((chip.getAttribute('data-filter') || '').toLowerCase() !== 'all') return;
+      [].forEach.call(chip.childNodes, function (n) {
+        if (n.nodeType === 3 && /^\s*All\s*$/.test(n.nodeValue)) n.nodeValue = 'Curated';
+      });
+    });
 
     var search = $('#dexMkSearch input') || $('#dexMkSearch');
-    if (search && 'placeholder' in search) search.placeholder = 'Filter pairs';
+    if (search && 'placeholder' in search) search.placeholder = 'Filter curated pairs';
   }
 
   // ---- 7d sparklines ------------------------------------------------------------------------------
@@ -568,32 +830,54 @@
     cell.appendChild(svg);
   }
 
+  // Series already fetched this page-load, keyed by token id. Without it every keystroke in the
+  // filter box and every page-button click re-requested the same curves — cheap at the edge, but the
+  // edge is not the budget that matters: xrpl.to allows 333 requests a DAY per IP and this layer is
+  // the one thing on the site that can spend them in bursts.
+  var SPARKS = {};
+
+  function fillPct() {
+    [].forEach.call(document.querySelectorAll('.dex-mk-change[data-lxpct]'), function (w) {
+      if (!w.textContent) w.textContent = w.getAttribute('data-lxpct');
+    });
+  }
+
   function loadSparks(rows) {
+    setTimeout(fillPct, 9000);                                   // a request that never answers still ends in a figure
     var byId = {};
     for (var i = 0; i < rows.length; i++) {
       if (/^[0-9a-f]{32}$/i.test(rows[i].m || '')) byId[rows[i].m.toLowerCase()] = rows[i];
     }
-    var ids = Object.keys(byId);
-    if (!ids.length) return;
+    var ids = Object.keys(byId).filter(function (id) { return !SPARKS[id]; });
+
+    // Whatever is already known is drawn immediately, so a re-render does not blank curves it has.
+    paintSparks(SPARKS, byId);
+    if (!ids.length) { fillPct(); return; }
 
     fetch('/lxapi/xrplspark?ids=' + ids.join(','))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok || !d.series) return;
-        for (var id in d.series) {
-          var t = byId[id];
-          if (!t) continue;
-          // The row is found by the ticker+issuer stamped on it when it was built, so this cannot
-          // paint a curve into the wrong row after a re-sort or a page change.
-          var tr = $('tr[data-tkr="' + (window.CSS && CSS.escape ? CSS.escape(t.n) : t.n)
-            + '"][data-iss="' + t.i + '"]');
-          if (!tr || tr.children.length < 8) continue;
-          var vals = d.series[id];
-          if (!vals || vals.length < 2) continue;
-          drawSpark(tr.children[7], vals, vals[vals.length - 1] >= vals[0]);
-        }
+        for (var id in d.series) SPARKS[id] = d.series[id];
+        paintSparks(d.series, byId);
       })
-      .catch(function () { /* the percentages stay exactly as they are */ });
+      .catch(function () {})
+      .then(fillPct);                                            // rows with no series get their percentage
+  }
+
+  function paintSparks(series, byId) {
+    for (var id in series) {
+      var t = byId[id];
+      if (!t) continue;
+      // The row is found by the ticker+issuer stamped on it when it was built, so this cannot
+      // paint a curve into the wrong row after a re-sort or a page change.
+      var tr = $('tr[data-tkr="' + (window.CSS && CSS.escape ? CSS.escape(t.n) : t.n)
+        + '"][data-iss="' + t.i + '"]');
+      if (!tr || tr.children.length < 8) continue;
+      var vals = series[id];
+      if (!vals || vals.length < 2) continue;
+      drawSpark(tr.children[7], vals, vals[vals.length - 1] >= vals[0]);
+    }
   }
 
   function headers() {
@@ -652,7 +936,7 @@
   // So it is back, and the endpoints were left returning `attribution` / `attributionUrl` through
   // the removal, which is why restoring it is this one function rather than an archaeology exercise.
   function attribution(d) {
-    if (!d || !d.attribution || document.getElementById('lxx-attr-dex')) return;
+    return;                                              // removed: RAZA 2026-09-15, "Please remove … on all places"
     var host = $('.dex-mk-foot') || $('.dex-mk-table-wrap');
     if (!host) return;
     var p = el('p'); p.id = 'lxx-attr-dex';
@@ -731,10 +1015,46 @@
     // shows exactly two pages of 50, so matching it costs no extra upstream request. Asking for
     // more would mean additional pages against xrpl.to's 333-a-day budget, which is a bigger
     // decision than a pager.
-    fetch('/lxapi/xrpltokens?n=100').then(function (r) { return r.json(); }).then(function (d) {
+    // ASKED AGAIN BEFORE GIVING UP (RAZA 2026-09-17: "sometimes i get this error when i open trade main page"). One refused
+    // read emptied the whole market table; the upstream's daily cap makes that a matter of when, not if. The endpoint also
+    // serves its last good answer when the live one fails, so this usually gets rows either way.
+    (function ask(tries) {
+      return fetch('/lxapi/xrpltokens?n=100').then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.ok && d.rows && d.rows.length) return d;
+        if (tries > 0) {
+          return new Promise(function (res) { setTimeout(res, 1200 * (4 - tries)); }).then(function () { return ask(tries - 1); });
+        }
+        return d;
+      }, function () {
+        return tries > 0
+          ? new Promise(function (res) { setTimeout(res, 1200 * (4 - tries)); }).then(function () { return ask(tries - 1); })
+          : null;
+      });
+    })(3).then(function (d) {
       reveal();
       if (!d || !d.ok || !d.rows.length) { note(h, 'Market data is unavailable right now.'); return; }
       window.__lxxTradeData = d;
+
+      // LUMOS IS ALWAYS IN THIS TABLE (RAZA 2026-09-17: "Add LUMOS to the curated assets on Trade main page"). The rows are
+      // the market's top hundred by volume and LUMOS does not trade its way in yet, so it was simply absent from the page
+      // that lists what this platform trades. Its row is fetched on its own and folded in — the same fields, from the same
+      // upstream, so it sorts and prices exactly like every other row rather than being pinned on top as a special case.
+      if (!d.rows.some(function (t) { return t.i === LUMOS_ISS; })) {
+        // The endpoint keys on the upstream's own id form, "issuer-currencyHex" — it takes no iss/cur pair.
+        fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(LUMOS_ISS + '-' + LUMOS_CUR))
+          .then(function (r) { return r.json(); })
+          .then(function (lt) {
+            if (!lt || !lt.ok || !(lt.price > 0)) return;
+            d.rows.push({
+              c: lt.currency, i: lt.issuer, n: lt.name || 'LUMOS', u: lt.user || '',
+              p: lt.price, d: lt.p24, w: lt.p7, v: lt.vol24, t: lt.tvl, x: lt.trades24,
+              hi: lt.hi, lo: lt.lo,
+              m: lt.md5 || '', h: lt.holders, vf: 1, o: lt.origin || ''
+            });
+            renderPage(h, d, pageNo);
+          })
+          .catch(function () {});
+      }
 
       // XRP's own 24h move, for the dollar-denominated change column. Fire-and-forget: the toggle
       // is usable immediately in XRP mode, and if this never lands the $ column shows em dashes
@@ -749,6 +1069,8 @@
         .catch(function () {});
 
       buildDenToggle(h, d);
+      wireSearch(h, d);
+      wireSort();
       renderPage(h, d, 1);
 
       var grid = $('#dexMoverGrid') || $('#mdxMoverList');

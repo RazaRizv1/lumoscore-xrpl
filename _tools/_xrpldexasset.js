@@ -1,6 +1,6 @@
 // Replace the Trade-Asset page's Stellar layer with an XRP Ledger one.
 //
-// `lx-dxadata` (~293KB) did not read the token in the URL at all: every /xrpl/trade/<token> address
+// `lx-dxadata` (~293KB) did not read the token in the URL at all: every /trade/xrpl/<token> address
 // rendered Stellar LUMOS, with 105 mentions of XLM and 124 Stellar addresses, under a runtime-set
 // title reading "LUMOS price, pools and holders on Stellar". Wiring the market table made this page
 // reachable from every row, so it had to go with it rather than after it.
@@ -22,15 +22,22 @@ const B = String.fromCharCode(92);
 const ID = 'lx-xrpldexasset';
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/dexasset.js', 'utf8');
+// Limit orders, in their own file and AFTER dexasset.js in the same block: they read the asset and
+// price it publishes (window.__lxxAssetRef / __lxxAssetData) and call its order-book refresh.
+const limit = fs.readFileSync(__dirname + '/browser/limit.js', 'utf8');
+// The Swap tab, last: it reads the same asset and price, and it signs a fee payment, so the collector goes
+// in through the same checksum-gated injection write.js uses.
+const { injectCollector } = require(__dirname + '/xrpladdr.js');
+const swap = injectCollector(fs.readFileSync(__dirname + '/browser/dxaswap.js', 'utf8'), 'dxaswap.js');
 
-for (const src of [core, page]) {
+for (const src of [core, page, limit, swap]) {
   if (src.indexOf('</' + 'script') >= 0) {
     console.error('  a source file contains a closing script tag — aborting');
     process.exit(1);
   }
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + limit + '\n' + swap + '\n</' + 'script>';
 
 let files = 0, pages = 0, stripped = 0;
 for (const dev of ['desktop', 'mobile']) {

@@ -74,7 +74,8 @@
       if (v) v.textContent = value;
       if (sub != null) {
         var s = cells[i].querySelector('.sub') || cells[i].querySelector('.lx-supnum');
-        if (s) s.textContent = sub;
+        if (!s) { s = el('div', 'sub'); cells[i].appendChild(s); }     // the Pools cell ships without one
+        if (s.textContent !== sub) s.textContent = sub;
       }
       return true;
     }
@@ -112,12 +113,10 @@
   // BLACKHOLED (DisableMaster + RegularKey = ACCOUNT_ONE), so no more can be minted by anyone, ever.
   // "1 billion" is a rounding of a number whose exactness is the entire point.
   function paintChainLabels() {
+    // lumoscore.com's line, word for word (RAZA 2026-09-15: "LUMOS token page on XRPL has issues").
     $$('.lh-desc').forEach(function (e) {
-      var t = e.textContent || '';
-      if (/Aptos|Stellar/i.test(t)) {
-        e.textContent = t.replace(/live on Aptos/i, 'live on the XRP Ledger')
-          .replace(/\bAptos\b/g, 'the XRP Ledger').replace(/\bStellar\b/g, 'the XRP Ledger');
-      }
+      var want = 'LumosCore’s native utility token — powers platform fees and rewards';
+      if (e.textContent !== want) e.textContent = want;
     });
     $$('.net-tag, .lt-cmp-chain').forEach(function (e) {
       if (/Aptos|Stellar/i.test(e.textContent || '')) {
@@ -128,8 +127,8 @@
     $$('.sub-h').forEach(function (e) {
       var t = e.textContent || '';
       if (!/fixed supply/i.test(t)) return;
-      e.textContent = '999,955,353 LUMOS · fixed supply on the XRP Ledger — the issuer is blackholed, '
-        + 'so no more can ever be minted.';
+      // "1 billion", as lumoscore.com states it (RAZA 2026-09-15: "make it 1 Billion LUMOS instead of 999,955,353").
+      e.textContent = '1 billion LUMOS · fixed supply on the XRP Ledger.';
     });
 
     // THE SAME SENTENCE LIVES UNDER OTHER CLASSES, and the phone has none of them as `.sub-h`. Left
@@ -141,8 +140,7 @@
     // sentences continue past the part that is wrong ("...issuer key locked. Allocation is..."), and
     // assigning textContent would take the rest of the sentence with it.
     var SUPPLY_FIX = [
-      [/\b1 billion LUMOS\b/gi, '999,955,353 LUMOS'],
-      [/\b1,000,000,000 LUMOS\b/g, '999,955,353 LUMOS'],
+      [/\b999,955,353 LUMOS\b/g, '1,000,000,000 LUMOS'],
       [/\bon (Stellar|Aptos)\b/gi, 'on the XRP Ledger'],
     ];
     $$('.sect-head .sub, .supply-totem .note, .supply-note, .lt-supply').forEach(function (e) {
@@ -180,6 +178,158 @@
     });
   }
 
+  var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+
+  // STELLAR'S HERO: the flame mark, the network chip with its logo, the issuer address (behind an inherited
+  // .addr-row:not(.lxlt) gate, which is why it read blank), the explorer link and the home-domain link.
+  function paintHeroExtras() {
+    $$('.lumos-icon').forEach(function (ic) {
+      ic.setAttribute('data-lxlogo', '1');
+      [['background-image', 'url("/assets/favicon.png")'], ['background-color', 'transparent'], ['background-size', 'contain'],
+        ['background-repeat', 'no-repeat'], ['background-position', 'center center'], ['box-shadow', 'none']]
+        .forEach(function (kv) { ic.style.setProperty(kv[0], kv[1], 'important'); });
+    });
+    $$('.addr-row').forEach(function (row) {
+      row.classList.add('lxlt');
+      var tag = row.querySelector('.net-tag');
+      if (tag && !tag.querySelector('.b-ico')) {
+        tag.textContent = '';
+        tag.setAttribute('data-logoed', '1');
+        var bi = el('span', 'b-ico');
+        var im = document.createElement('img');
+        im.src = XRP_LOGO;
+        im.alt = '';
+        im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
+        bi.appendChild(im);
+        tag.appendChild(bi);
+        tag.appendChild(document.createTextNode(' XRP Ledger '));
+      }
+      var ex = row.querySelector('.addr-actions a.addr-btn');
+      if (ex) {
+        ex.href = 'https://bithomp.com/explorer/' + ISS;
+        ex.target = '_blank';
+        ex.rel = 'noopener nofollow';
+        ex.setAttribute('data-tooltip', 'View on XRPL Explorer');
+        ex.setAttribute('data-lxex', '1');
+      }
+      if (!row.querySelector('.lx-lt-dom')) {
+        var dom = el('a', 'lx-lt-dom');
+        dom.href = 'https://lumoscore.com';
+        dom.target = '_blank';
+        dom.rel = 'noopener';
+        dom.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>lumoscore.com</span>';
+        row.appendChild(dom);
+      }
+    });
+    // The XRP price and the 24h change share one line under the dollar price, as on lumoscore.com.
+    $$('.hero-price-block').forEach(function (hb) {
+      if (hb.querySelector('.lx-pricemeta')) return;
+      var pn = hb.querySelector('.price-native'), ch = hb.querySelector('.change');
+      if (!pn || !ch) return;
+      var meta = el('div', 'lx-pricemeta');
+      meta.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap';
+      pn.parentNode.insertBefore(meta, pn);
+      meta.appendChild(pn);
+      meta.appendChild(ch);
+    });
+  }
+
+  // Counts beside the Pools and Holders tabs, drawn by the inherited .lt-tab[data-count]::after rule, and the supply
+  // card's link naming the real pool count (RAZA 2026-09-15: "Pools and holders count is not showing up here").
+  function paintTabsAndLinks(d) {
+    var pl = $('.lt-tab[data-t="pl"]'), hl = $('.lt-tab[data-t="hl"]');
+    if (pl && state.pools != null) pl.setAttribute('data-count', '(' + state.pools + ')');
+    var hc = (d && d.holders != null) ? Math.round(d.holders) : state.holders;   // the same figure as the Holders stat
+    if (hl && hc != null) hl.setAttribute('data-count', '(' + hc.toLocaleString('en-US') + ')');
+    if (state.pools != null) {
+      $$('button[data-goto="pl"], .lt-cmp-foot button, .lt-cmp-foot a').forEach(function (b) {
+        var want = 'View all ' + state.pools + ' pools →';
+        if (/View all/.test(b.textContent || '') && b.textContent !== want) b.textContent = want;
+      });
+    }
+  }
+
+  // Stellar's allocation (RAZA 2026-09-15: "Token count and % is missing"): six rows summing to one billion — Market
+  // Reserve 300M, Ecosystem LP 240M, Native LP 240M, Team 100M, Whale Holder 50M, Airdrops 70M. The design's extra
+  // "Cross-Chain Reserve" row is not on lumoscore.com, and the figures sat behind .alloc-legend:not(.lxlt).
+  function fixAllocation() {
+    $$('.alloc-row').forEach(function (r) {
+      var nm = ((r.querySelector('.name') || {}).textContent || '');
+      if (/Cross-Chain Reserve/i.test(nm)) { if (r.parentNode) r.parentNode.removeChild(r); return; }
+      if (/Airdrops/i.test(nm)) {
+        var am = r.querySelector('.amount'), pc = r.querySelector('.pct');
+        if (am && am.textContent !== '70M') am.textContent = '70M';
+        if (pc && pc.textContent !== '7%') pc.textContent = '7%';
+        r.style.gridColumn = 'auto';
+        r.style.maxWidth = 'none';
+      }
+    });
+    $$('.alloc-seg').forEach(function (s) {
+      var st = s.getAttribute('style') || '';
+      if (st.indexOf('--alloc-5)') >= 0) { if (s.parentNode) s.parentNode.removeChild(s); }
+      else if (st.indexOf('--alloc-7)') >= 0 && s.style.width !== '7%') s.style.width = '7%';
+    });
+    $$('.alloc-legend').forEach(function (l) { l.classList.add('lxlt'); });
+  }
+
+  // "What you can do with LUMOS" sits ABOVE Supply distribution, as on lumoscore.com (RAZA 2026-09-15). Each is a
+  // .section-head followed by its body in the page's own flow; the utility block is moved once, found by its heading.
+  function reorderSections() {
+    var main = $('main.page');
+    if (!main || main.getAttribute('data-lxorder') === '1') return;
+    var kids = [].slice.call(main.children);
+    var headOf = function (re) {
+      return kids.filter(function (k) { return k.classList.contains('section-head') && re.test(k.textContent || ''); })[0];
+    };
+    var sup = headOf(/Supply distribution/i), ut = headOf(/What you can do/i);
+    if (!sup || !ut) return;
+    var ui = kids.indexOf(ut), si = kids.indexOf(sup);
+    main.setAttribute('data-lxorder', '1');
+    if (ui < si) return;
+    var block = [ut];
+    for (var i = ui + 1; i < kids.length; i++) {
+      var k = kids[i];
+      if (k.classList.contains('section-head') || k.tagName === 'SECTION' || k.querySelector('h2')) break;
+      block.push(k);
+    }
+    block.forEach(function (n) { main.insertBefore(n, sup); });
+  }
+
+  // Stellar's medals for the top three holders.
+  function medalSVG(i) {
+    var c = [{ a: '#ffe487', b: '#e3a81a', s: '#b9860f', t: '#6d4a00' },
+      { a: '#ffffff', b: '#b6bcc6', s: '#8b93a0', t: '#4c5661' },
+      { a: '#f3c79a', b: '#c07a3c', s: '#97592a', t: '#5f3616' }][i];
+    var id = 'lxmed' + i;
+    return '<svg viewBox="0 0 40 40" width="26" height="26" aria-hidden="true">'
+      + '<defs><radialGradient id="' + id + '" cx="36%" cy="28%" r="78%"><stop offset="0%" stop-color="' + c.a + '"></stop><stop offset="100%" stop-color="' + c.b + '"></stop></radialGradient></defs>'
+      + '<circle cx="20" cy="21" r="15.5" fill="url(#' + id + ')" stroke="' + c.s + '" stroke-width="2"></circle>'
+      + '<circle cx="20" cy="21" r="12.3" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1"></circle>'
+      + '<path d="M12 3 L16 12 L12 11 L8 12 Z" fill="' + c.s + '"></path><path d="M28 3 L32 12 L28 11 L24 12 Z" fill="' + c.s + '"></path>'
+      + '<text x="20" y="26.5" text-anchor="middle" font-family="system-ui,sans-serif" font-size="15" font-weight="800" fill="' + c.t + '">' + (i + 1) + '</text>'
+      + '</svg>';
+  }
+
+  // A small symmetric identicon for a holder's avatar, drawn from the address itself (the design's .av held another
+  // chain's logo).
+  function identUri(a) {
+    var h = 0, i;
+    for (i = 0; i < a.length; i++) h = (h * 31 + a.charCodeAt(i)) >>> 0;
+    var hue = h % 360, cells = '';
+    for (var y = 0; y < 5; y++) {
+      for (var x = 0; x < 3; x++) {
+        h = (h * 1103515245 + 12345) >>> 0;
+        if ((h >>> 16) & 1) {
+          cells += '<rect x="' + (x * 8) + '" y="' + (y * 8) + '" width="8" height="8"/>';
+          if (x < 2) cells += '<rect x="' + ((4 - x) * 8) + '" y="' + (y * 8) + '" width="8" height="8"/>';
+        }
+      }
+    }
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="hsl(' + hue
+      + ',58%,46%)"/><g fill="rgba(255,255,255,.92)">' + cells + '</g></svg>';
+    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  }
+
   function paint(d) {
     lift();
     paintChainLabels();
@@ -208,11 +358,12 @@
 
     // Fully diluted uses the ISSUED total, which differs from circulating: 999,955,353 against
     // 705,205,451. Quoting one as the other is a 42% overstatement.
-    var fdv = (d && d.usd != null && d.issued != null) ? d.usd * d.issued : null;
-    setStat('diluted', usd(fdv), d && d.issued != null ? ('on ' + big(d.issued) + ' issued') : null);
+    // On the round billion, as lumoscore.com's card reads ("on 1.00B total supply").
+    var fdv = (d && d.usd != null) ? d.usd * 1e9 : null;
+    setStat('diluted', usd(fdv), 'on 1.00B total supply');
 
     setStat('holder', d && d.holders != null ? Math.round(d.holders).toLocaleString('en-US') : '—',
-      d && d.trustlines != null ? (Math.round(d.trustlines).toLocaleString('en-US') + ' trust lines') : null);
+      d && d.trustlines != null ? (Math.round(d.trustlines).toLocaleString('en-US') + ' trustlines') : null);
 
     setStat('volume', d && d.vol24 != null && d.usd != null && d.price
       ? usd(d.vol24 * (d.usd / d.price)) : '—', 'past 24h');
@@ -259,6 +410,9 @@
         setV(d && d.circulating != null
           ? Math.round(d.circulating).toLocaleString('en-US') : '—', 'LUMOS');
       } else if (/holder/.test(label)) {
+        // Both counts are named, as on lumoscore.com (RAZA 2026-09-15: "Trustlines (besides Holders) is missing").
+        var labEl = row.querySelector('.lt-cmp-l');
+        if (labEl && labEl.textContent !== 'Holders · Trustlines') labEl.textContent = 'Holders · Trustlines';
         setV(d && d.holders != null
           ? (Math.round(d.holders).toLocaleString('en-US')
             + (d.trustlines != null ? ('  ·  ' + Math.round(d.trustlines).toLocaleString('en-US')) : ''))
@@ -276,7 +430,11 @@
     });
 
     // The pools stat card is not in the payload at all, so it was showing the design's mock 14.
-    setStat('pool', state.pools == null ? '—' : String(state.pools), null);
+    setStat('pool', state.pools == null ? '—' : String(state.pools), 'LUMOS pairs');
+    paintHeroExtras();
+    paintTabsAndLinks(d);
+    fixAllocation();
+    reorderSections();
   }
 
   // How many AMM pools hold LUMOS. /lxapi/xrplpools?issuer= narrows the upstream's 30,648 pools to
@@ -289,7 +447,7 @@
   // Same data the count above already fetched, so this costs no extra request.
   function poolItem(p) {
     var a = el('a', 'pool-item');
-    a.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
+    a.href = '/pools/xrpl/id/' + encodeURIComponent(p.acct);
     a.setAttribute('data-chain', 'xrpl');
 
     var icons = el('div', 'pair-icons');
@@ -346,6 +504,100 @@
     return 'hsl(' + h + ',52%,42%)';
   }
 
+  // STELLAR'S "ALL LUMOS POOLS" (RAZA 2026-09-15: "LUMOS token page, in pools tab, its not the same as on Stellar"): the
+  // design's own row — LUMOS mark and the paired token's, "LUMOS / X", TVL, 24h volume, an Incentives pill and "View pool" —
+  // one per pool by TVL, with the Network column removed as lumoscore.com removes it, inside the page's scroll box.
+  var NATIVE_LP = 'rnPQqk3cfHyqSyvAGh3AfMtWiszK8zaF4U';
+  var ECO_LP = {
+    r27TeM8xMebVAMHt4aB3BMYw5MB5fULht: 1, rM6HW3s4WUGuLYwKwRvZx2aai5wk5PR5fz: 1, rhhBo4BXkrhvr17rLdtdwxMjEk1NnTvqUC: 1,
+    rJZftp95akgYuXXtb2yp23F1cGuHu34pMA: 1, rEmgwNPCbq6ogmLKThxgee35uCSqfhB83M: 1, rJnv9wSoSECHzWsNXR7E74hi8mbKX9ZnDM: 1,
+    rsKJxAyfL2AGdTMqz5ZMhBSyiSxqz97g3z: 1, rKsz9Dft5yYtbLS1SSG9L6u3LyhgwuWhew: 1, rUHWxx4kodHx3P8WxtkdcjhwDXnr5p9txo: 1,
+    rJfj7MXMt1VfBFF8mBta1CesMSzXYZELyZ: 1
+  };
+  var POOL_TPL = null;
+  function usdAbbr(v) {
+    if (!(v > 0)) return '$0';
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+    if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K';
+    return '$' + v.toFixed(2);
+  }
+  function sideThumb(s) {
+    if (!s || s.c === 'XRP' || !s.i) return '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+    if (s.m) return '/lxapi/xrplthumb?id=' + encodeURIComponent(s.m) + '&w=48';
+    return '/lxapi/xrplthumb?iss=' + encodeURIComponent(s.i) + '&cur=' + encodeURIComponent(s.c) + '&w=48';
+  }
+  function buildPoolsTable(rows, usd) {
+    var pb = $('#poolsBody');
+    if (!pb || !rows.length) return;
+    if (!POOL_TPL) {
+      var t0 = pb.querySelector('tr:not([data-lxbuilt])') || pb.querySelector('tr');
+      if (!t0) return;
+      POOL_TPL = t0.cloneNode(true);
+    }
+    var tbl = pb.closest('table');
+    if (tbl) {
+      $$('thead th', tbl).forEach(function (th) {
+        if (/^Network$/i.test((th.textContent || '').trim()) && th.parentNode) th.parentNode.removeChild(th);
+      });
+    }
+    var arr = rows.slice().sort(function (a, b) { return (+b.liq || 0) - (+a.liq || 0); });
+    pb.innerHTML = '';
+    arr.forEach(function (p) {
+      var other = (p.a1 && p.a1.i === ISS && p.a1.c === CUR) ? p.a2 : p.a1;
+      var row = POOL_TPL.cloneNode(true);
+      row.setAttribute('data-lxbuilt', '1');
+      row.setAttribute('data-acct', p.acct);
+      row.removeAttribute('data-chain');
+      var nm = row.querySelector('.pair-name');
+      if (nm) { nm.textContent = 'LUMOS / ' + poolName(other); nm.setAttribute('data-logoed', '1'); }
+      [[row.querySelector('.pair-icons .a'), '/assets/favicon.png'], [row.querySelector('.pair-icons .b'), sideThumb(other)]].forEach(function (x) {
+        var n = x[0];
+        if (!n) return;
+        n.removeAttribute('data-logo');
+        n.setAttribute('data-logoed', '1');
+        n.textContent = '';
+        n.style.background = 'transparent';
+        var im = document.createElement('img');
+        im.alt = '';
+        im.src = x[1];
+        im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block';
+        n.appendChild(im);
+      });
+      var chain = row.querySelector('.chain-pill');
+      if (chain) { var ctd = chain.closest('td'); if (ctd && ctd.parentNode) ctd.parentNode.removeChild(ctd); }
+      var nums = row.querySelectorAll('.num');
+      if (nums[0]) nums[0].textContent = usd ? usdAbbr((+p.liq || 0) * usd) : (amount(p.liq) + ' XRP');
+      if (nums[1]) nums[1].textContent = usd ? usdAbbr((+p.vol || 0) * usd) : (amount(p.vol) + ' XRP');
+      var inc = row.querySelector('.incent-pill');
+      if (inc) {
+        inc.setAttribute('data-logoed', '1');
+        if (p.acct === NATIVE_LP) { inc.textContent = 'Native LP'; inc.className = 'incent-pill native'; }
+        else if (ECO_LP[p.acct]) { inc.textContent = 'Ecosystem'; inc.className = 'incent-pill eco'; }
+        else inc.style.display = 'none';
+      }
+      var link = row.querySelector('a');
+      if (link) link.setAttribute('href', '/pools/xrpl/id/' + encodeURIComponent(p.acct));
+      pb.appendChild(row);
+    });
+    pb.classList.add('lxlt');
+    if (tbl && tbl.parentNode && !tbl.parentNode.classList.contains('lx-poolscroll')) {
+      var wrap = document.createElement('div');
+      wrap.className = 'lx-poolscroll';
+      tbl.parentNode.insertBefore(wrap, tbl);
+      wrap.appendChild(tbl);
+    }
+    if (!window.__lxxLtPoolNav) {
+      window.__lxxLtPoolNav = 1;
+      window.addEventListener('click', function (e) {
+        var tr = e.target && e.target.closest && e.target.closest('#poolsBody tr[data-acct]');
+        if (!tr) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.location.href = '/pools/xrpl/id/' + encodeURIComponent(tr.getAttribute('data-acct'));
+      }, true);
+    }
+  }
+
   function paintPoolList(rows) {
     var host = $('#poolList');
     if (!host) return;                                  // desktop renders a table instead
@@ -367,6 +619,9 @@
         state.pools = d.total;
         paint(window.__lxxLumos || null);         // repaint the two places the count appears
         paintPoolList(d.rows || []);
+        fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
+          .then(function (t) { return (t && t.ok && +t.usd > 0) ? +t.usd : null; }, function () { return null; })
+          .then(function (usd) { buildPoolsTable(d.rows || [], usd); });
       })
       .catch(function () { /* the card stays dashed, which is the honest default */ });
   }
@@ -483,13 +738,27 @@
       if (addrEl) { addrEl.textContent = shortAddr(h.addr); addrEl.setAttribute('title', h.addr); }
       if (chain) {
         var pct = issued > 0 ? (h.bal / issued * 100) : 0;
-        // Rebuilt rather than assigned into: the row ships a mark inside .chain, and replacing the
-        // whole textContent would take it with it.
-        var mark = chain.querySelector('.b-ico');
-        chain.textContent = '';
-        if (mark) chain.appendChild(mark);
-        chain.appendChild(document.createTextNode(' XRP Ledger · ' + pct.toFixed(2) + '% of supply'));
+        // Stellar's line: the share alone — the page is already about one network.
+        chain.textContent = (pct >= 0.01 ? pct.toFixed(2) : '<0.01') + '% of supply';
       }
+      // THE ROWS STAYED SKELETONS (RAZA 2026-09-15: "Pools and holders tabs are not loading"). The inherited sheet
+      // animates .holder-row:not([data-lxbuilt]) as a loading shimmer and hides its rank; Stellar marks a row built once
+      // it holds a real holder. Ranks get Stellar's medals, the avatar an identicon, and the row opens the account.
+      row.setAttribute('data-lxbuilt', '1');
+      row.classList.add('lxlt');
+      var rk = row.querySelector('.rk');
+      if (rk) {
+        if (i < 3) { rk.className = 'rk medal'; rk.innerHTML = medalSVG(i); }
+        else { rk.className = 'rk'; rk.textContent = String(i + 1); }
+      }
+      var av = row.querySelector('.av');
+      if (av) {
+        av.removeAttribute('data-logo');
+        av.setAttribute('data-logoed', '1');
+        av.style.cssText = 'background:url("' + identUri(h.addr) + '") center center / cover no-repeat;box-shadow:none';
+      }
+      row.style.cursor = 'pointer';
+      row.onclick = (function (ad) { return function () { window.location.href = '/account/xrpl/' + encodeURIComponent(ad); }; })(h.addr);
 
       // AND THE BALANCE BESIDE IT. Filling the percentage alone left "32.08% of supply" against the
       // mock's "29.6M LUMOS" — two numbers about the same holder that cannot both be true, which is
@@ -525,6 +794,8 @@
         marker = res && res.marker;
         if (marker && ++pages < 15) return page();
         paintHolders(acc);
+        state.holders = acc.length;
+        paintTabsAndLinks(window.__lxxLumos || null);
       }).catch(function () { /* leave the card as it is rather than half-write it */ });
     }
     page();

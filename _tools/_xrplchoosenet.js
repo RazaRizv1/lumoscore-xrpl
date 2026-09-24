@@ -12,7 +12,7 @@
 //
 // There is no network to choose here — the site IS the XRP Ledger — so the shim navigates straight to
 // the target. It goes through __lxNav so the clean-URL map applies and the address bar shows
-// /xrpl/dashboard rather than a design filename, and it only defines the function if something else
+// /dashboard rather than a design filename, and it only defines the function if something else
 // has not already, so re-introducing lx-mc later would win rather than collide.
 const fs = require('fs');
 const { read, getContents } = require(__dirname + '/lib.js');
@@ -36,7 +36,7 @@ const SCRIPT = '<script id="lx-xrplchoosenet">(function(){'
   + 'function go(target){'
   // The default target is written as the ROUTE, not as the design filename it means.
   //
-  // It used to say "lumoscore-home.html", and _xrplroutes rewrote it to "/xrpl/dashboard" on every
+  // It used to say "lumoscore-home.html", and _xrplroutes rewrote it to "/dashboard" on every
   // build — 128 of them, one per page this shim lands on, which was the ENTIRE "route references
   // rewritten" figure on a chain re-run. That is not a cosmetic complaint: a re-run of the chain is
   // supposed to report zero, and permanent noise is what stops anyone noticing when a real drift
@@ -48,7 +48,7 @@ const SCRIPT = '<script id="lx-xrplchoosenet">(function(){'
   //
   // This is not a dead default: of the call sites in the built site, 96 pass no argument at all,
   // 15 pass location.href and only 6 name a target. This line is what almost every one of them uses.
-  + 'var t=target||"/xrpl/dashboard";'
+  + 'var t=target||"/dashboard";'
   + 'try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}'
   + 'try{ location.href=t; }catch(_){}'
   + '}'

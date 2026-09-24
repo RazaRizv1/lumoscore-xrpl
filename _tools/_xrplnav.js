@@ -41,8 +41,16 @@ const PATCHES = [
   // So the helper itself is told what it should already know. One guard, at the top of the function
   // that makes the decision, matching the design's own modal markers.
   ["function rowTarget(el){\n    if(!CONTAINERNAV && !LISTTARGET) return null;",
-   "function rowTarget(el){\n    if(el.closest('.modal-overlay,[data-modal],[role=\"dialog\"]')) return null;\n"
+   "function rowTarget(el){\n    if(el.closest('.modal-overlay,[data-modal],[role=\"dialog\"],thead')) return null;\n"
    + "    if(!CONTAINERNAV && !LISTTARGET) return null;"],
+
+  // A TABLE HEADER IS NOT A ROW EITHER. The pools table's "# Pair Liquidity 24h Volume" header is a
+  // <tr> too, so the same helper claimed a click on it and routed it to /pools/stellar — Page not
+  // found (RAZA 2026-09-15). The guard above now lists thead; this entry upgrades containers that
+  // already carry the earlier, dialog-only guard. Its target does not contain its source (the selector
+  // string differs), so a second run matches nothing.
+  ["if(el.closest('.modal-overlay,[data-modal],[role=\"dialog\"]')) return null;",
+   "if(el.closest('.modal-overlay,[data-modal],[role=\"dialog\"],thead')) return null;"],
 ];
 
 let files = 0, hits = 0;

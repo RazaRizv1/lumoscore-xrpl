@@ -47,7 +47,10 @@ export async function onRequest(context) {
   if (!id) return json({ ok: false, error: 'no id' }, 30);
 
   const cache = caches.default;
-  const key = new Request(url.origin + url.pathname + '?id=' + encodeURIComponent(id), request);
+  // Versioned: Cloudflare's Cache API survives a deploy, so a shape change here would otherwise keep
+  // serving the previous build's fields. Same reason as /lxapi/xrplchart and /lxapi/xrplbridge.
+  const CACHE_V = '2';
+  const key = new Request(url.origin + url.pathname + '?v=' + CACHE_V + '&id=' + encodeURIComponent(id), request);
   const hit = await cache.match(key);
   if (hit) return hit;
 
@@ -70,6 +73,11 @@ export async function onRequest(context) {
       usd: num(t.usd),
       p24: num(t.pro24h), p7: num(t.pro7d), p1h: num(t.pro1h),
       vol24: num(t.vol24hxrp), trades24: num(t.vol24htx),
+      // THE DAY'S RANGE, the same pair /lxapi/xrpltokens sends as `hi`/`lo` (RAZA 2026-09-17: "why is LUMOS high /low not
+      // showing up on Trade main page"). The market table builds its rows from the list endpoint; LUMOS alone is fetched
+      // from here and folded in, so a field this endpoint did not carry was the one column its row could not fill.
+      hi: num((Array.isArray(t.maxMin24h) ? t.maxMin24h : [])[0]),
+      lo: num((Array.isArray(t.maxMin24h) ? t.maxMin24h : [])[1]),
       tvl: num(t.tvl), marketcap: num(t.marketcap),
       holders: num(t.holders), trustlines: num(t.trustlines), offers: num(t.offers),
       issued: num(t.amount), circulating: num(t.supply),
@@ -77,6 +85,12 @@ export async function onRequest(context) {
       md5: String(t.md5 || ''),
       domain: String(t.domain || ''),
       origin: String(t.origin || ''),
+      // NO DESCRIPTION FIELD EXISTS UPSTREAM. Checked by dumping every key the token object carries
+      // (130+ of them: whitepaper, social, tags, slug, ext, rsi*, amm*, …) — there is no desc, about
+      // or info among them. The issuer's own `xrp-ledger.toml` is no help either: ripple.com, the
+      // most-verified issuer on the ledger, publishes VALIDATORS and PRINCIPALS but no [[TOKENS]]
+      // block at all. So the Trade-Asset description comes from the token registry or not at all.
+      // Don't re-probe this: it costs an upstream call against a 333/day budget.
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to',
     };
   } catch (e) {

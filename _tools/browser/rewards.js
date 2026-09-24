@@ -100,6 +100,25 @@
     }
   }
 
+  function erBox(rows) {
+    var b = $('#eligBox');
+    if (!b) return;
+    b.classList.add('lxrw');
+    b.innerHTML = '';
+    rows.forEach(function (r) {
+      var er = el('div', 'er' + (r[4] ? ' tot' : ''));
+      var ek = el('div', 'ek');
+      if (r[0]) { var dot = el('span', 'd'); dot.style.background = r[0]; ek.appendChild(dot); }
+      var w = el('div');
+      w.appendChild(el('div', 't', r[1]));
+      if (r[2]) w.appendChild(el('div', 's', r[2]));
+      ek.appendChild(w);
+      er.appendChild(ek);
+      er.appendChild(el('div', 'ev mono', r[3]));
+      b.appendChild(er);
+    });
+  }
+
   function eligibility() {
     var me = addr();
     if (!me) {
@@ -110,7 +129,7 @@
 
     box('Reading the XRP Ledger…', 'Checking your LUMOS balance and pool positions.');
 
-    rpc('account_lines', { account: me, limit: 400, ledger_index: 'validated' }).then(function (res) {
+    window.lxx.allLines(rpc, me).then(function (res) {
       if (!res || !res.lines) {
         box('Could not read that account',
           'The XRP Ledger did not return balances for ' + me.slice(0, 8) + '… — it may not be activated yet.');
@@ -132,7 +151,7 @@
         // An LP token is issued BY the AMM account, so l.account identifies the pool directly.
         if (typeof l.currency === 'string' && l.currency.length === 40 && /^03/i.test(l.currency)) {
           if (l.account === NATIVE_POOL) nativeLp += bal;
-          else if (ECO[l.account]) ecoHits.push({ name: ECO[l.account], lp: bal });
+          else if (ECO[l.account]) ecoHits.push({ name: ECO[l.account], lp: bal, acct: l.account });
         }
       }
 
@@ -154,12 +173,44 @@
         return;
       }
 
-      var any = lumos > 0 || nativeLp > 0 || ecoHits.length > 0;
-      box(any ? 'You are eligible' : 'Nothing eligible yet',
-        any
-          ? 'Rewards are paid per round from the treasury. Amounts are set when a round closes.'
-          : 'Hold LUMOS, or add liquidity to the LUMOS/XRP pool or an Ecosystem pool, to take part.',
-        rows);
+      // HOLDING LUMOS IS NOT A REWARD PROGRAMME (RAZA 2026-09-15: "I dont think Rewards is working correctly on XRPL").
+      // This said "You are eligible" for any balance — 1.05M LUMOS and no pool position. The three programmes on this
+      // page are Native LP (a LUMOS/XRP position), Ecosystem LP (a position in one of the ten pools) and Whale Holder,
+      // which starts at 5,000,000 LUMOS with one share per 5M. The 250K fee discount is a trading benefit, not a reward.
+      // STELLAR'S BOX (RAZA 2026-09-15: "the design remains same and if the wallet is not qualifying for any reward. Just add -
+      // like you're doing on Stellar"): one row per programme with its dot, what this account has, and its estimated share
+      // of the round — Native LP 1,000,000 LUMOS by pool share, Ecosystem 100,000 LUMOS per pool by pool share, Whale Holder
+      // 1,000,000 LUMOS by whale shares (one per 5M, team wallets and pools excluded) — then the total.
+      var shares = Math.floor(lumos / 5e6);
+      var lpTotal = function (r) { return Number(r && r.amm && r.amm.lp_token && r.amm.lp_token.value) || 0; };
+      Promise.all([
+        nativeLp > 0 ? rpc('amm_info', { amm_account: NATIVE_POOL }) : Promise.resolve(null),
+        Promise.all(ecoHits.map(function (e) { return rpc('amm_info', { amm_account: e.acct }).then(function (r) { return { e: e, r: r }; }); })),
+        shares > 0 ? fetch('/lxapi/xrplrichlist?iss=' + ISS + '&cur=' + CUR + '&n=50').then(function (x) { return x.json(); }).catch(function () { return null; }) : Promise.resolve(null)
+      ]).then(function (res) {
+        var nTot = lpTotal(res[0]), nShare = nTot > 0 ? nativeLp / nTot : 0, nRew = 1e6 * nShare;
+        var eRew = 0, eCodes = [];
+        res[1].forEach(function (x) { var t = lpTotal(x.r); if (t > 0) eRew += 1e5 * (x.e.lp / t); eCodes.push(x.e.name); });
+        var wTS = 0;
+        ((res[2] && res[2].rows) || []).forEach(function (h) {
+          if (h.amm) return;
+          var tm = false;
+          try { tm = window.lxx.isTeamWallet(h.account); } catch (e) {}
+          if (tm) return;
+          var hb = Math.abs(Number(h.balance)) || 0;
+          if (hb >= 5e6) wTS += Math.floor(hb / 5e6);
+        });
+        if (shares > wTS) wTS = shares;
+        var wRew = (shares > 0 && wTS > 0) ? 1e6 * shares / wTS : 0;
+        var whole = function (v) { return Math.round(+v || 0).toLocaleString('en-US'); };
+        var pc = function (x) { var q = (+x || 0) * 100; return (q >= 1 ? q.toFixed(1) : (q >= 0.01 ? q.toFixed(2) : q.toFixed(3))) + '%'; };
+        erBox([
+          ['var(--accent)', 'Native LP Rewards', nativeLp > 0 ? ('LUMOS/XRP · ' + pc(nShare) + ' of the pool') : 'Add LUMOS/XRP liquidity to qualify', nativeLp > 0 ? '~' + whole(nRew) : '—'],
+          ['var(--blue)', 'Ecosystem LP Rewards', eCodes.length ? (eCodes.length === 1 ? ('LUMOS/' + eCodes[0] + ' pool') : (eCodes.length + ' pools · ' + eCodes.slice(0, 3).join(', ') + (eCodes.length > 3 ? '…' : ''))) : 'Join an eligible LUMOS pool to qualify', eCodes.length ? '~' + whole(eRew) : '—'],
+          ['var(--green)', 'Whale Holder Rewards', shares > 0 ? (whole(lumos) + ' LUMOS · ' + shares + ' share' + (shares > 1 ? 's' : '')) : (lumos > 0 ? whole(lumos) + ' LUMOS · below 5M' : 'Hold 5M+ LUMOS to qualify'), shares > 0 ? '~' + whole(wRew) : '—'],
+          ['', 'Your estimated total this round', '', '~' + whole(nRew + eRew + wRew) + ' LUMOS', true]
+        ]);
+      });
     });
   }
 
@@ -177,7 +228,12 @@
     rows.appendChild(r);
 
     var c = $('#repCount');
-    if (c) c.textContent = '0';
+    if (c) {
+      c.textContent = '0';
+      // The design's "Showing <b>6</b> of" kept its mock six beside a count of none.
+      var shown = c.previousElementSibling;
+      if (shown && shown.tagName === 'B' && shown.textContent !== '0') shown.textContent = '0';
+    }
     var t = $('#repTitle');
     if (t) t.textContent = 'No rounds yet';
     var s = $('#repSub');
@@ -222,9 +278,53 @@
     });
   }
 
+  // The programme descriptions still named another chain's pairs after the chain-name pass: "LUMOS/aBTC on the XRP
+  // Ledger" (aBTC is an Aptos asset) and "e.g. LUMOS/MESO, LUMOS/CELL". Named from this ledger's own pools.
+  function fixProgramCopy() {
+    [].forEach.call(document.querySelectorAll('.pdesc'), function (p) {
+      var h = p.innerHTML, o = h;
+      h = h.replace(/\s*or\s*<b>LUMOS\/aBTC<\/b>\s*on the XRP Ledger/i, '');
+      h = h.replace(/LUMOS\/MESO,\s*LUMOS\/CELL/, 'LUMOS/RLUSD, LUMOS/ARMY');
+      if (h !== o) p.innerHTML = h;
+    });
+  }
+
+  // THE ROUND PICKER AND THE NETWORK CHIP (RAZA 2026-09-16: "it shows APTOS logo and also says June 1. Fix it"). The chip keeps the
+  // design's Aptos image; the picker stopped at the design's last sample round. Rounds close on the 1st and the 15th on the same
+  // dates as Stellar (Round 23 = 1 June 2026), so the list runs to the most recent close.
+  function fixRounds() {
+    var img = document.querySelector('#netseg .ns img');
+    if (img && img.getAttribute('data-lxx') !== '1') {
+      img.setAttribute('data-lxx', '1');
+      img.src = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+    }
+    var sel = $('#roundSel');
+    if (!sel || sel.__lxx) return;
+    sel.__lxx = 1;
+    var rounds = [], n = 20, d = new Date(2026, 3, 15), now = new Date();
+    while (d <= now) {
+      rounds.push([n, new Date(d.getTime())]);
+      n++;
+      d = d.getDate() === 1 ? new Date(d.getFullYear(), d.getMonth(), 15) : new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+    if (!rounds.length) return;
+    sel.innerHTML = '';
+    rounds.reverse().forEach(function (r) {
+      var o = document.createElement('option');
+      o.value = String(r[0]);
+      o.textContent = 'Round ' + r[0] + ' · ' + r[1].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      sel.appendChild(o);
+    });
+    sel.value = String(rounds[0][0]);
+    sel.addEventListener('change', function () { setTimeout(report, 0); });
+  }
+
   function load() {
     if (!$('#eligBox') && !$('#repRows')) return;             // not the Rewards page
+    setTimeout(fixRounds, 0);
+    setTimeout(fixRounds, 1500);
     paintChainCopy();
+    fixProgramCopy();
     eligibility();
     report();
     // Connect finishes after this on a cold load, and the address can arrive from another tab.

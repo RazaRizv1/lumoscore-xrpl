@@ -38,7 +38,74 @@ if (!/var XAMAN_KEY = '[0-9a-f-]{36}'/.test(page)) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
 
-let files = 0, pages = 0, stripped = 0;
+// ---- the design's OTHER connect modal ------------------------------------------------------------
+// `#lcConnectModal` is a second, separate inherited modal (the `lc-*` family — not the `lxw-*` one
+// that designConnected() still mounts for the connected screen). Its list is seven STELLAR wallets:
+// Freighter, xBull, Rabet, Albedo, LOBSTR, WalletConnect, Hana.
+//
+// It is unreachable — its only opener is `.lc-guest-open`, and no element on any XRPL page carries
+// that class, so the block sits inside `<div id="lcConnectModal" hidden>` for the life of the page.
+// Unreachable is not the same as harmless: the markup still ships, and a crawler reading the HTML
+// finds seven wrong-chain wallet names on a site about the XRP Ledger. Same reason the copy pass
+// exists — see _xrplbridgecopy.
+//
+// Only the `.lc-wgroup` blocks go. `.lc-wempty` is a sibling INSIDE the same list and the design's
+// script reads it (`modal.querySelector('.lc-wempty')`), so it stays; the script's own guard
+// (`if (!modal) return;`) means nothing here can orphan a lookup either way.
+//
+// Idempotent by construction: the cut is driven by finding `<div class="lc-wgroup">`, so a second
+// run finds none and changes nothing.
+function matchDiv(h, a) {
+  // Index just past the `</div>` that closes the tag starting at `a`. Divs never self-close.
+  const re = /<\/?div\b[^>]*>/g;
+  re.lastIndex = a;
+  let depth = 0, m;
+  while ((m = re.exec(h))) {
+    if (m[0][1] === '/') { if (--depth === 0) return m.index + m[0].length; }
+    else depth++;
+  }
+  return -1;
+}
+
+// Two screens in the same modal also NAME a wallet, outside the list: the connecting screen's
+// heading and the connected card's meta line. The design's script overwrites both at runtime
+// (`'Confirming with ' + state.wallet`, `walDone.textContent = state.wallet`), but that script can
+// only run from an opener this build has none of, so the static text is what ships. Neutral wording
+// keeps each element, its id and its sentence shape exactly as designed.
+//
+// Verified uniform across all seven page keys that carry them before being written as exact strings
+// — the hand-written gates that silently disabled correct rules three times in _xrplbridgecopy were
+// all cases of guessing the source text instead of reading it.
+const PLACEHOLDERS = [
+  ['<h4 id="lcConnectingTitle">Confirming with Freighter</h4>',
+   '<h4 id="lcConnectingTitle">Confirming with your wallet</h4>'],
+  ['<span id="lcWalletNameDone">Freighter</span>',
+   '<span id="lcWalletNameDone">Wallet</span>'],
+];
+
+function stripWalletList(h) {
+  const OPEN = '<div class="lc-wgroup">';
+  let out = h, cut = 0;
+  for (;;) {
+    const a = out.indexOf(OPEN);
+    if (a < 0) break;
+    const end = matchDiv(out, a);
+    if (end < 0) { console.error('  unbalanced .lc-wgroup — left in place'); break; }
+    cut += (out.slice(a, end).match(/class="lc-wrow"/g) || []).length;
+    out = out.slice(0, a) + out.slice(end);
+  }
+  // Idempotent: no replacement CONTAINS its own search string, so a second run finds nothing. (The
+  // one-way gate that bit _xrplbridgecopy was a rule whose search text survived its own replacement.)
+  let title = 0;
+  for (const [from, to] of PLACEHOLDERS) {
+    if (out.indexOf(from) < 0) continue;
+    out = out.split(from).join(to);
+    title++;
+  }
+  return { h: out, cut, title };
+}
+
+let files = 0, pages = 0, stripped = 0, wrows = 0, wpages = 0, titles = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -55,6 +122,9 @@ for (const dev of ['desktop', 'mobile']) {
     const mine = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
     h = h.replace(mine, '');
 
+    const wl = stripWalletList(h);
+    if (wl.cut || wl.title) { h = wl.h; wrows += wl.cut; titles += wl.title; if (wl.cut) wpages++; }
+
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
     json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
@@ -67,4 +137,6 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl connect: injected on ' + pages + ' page key(s) across ' + files + ' container(s); '
-  + 'stripped the Stellar flow from ' + stripped);
+  + 'stripped the Stellar flow from ' + stripped
+  + '; removed ' + wrows + ' Stellar wallet row(s) from ' + wpages + ' page key(s)'
+  + ', neutralised ' + titles + ' connecting-screen placeholder(s)');

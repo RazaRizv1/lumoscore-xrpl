@@ -15,6 +15,9 @@ import { tokenId } from './_tokenid.js';
 const UP = 'https://api.xrpl.to/api/thumb/';
 const TTL = 604800;                    // a week; logos do not move
 
+// md5('rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha_4C554D4F53' + 30 zeros) — LUMOS, under the same scheme as every other token.
+const LUMOS_ID = '5c4fb27e6ea19e0bde8900d2c0a7b177';
+
 // Only the sizes xrpl.to actually serves. Anything else is rejected rather than passed through,
 // so this cannot be turned into an open image proxy for arbitrary upstream paths.
 const SIZES = [16, 32, 40, 48, 64, 96, 128];
@@ -40,6 +43,24 @@ export async function onRequest(context) {
   if (!/^[0-9a-f]{32}$/.test(id)) {
     return new Response('bad id', { status: 400, headers: { 'cache-control': 'public, max-age=3600' } });
   }
+  // THE LUMOS MARK IS THIS PROJECT'S OWN (RAZA 2026-09-16: "Also fix lumos logo. Use the same logo that we're using on
+  // Stellar"). The upstream holds a different artwork for the token, and it was being drawn on every surface that shows a
+  // logo. Answering here — rather than at each of the dozen call sites — means one rule covers the lot, including rows that
+  // arrive with an id and never name the issuer. The file is byte-identical to lumoscore.com's.
+  if (id === LUMOS_ID) {
+    const own = await fetch(url.origin + '/assets/tokens/lumos.png').catch(() => null);
+    if (own && own.ok) {
+      return new Response(own.body, {
+        headers: {
+          'content-type': 'image/png',
+          'cache-control': 'public, max-age=' + TTL + ', immutable',
+          'access-control-allow-origin': '*',
+        },
+      });
+    }
+    return Response.redirect(url.origin + '/assets/tokens/lumos.png', 302);
+  }
+
   let w = parseInt(url.searchParams.get('w') || '48', 10);
   if (SIZES.indexOf(w) < 0) w = 48;
 
@@ -51,19 +72,30 @@ export async function onRequest(context) {
   const headers = { accept: 'image/webp,image/*', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' };
   if (env && env.XRPLTO_API_KEY) headers['x-api-key'] = env.XRPLTO_API_KEY;
 
-  let upstream;
-  try {
-    upstream = await fetch(UP + id + '?w=' + w, { headers });
-  } catch (e) {
-    return new Response('upstream unreachable', { status: 502 });
+  // RAZA 2026-09-15: "WHys the logo for this asset not loading" / "some asset logos are not loading" — the image was there;
+  // a refused upstream call answered with an error the browser then kept for ten minutes. One retry, and an error is never
+  // cached, so the next view asks again.
+  let upstream = null;
+  // ONE retry, not three. xrpl.to's API policy is explicit -- "Honour Retry-After on a 429: back off, do not
+  // retry" -- and four attempts against a burst cap is hammering it, which is how a key gets pulled. A wallet page
+  // asking for a hundred logos is exactly the case that used to fan out here; it now backs off once for as long as
+  // the upstream asks, and a missing logo is already handled quietly downstream (2026-09-24, with the real key live).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      upstream = await fetch(UP + id + '?w=' + w, { headers });
+      if (upstream.ok || upstream.status === 401 || upstream.status === 404) break;
+    } catch (e) { upstream = null; }
+    const ra = upstream ? Number(upstream.headers.get('retry-after')) : 0;
+    await new Promise((res) => setTimeout(res, isFinite(ra) && ra > 0 && ra <= 10 ? ra * 1000 : 600));
   }
+  if (!upstream) return new Response('upstream unreachable', { status: 502, headers: { 'cache-control': 'no-store' } });
 
   // 401 here means the key is missing or rejected. Say so with a status the page can ignore
   // quietly — a missing logo must never break a row.
   if (!upstream.ok) {
     return new Response('no logo', {
       status: upstream.status === 401 ? 404 : upstream.status,
-      headers: { 'cache-control': 'public, max-age=600' },
+      headers: { 'cache-control': upstream.status === 404 || upstream.status === 401 ? 'public, max-age=600' : 'no-store' },
     });
   }
 

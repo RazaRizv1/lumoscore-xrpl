@@ -30,10 +30,14 @@ const STELLAR = 'C:' + path.sep + 'LumosCore';
 
 const CHAIN = [
   '_xrplnav', '_xrplconnect', '_xrplwhead', '_xrplfeerate', '_xrplaunchpad', '_xrpldash', '_xrpldashtop', '_xrpltrade',
-  '_xrpldexasset', '_xrplpools', '_xrplpooldetail', '_xrplaccount', '_xrplwallet', '_xrpltrustbtn', '_xrplrewards',
+  '_xrpldexasset', '_xrplpools', '_xrplpoolsmock', '_xrplcreatepool', '_xrplqorders', '_xrplpooldetail', '_xrplaccount', '_xrplwallet', '_xrpltrustbtn', '_xrplrewards',
   '_xrplltoken', '_xrplbridge', '_xrplsearch', '_xrplcopy', '_xrplreveal', '_xrplseo',
   '_xrplnetpicker', '_xrplchoosenet', '_xrpldashboxes', '_xrpllisting', '_xrplroutes', '_nofollow',
-  '_xrplorphan', '_xrplbridgecopy', '_xrpldocs', '_xrplcopy2', '_xrplstripstellar',
+  '_xrplorphan', '_xrplbridgecopy', '_xrplbridgehiw', '_xrpldocs', '_xrplcopy2', '_xrplstripstellar',
+  // LAST, and that position is load-bearing: it mirrors each page's visible FAQ into its schema.org
+  // block, so it must run after every pass that can change that copy. Moved earlier, it would
+  // faithfully republish the exact sentences the later passes are about to correct.
+  '_xrplfaqld',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {

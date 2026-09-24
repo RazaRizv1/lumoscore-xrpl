@@ -54,6 +54,42 @@
   function del(k) { try { localStorage.removeItem(k); } catch (e) {} }
   function noop() {}
 
+  // THE FADE-IN GATE THAT NEVER OPENED (RAZA 2026-09-16: "[Still not showing - WTF, this has been going on since yesterday]" —
+  // My Pools; and "Sometimes Pools-pool page is taking forever to load"). The design fades sections in with
+  //     html.lcm-ready <section>:not([data-lcm-done]) { opacity:0 }   and   [data-lcmu]:not(.lcmu-in) { opacity:0 }
+  // released by a scroll observer. A section that was display:none when that observer looked (a tab panel), or one it
+  // simply missed, stayed at opacity 0 with its content correctly loaded inside — My Pools held the position the whole time.
+  // Every check read visibility, which was "visible". Any gated section still transparent a moment after load, or after a
+  // click, is released here.
+  (function () {
+    function release() {
+      try {
+        var sels = [];
+        [].forEach.call(document.querySelectorAll('style'), function (st) {
+          String(st.textContent || '').replace(/html\.lcm-ready\s+([^{},]+?):not\(\[data-lcm-done\]\)/g, function (m, s) {
+            if (sels.indexOf(s.trim()) < 0) sels.push(s.trim());
+            return m;
+          });
+        });
+        sels.forEach(function (s) {
+          [].forEach.call(document.querySelectorAll(s), function (n) {
+            if (n.getBoundingClientRect().height > 0 && getComputedStyle(n).opacity === '0') {
+              n.setAttribute('data-lcm-done', '1');
+              n.classList.add('lcm-on');
+            }
+          });
+        });
+        [].forEach.call(document.querySelectorAll('[data-lcmu]:not(.lcmu-in)'), function (n) {
+          if (n.getBoundingClientRect().height > 0 && getComputedStyle(n).opacity === '0') n.classList.add('lcmu-in');
+        });
+      } catch (e) {}
+    }
+    function later(ms) { setTimeout(release, ms); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { later(1500); later(4000); });
+    else { later(1500); later(4000); }
+    window.addEventListener('click', function () { later(700); later(1800); }, true);
+  })();
+
   // xrpl-core is injected immediately above this file and is the same bytes the node tests run.
   function validAddress(a) {
     try { return window.lxx.isAddress(a); } catch (e) { return false; }
@@ -171,8 +207,14 @@
         var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
         throw new Error(/reject|denied|cancel/i.test(m) ? 'Rejected in GemWallet.' : m);
       }
+      // A REFUSAL IS ANNOUNCED AT WHICHEVER LEVEL THE EXTENSION PUTS IT (RAZA 2026-09-17: "if i initiate the send but i
+      // cancel the wallet confirmation. on Stellar it shows an error, on XRP it doesnt"). @gemwallet/api answers a
+      // declined request with `type: 'reject'` on the RESPONSE, not inside `result`, so a check of `result.type` alone
+      // fell through to the missing-hash error — and worse, said nothing at all when the popup was dismissed without
+      // answering. All three nestings are read here.
       var r = (d && d.result) || {};
-      if (r.type === 'reject') throw new Error('Rejected in GemWallet.');
+      if (d && d.type === 'reject') throw new Error('Rejected in GemWallet.');
+      if (r.type === 'reject' || (r.result && r.result.type === 'reject')) throw new Error('Rejected in GemWallet.');
       var hash = r.hash || r.txHash || (r.result && r.result.hash);
       if (!hash) throw new Error('GemWallet did not return a transaction hash.');
       return String(hash);
@@ -200,6 +242,8 @@
         throw new Error(/reject|denied|cancel/i.test(m) ? 'Request rejected in GemWallet.' : m);
       }
       var r = (d && d.result) || {};
+      if (d && d.type === 'reject') throw new Error('Request rejected in GemWallet.');
+      if (r.type === 'reject') throw new Error('Request rejected in GemWallet.');
       if (!r.address) throw new Error('GemWallet did not return an address.');
       return accept(r.address, 'GemWallet', 'gem');
     });
@@ -224,7 +268,8 @@
     if (xummReady) return xummReady;
     xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
       if (!window.XummPkce) throw new Error('The Xaman library did not load.');
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true });
+      // One fixed return address, the site's root, whichever page sign-in starts from — the address that must be listed in the Xaman app.
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: window.location.origin + '/' });
 
       // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
       // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
@@ -272,6 +317,50 @@
     });
   }
 
+  // ---- Crossmark -------------------------------------------------------------------------------
+  // RAZA 2026-09-16: "On landing page → XRPL → Wallet connection popup, also add: Cross mark, Joey, Wallet connect".
+  //
+  // Crossmark is an extension that injects `window.crossmark`, with everything under `.async` returning a promise that
+  // resolves once the user has answered the popup. Its logo already ships at assets/wallets/crossmark.webp.
+  //
+  // UNTESTED AGAINST THE EXTENSION, exactly as GemWallet's path was when it was written: there is no Crossmark in the
+  // browser this was built in. Both response shapes the SDK has used are read, and anything else is reported as a refusal
+  // rather than treated as a success — a wallet layer must never claim a signature it cannot show a hash for.
+  function crossApi() { return (typeof window !== 'undefined' && window.crossmark) || null; }
+  function crossInstalled() { return !!crossApi(); }
+  function crossCall(name, arg) {
+    var api = crossApi();
+    if (!api) return Promise.reject(new Error('Crossmark is not installed in this browser.'));
+    var fn = (api.async && api.async[name]) || api[name];
+    if (typeof fn !== 'function') return Promise.reject(new Error('This version of Crossmark cannot ' + name + '.'));
+    try { return Promise.resolve(fn.call(api.async || api, arg)); } catch (e) { return Promise.reject(e); }
+  }
+  // The SDK wraps its answer as { response: { data: … } }; older builds answered with the data itself.
+  function crossData(r) { return (r && r.response && r.response.data) || (r && r.data) || r || {}; }
+  function crossConnect() {
+    return crossCall('signInAndWait').then(function (r) {
+      var d = crossData(r);
+      var a = d.address || (d.account && d.account.address) || d.classicAddress || '';
+      if (!a) throw new Error('Crossmark did not return an address.');
+      return accept(a, 'Crossmark', 'cross');
+    }, function (e) {
+      var m = (e && e.message) || '';
+      throw new Error(/reject|denied|cancel/i.test(m) ? 'Request rejected in Crossmark.' : (m || 'Crossmark did not respond.'));
+    });
+  }
+  function crossSubmit(tx) {
+    return crossCall('signAndSubmitAndWait', tx).then(function (r) {
+      var d = crossData(r);
+      var res = (d.resp && d.resp.result) || d.result || d;
+      var hash = res.hash || d.hash || '';
+      if (!hash) throw new Error('Crossmark did not return a transaction hash.');
+      return hash;
+    }, function (e) {
+      var m = (e && e.message) || '';
+      throw new Error(/reject|denied|cancel/i.test(m) ? 'Rejected in Crossmark.' : (m || 'Crossmark could not sign this transaction.'));
+    });
+  }
+
   // ---- registry --------------------------------------------------------------------------------
   // The logo files already ship in this build -- assets/wallets/{gem,xaman}.png -- so the picker and
   // the header chip use the real marks rather than a letter in a coloured square. The Stellar site
@@ -291,6 +380,13 @@
       status: function () {
         return gemInstalled().then(function (ok) { return ok ? 'Installed' : ''; });
       }
+    },
+    {
+      id: 'cross', name: 'Crossmark', sub: 'Browser extension',
+      ico: 'linear-gradient(135deg,#6b57ff 0%,#3a2bb5 100%)', glyph: 'C',
+      logo: '/assets/wallets/crossmark.webp',
+      connect: crossConnect,
+      status: function () { return Promise.resolve(crossInstalled() ? 'Installed' : ''); }
     }
   ];
 
@@ -534,7 +630,7 @@
       // The DESIGN's opener, captured before we replaced window.lxwOpenWallet with our own picker.
       var mount = window.__lxwDesignOpen;
       if (typeof mount !== 'function') return false;
-      try { mount('xrpl', '/xrpl/dashboard'); } catch (e) { return false; }
+      try { mount('xrpl', '/dashboard'); } catch (e) { return false; }
       var scr = document.querySelectorAll('.lxw-screen');
       if (!scr.length) return false;
 
@@ -680,6 +776,7 @@
       var t = get(K.transport);
       if (!get(K.addr)) return Promise.reject(new Error('Connect a wallet first.'));
       if (t === 'gem') return gemSubmit(tx);
+      if (t === 'cross') return crossSubmit(tx);
       if (t === 'xaman') {
         return Promise.reject(new Error(
           'Signing with Xaman is not built yet — reconnect with GemWallet on desktop.'));
@@ -687,7 +784,7 @@
       return Promise.reject(new Error(
         'This wallet connection cannot sign. Disconnect and connect again.'));
     },
-    canSign: function () { return get(K.transport) === 'gem'; },
+    canSign: function () { var t = get(K.transport); return t === 'gem' || t === 'cross'; },
 
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     wallets: WALLETS.map(function (w) { return w.name; }),

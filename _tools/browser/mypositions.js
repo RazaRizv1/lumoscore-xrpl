@@ -32,16 +32,22 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
-  function rpc(method, params) {
+  function rpc1(method, params) {
     return fetch(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
     }).then(function (r) { return r.json(); });
   }
+  // One retry: a dropped request from the public node was enough to leave the list empty.
+  function rpc(method, params) {
+    return rpc1(method, params).catch(function () {
+      return new Promise(function (res) { setTimeout(res, 800); }).then(function () { return rpc1(method, params); });
+    });
+  }
 
   function addr() {
-    try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
+    try { return (window.lxc && window.lxc.address && window.lxc.address()) || localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
   }
 
   function fmt(n, dp) {
@@ -57,9 +63,9 @@
   // A side is a drops string (XRP) or { currency, issuer, value }.
   function side(a) {
     if (a == null) return null;
-    if (typeof a === 'string') return { name: 'XRP', amount: Number(a) / 1e6 };
+    if (typeof a === 'string') return { name: 'XRP', amount: Number(a) / 1e6, cur: 'XRP', iss: '' };
     var d = window.lxx.decodeCurrency(a.currency);
-    return { name: (d && d.display) || a.currency, amount: Number(a.value) };
+    return { name: (d && d.display) || a.currency, amount: Number(a.value), cur: a.currency, iss: a.issuer };
   }
 
   // A stable colour per ticker, matching how the wallet draws a mark it has no logo for.
@@ -78,6 +84,27 @@
 
   // The page's logo engine repaints any element holding 1-5 characters, and these discs hold exactly
   // one. data-logoed is its own skip marker.
+  // THE POOL'S TWO LOGOS (RAZA 2026-09-16: "Where are the fucking logos for the pool"), in the Pools list's own .pa/.pb slots,
+  // falling back to the lettered disc when a token has none.
+  function logo(cls, sd) {
+    var e = el('span', 'lxx-ic ' + cls);
+    e.setAttribute('data-logoed', '1');
+    e.style.cssText = 'display:inline-flex;width:32px;height:32px;flex:0 0 32px;border-radius:50%;overflow:hidden;align-items:center;justify-content:center';
+    var im = document.createElement('img');
+    im.alt = '';
+    im.src = sd.cur === 'XRP' ? '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48'
+      : ('/lxapi/xrplthumb?iss=' + encodeURIComponent(sd.iss) + '&cur=' + encodeURIComponent(sd.cur) + '&w=48');
+    im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+    im.onerror = function () {
+      if (im.parentNode) im.parentNode.removeChild(im);
+      e.style.background = hue(sd.name);
+      e.style.color = '#fff'; e.style.fontSize = '12px'; e.style.fontWeight = '800';
+      e.appendChild(document.createTextNode(String(sd.name || '?').charAt(0).toUpperCase()));
+    };
+    e.appendChild(im);
+    return e;
+  }
+
   function disc(cls, name) {
     var d = el('div', cls, String(name || '?').slice(0, 1).toUpperCase());
     try { d.setAttribute('data-logoed', '1'); } catch (e) {}
@@ -111,11 +138,25 @@
       return /position/i.test(b.textContent || '') || b.getAttribute('data-tab') === 'mine';
     })[0];
     var c = btn && btn.querySelector('.count');
-    if (c) c.textContent = String(n);
+    // The tab's count badge (RAZA 2026-09-16: "Where's the fucking pool count on the tab"): created if the tab lost it.
+    if (btn && !c) { c = el('span', 'count'); btn.appendChild(document.createTextNode(' ')); btn.appendChild(c); }
+    if (c) { c.textContent = String(n); c.setAttribute('data-logoed', '1'); c.style.removeProperty('display'); c.style.visibility = 'visible'; }
+  }
+
+  // The panel sits behind the design's fade-in gate at opacity 0 (see connect.js); it is released whenever this writes to it.
+  function reveal() {
+    var pn = $('#panelMyPositions');
+    if (!pn) return;
+    pn.setAttribute('data-lcm-done', '1');
+    pn.classList.add('lcm-on');
+    pn.classList.add('lcmu-in');
+    pn.style.setProperty('opacity', '1', 'important');
+    pn.style.setProperty('transform', 'none', 'important');
   }
 
   function note(msg) {
     var h = host(); if (!h) return;
+    reveal();
     h.node.innerHTML = '';
     if (h.kind === 'cards') {
       var d = el('div', null, msg);
@@ -133,7 +174,7 @@
   // The phone's card for one position. Same three figures as the table, in the design's own shape.
   function posCard(i, pos) {
     var a = el('a', 'pool-card my-pos');
-    a.href = '/xrpl/pools/id/' + encodeURIComponent(pos.account);
+    a.href = '/pools/xrpl/id/' + encodeURIComponent(pos.account);
 
     var head = el('div', 'pc-head');
     var icons = el('div', 'pair-icons');
@@ -172,14 +213,16 @@
 
   function row(i, pos) {
     var tr = document.createElement('tr');
+    tr.setAttribute('data-lxmypool', pos.account);
+    tr.style.cursor = 'pointer';
 
     tr.appendChild(el('td', 'idx', (i + 1 < 10 ? '0' : '') + (i + 1)));
 
     var pc = el('td');
     var cell = el('div', 'pair-cell');
     var icons = el('div', 'pair-icons');
-    icons.appendChild(disc('pa', pos.a.name));
-    icons.appendChild(disc('pb', pos.b.name));
+    icons.appendChild(logo('pa', pos.a));
+    icons.appendChild(logo('pb', pos.b));
     cell.appendChild(icons);
     var meta = el('div');
     meta.appendChild(el('div', 'pair-name', pos.a.name + ' / ' + pos.b.name));
@@ -201,21 +244,13 @@
     sh.appendChild(el('div', 'num', (pos.share * 100).toFixed(pos.share * 100 < 0.01 ? 4 : 3) + '%'));
     tr.appendChild(sh);
 
-    // Not on the ledger — see the note at the top of this file.
-    var fees = el('td');
-    fees.appendChild(el('div', 'num', '—'));
-    fees.appendChild(el('div', 'num-sub', 'not on ledger'));
-    tr.appendChild(fees);
-
-    var dep = el('td');
-    dep.appendChild(el('div', 'num', '—'));
-    tr.appendChild(dep);
-
+    // STELLAR'S ROW (RAZA 2026-09-16, "here's how the row looks like on Stellar"): Pair · Your liquidity · Pool share · "View position →".
+    // Stellar drops Fees Earned and Deposited — neither is kept by its ledger or this one.
     var act = el('td', 'participants-cell');
     var a = document.createElement('a');
-    a.href = '/xrpl/pools/id/' + encodeURIComponent(pos.account);
-    a.textContent = 'VIEW POSITION →';
-    a.style.cssText = 'color:var(--accent);font-size:14px;font-weight:700;letter-spacing:0.3px;text-decoration:none';
+    a.href = '/pools/xrpl/id/' + encodeURIComponent(pos.account);
+    a.className = 'lx-ammview';
+    a.textContent = 'View position →';
     act.appendChild(a);
     tr.appendChild(act);
 
@@ -225,13 +260,30 @@
   function load() {
     if (!host()) return;                                 // not a page with a positions list
     var me = addr();
-    if (!me) { note('Connect a wallet to see your liquidity positions.'); setCount(0); return; }
+    // THE WALLET RESTORES A MOMENT AFTER THE PAGE DOES (RAZA 2026-09-16: "When i open My pool from pools main page and then open
+    // any pool page, then i go back, then it stops showing the count of my pools. I have 2 pools otherwise"). Coming back from
+    // a pool, this ran before the address was readable and wrote a zero that nothing revisited. It now waits ~5s for a wallet
+    // before saying there is none.
+    if (!me) {
+      if ((load.waits = (load.waits || 0) + 1) < 12) { setTimeout(load, 400); return; }
+      note('Connect a wallet to see your liquidity positions.');
+      setCount(0);
+      return;
+    }
+    load.waits = 0;
 
     note('Reading your positions…');
 
-    rpc('account_lines', { account: me, limit: 400, ledger_index: 'validated' })
+    // allLines() pages account_lines through the rpc it is given and reads r.lines — it expects the ledger's
+    // \`result\`. This file's rpc resolves the whole JSON-RPC envelope, so every page read as empty and My Pools
+    // said "No liquidity positions" for an account holding three. Unwrapped here rather than changing rpc, which
+    // the amm_info calls below read as the envelope.
+    window.lxx.allLines(function (m, q) { return rpc(m, q).then(function (j) { return (j && j.result) || j; }); }, me)
       .then(function (r) {
-        var lines = (r.result && r.result.lines) || [];
+        // allLines() returns { lines } — the shape wallet.js reads. Reading r.result.lines found nothing on every
+        // account, which is why My Pools said "No liquidity positions" beside a wallet listing three
+        // (RAZA 2026-09-15: "I do have a pool. Its showing up on Wallet page but not on Pools main page").
+        var lines = (r && (r.lines || (r.result && r.result.lines))) || [];
         var lp = lines.filter(function (l) {
           return window.lxx.isLpToken(l.currency) && Number(l.balance) > 0;
         });
@@ -258,7 +310,14 @@
           var h = host(); if (!h) return;
           h.node.innerHTML = '';
           var make = h.kind === 'table' ? row : posCard;
+          if (h.kind === 'table') {
+            var tbl = h.node.closest && h.node.closest('table');
+            if (tbl) [].forEach.call(tbl.querySelectorAll('thead th'), function (th) {
+              if (/fees earned|deposited/i.test(th.textContent || '') && th.parentNode) th.parentNode.removeChild(th);
+            });
+          }
           for (var i = 0; i < pos.length; i++) h.node.appendChild(make(i, pos[i]));
+          reveal();
           setCount(pos.length);
         });
       })
@@ -268,6 +327,33 @@
         setCount(0);
       });
   }
+
+  // RAZA 2026-09-15, again: "[Still not showing] I do have a pool". The list was written once at page load; the design's tab
+  // switch and a wallet that connects after load both left it holding nothing. It is re-read whenever My Pools is opened
+  // without our rows in it, and when the wallet changes.
+  // A position row opens its pool (RAZA 2026-09-16: "WHen clicking on my pool, it redirects to All pools tab"): the design's row
+  // handler switched tabs; this is taken first.
+  window.addEventListener('click', function (e) {
+    var tr = e.target && e.target.closest && e.target.closest('#panelMyPositions tr[data-lxmypool], #panelMine [data-lxmypool]');
+    if (!tr || (e.target.closest && e.target.closest('a[href]') && !e.target.closest('a.lx-ammview'))) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    window.location.href = '/pools/xrpl/id/' + encodeURIComponent(tr.getAttribute('data-lxmypool'));
+  }, true);
+  window.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest && e.target.closest('#poolTabs [data-tab="mine"], [data-tab="mine"]');
+    if (!t) return;
+    setTimeout(function () {
+      reveal();
+      var h = host();
+      if (!h || !h.node.querySelector('a[href*="/pools/xrpl/id/"]')) load();
+    }, 60);
+  }, true);
+  try { if (window.lxc && window.lxc.onChange) window.lxc.onChange(function () { setTimeout(load, 300); }); } catch (e) {}
+  window.addEventListener('storage', function (e) { if (e && e.key === 'lumos.address') load(); });
+
+  // Back from a pool page the browser can restore this one from its cache, when no script runs again at all.
+  window.addEventListener('pageshow', function (e) { if (e && e.persisted) { load.waits = 0; load(); } });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();

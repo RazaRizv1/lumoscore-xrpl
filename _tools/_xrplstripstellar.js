@@ -28,7 +28,7 @@
 //                 per-chain child route or reveals a "Choose a network" picker that ships `hidden`.
 //                 This fork has ONE network and no child routes, so it always took the second branch:
 //                 the $LUMOS nav item led to a picker offering "Stellar — LUMOS · 1B supply" (the
-//                 wrong chain's token, linking to /xrpl/lumos/stellar, which 404s) beside "XRP Ledger
+//                 wrong chain's token, linking to /lumos/stellar, which 404s) beside "XRP Ledger
 //                 — Planned · Upcoming", which is simply false — LUMOS is live here, blackholed, with
 //                 999,955,353 issued. Meanwhile the REAL token page was in the same markup all along,
 //                 suppressed. Removing the router leaves the picker hidden as it ships and lets
@@ -40,13 +40,15 @@
 //                 Ledger wallet a Send button that does that is worse than one that does nothing, so
 //                 it goes, and mobile Send now matches desktop: awaiting an XRPL write path.
 //
-// DELIBERATELY LEFT IN PLACE, and it needs a decision rather than a quiet edit:
+// NOT IN THIS LIST, BUT GONE — and the note that used to be here was out of date:
 //
-//   lx-listtoken  on lumoscore-list-token{,-mobile}. It is the paid curated-listing flow, and it takes
-//                 a payment on STELLAR MAINNET and verifies it against horizon.stellar.org — real
-//                 money, on the wrong ledger, reached from an XRP Ledger page. Stripping it would
-//                 leave a live-looking payment form that silently does nothing, which is its own
-//                 hazard, so neither option is safe to pick unilaterally. Raised with RAZA.
+//   lx-listtoken  the paid curated-listing flow on lumoscore-list-token{,-mobile}, which took a
+//                 payment on STELLAR MAINNET from an XRP Ledger page. It used to be described here as
+//                 "deliberately left in place, raised with RAZA". It is now stripped by
+//                 _xrpllisting.js, in the same step that injects the XRPL listing layer, so the page
+//                 is never left with neither. Verified 2026-09-15: no lx-listtoken and no Stellar
+//                 network passphrase on either page; the one horizon.stellar.org string still there
+//                 is an explanatory comment inside lx-xrplfeerate, not a request.
 //
 // NOT stripped anywhere: anything that draws UI the design expects and has no XRPL replacement yet.
 // Removing markup to silence a failing script would change the design, which is not this project's

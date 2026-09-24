@@ -35,7 +35,7 @@ for (const src of [core, xp, page, px, wr]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + xp + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
 
-let files = 0, pages = 0, stellarLayers = 0;
+let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -44,12 +44,28 @@ for (const dev of ['desktop', 'mobile']) {
 
   for (const key of Object.keys(json)) {
     if (typeof json[key] !== 'string') continue;
-    // Only the wallet pages: this layer paints #assetsTable and nothing else has one.
-    if (!/^lumoscore-wallet(-(dark|light|mobile))?\.html$/.test(key)) continue;
+    // The wallet pages, AND the dashboard — because the dashboard carries the same `#modalSwap`
+    // dialog and `write.js` is what drives it. Without the layer there, "Custom Swap / Orders"
+    // opened a dialog with nothing behind it, which is why that card had to route away to the trade
+    // page instead. wallet.js paints nothing here (no `#assetsTable`, so its host check is null) and
+    // prices.js returns at its own guard; what the dashboard gains is the balance read and write.js.
+    // …and the $LUMOS token page, which reaches the same dialog from its own "Swap" button. Left out
+    // of the first pass and caught by scanning every `id="*modal*"` block in dist for wrong-chain
+    // words: one click there opened "FROM Balance: — APT / 1 APT ≈ 312.5 LUMOS" over an enabled
+    // Confirm Swap, with no layer behind any of it. A fabricated rate on a live-looking money button
+    // is the worst thing on this fork, so it gets the real machinery rather than a disable.
+    if (!/^lumoscore-(wallet|home|lumos-token)(-(dark|light|mobile))?\.html$/.test(key)) continue;
     let h = json[key];
     // desktop has a table, mobile has a card list. Requiring the table would have silently
     // skipped every phone -- the most repeated bug class in the Stellar project.
-    if (h.indexOf('id="assetsTable"') < 0 && h.indexOf('id="assetList"') < 0) continue;
+    //
+    // THE MOBILE DASHBOARD IS DELIBERATELY EXCLUDED by this same check: it ships `#swapModal` (the
+    // unwired design mock) and NOT `#modalSwap`, so there is nothing here for write.js to drive and
+    // injecting 100KB to drive nothing would be worse than the honest route the card already takes.
+    // Checked rather than assumed — the phone build differing from the desktop one is the trap this
+    // project keeps falling into.
+    if (h.indexOf('id="assetsTable"') < 0 && h.indexOf('id="assetList"') < 0
+      && h.indexOf('id="modalSwap"') < 0) continue;
 
     // THE STELLAR WALLET LAYER — 118KB of it — was still running here and calling
     // horizon.stellar.org. It writes .value-side, .value-side .value, .sub-value,
@@ -61,6 +77,59 @@ for (const dev of ['desktop', 'mobile']) {
     // NOT stripped: lx-swapcalc, lx-qorders and lx-wclaim also carry Stellar calls but own
     // controls the design expects to exist, so they need XRPL data rather than deletion.
     { const g = stripById(h, 'lx-walletdata'); h = g.html; stellarLayers += g.removed; }
+
+    // THE HERO CHART HAS A SECOND WRITER, and it draws a RANDOM WALK.
+    //
+    //     let v = 50;
+    //     for (let i = 0; i < c.points; i++) { v += (Math.random() - 0.45) * c.vol; … }
+    //
+    // — inside the design's 44KB inline block, wired to the 1D/1W/1M/1Y/ALL buttons, and it also
+    // rewrites `.chart-axis` to a hardcoded "May 16 · May 18 · May 20 · May 22" and `.timeframe-mini`
+    // to "past 7 days". It does not run on load, which is the only reason nobody had seen invented
+    // price history on this page: it fires on the FIRST TAB CLICK. The same user-input-only trigger
+    // as the Aptos market table, and just as invisible to any check that does not click.
+    //
+    // Made to bail through its own guard — the block opens `const chartEl =
+    // getElementById('heroChart'); if (!tabs.length || !chartEl) return;` — rather than deleted,
+    // because that one <script> also holds the modals, toasts, copy handling, the search popup, the
+    // cancel-order flow, the row menus and the activity list. Deleting a shared block is how this
+    // project once killed seven unrelated features at once.
+    //
+    // Scoped to that block by index: `heroChart` is also named by our own layer, which draws the
+    // real series in its place.
+    // THERE ARE TWO OF THEM, which is why this scans instead of anchoring on one function name.
+    //
+    // The first pass keyed on `function renderChart` and disabled exactly that block — and the axis
+    // still came back reading "2023 2024 2025 2026" under a real price line. A SECOND, separate
+    // 5.4KB IIFE also owns #heroChart: its own `config` (a seeded random walk, so it is deterministic
+    // and looks plausible), its own `#chartHit` / `.chart-tooltip` hover, and its own
+    // `axis.innerHTML = c.axis.map(...)` which REPLACES the design's five spans with four. Its
+    // renderer is called `render`, so anchoring on the other name never touched it.
+    //
+    // Found by watching the axis with a MutationObserver rather than by reading more source: the
+    // removed nodes came back as ["2023","2024","2025","2026"], which is in neither the design block
+    // nor this layer.
+    //
+    // So: every script block that reaches for #heroChart is made to bail through its own guard —
+    // both carry `if (!wrap) return;` / `if (!tabs.length || !chartEl) return;`. Our own layer is
+    // skipped by id, since it names the same element and is what draws the real series.
+    {
+      const find = "getElementById('heroChart')";
+      let from = 0;
+      for (;;) {
+        const at = h.indexOf(find, from);
+        if (at < 0) break;
+        const bs = h.lastIndexOf('<script', at);
+        const be = h.indexOf('</' + 'script>', at);
+        if (bs < 0 || be < at) break;
+        const openTag = h.slice(bs, h.indexOf('>', bs) + 1);
+        if (openTag.indexOf(ID) >= 0) { from = be; continue; }   // our own layer
+        const block = h.slice(bs, be).split(find).join("getElementById('lx-design-mock-disabled')");
+        h = h.slice(0, bs) + block + h.slice(be);
+        mockCharts++;
+        from = bs + block.length;
+      }
+    }
 
     const re = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
     h = h.replace(re, '');
@@ -75,4 +144,5 @@ for (const dev of ['desktop', 'mobile']) {
   fs.writeFileSync(file, data.slice(0, s) + serialized + data.slice(e), 'utf8');
 }
 
-console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); data layer on ' + pages + ' page key(s) across ' + files + ' container(s)');
+console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); disabled '+mockCharts
+  + ' random-walk chart(s); data layer on ' + pages + ' page key(s) across ' + files + ' container(s)');

@@ -1,6 +1,6 @@
 // Replace the Account page's Stellar layer with an XRP Ledger one.
 //
-// `lx-accdata` (~53KB) required a Stellar G-address. On /xrpl/account/<r-address> it printed
+// `lx-accdata` (~53KB) required a Stellar G-address. On /account/xrpl/<r-address> it printed
 // "No Stellar address in this link." and stopped, so the page never worked for a single real
 // visitor. Inert rather than wrong -- the better of the two failures, but still a dead page.
 //

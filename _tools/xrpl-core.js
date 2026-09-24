@@ -231,6 +231,46 @@ function feeOf(value, rate) {
 }
 
 // ---- balances ------------------------------------------------------------------------------------
+
+// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// this project asked for `limit: 400` and read page one as if it were the whole account.
+//
+// That is not a theoretical limit. Measured on a real mainnet LP provider
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
+// LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
+// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+//
+// The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
+// instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
+// meant the higher fee and no rewards.
+//
+// `rpc` is injected rather than imported because each browser layer owns its own transport, and this
+// file is also the one the node tests run against. Capped at 20 pages (8,000 lines) so a pathological
+// account cannot spin here forever; the cap is far above anything observed.
+// Resolves `{ lines }` — the SAME shape a single account_lines call returns — so it is a drop-in at
+// every call site and no consumer has to change how it reads the result. That matters here: seven
+// layers read these lines in seven slightly different ways, and a reshaped return is how one of them
+// would quietly start seeing `undefined`.
+function allLines(rpc, account, opts) {
+  const base = Object.assign({ account: account, limit: 400, ledger_index: 'validated' }, opts || {});
+  const out = [];
+  let pages = 0;
+
+  function next(marker) {
+    const q = Object.assign({}, base);
+    if (marker) q.marker = marker;
+    return rpc('account_lines', q).then(function (r) {
+      const lines = (r && r.lines) || [];
+      for (let i = 0; i < lines.length; i++) out.push(lines[i]);
+      pages++;
+      if (r && r.marker && pages < 20) return next(r.marker);
+      return { lines: out, pages: pages };
+    });
+  }
+  return next(null);
+}
+
 // Splits account_lines into things the holder OWNS and pool shares, and drops issuer obligations.
 function readLines(lines) {
   const held = [], pools = [], obligations = [];
@@ -251,9 +291,65 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
-const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, isAddress,
+// ---- limit orders --------------------------------------------------------------------------------
+// An issued-token value exactly as the ledger wants it: a plain decimal string with at most 15
+// significant digits. toPrecision caps the digits but answers in EXPONENT form below 1e-6 or at
+// 1e21 and above ("1.00000000000000e-7"), so that form is expanded back into digits here rather than
+// passed through — one serialiser disagreeing with another about "1e-7" is not a risk worth taking
+// for an amount that moves money.
+function iouValue(n) {
+  const x = Number(n);
+  if (!isFinite(x) || x <= 0) return null;
+  const p = x.toPrecision(15);
+  const m = /^(\d)(?:\.(\d+))?e([+-]\d+)$/.exec(p);
+  let s = p;
+  if (m) {
+    const digits = m[1] + (m[2] || ''), exp = Number(m[3]);
+    if (exp < 0) s = '0.' + '0'.repeat(-exp - 1) + digits;
+    else if (digits.length > exp + 1) s = digits.slice(0, exp + 1) + '.' + digits.slice(exp + 1);
+    else s = digits + '0'.repeat(exp + 1 - digits.length);
+  }
+  if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s;
+}
+
+// OfferCreate's tfSell, 0x00080000 (xrpl.org, OfferCreate flags).
+const TF_SELL = 0x00080000;
+
+// The TakerGets / TakerPays / Flags of a limit order for `token` against XRP, at `price` XRP per token.
+//
+// The creator SELLS TakerGets and BUYS TakerPays — verified against xrpl.org, not reasoned about,
+// because the names read naturally from the TAKER's side and backwards is the mistake to expect.
+//
+//   buy   TakerPays = the token amount       TakerGets = amount × price, in drops    no flags
+//         The ledger treats a plain offer as done once TakerPays has arrived: exactly "buy N tokens
+//         at up to this price". Stellar's manageBuyOffer.
+//   sell  TakerGets = the token amount       TakerPays = amount × price, in drops    tfSell
+//         Without tfSell a sell that crosses better bids stops as soon as the XRP total is reached
+//         and leaves tokens unsold. With it the whole amount sells, the extra XRP going to the seller.
+//         Stellar's manageSellOffer.
+//
+// The XRP side goes through toDrops, so it is ROUNDED to the nearest drop — never more than half a
+// drop from price × amount. Refuses (null) rather than building something the ledger would reject:
+// a non-positive number, an unknown side, a token without an issuer, XRP on the token side, or a
+// total under half a drop, which rounds to "0" and is temBAD_OFFER.
+function offerFor(side, token, amount, price) {
+  if (side !== 'buy' && side !== 'sell') return null;
+  if (!token || !token.currency || !token.issuer || token.currency === CUR_XRP) return null;
+  const a = Number(amount), p = Number(price);
+  if (!isFinite(a) || a <= 0 || !isFinite(p) || p <= 0) return null;
+  const value = iouValue(a);
+  const drops = toDrops(a * p);
+  if (!value || drops === null || drops === '0') return null;
+  const tok = { currency: token.currency, issuer: token.issuer, value: value };
+  if (side === 'buy') return { TakerGets: drops, TakerPays: tok, Flags: 0 };
+  return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
+}
+
+const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
-  toDrops, amountFor, assetOf, minAfterSlippage, feeOf };
+  toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
+  iouValue, TF_SELL, offerFor };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;

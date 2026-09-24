@@ -4,7 +4,7 @@
 // own output on every build:
 //
 //   * _xrplchoosenet emitted the design filename "lumoscore-home.html" and _xrplroutes rewrote it to
-//     /xrpl/dashboard immediately after — 128 of them, which was the ENTIRE "route references
+//     /dashboard immediately after — 128 of them, which was the ENTIRE "route references
 //     rewritten" figure on a chain re-run. Permanent noise in a run report destroys the zero: nobody
 //     can spot a real drift in a number that is never zero.
 //

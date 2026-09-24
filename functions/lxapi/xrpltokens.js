@@ -114,10 +114,30 @@ export async function onRequest(context) {
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to',
     };
   } catch (e) {
+    // YESTERDAY'S PRICES BEAT AN EMPTY TABLE (RAZA 2026-09-17: "sometimes i get this error when i open trade main page" —
+    // "Market data is unavailable right now"). The upstream allows 333 requests a DAY per IP and answers 429 once that is
+    // spent, so the whole market table vanished for everyone until the cache warmed again.
+    //
+    // The last good answer is kept under its own key for a day and served when the live one fails, marked `stale` with the
+    // time it was taken so the page can say so rather than passing old figures off as current.
+    const last = await cache.match(lastKey(url, n)).catch(() => null);
+    if (last) {
+      const old = await last.json().catch(() => null);
+      if (old && old.rows && old.rows.length) {
+        return json({ ...old, stale: true, error: String((e && e.message) || e) }, 30);
+      }
+    }
     return json({ ok: false, error: String((e && e.message) || e), rows: [] }, 30);
   }
 
   const res = json(out, TTL);
   context.waitUntil(cache.put(key, res.clone()));
+  // …and the copy that outlives the upstream's daily budget.
+  context.waitUntil(cache.put(lastKey(url, n), json({ ...out, cachedAt: Date.now() }, 86400)));
   return res;
+}
+
+// A second cache entry, kept for a day, holding the last answer the upstream actually gave.
+function lastKey(url, n) {
+  return new Request(url.origin + url.pathname + '?lastgood=1&n=' + n);
 }

@@ -56,7 +56,7 @@
   var linesP = {};
   function lines(addr) {
     if (!linesP[addr]) {
-      linesP[addr] = rpc('account_lines', { account: addr, limit: 400, ledger_index: 'validated' });
+      linesP[addr] = window.lxx.allLines(rpc, addr);
     }
     return linesP[addr];
   }

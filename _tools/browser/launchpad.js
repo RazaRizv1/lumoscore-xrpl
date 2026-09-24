@@ -80,10 +80,14 @@
   // a lot to spend proving a GemWallet round-trip works, so the first live launch runs at a
   // fraction of it. Put the line below back to the real numbers once a test launch has succeeded.
   //
-  // What this actually costs at ~$1.42/XRP: 0.35 fee + 1.06 into the pool + 1.5 funding the issuer
-  // + 0.2 for the AMM's owner reserve = roughly 3.1 XRP. Of that only the issuer funding is truly
-  // spent -- it is locked forever by the blackhole. The fee returns to LumosCore's own collector and
-  // the pool side is withdrawable with the LP tokens.
+  // WHERE THE MONEY GOES, as of 2026-09-17 (RAZA's locked-liquidity design):
+  //   create + pool  -> LumosCore's collector. BOTH lines are charged now; `pool` used to be displayed and never sent.
+  //   liq            -> the pool account, and from there into the AMM. NOT withdrawable by anyone, ever: that account
+  //                     blackholes itself on the last step, which is the whole point of the design.
+  //   issuer funding -> ~1.02 XRP, locked forever in the blackholed issuer (measured against three live launches).
+  //   pool funding   -> ~1.85 XRP of reserves + the AMMCreate burn, likewise locked in a dead account.
+  // So roughly 2.9 XRP per launch is permanently out of circulation, and the only recoverable part is nothing at all —
+  // which is what "the liquidity cannot be rugged" costs.
   var USD_REAL = { create: 5, liq: 10, pool: 10 };
   var USD = { create: 0.50, liq: 1.50, pool: 0 };
   var TEST_PRICING = USD.create !== USD_REAL.create || USD.liq !== USD_REAL.liq;
@@ -574,7 +578,7 @@
     // Same call the review step already makes for a missing draft — there is nothing to confirm
     // without a result, so it goes back to the step that makes one.
     if (!res || !(res.name || res.ticker || res.currency)) {
-      try { location.replace('/xrpl/launchpad'); } catch (e) {}
+      try { location.replace('/launchpad'); } catch (e) {}
       return;
     }
 
@@ -692,7 +696,7 @@
       var draft = null;
       try { draft = JSON.parse(localStorage.getItem(DRAFT) || 'null'); } catch (e) { draft = null; }
       if (!draft || !draft.name || !draft.ticker) {
-        try { location.replace('/xrpl/launchpad'); } catch (e) {}
+        try { location.replace('/launchpad'); } catch (e) {}
         return;
       }
     }

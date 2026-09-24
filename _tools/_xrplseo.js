@@ -1,6 +1,6 @@
 // XRPL titles and meta descriptions.
 //
-// The containers arrived carrying Stellar's copy -- /xrpl/wallet was telling search engines it was a
+// The containers arrived carrying Stellar's copy -- /wallet was telling search engines it was a
 // "Stellar Wallet". Titles and descriptions are what gets indexed, so they are the one thing that has
 // to be right before any of this is public.
 //

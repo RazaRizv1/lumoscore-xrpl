@@ -153,7 +153,7 @@ export async function onRequest(context) {
     };
   } catch (e) {
     // A price column that says nothing is fine. A price column that says something wrong is not.
-    return json({ ok: false, error: String((e && e.message) || e), t: {} }, 30);
+    return json({ ok: false, error: String((e && e.message) || e), t: {} }, 0);   // a refusal is never cached
   }
 
   const res = json(out, TTL);

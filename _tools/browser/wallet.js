@@ -21,6 +21,17 @@
   var RPC = 'https://xrplcluster.com/';
   var $ = function (s, r) { return (r || document).querySelector(s); };
 
+  // THE DESIGN'S NUMBERS GO BEFORE THEY CAN BE READ (RAZA 2026-09-17: "there's a flash bug when i refresh. It shows that i
+  // have 5 assets and 2 pools for split seconds"). The markup ships "5 holdings · 31,108.45 APT total" with tab counts of 5
+  // and 2, and this layer only overwrote them once the ledger answered — a second or two of someone else's portfolio on
+  // every refresh. Cleared as this file runs, which is before anything is painted.
+  (function blankHeaderMock() {
+    [].forEach.call(document.querySelectorAll('.asset-tabs .cnt'), function (c) { c.textContent = ''; });
+    [].forEach.call(document.querySelectorAll('.section-heading .meta, h2 .meta, h3 .meta'), function (m) {
+      if (/holding|APT|Aptos|active|total/i.test(m.textContent || '')) m.textContent = '';
+    });
+  })();
+
   // RETRIED ONCE, and that is not belt-and-braces. This page now runs four layers that each talk to
   // the ledger on load -- balances, the fee tier, connect, and prices -- and a public node drops one
   // of a simultaneous burst. The symptom is the whole asset list replaced by 'Could not read the XRP
@@ -206,9 +217,22 @@
     });
   }
 
+  // THE VERIFIED TICK (RAZA 2026-09-16: "Also add verification tick for LUMOS on all other places where it should be").
+  // The same span, glyph and class the market table and the search rows use, so the inherited .lx-vtick rule styles it;
+  // the sizing is inline as well because this page's sheet does not carry that rule.
+  var LUMOS_ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  function vtick() {
+    var s = el('span', 'lx-vtick');
+    s.title = 'Verified issuer';
+    s.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;margin-left:5px;border-radius:50%;background:#2fb46a;color:#fff;vertical-align:middle;flex:none';
+    s.innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+    return s;
+  }
+
   // ---- rows, per design ---------------------------------------------------------------------------
   function tableRow(name, sub, right, rightSub, frozen, tok) {
     var tr = document.createElement('tr');
+    tr.setAttribute('data-lxkey', tok ? (name + '-' + tok.issuer) : 'XRP');
     var c1 = el('td');
     var aid = el('div', 'asset-id');
     var ico = el('div', 'ico lx-aico');
@@ -223,23 +247,382 @@
     }, thumb(tok, 48));
     aid.appendChild(ico);
     var meta = el('div', 'meta');
-    // A ticker is one to five characters, which is precisely what the logo layer hunts for, so the
-    // name is claimed the same way the card badge is. "XRP" is not a slot to lose to a repaint.
     var nm = el('div', 'nm');
     plain(nm, name + (frozen ? ' (frozen)' : ''));
+    if (tok && tok.issuer === LUMOS_ISS) nm.appendChild(vtick());
     meta.appendChild(nm);
-    meta.appendChild(el('div', 'sb', sub || ''));
+
+    // STELLAR'S ROW (RAZA 2026-09-15: "My assets section is different on Stellar"), read off lumoscore.com:
+    // the native asset's sub-line is "Stellar · native"; a token's is its issuer, shortened, with a copy
+    // button — `.lx-asb`, `.lx-iss`, `.lx-isscopy`, all styled by the inherited sheet. The price cell
+    // is `.p1.lx-p1` plus the price in the native asset, the balance cell is `.b1` over "≈ $x" in
+    // `.b2`, and the actions carry their icons and a third, icon-only button.
+    var sb = el('div', 'sb');
+    if (!tok) {
+      sb.appendChild(el('span', 'lx-asb-t', 'XRP Ledger · native'));
+    } else {
+      var asb = el('span', 'lx-asb');
+      asb.setAttribute('data-vk', name + '|' + tok.issuer);
+      var iss = el('span', 'lx-iss', short(tok.issuer));
+      iss.title = tok.issuer;
+      asb.appendChild(iss);
+      var cp = el('button', 'lx-isscopy');
+      cp.type = 'button';
+      cp.setAttribute('data-iss', tok.issuer);
+      cp.setAttribute('aria-label', 'Copy issuer address');
+      cp.title = 'Copy issuer address';
+      cp.innerHTML = ICON_COPY;
+      asb.appendChild(cp);
+      sb.appendChild(asb);
+    }
+    meta.appendChild(sb);
     aid.appendChild(meta);
     c1.appendChild(aid);
     tr.appendChild(c1);
-    tr.appendChild(el('td', null, '—'));                 // price: needs a price source
-    tr.appendChild(el('td', null, '—'));                 // 7d: later
-    var c4 = el('td', 'right');
-    c4.appendChild(el('div', 'asset-bal', right));
-    if (rightSub) c4.appendChild(el('div', 'asset-sb', rightSub));
+    tr.appendChild(el('td', 'price-cell', '—'));        // prices.js fills it
+    // `spark-cell` IS THE CLASS THAT HIDES THIS COLUMN, as on Stellar — see the note in prices.js.
+    tr.appendChild(el('td', 'spark-cell'));
+    var c4 = el('td', 'right balance-cell');
+    c4.appendChild(el('div', 'b1', right));
+    c4.appendChild(el('div', 'b2', ''));
+    // XRP's spendable/reserved split stays available on hover; Stellar's row has no line for it.
+    if (rightSub) c4.title = rightSub;
     tr.appendChild(c4);
-    tr.appendChild(el('td', 'right'));
+    var c5 = el('td', 'right');
+    c5.appendChild(rowActions(name, tok));
+    tr.appendChild(c5);
     return tr;
+  }
+
+  // COLUMN 5 WAS 260px OF NOTHING ON EVERY ROW. lumoscore.com fills it — read off the live table, it
+  // holds `.row-quick-actions` with two `.qa-row-btn` buttons, Trade and Send. The design's own
+  // classes and its own column; nothing is styled or invented here.
+  function rowActions(name, tok) {
+    var wrap = el('div', 'row-quick-actions');
+
+    var trade = el('button', 'qa-row-btn');
+    trade.innerHTML = ICON_TRADE + ' Trade';
+    trade.type = 'button';
+    // XRP has no issuer, so it has no asset page of its own — that row goes to the market.
+    trade.setAttribute('data-lxgo', tok && tok.issuer
+      ? '/trade/xrpl/' + encodeURIComponent(name + '-' + tok.issuer)
+      : '/trade/xrpl');
+    wrap.appendChild(trade);
+
+    // A HOLDING OF NOTHING OFFERS THE TRUST LINE BACK (RAZA 2026-09-16: "If i have 0 of any asset, then there should be
+    // remove trustline button just like on Stellar"). Stellar puts it where Send sits, and Send on an empty holding has
+    // nothing to send anyway. Each trust line reserves 0.2 XRP, so removing one hands that back.
+    if (tok && !(tok.balance > 0) && !tok.frozen) {
+      // STELLAR'S EXACT BUTTON (RAZA 2026-09-17: "the remove trustline button is not the same as on Stellar"): class
+      // `qa-row-btn lx-rmtrust` with a trash glyph — and this build already carries the rule that paints that icon red
+      // (`#assetsTable .qa-row-btn.lx-rmtrust svg{stroke:var(--red)}`), which my own class and link icon never triggered.
+      var tl = el('button', 'qa-row-btn lx-rmtrust');
+      tl.innerHTML = ICON_TRUSTLINE + ' Trustline';
+      tl.type = 'button';
+      tl.title = 'Remove this trust line and free its 0.2 XRP reserve';
+      tl.setAttribute('data-lxrmtl', (tok.currency || '') + '|' + tok.issuer + '|' + name);
+      wrap.appendChild(tl);
+    } else {
+      // SEND WORKS ON EVERY ROW (RAZA 2026-09-15: "Why's send button inactive"). The Send dialog's picker
+      // (write.js) holds tokens as well as XRP, so the row opens it on its own asset, as lumoscore.com does.
+      var send = el('button', 'qa-row-btn');
+      send.innerHTML = ICON_SEND + ' Send';
+      send.type = 'button';
+      send.setAttribute('data-lxsend', tok ? ((tok.currency || '') + '|' + tok.issuer + '|' + name) : 'XRP');
+      wrap.appendChild(send);
+    }
+
+    // The third, icon-only button Stellar's row ends on. It opens Stellar's row menu — View asset, Pin to
+    // top, Copy issuer address, View on Explorer (RAZA 2026-09-15: "instead of opening the dropdown, it
+    // opens up bithomp").
+    var more = el('button', 'qa-row-btn icon-only');
+    more.type = 'button';
+    more.innerHTML = ICON_MORE;
+    more.setAttribute('aria-label', 'More actions');
+    more.setAttribute('data-lxmenu', tok ? (name + '|' + tok.issuer) : 'XRP');
+    wrap.appendChild(more);
+    return wrap;
+  }
+
+  // Setting the limit to zero on a holding of nothing is what closes a trust line: the ledger deletes the line and gives
+  // the 0.2 XRP reserve back. It is refused while any balance remains, which is why the button only appears on an empty
+  // row. Signed with the same wallet path as every other write on this site.
+  function removeTrustline(btn) {
+    var parts = (btn.getAttribute('data-lxrmtl') || '').split('|');
+    var cur = parts[0], iss = parts[1], code = parts[2] || 'the asset';
+    var me = addr();
+    if (btn.getAttribute('data-busy') === '1' || !cur || !iss || !me) return;
+    if (!window.lxc || !window.lxc.submit) { toast('Connect a wallet first.'); return; }
+    var label = btn.innerHTML;
+    btn.setAttribute('data-busy', '1');
+    btn.textContent = 'Approve…';
+    window.lxc.submit({
+      TransactionType: 'TrustSet', Account: me,
+      LimitAmount: { currency: cur, issuer: iss, value: '0' }
+    }).then(function () {
+      btn.textContent = 'Removing…';
+      toast(code + ' trust line removed');
+      // The ledger validates in a few seconds; the list is read again rather than edited in place.
+      setTimeout(function () { btn.removeAttribute('data-busy'); btn.innerHTML = label; load(); }, 5000);
+    }, function (err) {
+      btn.removeAttribute('data-busy');
+      btn.innerHTML = label;
+      var m = (err && err.message) || '';
+      toast(/reject|denied|cancel/i.test(m) ? 'Cancelled' : 'The trust line could not be removed.');
+    });
+  }
+
+  // Stellar hides this header at RUNTIME — its `th` carries an inline `display:none`, and there is no
+  // stylesheet rule for it in either build, which is why grepping the CSS found nothing. Same thing
+  // here, so the column disappears completely instead of standing empty over hidden cells.
+  function hideSparkHead() {
+    var body = document.getElementById('assetsTable');
+    var tbl = body && body.closest ? body.closest('table') : null;
+    if (!tbl) return;
+    var ths = tbl.querySelectorAll('thead th');
+    if (ths.length > 2) ths[2].style.display = 'none';
+  }
+
+  // The row buttons have to be claimed on WINDOW CAPTURE, for the same reason the trade and pools
+  // rows are: the design claims clicks anywhere in a list page and routes them through its own
+  // resolver, and a bubble-phase listener on the button never runs first.
+  function claimRowActions() {
+    if (window.__lxxWalletActs) return;
+    window.__lxxWalletActs = 1;
+    window.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+
+      var go = t.closest('[data-lxgo]');
+      if (go) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.location.href = go.getAttribute('data-lxgo');
+        return;
+      }
+
+      var mb = t.closest('[data-lxmenu]');
+      if (mb) { e.preventDefault(); e.stopImmediatePropagation(); openRowMenu(mb); return; }
+      var mi = t.closest('.lx-rowmenu [data-lxmi]');
+      if (mi) { e.preventDefault(); e.stopImmediatePropagation(); rowMenuAct(mi); return; }
+      if (!t.closest('.lx-rowmenu')) closeRowMenu();
+
+      // THE WALLET CHIP'S LINK ICON opens this account on Bithomp (RAZA 2026-09-15), as Stellar's opens it on
+      // stellar.expert. Found by its external-link glyph, the way Stellar's layer finds it.
+      var xb = t.closest('.wallet-chip button, .wallet-chip a, .hero-id-row button, .hero-id-row a');
+      var xpoly = xb && xb.querySelector('polyline');
+      if (xb && ((xb.getAttribute('title') || '') === 'Explorer' || (xpoly && /^15\s+3\s+21\s+3\s+21\s+9$/.test((xpoly.getAttribute('points') || '').trim())))) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (addr()) window.open('https://bithomp.com/explorer/' + encodeURIComponent(addr()), '_blank', 'noopener');
+        return;
+      }
+
+      var ex = t.closest('[data-lxexp]');
+      if (ex) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        var xv = ex.getAttribute('data-lxexp');
+        if (xv) window.open('https://bithomp.com/explorer/' + encodeURIComponent(xv), '_blank', 'noopener');
+        return;
+      }
+      var cpb = t.closest('.lx-isscopy');
+      if (cpb) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        copyText(cpb.getAttribute('data-iss') || '');
+        return;
+      }
+
+      var tlb = t.closest('[data-lxrmtl]');
+      if (tlb) { e.preventDefault(); e.stopImmediatePropagation(); removeTrustline(tlb); return; }
+
+      var sd = t.closest('[data-lxsend]');
+      if (sd) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // Opens the page's OWN Send dialog by clicking the header button that already does it, so
+        // whichever of the two modal sets is live (this page ships a desktop and a mobile copy) is
+        // the one that opens, and nothing here duplicates that logic.
+        // write.js reads this when the dialog opens and selects the row's asset.
+        window.__lxxSendPre = sd.getAttribute('data-lxsend') || 'XRP';
+        var btns = document.querySelectorAll('.quick-actions .qa-btn');
+        for (var i = 0; i < btns.length; i++) {
+          if (/^\s*send\s*$/i.test(btns[i].textContent || '')) { btns[i].click(); return; }
+        }
+      }
+    }, true);
+  }
+
+  // Stellar's row icons, copied off lumoscore.com's live table (RAZA 2026-09-15: "the send and trade icon is
+  // different on XRPL"): a candlestick chart for Trade, a paper plane for Send, at 11px; the kebab at 12px.
+  var SVG_OPEN = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">';
+  var ICON_TRADE = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M8 6v3"></path><rect x="6" y="9" width="4" height="6" rx="1"></rect><path d="M8 15v3"></path><path d="M16 4v2"></path><rect x="14" y="6" width="4" height="9" rx="1"></rect><path d="M16 15v3"></path></svg>';
+  var ICON_SEND = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
+  // The trash glyph lumoscore.com uses on this button, copied from its own markup so the two builds draw the same row.
+  var ICON_TRUSTLINE = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>';
+  var ICON_MORE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>';
+
+  // ---- the row menu ----------------------------------------------------------------------------------
+  // Stellar's .row-menu, built the way lumoscore.com builds it: fixed-position under the kebab, a child of
+  // body, four actions with a divider before the explorer link. The inherited sheet styles it.
+  // Figures the way Stellar's pool rows print them: whole units past 100K, one decimal past 1K, two below.
+  function lpAmt(v) {
+    v = Number(v);
+    if (!(v > 0)) return '0';
+    var dp = v >= 100000 ? 0 : (v >= 1000 ? 1 : (v >= 1 ? 2 : 6));
+    return v.toLocaleString('en-US', { maximumFractionDigits: dp });
+  }
+
+  var PIN_KEY = 'lumos.pinned';
+  function pinnedList() {
+    try { var v = JSON.parse(localStorage.getItem(PIN_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+  function closeRowMenu() {
+    [].forEach.call(document.querySelectorAll('.lx-rowmenu'), function (m) { if (m.parentNode) m.parentNode.removeChild(m); });
+  }
+  function menuSvg(inner) {
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+  }
+  function openRowMenu(btn) {
+    var open = document.querySelector('.lx-rowmenu');
+    var again = open && open.__lxFor === btn;
+    closeRowMenu();
+    if (again) return;                                       // a second click on the same kebab closes it
+    var key = btn.getAttribute('data-lxmenu') || 'XRP';
+    var parts = key.split('|'), code = parts[0], iss = parts[1] || '';
+    var pinKey = iss ? (code + '-' + iss) : 'XRP';
+    var m = document.createElement('div');
+    m.className = 'row-menu open lx-rowmenu';
+    m.__lxFor = btn;
+    m.setAttribute('data-lxcode', code);
+    m.setAttribute('data-lxiss', iss);
+    var h = '<button type="button" data-lxmi="view">' + menuSvg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>') + ' View asset</button>'
+      + '<button type="button" data-lxmi="pin">' + menuSvg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>')
+      + (pinnedList().indexOf(pinKey) >= 0 ? ' Unpin' : ' Pin to top') + '</button>';
+    if (iss) h += '<button type="button" data-lxmi="copy">' + menuSvg('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>') + ' Copy issuer address</button>';
+    h += '<div class="divider"></div>'
+      + '<button type="button" data-lxmi="explorer">' + menuSvg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line>') + ' View on XRPL Explorer</button>';
+    m.innerHTML = h;
+    m.style.position = 'fixed';
+    m.style.visibility = 'hidden';
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 170;
+    var top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+    m.style.top = Math.round(top) + 'px';
+    m.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw))) + 'px';
+    m.style.visibility = '';
+    if (!window.__lxxRowMenuClose) {
+      window.__lxxRowMenuClose = 1;
+      window.addEventListener('scroll', closeRowMenu, true);
+      window.addEventListener('resize', closeRowMenu);
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeRowMenu(); });
+    }
+  }
+  function rowMenuAct(item) {
+    var m = item.closest('.lx-rowmenu');
+    var code = m.getAttribute('data-lxcode'), iss = m.getAttribute('data-lxiss') || '';
+    var what = item.getAttribute('data-lxmi');
+    closeRowMenu();
+    if (what === 'view') {
+      window.location.href = iss ? ('/trade/xrpl/' + encodeURIComponent(code + '-' + iss)) : '/trade/xrpl';
+    } else if (what === 'copy') {
+      copyText(iss);
+    } else if (what === 'explorer') {
+      var target = iss || addr();
+      if (target) window.open('https://bithomp.com/explorer/' + encodeURIComponent(target), '_blank', 'noopener');
+    } else if (what === 'pin') {
+      var k = iss ? (code + '-' + iss) : 'XRP', list = pinnedList(), at = list.indexOf(k);
+      if (at >= 0) list.splice(at, 1); else list.unshift(k);
+      try { localStorage.setItem(PIN_KEY, JSON.stringify(list)); } catch (e) {}
+      applyPins();
+    }
+  }
+  // Pinned rows go to the top of My Assets, newest pin first, each with Stellar's star badge.
+  function applyPins() {
+    var tb = document.getElementById('assetsTable');
+    if (!tb) return;
+    var list = pinnedList();
+    [].forEach.call(tb.querySelectorAll('tr[data-lxkey]'), function (tr) {
+      var on = list.indexOf(tr.getAttribute('data-lxkey')) >= 0;
+      tr.classList.toggle('lx-pinned', on);
+      var nm = tr.querySelector('.nm'), bd = nm && nm.querySelector('.lx-pin-badge');
+      if (on && nm && !bd) {
+        bd = document.createElement('span');
+        bd.className = 'lx-pin-badge';
+        bd.title = 'Pinned';
+        bd.setAttribute('data-logoed', '1');
+        bd.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>';
+        nm.appendChild(bd);
+      } else if (!on && bd) {
+        bd.parentNode.removeChild(bd);
+      }
+    });
+    for (var i = list.length - 1; i >= 0; i--) {
+      var row = tb.querySelector('tr[data-lxkey="' + String(list[i]).replace(/"/g, '') + '"]');
+      if (row) tb.insertBefore(row, tb.firstChild);
+    }
+  }
+  try { window.__lxxApplyPins = applyPins; } catch (e) {}
+  var ICON_COPY = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+  // Balances the way Stellar prints them: whole units past a thousand, cents above one, and enough
+  // precision below one that a small holding does not read as zero.
+  function balTxt(v) {
+    v = Number(v);
+    if (!isFinite(v)) return '—';
+    if (v >= 1000) return fmt(v, 0);
+    if (v >= 1) return fmt(v, 2);
+    return fmt(v, 6);
+  }
+
+  function copyText(text) {
+    if (!text) return;
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(fallback);
+      else fallback();
+    } catch (e) { fallback(); }
+    toast('Copied to clipboard');
+  }
+
+  // Stellar's bottom-centre toast, the same element the rest of the site uses.
+  function toast(msg) {
+    if (!document.getElementById('lx-copytoast-css')) {
+      var st = document.createElement('style');
+      st.id = 'lx-copytoast-css';
+      st.textContent = '.lx-ctoast-stack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}'
+        + '.lx-ctoast{background:var(--text,#16171b);color:var(--bg,#fff);padding:11px 18px 11px 14px;border-radius:10px;font-family:"Hanken Grotesk",system-ui,sans-serif;font-size:16px;font-weight:600;display:inline-flex;align-items:center;gap:9px;white-space:nowrap;box-shadow:0 12px 32px rgba(0,0,0,.28),0 2px 8px rgba(0,0,0,.16)}'
+        + '.lx-ctoast .ci{width:18px;height:18px;border-radius:50%;background:var(--green,#35c07f);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px}';
+      document.head.appendChild(st);
+    }
+    var stack = document.querySelector('.lx-ctoast-stack');
+    if (!stack) { stack = document.createElement('div'); stack.className = 'lx-ctoast-stack'; document.body.appendChild(stack); }
+    var t = document.createElement('div');
+    t.className = 'lx-ctoast';
+    t.appendChild(Object.assign(document.createElement('span'), { className: 'ci', textContent: '✓' }));
+    t.appendChild(Object.assign(document.createElement('span'), { textContent: msg || 'Copied to clipboard' }));
+    stack.appendChild(t);
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 1800);
+  }
+
+  // A token mark inside an activity row's label: Stellar's `.lx-act-ilogo`, painted from a CSS variable.
+  function actLogo(a) {
+    var s = el('span', 'lx-act-ilogo');
+    var u = (a && a.issuer) ? thumb({ issuer: a.issuer, currency: a.currency }, 32) : thumb(null, 32);
+    ['--al', '--ic', '--lxlogo'].forEach(function (k) { s.style.setProperty(k, 'url("' + u + '")'); });
+    s.setAttribute('data-l', '');
+    s.setAttribute('data-logoed', '1');
+    return s;
   }
 
   function card(name, sub, right, rightSub, frozen, tok) {
@@ -385,16 +768,18 @@
         ? (fmt(data.xrp.spendable, 6) + ' spendable · ' + fmt(data.xrp.reserved, 2) + ' reserved')
         : 'reserve unknown';
       // null marks the native asset: it has no issuer, so its logo id cannot be derived.
-      h.node.appendChild(make('XRP', 'XRP Ledger', fmt(data.xrp.balance, 6) + ' XRP', rs, false, null));
+      h.node.appendChild(make('XRP', 'XRP Ledger', balTxt(data.xrp.balance) + ' XRP', rs, false, null));
     }
 
     data.held.sort(function (a, b) { return b.balance - a.balance; });
     for (var i = 0; i < data.held.length; i++) {
       var t = data.held[i];
-      h.node.appendChild(make(t.display, short(t.issuer), fmt(t.balance, 6) + ' ' + t.display, '', t.frozen, t));
+      h.node.appendChild(make(t.display, short(t.issuer), balTxt(t.balance) + ' ' + t.display, '', t.frozen, t));
     }
 
     if (!data.held.length && !data.xrp) note(h, 'Nothing held on this account yet.');
+    hideSparkHead();
+    claimRowActions();
     setMeta(data.held.length, data.pools.length, data.xrp);
     setChip();
     clearTotalMock();
@@ -489,6 +874,14 @@
     if (!a) return;
     var chip = $('.wallet-chip .text') || $('.wallet-chip .addr');
     if (chip && chip.textContent.trim() !== short(a)) chip.textContent = short(a);
+    // `.hero-id-row .wallet-chip .text:not(.lxp)` is hidden by the inherited sheet — which is the
+    // "wallet address is empty" top left (RAZA 2026-09-15). Written correctly, never released.
+    if (chip) chip.classList.add('lxp');
+    // "COPIED TO CLIPBOARD", as lumoscore.com says (RAZA 2026-09-15). The design's copy handler builds its toast from
+    // data-copy-label — "Wallet address copied to clipboard" — so the label is removed from the address controls.
+    [].forEach.call(document.querySelectorAll('.wallet-chip [data-copy-label], .hero-id-row [data-copy-label]'), function (b) {
+      b.removeAttribute('data-copy-label');
+    });
 
     // THE PAGE HAS MORE THAN ONE HOLDINGS SUMMARY. setMeta writes $('.section-heading .meta'), which
     // is the FIRST match — and a second one lives in another .section-heading further down, so it kept
@@ -497,8 +890,9 @@
     var d = window.__lxxData;
     if (!d) return;
     var n = d.held.length + (d.xrp ? 1 : 0);
-    var line = n + ' holding' + (n === 1 ? '' : 's')
-      + (d.xrp ? (' · ' + fmt(d.xrp.balance, 2) + ' XRP') : '');
+    // Stellar's wording: "3 Holdings | Total worth: ~326 XLM". The worth arrives with prices (prices.js).
+    var line = n + (n === 1 ? ' Holding' : ' Holdings')
+      + (window.__lxxWorthXrp > 0 ? (' | Total worth: ~' + Math.round(window.__lxxWorthXrp).toLocaleString('en-US') + ' XRP') : '');
     [].forEach.call(document.querySelectorAll('.section-heading .meta, h2 .meta'), function (m) {
       // Only summaries, never an activity row's own .meta (which is "From r… · 06:16").
       if (!/holding|APT|Aptos/i.test(m.textContent || '')) return;
@@ -527,6 +921,7 @@
       m.textContent = line;
     });
   }
+  try { window.__lxxSetChip = setChip; } catch (e) {}
 
   // ---- Open orders and Claimable -------------------------------------------------------------------
   // Both tabs were driven by Stellar layers (lx-qorders, lx-wclaim) that queried horizon.stellar.org
@@ -544,9 +939,8 @@
   // two insight cards folded away — which is why it inherits lx-qorders-css and lx-wclaim-css and
   // looks the same. This is a port of the same layer, not a new design.
   //
-  // "Claimable payments" is Stellar's claimable-balance feature, which this ledger does not have. A
-  // CHECK is the real equivalent: a payment addressed to you that you have to cash, which is what the
-  // label already describes. So the tab keeps its name and counts checks.
+  // "Claimable payments" is Stellar's claimable-balance feature, which this ledger does not have, so the
+  // tab is NOT built here (RAZA 2026-09-15: "remove the claimable tab on XRPL"). Open orders stands alone.
   function selectTab(which) {
     var tabs = document.querySelectorAll('.lx-wctab');
     for (var i = 0; i < tabs.length; i++) {
@@ -586,8 +980,6 @@
     bar.innerHTML = '<div class="asset-tabs lx-wcgroup">'
       + '<button class="lx-wctab active" type="button" data-t="orders">Open orders'
       + ' <span class="cnt">0</span></button>'
-      + '<button class="lx-wctab" type="button" data-t="claim">Claimable payments'
-      + ' <span class="cnt">0</span></button>'
       + '</div>';
     bar.addEventListener('click', function (e) {
       var b = e.target.closest && e.target.closest('.lx-wctab');
@@ -601,8 +993,6 @@
     var anchor = orders || stack.nextSibling;
 
     var pOrders = document.createElement('div'); pOrders.className = 'lx-wcpanel lx-wcpanel-orders';
-    var pClaim = document.createElement('div'); pClaim.className = 'lx-wcpanel lx-wcpanel-claim';
-    pClaim.setAttribute('hidden', '');
 
     host.insertBefore(bar, anchor);
     host.insertBefore(pOrders, anchor);
@@ -618,8 +1008,23 @@
       }
       pOrders.appendChild(orders);
     }
-    host.insertBefore(pClaim, pOrders.nextSibling);
-    pClaim.innerHTML = '<div class="lx-wclist"><div class="lx-wcnote"></div></div>';
+
+    // "CANCEL ALL" MOVES ONTO THE TAB ROW (RAZA 2026-09-17: "place the cancel all button aligning with Claimable payments
+    // (but on right side)"). It belongs to the heading this layer hides, so it was left sitting on a line of its own above
+    // the tabs. Re-parented, not restyled — the design's own button, at the end of the row the tabs are on.
+    // Searched across the page, not inside the panel: the control lives in its own `.section-heading .right`, a sibling of
+    // the orders list rather than a child of it, so looking only within the panel found nothing.
+    var cancel = null;
+    [].slice.call(document.querySelectorAll('.section-heading .ctrl-btn, .section-heading button, .section-heading a')).forEach(function (b) {
+      if (!cancel && /cancel all/i.test(b.textContent || '')) cancel = b;
+    });
+    if (cancel) {
+      bar.style.display = 'flex';
+      bar.style.alignItems = 'center';
+      bar.style.gap = '10px';
+      cancel.style.marginLeft = 'auto';
+      bar.appendChild(cancel);
+    }
 
     // Always opens on Open orders: it is the list with money at stake and an action attached.
     selectTab('orders');
@@ -669,6 +1074,34 @@
     el.textContent = text;
   }
 
+  var DOMS = {};
+  function domainFor(t, cb) {
+    var k = t.issuer + '-' + t.currency;
+    if (!DOMS[k]) {
+      DOMS[k] = fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(k))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var dm = (d && d.ok && d.domain) ? String(d.domain).replace(/^https?:\/\//, '').replace(/\/.*$/, '') : '';
+          if (t.issuer === 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha') return 'lumoscore.com';
+          dm = dm.split(':')[0].toLowerCase().replace(/^www\./, '');
+          var dp = dm.split('.');
+          return dp.length > 2 ? dp.slice(-2).join('.') : dm;
+        })
+        .catch(function () { return ''; });
+    }
+    DOMS[k].then(cb);
+  }
+  if (!window.__lxxVasset) {
+    window.__lxxVasset = 1;
+    window.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest && e.target.closest('a.lx-vasset[href^="/trade/xrpl/"]');
+      if (!a) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.location.href = a.getAttribute('href');
+    }, true);
+  }
+
   function orderRow(tpl, o) {
     var row = tpl.cloneNode(true);
 
@@ -685,8 +1118,11 @@
     var gets = amt(o.taker_gets), pays = amt(o.taker_pays);
     var gc = gets ? gets.code : '?', pc = pays ? pays.code : '?';
 
+    // STELLAR'S ROW (RAZA 2026-09-15: "View asset text link is not there like on Stellar"): the token's logo and code, then
+    // its home domain and "View asset". The pair the design printed ("XYIELD / XRP", two lettered discs) is not it.
+    var tok = (gets && gets.code !== 'XRP') ? gets : pays;
     var nm = row.querySelector('.pair-text .name');
-    if (nm) nm.textContent = gc + ' / ' + pc;
+    if (nm) nm.textContent = tok ? tok.code : (gc + ' / ' + pc);
     // Desktop puts the pill inside .pair-text as .side; the phone puts it beside .order-pair as
     // .order-side. Same two modifier classes, different element — so the class is rebuilt from
     // whichever base name this layout uses rather than hardcoding one of them.
@@ -699,11 +1135,36 @@
     // The two circles ship carrying APT and USDT artwork. There is no logo source wired here yet, so
     // they fall back to the design's own lettered treatment rather than keep another chain's tokens.
     var ico = row.querySelectorAll('.pair-ico .b');
-    [gc, pc].forEach(function (code, i) {
-      if (!ico[i]) return;
-      plain(ico[i], code.charAt(0).toUpperCase());
-      ico[i].style.fontSize = '11px';
-    });
+    for (var ik = 1; ik < ico.length; ik++) if (ico[ik].parentNode) ico[ik].parentNode.removeChild(ico[ik]);
+    if (ico[0]) {
+      plain(ico[0], '');
+      ico[0].style.background = 'transparent';
+      var oim = document.createElement('img');
+      oim.alt = '';
+      oim.src = (tok && tok.issuer)
+        ? ('/lxapi/xrplthumb?iss=' + encodeURIComponent(tok.issuer) + '&cur=' + encodeURIComponent(tok.currency) + '&w=48')
+        : '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+      oim.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block';
+      ico[0].appendChild(oim);
+    }
+    var ptx = row.querySelector('.pair-text');
+    if (ptx && tok && tok.issuer && !ptx.querySelector('.lx-ameta')) {
+      var meta = el('span', 'lx-ameta');
+      meta.style.cssText = 'display:inline-flex;align-items:center;gap:5px;margin-left:8px;font-size:10.5px;font-weight:600;color:var(--text-soft,#8a8fa3)';
+      var hd = el('span', 'lx-hd');
+      hd.setAttribute('data-logoed', '1');
+      meta.appendChild(hd);
+      var va = el('a', 'lx-vasset', 'View asset');
+      va.href = '/trade/xrpl/' + encodeURIComponent(tok.code + '-' + tok.issuer);
+      va.style.cssText = 'color:var(--accent,#ea6a2c);text-decoration:none;font-weight:700';
+      meta.appendChild(va);
+      ptx.appendChild(meta);
+      domainFor(tok, function (dom) {
+        if (!dom || !hd.parentNode) return;
+        hd.textContent = dom;
+        hd.parentNode.insertBefore(el('span', null, '·'), va);
+      });
+    }
 
     var cols = row.querySelectorAll('.order-details .col');
     var price = (gets && pays && gets.value) ? (pays.value / gets.value) : null;
@@ -801,31 +1262,6 @@
       }).catch(function () { /* leave the design's block rather than empty it on a dropped request */ });
   }
 
-  function paintClaimable(me) {
-    rpc('account_objects', { account: me, ledger_index: 'validated', type: 'check', limit: 50 })
-      .then(function (r) {
-        var checks = (r.account_objects || []).filter(function (c) {
-          return c.Destination === me;                    // checks written TO you, not by you
-        });
-        setTab('claim', checks.length);
-
-        var note = $('.lx-wcpanel-claim .lx-wcnote');
-        if (!note) return;
-        if (!checks.length) {
-          // The inherited copy described Stellar claimable balances. Say what this ledger does.
-          note.textContent = 'Nothing is waiting to be claimed. Checks written to you on the XRP Ledger will appear here.';
-          return;
-        }
-        var list = note.parentElement;
-        list.innerHTML = '';
-        checks.forEach(function (c) {
-          var got = amt(c.SendMax);
-          list.appendChild(el('div', 'lx-wcnote',
-            'Check from ' + short(c.Account) + (got ? (' — up to ' + fmt(got.value, 6) + ' ' + got.code) : '')));
-        });
-      }).catch(function () {});
-  }
-
   // ---- Activity ------------------------------------------------------------------------------------
   // The design ships thirty rows of invented transactions — "Received USDT from 0x0222…02b2",
   // "Sell 500 APT @ 0.4128" — dated today and sitting under this account's real balances. That is the
@@ -840,6 +1276,29 @@
     AccountSet: 'Account update', NFTokenMint: 'NFT mint'
   };
 
+  // WHAT A SWAP ACTUALLY COST: SendMax is only a ceiling, so the spend is read from the ledger's own balance changes — the account's XRP
+  // (less the network fee) or its trust line for the token given.
+  function ownDelta(meta, me, give, tx) {
+    var nodes = (meta && meta.AffectedNodes) || [];
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i].ModifiedNode || nodes[i].DeletedNode;
+      if (!n) continue;
+      var f = n.FinalFields || {}, pv = n.PreviousFields || {};
+      if (give.code === 'XRP' && n.LedgerEntryType === 'AccountRoot' && f.Account === me && pv.Balance != null) {
+        return (Number(pv.Balance) - Number(f.Balance) - Number(tx.Fee || 0)) / 1e6;
+      }
+      if (give.code !== 'XRP' && n.LedgerEntryType === 'RippleState' && pv.Balance && f.Balance
+        && f.Balance.currency === give.currency) {
+        var lo = f.LowLimit && f.LowLimit.issuer, hi = f.HighLimit && f.HighLimit.issuer;
+        if (lo !== me && hi !== me) continue;
+        if ((lo === me ? hi : lo) !== give.issuer) continue;
+        var sgn = lo === me ? 1 : -1;
+        return sgn * (Number(pv.Balance.value) - Number(f.Balance.value));
+      }
+    }
+    return 0;
+  }
+
   // An amount is either drops (a bare string) or an issued-currency object.
   function amt(v) {
     if (v == null) return null;
@@ -847,7 +1306,7 @@
     // Through lxx.decodeCurrency so a 40-char hex code renders as its name, exactly as the asset
     // list above renders it — one decoder, so the two cannot disagree about what a token is called.
     var d = window.lxx.decodeCurrency(v.currency);
-    return { value: +v.value, code: (d && d.display) || v.currency };
+    return { value: +v.value, code: (d && d.display) || v.currency, currency: v.currency, issuer: v.issuer };
   }
 
   function paintActivity(me) {
@@ -877,8 +1336,9 @@
             lastDay = day;
             var dv = dayT.cloneNode(true);
             var today = new Date().toDateString();
-            dv.textContent = (day === today ? 'TODAY · ' : '')
-              + when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).toUpperCase();
+            dv.textContent = (day === today ? 'Today · ' : '')
+              + when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            dv.classList.add('lxp');                           // gated like every other activity value
             block.appendChild(dv);
           }
 
@@ -927,26 +1387,37 @@
             ico.classList.toggle('swap', !!(through || self));
           }
 
+          // Computed first now, because the label below names the assets.
+          var dlv0 = meta.delivered_amount || meta.DeliveredAmount;
+          if (dlv0 === 'unavailable') dlv0 = null;              // pre-2014 ledgers do not report it
+          var got00 = amt(dlv0 || tx.Amount);
+          var give00 = self ? amt(tx.SendMax) : null;
+
+          // STELLAR'S ROW (RAZA 2026-09-15: "its different on Stellar. Also remove that confirmed tag for
+          // literally every trx"): the kind, then each asset with its own mark — "Received ⊗ XRP",
+          // "Swap ⊗ XRP → ⊗ FUZZY". No status pill: every row is a validated transaction, and the rare one
+          // that failed says so in its label instead.
           var ty = row.querySelector('.type');
           if (ty) {
-            var status = ty.querySelector('.status');
+            var okTx = (meta.TransactionResult === 'tesSUCCESS');
             ty.textContent = (isPayment
-              ? (self ? 'Swap'
-                : incoming ? 'Received'
-                : through ? 'Routed through' : 'Sent')
-              : kind) + ' ';
-            if (status) {
-              var ok = (meta.TransactionResult === 'tesSUCCESS');
-              status.textContent = ok ? 'Confirmed' : (meta.TransactionResult || 'Failed');
-              status.classList.toggle('success', ok);
-              ty.appendChild(status);
+              ? (self ? 'Swap' : incoming ? 'Received' : through ? 'Routed through' : 'Sent')
+              : kind) + (okTx ? '' : ' (failed)');
+            if (isPayment && self && give00 && got00 && give00.code !== got00.code) {
+              ty.appendChild(actLogo(give00));
+              ty.appendChild(document.createTextNode(give00.code + ' →'));
+              ty.appendChild(actLogo(got00));
+              ty.appendChild(document.createTextNode(got00.code));
+            } else if (isPayment && got00) {
+              ty.appendChild(actLogo(got00));
+              ty.appendChild(document.createTextNode(got00.code));
             }
           }
 
           // delivered_amount, never tx.Amount: on a path payment Amount is the MAXIMUM the sender
           // would allow, not what arrived — measured elsewhere in this project as a 33%
           // overstatement. Computed once here because both the meta line and the figure need it.
-          var got0 = amt(meta.delivered_amount || meta.DeliveredAmount || tx.Amount);
+          var got0 = got00;
 
           var mt = row.querySelector('.meta');
           if (mt) {
@@ -955,30 +1426,31 @@
             // A swap names the two assets, not the two addresses — both of which are you. SendMax is
             // a maximum rather than a quantity, so only its CODE is used; the figure on the right is
             // the delivered amount, which is exact.
-            var give = self ? amt(tx.SendMax) : null;
-            var who = self
-              ? ((give && give.code && got0 && got0.code && give.code !== got0.code)
-                  ? (give.code + ' → ' + got0.code + ' · ') : '')
-              : through
-              ? (tx.Account && tx.Destination
-                  ? (short(tx.Account) + ' → ' + short(tx.Destination) + ' · ') : '')
-              : (other ? ((incoming ? 'From ' : 'To ') + short(other) + ' · ') : '');
-            mt.textContent = who
-              + when.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            // The counterparty, as Stellar's row has it; a swap's two assets are already in the label.
+            var who = self ? ''
+              : through ? ((tx.Account && tx.Destination) ? (short(tx.Account) + ' → ' + short(tx.Destination)) : '')
+              : (other ? ((incoming ? 'From ' : 'To ') + short(other)) : '');
+            mt.textContent = who;
+            mt.classList.add('lxp');
           }
 
           var a1 = row.querySelector('.a1');
           if (a1) {
             var got = got0;
-            if (got && isFinite(got.value)) {
+            // A failed transaction moved nothing, so it shows no amount (its Amount is only what was asked for).
+            if (got && isFinite(got.value) && meta.TransactionResult === 'tesSUCCESS') {
               // No sign on a pass-through or a swap. On a pass-through the delivered amount is what
               // the DESTINATION received and this account's balance nets out across the hop; on a
               // swap one asset was given for another, so a lone "+" would report half of it. A "−"
               // in either case reads as money that left this wallet.
-              var sign = (through || self) ? '' : (incoming ? '+' : '−');
+              // A swap reads "+1,018.8 TDT" over "−0.0998 XLM" on Stellar (RAZA 2026-09-16): what arrived, then what it cost.
+              var sign = through ? '' : ((incoming || self) ? '+' : '−');
               a1.textContent = sign + fmt(got.value, 6) + ' ' + got.code;
               a1.classList.toggle('up', !!incoming);
               a1.classList.toggle('down', !incoming && !through && !self);
+              a1.classList.toggle('swap', !!(through || self));
+              // `.activity-amt .a1:not(.lxp)` is hidden by the inherited sheet — why rows showed no amount.
+              a1.classList.add('lxp');
             } else {
               a1.textContent = '';
             }
@@ -989,7 +1461,13 @@
           // clear it rather than repeat a number that was never about this transaction. An empty
           // slot says nothing; a stale one says something false on all 25 rows.
           var a2 = row.querySelector('.a2');
-          if (a2) a2.textContent = '';
+          if (a2) {
+            a2.textContent = '';
+            if (self && give00 && got00 && give00.code !== got00.code) {
+              var spentV = ownDelta(meta, me, give00, tx);
+              if (spentV > 0) { a2.textContent = '−' + fmt(spentV, 6) + ' ' + give00.code; a2.classList.add('lxp'); }
+            }
+          }
 
           // The explorer mark, at the end of the row — the same one the dashboard feed carries, so
           // both feeds on the site open the same explorer from the same place.
@@ -1004,41 +1482,325 @@
       }).catch(function () { /* leave the design's block alone rather than empty it on a failure */ });
   }
 
-  // THE PORTFOLIO CHART IS THE DESIGN'S, AND NOTHING HERE EVER WIRED IT.
+  // ---- Liq Pools -----------------------------------------------------------------------------------
   //
-  // This layer never touched the hero chart, so what shipped was the template's drawing: a plotted
-  // line, a readout, and an axis reading "May 16 · May 18 · May 20 · May 22" — four months stale,
-  // above a value that reads an em dash. A chart with dates on it is read as history, and this one
-  // is not the account's history; it is not anyone's.
+  // RAZA 2026-09-15: "Whys it showing 2 pools when the count says 0. Also where did this APT come from."
+  // The panel was the design's mock rows — APT / USDC, LUMOS / APT — and nothing ever replaced them.
   //
-  // Honest rather than removed, on the same call as the swap panel and Create Pool. A real one
-  // needs balance history, and the XRP Ledger does not hand that over — it has to be reconstructed
-  // by replaying account_tx, which is a feature, not a fix.
-  //
-  // The timeframe buttons are left alone deliberately: they are the design's, they change nothing
-  // now, and the note directly under the chart is what explains the panel.
-  function clearMockChart() {
-    var side = $('.chart-side') || document;
-    var axis = side.querySelector ? side.querySelector('.chart-axis') : null;
-    if (axis) axis.textContent = '';                     // the stale May dates
+  // Each LP-token trust line IS a position, and its issuer is the pool's AMM account, so amm_info on it
+  // gives the pair, the reserves and the LP supply; the account's share is its balance over that supply.
+  // The design's own row is the template. APR and rewards have no ledger source and say so.
+  function paintLpPositions(data) {
+    var panel = document.getElementById('lpPanel');
+    var body = panel && panel.querySelector('tbody');
+    if (!body) return;
+    var tpl = body.querySelector('tr');
+    tpl = (tpl && tpl.children.length >= 6) ? tpl.cloneNode(true) : null;
+    var pools = (data && data.pools) || [];
+    function empty(text) {
+      body.innerHTML = '';
+      var tr = document.createElement('tr');
+      var td = el('td', null, text);
+      td.colSpan = 6;
+      td.style.cssText = 'padding:28px;text-align:center;color:var(--text-muted)';
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+    if (!pools.length || !tpl) { empty('No liquidity positions'); return; }
+    empty('Reading your positions…');
+    var usdP = fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
+      .then(function (t) { return (t && t.ok && +t.usd > 0) ? +t.usd : null; }).catch(function () { return null; });
+    Promise.all([usdP].concat(pools.map(function (lp) {
+      return rpc('amm_info', { amm_account: lp.issuer, ledger_index: 'validated' })
+        .then(function (r) { return { lp: lp, amm: r.amm }; }, function () { return { lp: lp, amm: null }; });
+    }))).then(function (res) {
+      var usd = res[0];
+      var rows = res.slice(1).filter(function (x) {
+        return x.amm && x.amm.lp_token && Number(x.amm.lp_token.value) > 0 && x.lp.balance > 0;
+      });
+      if (!rows.length) { empty('No liquidity positions'); return; }
+      body.innerHTML = '';
+      rows.forEach(function (x) {
+        var m = x.amm, A = amt(m.amount), B = amt(m.amount2);
+        var share = x.lp.balance / Number(m.lp_token.value);
+        var tr = tpl.cloneNode(true), td = tr.children;
 
-    var svg = $('.mini-chart') || (side.querySelector && side.querySelector('svg'));
-    if (svg && svg.querySelectorAll) {
-      [].forEach.call(svg.querySelectorAll('path'), function (p) { p.setAttribute('d', ''); });
-      [].forEach.call(svg.querySelectorAll('circle'), function (c) { c.setAttribute('r', '0'); });
+        var icos = tr.querySelectorAll('.lp-ico');
+        [A, B].forEach(function (s, i) {
+          var ic = icos[i];
+          if (!ic) return;
+          ic.innerHTML = '';
+          var im = document.createElement('img');
+          im.alt = '';
+          im.src = s.issuer ? thumb({ issuer: s.issuer, currency: s.currency }, 48) : thumb(null, 48);
+          im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%';
+          ic.appendChild(im);
+        });
+        var nm = tr.querySelector('.lp-nm');
+        if (nm) plain(nm, A.code + ' / ' + B.code);
+        var sb = tr.querySelector('.lp-sb');
+        // Stellar's wording and figures (RAZA 2026-09-15: "XRPL text on the row is different from Stellar"): "0.30% fee
+        // tier · Stellar AMM" there, two decimals and the ledger's short name here.
+        if (sb) sb.textContent = (m.trading_fee / 1000).toFixed(2) + '% fee tier · XRPL AMM';
+
+        if (td[1]) {
+          var s1 = td[1].querySelector('.p1'), s2 = td[1].querySelector('.p2');
+          if (s1) s1.textContent = (share * 100).toFixed(share < 0.0001 ? 6 : 2) + '%';
+          if (s2) s2.textContent = lpAmt(x.lp.balance) + ' LP tokens';
+        }
+        if (td[2]) { td[2].textContent = '—'; td[2].title = 'The XRP Ledger does not publish a pool APR'; }
+
+        // STELLAR'S LIQUIDITY CELL: your share of each reserve — the first in the headline weight with its ticker small
+        // beside it, the second underneath ("21.95 BOMB" over "938,225 FRANK"). It used to be an XRP value and a dollar
+        // line for XRP pools and a "+"-joined pair otherwise.
+        if (td[3]) {
+          var q1 = td[3].querySelector('.p1'), q2 = td[3].querySelector('.p2');
+          if (q1) {
+            q1.textContent = lpAmt(A.value * share) + ' ';
+            var un = el('span', null, A.code);
+            un.style.cssText = 'color:var(--text-soft);font-size:14px';
+            un.setAttribute('data-logoed', '1');
+            q1.appendChild(un);
+          }
+          if (q2) q2.textContent = lpAmt(B.value * share) + ' ' + B.code;
+        }
+        if (td[4]) {
+          var r1 = td[4].querySelector('.p1'), r2 = td[4].querySelector('.p2');
+          if (r1) { r1.textContent = '—'; r1.style.color = ''; }
+          if (r2) r2.textContent = 'fees accrue into the pool';
+        }
+
+        var btns = tr.querySelectorAll('.qa-row-btn');
+        // Stellar's plus and minus (RAZA 2026-09-15: "Icon on Add and Remove is not that we have on Stellar").
+        if (btns[0]) btns[0].innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add';
+        if (btns[1]) btns[1].innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg> Remove';
+        var go = '/pools/xrpl/id/' + encodeURIComponent(x.lp.issuer);
+        if (btns[0]) btns[0].setAttribute('data-lxgo', go);
+        if (btns[1]) btns[1].setAttribute('data-lxgo', go + '?act=withdraw');
+        if (btns[2]) { btns[2].setAttribute('data-lxexp', x.lp.issuer); btns[2].title = 'View on Bithomp'; }
+        body.appendChild(tr);
+      });
+      var cnt = [].filter.call(document.querySelectorAll('.asset-tabs .cnt'), function (c) {
+        return !(c.closest && c.closest('.lx-wcgroup'));
+      });
+      if (cnt[1]) cnt[1].textContent = String(rows.length);
+    });
+  }
+
+  // ---- the hero chart ------------------------------------------------------------------------------
+  //
+  // WHAT IT PLOTS: XRP/USD over the chosen timeframe. Not the account's portfolio value — and that is
+  // not a shortcut, it is what lumoscore.com draws in the same box. Its wallet fetches CoinGecko's
+  // `coins/stellar/market_chart` and plots XLM/USD; the comment beside its hidden 7-day delta says
+  // why — "no portfolio history feed". Neither ledger publishes a balance series, so a true portfolio
+  // curve would mean replaying every transaction on the account. This is the Stellar chart with
+  // `stellar` swapped for `ripple`, served through /lxapi/xrplchart.
+  //
+  // This box previously carried my own note reading "Portfolio history is not available yet." That
+  // was honest but it was not the page main ships, and it is now gone.
+  //
+  // EVERY CLASS BELOW IS INHERITED. `.lx-chartskel`, `.lx-carea`, `.lx-cbase`, `.lx-cline`,
+  // `.lx-chart-none`, `.lx-cx`, `.lx-cd`, `.lx-ctip` and the two gates `#heroChart:not(.lx-chart-ready)
+  // {visibility:hidden}` / `.chart-axis:not(.lx-axis-ready){visibility:hidden}` all came across with
+  // the fork — the stylesheet survived and only the script that used it was stripped. So nothing here
+  // adds CSS; it raises the gates the design already has and fills the shapes it already styles.
+  // The SVG is built to match the live one exactly: viewBox 0 0 600 100, a `lxhc` gradient, an area
+  // path and a 1.6px line.
+  var CHART_TF = '1W';                       // the design ships 1W pre-selected
+  var CHART_GEN = 0;                         // guards against a slow response for an abandoned tab
+
+  function chartHost() { return document.getElementById('heroChart'); }
+
+  var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // Matched to Stellar's tfLbl(), and the year format is the reason this is not just toLocaleDateString.
+  // `{month:'short',year:'2-digit'}` renders August 2022 as "Aug 22", which on an axis sitting beside
+  // "Aug 27" and "Sep 3" reads as the 22nd of August. The ALL axis came out "Jun 18 | Jul 20 | Aug 22 |
+  // Aug 24 | Today" — five day-of-month labels spanning eight years. The apostrophe is what separates
+  // a year from a date, and main already writes it that way.
+  function tfLabel(t, tf) {
+    var d = new Date(t);
+    if (tf === '1D') return (d.getHours() < 10 ? '0' : '') + d.getHours() + ':00';
+    if (tf === '1Y' || tf === 'ALL') return MON[d.getMonth()] + ' ’' + String(d.getFullYear()).slice(2);
+    return MON[d.getMonth()] + ' ' + d.getDate();
+  }
+
+  function chartSkeleton(host) {
+    // The design's own loading shape, animated by `.lx-cline`'s inherited keyframes.
+    host.innerHTML = '<div class="lx-chartskel"><svg viewBox="0 0 300 90" preserveAspectRatio="none">'
+      + '<path class="lx-carea" d="M0,72 30,60 60,66 90,46 120,54 150,34 180,44 210,24 240,32 270,14 300,22 300,90 0,90Z"></path>'
+      + '<path class="lx-cbase" pathLength="100" d="M0,72 30,60 60,66 90,46 120,54 150,34 180,44 210,24 240,32 270,14 300,22"></path>'
+      + '<path class="lx-cline" pathLength="100" d="M0,72 30,60 60,66 90,46 120,54 150,34 180,44 210,24 240,32 270,14 300,22"></path>'
+      + '</svg></div>';
+    host.classList.add('lx-chart-ready', 'lx-chart-loading');
+  }
+
+  function chartNone(host, msg) {
+    host.innerHTML = '';
+    var d = el('div', 'lx-chart-none', msg);
+    host.appendChild(d);
+    host.classList.add('lx-chart-ready');
+    host.classList.remove('lx-chart-loading');
+  }
+
+  function drawChart(host, pts, tf) {
+    var W = 600, H = 100;
+    var lo = pts[0][1], hi = pts[0][1];
+    for (var i = 1; i < pts.length; i++) {
+      if (pts[i][1] < lo) lo = pts[i][1];
+      if (pts[i][1] > hi) hi = pts[i][1];
+    }
+    // A perfectly flat series has no range to scale into; centre it rather than divide by zero.
+    var span = hi - lo;
+    var t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+    var tspan = (t1 - t0) || 1;
+
+    var line = '', xs = [], ys = [];
+    for (var j = 0; j < pts.length; j++) {
+      var x = ((pts[j][0] - t0) / tspan) * W;
+      var y = span > 0 ? (H - 9) - ((pts[j][1] - lo) / span) * (H - 18) : H / 2;
+      xs.push(x); ys.push(y);
+      line += (j ? ' L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }
+    var area = line + ' L' + W + ' ' + H + ' L0 ' + H + ' Z';
+
+    host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" width="100%"'
+      + ' height="100%" style="display:block">'
+      + '<defs><linearGradient id="lxhc" x1="0" x2="0" y1="0" y2="1">'
+      + '<stop offset="0%" stop-color="#ea6a2c" stop-opacity="0.28"></stop>'
+      + '<stop offset="100%" stop-color="#ea6a2c" stop-opacity="0"></stop>'
+      + '</linearGradient></defs>'
+      + '<path d="' + area + '" fill="url(#lxhc)"></path>'
+      + '<path d="' + line + '" fill="none" stroke="#ea6a2c" stroke-width="1.6"'
+      + ' stroke-linecap="round" stroke-linejoin="round"></path>'
+      + '</svg>';
+
+    host.classList.add('lx-chart-ready');
+    host.classList.remove('lx-chart-loading');
+
+    // The axis spans are the design's five; only their text changes. Last one reads "Today" as it
+    // does on main.
+    var axis = $('.chart-axis');
+    if (axis) {
+      var sp = axis.querySelectorAll('span');
+      for (var k = 0; k < sp.length; k++) {
+        var frac = sp.length > 1 ? k / (sp.length - 1) : 1;
+        sp[k].textContent = (k === sp.length - 1) ? 'Today' : tfLabel(t0 + tspan * frac, tf);
+      }
+      axis.classList.add('lx-axis-ready');
     }
 
-    var host2 = svg && svg.parentElement;
-    if (host2 && !host2.querySelector('.lxx-wchart-note')) {
-      if (getComputedStyle(host2).position === 'static') host2.style.position = 'relative';
-      var n = document.createElement('div');
-      n.className = 'lxx-wchart-note';
-      n.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;'
-        + 'justify-content:center;text-align:center;padding:0 18px;font-size:13.5px;opacity:.6;'
-        + 'pointer-events:none';
-      n.textContent = 'Portfolio history is not available yet.';
-      host2.appendChild(n);
+    var mini = $('.timeframe-mini');
+    if (mini) {
+      var map = { '1D': 'past 24 hours', '1W': 'past 7 days', '1M': 'past 30 days', '1Y': 'past year', 'ALL': 'all-time' };
+      mini.textContent = map[tf] || '';
     }
+
+    chartHover(host, pts, xs, ys, tf);
+  }
+
+  // Scrub-to-read, using the three elements the inherited stylesheet already dresses: a vertical
+  // rule, a dot and a tooltip. Rebuilt with the chart so it can never point at a stale series.
+  function chartHover(host, pts, xs, ys, tf) {
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    var cx = el('div', 'lx-cx'), cd = el('div', 'lx-cd'), tip = el('div', 'lx-ctip');
+    cd.style.background = '#ea6a2c';
+    host.appendChild(cx); host.appendChild(cd); host.appendChild(tip);
+
+    function show(e) {
+      var r = host.getBoundingClientRect();
+      if (!r.width) return;
+      var px = (e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX) - r.left;
+      var frac = Math.max(0, Math.min(1, px / r.width));
+      // Nearest point by x, so the readout is a real sample and never an interpolation.
+      var idx = 0, best = Infinity;
+      for (var i = 0; i < xs.length; i++) {
+        var d = Math.abs(xs[i] / 600 - frac);
+        if (d < best) { best = d; idx = i; }
+      }
+      var lx = (xs[idx] / 600) * r.width, ly = (ys[idx] / 100) * r.height;
+      cx.style.left = lx + 'px';
+      cd.style.left = lx + 'px'; cd.style.top = ly + 'px';
+      tip.style.left = Math.max(38, Math.min(r.width - 38, lx)) + 'px';
+      tip.style.top = ly + 'px';
+      tip.innerHTML = '';
+      tip.appendChild(document.createTextNode(usdPrice(pts[idx][1])));
+      var sub = el('span', 'lx-ctd', fullWhen(pts[idx][0], tf));
+      tip.appendChild(sub);
+      cx.style.opacity = '1'; cd.style.opacity = '1'; tip.style.opacity = '1';
+    }
+    function hide() { cx.style.opacity = '0'; cd.style.opacity = '0'; tip.style.opacity = '0'; }
+
+    host.addEventListener('mousemove', show);
+    host.addEventListener('mouseleave', hide);
+    host.addEventListener('touchstart', show, { passive: true });
+    host.addEventListener('touchmove', show, { passive: true });
+    host.addEventListener('touchend', hide);
+  }
+
+  // XRP has traded under a dollar for most of its life and is quoted to four decimals everywhere
+  // that matters, so the wallet's own 2dp money format would flatten the whole series to "$0.74".
+  function usdPrice(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v >= 1000) return '$' + Math.round(v).toLocaleString('en-US');
+    if (v >= 1) return '$' + v.toFixed(3);
+    return '$' + v.toFixed(4);
+  }
+
+  // The tooltip has room for the unabbreviated form, so it always carries the year — no reader should
+  // have to work out which August a point belongs to.
+  function fullWhen(t, tf) {
+    var d = new Date(t);
+    var day = MON[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+    if (tf !== '1D') return day;
+    return day + ' · ' + (d.getHours() < 10 ? '0' : '') + d.getHours()
+      + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+  }
+
+  function loadChart(tf) {
+    var host = chartHost();
+    if (!host) return;
+    CHART_TF = tf;
+    var gen = ++CHART_GEN;
+    chartSkeleton(host);
+
+    fetch('/lxapi/xrplchart?tf=' + encodeURIComponent(tf))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (gen !== CHART_GEN) return;                   // a later tab won the race
+        if (!d || !d.ok || !d.pts || d.pts.length < 2) {
+          chartNone(host, 'Price history unavailable right now');
+          return;
+        }
+        drawChart(host, d.pts, tf);
+      })
+      .catch(function () {
+        if (gen !== CHART_GEN) return;
+        chartNone(host, 'Price history unavailable right now');
+      });
+  }
+
+  // The design's own tab buttons. Its listeners are gone — the block they lived in is made to bail
+  // at build time, because the same function drew a Math.random() series — so the active state is
+  // driven here too.
+  function wireChart() {
+    var host = chartHost();
+    if (!host || host.getAttribute('data-lxch') === '1') return;
+    host.setAttribute('data-lxch', '1');
+
+    var btns = document.querySelectorAll('.tf-row .tf-btn');
+    for (var i = 0; i < btns.length; i++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          var tf = (b.textContent || '').trim().toUpperCase();
+          for (var j = 0; j < btns.length; j++) btns[j].classList.toggle('active', btns[j] === b);
+          loadChart(tf);
+        });
+      })(btns[i]);
+    }
+
+    var active = document.querySelector('.tf-row .tf-btn.active');
+    loadChart(active ? (active.textContent || '').trim().toUpperCase() : '1W');
   }
 
   // THE MONEY DIALOGS CARRY THE DESIGN'S BALANCES, AND ONLY ONE OF THEM GETS REWRITTEN.
@@ -1063,23 +1825,38 @@
     });
   }
 
+  // THE BALANCE READ IS NO LONGER GATED ON WALLET MARKUP, and that split is what lets the Custom
+  // Swap dialog work off this page.
+  //
+  // `write.js` — Send, Swap, Trustlines, the signing paths — reads `window.__lxxData` for balances
+  // and for the asset it is allowed to offer. That object was published inside a function which
+  // returned immediately unless the page had `#assetsTable` / `#assetList`, so on any page that is
+  // not the wallet, write.js loaded with no balances and every field it fills stayed empty. The
+  // dashboard carries the same `#modalSwap` markup and could never have driven it.
+  //
+  // So the read runs whenever an address is connected, and only the PAINTING is gated on `h`. The
+  // wallet page behaves exactly as before — same calls, same order — and any other page carrying a
+  // dialog gets the data it needs without a second copy of this logic.
   function load() {
     var h = host();
-    if (!h) return;                                      // not a wallet page
-    lift();
-    // Before the wallet check: the mock must not survive a signed-out page or a failed read, the
-    // same ordering the pool page needed.
-    clearMockChart();
-    clearMockBalances();
-    var a = addr();
-    if (!a) { note(h, 'Connect a wallet to see your balances.'); return; }
+    if (h) {
+      lift();
+      // The chart is XRP's price, not this account's, so it is valid with no wallet connected and
+      // must not sit behind the address check — the same mistake that left the pool page empty for
+      // every signed-out visitor.
+      wireChart();
+      clearMockBalances();
+    }
 
-    note(h, 'Reading the XRP Ledger…');
+    var a = addr();
+    if (!a) { if (h) note(h, 'Connect a wallet to see your balances.'); return; }
+
+    if (h) note(h, 'Reading the XRP Ledger…');
 
     Promise.all([
       rpc('server_info', {}),
       rpc('account_info', { account: a, ledger_index: 'validated' }),
-      rpc('account_lines', { account: a, limit: 400, ledger_index: 'validated' })
+      window.lxx.allLines(rpc, a)
     ]).then(function (r) {
       var v = (r[0].info && r[0].info.validated_ledger) || {};
       // Read every time. These halved by amendment once already; a hardcoded pair would quietly
@@ -1093,6 +1870,12 @@
       var split = window.lxx.readLines(r[2].lines);
       data.held = split.held; data.pools = split.pools; data.obligations = split.obligations;
       window.__lxxData = data;
+
+      // Announced so a dialog on a non-wallet page can fill itself the moment balances land, rather
+      // than polling or racing this fetch.
+      try { window.dispatchEvent(new CustomEvent('lxx:walletdata')); } catch (e2) {}
+
+      if (!h) return;                                    // data only — nothing here to paint
       paint(data);
       // Before the painters and before setMeta's second pass: buildTabs moves .orders-block into a
       // panel and stamps .lx-wcgroup, and both of those are things the writers below look for.
@@ -1100,8 +1883,10 @@
       setMeta(data.held.length, data.pools.length, data.xrp);
       paintActivity(a);
       paintOrders(a);
-      paintClaimable(a);
+      paintLpPositions(data);
+      applyPins();
     }).catch(function (e) {
+      if (!h) return;
       // An account with no transactions simply does not exist on the ledger yet. Not an error.
       if (/actNotFound/i.test(e.message || '')) { note(h, 'This account is not activated on the XRP Ledger yet.'); return; }
       note(h, 'Could not read the XRP Ledger — ' + (e.message || 'try again'));

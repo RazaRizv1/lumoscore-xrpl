@@ -99,6 +99,44 @@
   // rather than as a converted number, so a missing rate never invents one.
   var USD = null;
 
+  // ASKED AGAIN WHEN REFUSED (RAZA 2026-09-16: the list showing "—" for liquidity, volume and fees against live pools).
+  // The rate endpoint answers 200 with {ok:false} when the upstream throttles it, and one refusal blanked every USD cell
+  // in the table for the life of the page.
+  // THE MOCK GOES AT ONCE (RAZA 2026-09-17: "On pools main page, theres a flash bug. While the page is refreshed, it show
+  // these values for split seconds" — "12.7M APT", "100 active pools", "$21,483.83 · 51,250 APT swapped"). The design ships
+  // those figures in the markup and this layer only replaced them once the ledger answered, so every refresh flashed another
+  // chain's numbers.
+  //
+  // THE FIGURES ARE NOW BLANKED IN THE MARKUP ITSELF, by `_xrplpoolsmock` at build time (RAZA reported the flash a second
+  // time after this ran here: a script at the end of the body cannot beat the paint of the document that carries it). What
+  // is left here is a belt-and-braces pass for any container the transform has not reached.
+  //
+  // `amm-snapshot-sub` is BOTH a figure and a caption — "51,250 APT swapped" against "Across all pools" — and blanking it
+  // wholesale erased the design's own captions, leaving the Total Liquidity row with nothing under its name. Only a sub
+  // carrying a digit is mock.
+  (function blankOverviewMock() {
+    var seen = {};
+    [].forEach.call(document.querySelectorAll('.amm-snapshot-value, .amm-snapshot-vsub, .amm-snapshot-sub'), function (n) {
+      if (seen[n]) return;
+      seen[n] = 1;
+      if (n.classList.contains('amm-snapshot-value')) { n.textContent = '—'; return; }
+      if (n.classList.contains('amm-snapshot-vsub')) { n.textContent = ''; return; }
+      if (/\d/.test(n.textContent || '')) n.textContent = '';
+    });
+    [].forEach.call(document.querySelectorAll('.stat-cell .val, .pga-cell .val, [class*=pool-stat] .val'), function (n) {
+      if (/APT|APTOS/i.test(n.textContent || '')) n.textContent = '—';
+    });
+  })();
+
+  function fetchUsd(tries) {
+    return fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
+      .then(function (t) { if (t && t.ok && +t.usd > 0) return +t.usd; throw new Error('retry'); })
+      .catch(function () {
+        if (!(tries > 0)) return null;
+        return new Promise(function (res) { setTimeout(res, 2000); }).then(function () { return fetchUsd(tries - 1); });
+      });
+  }
+
   function usdText(xrpAmount) {
     if (USD == null || xrpAmount == null || !isFinite(xrpAmount)) return '—';
     var v = xrpAmount * USD;
@@ -108,13 +146,25 @@
     return '$' + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
   }
 
+  // The two sides of the pool, "3.40M XRP + 4.63M RLUSD", exactly as Stellar renders its liquidity
+  // cell. Returns null when either amount is missing so the cell falls back to one line rather than
+  // printing a half-composition.
+  function composition(p) {
+    var a = p && p.a1, b = p && p.a2;
+    if (!a || !b || a.v == null || b.v == null || !isFinite(a.v) || !isFinite(b.v)) return null;
+    return amount(a.v) + ' ' + nameOf(a) + ' + ' + amount(b.v) + ' ' + nameOf(b);
+  }
+
   // `pair-sub` is the design's own class — the same one Stellar's liquidity cell uses for its
   // second line — so the sub-line inherits the design's muted size and colour rather than needing
   // any CSS of its own.
-  function usdCell(xrpAmount) {
+  //
+  // `sub` is optional now: Stellar puts a second line under LIQUIDITY only, and volume and fees are
+  // a single USD figure each.
+  function usdCell(xrpAmount, sub) {
     var td = el('td');
     td.appendChild(el('div', null, usdText(xrpAmount)));
-    td.appendChild(el('div', 'pair-sub', amount(xrpAmount) + ' XRP'));
+    if (sub) td.appendChild(el('div', 'pair-sub', sub));
     return td;
   }
 
@@ -170,7 +220,11 @@
   function row(p, rank) {
     var tr = document.createElement('tr');
 
-    tr.appendChild(el('td', null, String(rank)));
+    // ZERO-PADDED, as on lumoscore.com: "01", "02" … Stellar pads and this did not, which is the
+    // "left side numbering is off" — the columns did not line up because the digits did not.
+    // `idx`, as on lumoscore.com: that class is what greys the rank. Without it the numbers were drawn
+    // in full text colour, which is the "counting column is whiter" RAZA compared (2026-09-15).
+    tr.appendChild(el('td', 'idx', (rank < 10 ? '0' : '') + rank));
 
     var pair = el('td');
     // A REAL ANCHOR, not a scripted navigation. Setting window.location from a click handler here was
@@ -183,17 +237,25 @@
     // link-cleaning handler only rewrites hrefs matching lumoscore-*.html, so it leaves this one
     // alone. It is also how the Stellar build links its pool rows, so this is the shape the rest of
     // the page already expects — and it gives the row middle-click and open-in-new-tab for free.
-    var wrap = el('a', 'pool-pair');
-    wrap.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
-    wrap.style.cssText = 'display:flex;align-items:center;gap:7px;color:inherit;text-decoration:none';
-    wrap.appendChild(logoEl(nameOf(p.a1), p.a1 && p.a1.m, 22));
-    wrap.appendChild(logoEl(nameOf(p.a2), p.a2 && p.a2.m, 22));
-    wrap.appendChild(el('span', null, nameOf(p.a1) + ' / ' + nameOf(p.a2)));
-    if (p.fee != null) {
-      var f = el('span', null, p.fee + '%');
-      f.style.cssText = 'font-size:11px;opacity:.6;margin-left:4px';
-      wrap.appendChild(f);
-    }
+    // STELLAR'S CELL, NOT A LOOKALIKE (RAZA 2026-09-15: "the text size in rows seems smaller"). Read off
+    // lumoscore.com's live row: `div.pair-cell > div.pair-icons > .pa/.pb` at 32px, then
+    // `div > div.pair-name` — 15.5px/700 from the design's own stylesheet. This drew 22px discs beside a
+    // bare span, so the name took the table's 15px/400 and every row sat 17px shorter.
+    var wrap = el('a', 'pool-pair pair-cell');
+    wrap.href = '/pools/xrpl/id/' + encodeURIComponent(p.acct);
+    wrap.style.cssText = 'display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none';
+    var icons = el('div', 'pair-icons');
+    icons.setAttribute('data-paired', '1');
+    var la = logoEl(nameOf(p.a1), p.a1 && p.a1.m, 32); la.classList.add('pa');
+    var lb = logoEl(nameOf(p.a2), p.a2 && p.a2.m, 32); lb.classList.add('pb');
+    icons.appendChild(la); icons.appendChild(lb);
+    wrap.appendChild(icons);
+    var nm = el('div');
+    nm.appendChild(el('div', 'pair-name', nameOf(p.a1) + ' / ' + nameOf(p.a2)));
+    wrap.appendChild(nm);
+    // NO FEE BADGE. This layer used to append the pool's trading fee ("0.205%") beside the pair.
+    // lumoscore.com does not, and it was an addition of mine rather than anything the design asked
+    // for — removed on RAZA's instruction. The fee still reaches the pool's own page.
     pair.appendChild(wrap);
     tr.appendChild(pair);
 
@@ -210,10 +272,29 @@
     // every row, so this build does not know them. Getting them means an amm_info per pool — 100
     // round-trips to fill one column, the same cost trap as probing a logo per holding. The XRP
     // amount is the number we actually have, and it is the one the sub-line states.
-    tr.appendChild(usdCell(p.liq));
+    // MATCHED TO lumoscore.com, column by column, after RAZA compared them side by side:
+    //   Liquidity  a USD headline with the two POOL SIDES beneath — "$4.64M" over
+    //              "12.20M XLM + 2.32M USDC". This showed the XRP total instead, because the
+    //              amounts were being dropped by the worker (now passed through).
+    //   Volume     USD only. No second line.
+    //   Fees       USD only. No second line.
+    // The XRP sub-lines under volume and fees were mine, and Stellar has neither.
+    tr.appendChild(usdCell(p.liq, composition(p)));
     tr.appendChild(usdCell(p.vol));
     tr.appendChild(usdCell(p.fees));
-    tr.appendChild(el('td', null, count(p.holders)));
+    var partTd = el('td', null, count(p.holders));
+    // COUNTED HERE WHEN THE LIST DOES NOT CARRY ONE (RAZA 2026-09-17: "For ARMY / LUMOS pool, i see no participants on
+    // Pools-Pool page, but when i open the page, it shows 1 participants"). The upstream leaves lpHolderCount null on some
+    // pools; the pool page counts the LP token's own holders, which is why the two pages disagreed about the same pool.
+    // `p.holders == null` FIRST, and that is the whole bug (RAZA reported this pool twice). The upstream sends null when
+    // it has no count; `+null` is 0, which isFinite() happily accepts — so the one case this repair exists for was the one
+    // case it skipped, and the cell kept the em dash `count(null)` had already written. Nothing else was wrong with it.
+    if ((p.holders == null || !isFinite(+p.holders)) && p.acct) partTd.setAttribute('data-lxpart', p.acct);
+    tr.appendChild(partTd);
+    // WEIGHTS OFF THE LIVE STELLAR ROW: the liquidity headline and the participant count are 700 there,
+    // the volume and fee figures 400. Set inline on those two cells only.
+    tr.children[2].firstChild.style.fontWeight = '700';
+    tr.children[5].style.fontWeight = '700';
 
     tr.style.cursor = 'pointer';
     return tr;
@@ -231,7 +312,7 @@
   // this project. It is the same one.
   function card(p, rank) {
     var a = el('a', 'pool-card');
-    a.href = '/xrpl/pools/id/' + encodeURIComponent(p.acct);
+    a.href = '/pools/xrpl/id/' + encodeURIComponent(p.acct);
 
     var head = el('div', 'pc-head');
     var icons = el('div', 'pair-icons');
@@ -243,10 +324,11 @@
 
     var info = el('div', 'pc-info');
     info.appendChild(el('div', 'pc-name', nameOf(p.a1) + ' / ' + nameOf(p.a2)));
-    // The design's second line is a hand-written category ("Native · Utility"). There is no such
-    // classification on this ledger, so it carries the pool's fee — a fact, and the thing a
-    // liquidity provider actually wants beside the pair.
-    info.appendChild(el('div', 'pc-sub', p.fee != null ? (p.fee + '% fee tier') : ''));
+    // THE FEE BADGE WAS REMOVED FROM THE TABLE AND LEFT ON THE CARD, so the phone kept showing
+    // "0.205% fee tier" after RAZA asked for it to go — "we dont have it on stellar so why did you
+    // add it on XRPL". Checked against lumoscore.com's own phone build: its pool cards carry no fee
+    // tier at all. The line stays empty, as it is there.
+    info.appendChild(el('div', 'pc-sub', ''));
     head.appendChild(info);
     head.appendChild(el('div', 'pc-idx', '#' + (rank < 10 ? '0' : '') + rank));
     a.appendChild(head);
@@ -259,11 +341,13 @@
       if (sub != null) s.appendChild(el('div', 'vs', sub));
       return s;
     }
-    // Same USD-over-XRP treatment as the table. The card's own `vs` slot already exists for a
-    // second line, so this needs no new markup — and doing it here as well is the point: the phone
-    // uses a different container, which is how it has been missed before.
-    stats.appendChild(stat('Liquidity', usdText(p.liq), amount(p.liq) + ' XRP'));
-    stats.appendChild(stat('24h Vol', usdText(p.vol), amount(p.vol) + ' XRP'));
+    // MATCHED TO THE TABLE AND TO MAIN'S PHONE BUILD, which read: "LIQUIDITY $4.48M / 12.60M XLM +
+    // 2.25M USDC" and "VOL (TODAY) $219.3K". So liquidity names BOTH sides — the thing RAZA asked
+    // for and which only the desktop table got — and volume is the dollar figure alone. The card
+    // previously showed "$4.62M / 3.42M XRP", one side doubled, beside a volume carrying an XRP
+    // sub-line the reference does not have.
+    stats.appendChild(stat('Liquidity', usdText(p.liq), composition(p)));
+    stats.appendChild(stat('Vol (today)', usdText(p.vol)));   // main's phone label, as the note above records
     stats.appendChild(stat('Members', count(p.holders)));
     a.appendChild(stats);
     return a;
@@ -334,8 +418,13 @@
   // The same goes for "+4 in past 7 days": nothing here knows what the count was a week ago.
   // The page's own strapline read "Provide liquidity and earn fees on Stellar's on-chain AMM pools",
   // above a table of XRP Ledger AMMs. Rewritten by text node so the design's markup is untouched.
+  // `.page-subtitle` IS THE PHONE'S, and it was missed because it is invisible: the mobile pools page
+  // carries "Provide liquidity and earn fees on Stellar's on-chain AMM pools." in a `.lx-sronly`
+  // block — clipped from view, but read aloud by screen readers and present in the served HTML. A
+  // selector list that only named the desktop element left the wrong chain's name on the phone
+  // build, in the one place nobody looks.
   function paintHeroCopy() {
-    $$('.dex-hero-sub').forEach(function (p) {
+    $$('.dex-hero-sub, .page-subtitle, .page-title').forEach(function (p) {
       if (!/Stellar|Aptos/i.test(p.textContent || '')) return;
       var w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
       var n;
@@ -355,9 +444,8 @@
 
     // The USD rate lives on the tokens endpoint, the same one every other USD figure on this site is
     // derived from, so the overview cannot disagree with the rest of the page about what an XRP is.
-    fetch('/lxapi/xrpltokens').then(function (r) { return r.json(); }).then(function (t) {
-      return (t && t.ok && +t.usd > 0) ? +t.usd : null;
-    }).catch(function () { return null; }).then(function (usd) {
+    // Asked again when refused, like the table's rate — one {ok:false} left this card reading em dashes for the page's life.
+    fetchUsd(3).then(function (usd) {
       rows.forEach(function (row) {
         var label = ((row.querySelector('.amm-snapshot-label') || {}).textContent || '').trim().toLowerCase();
         var val = row.querySelector('.amm-snapshot-value');
@@ -401,7 +489,7 @@
   // was found stating the requirement verbatim in its response body — see the fuller note in
   // browser/trade.js.
   function attribution(d) {
-    if (!d || !d.attribution || document.getElementById('lxx-attr-pools')) return;
+    return;                                              // removed: RAZA 2026-09-15, "Please remove … on all places"
     var host = $('#panelAllPools') || $('#panelAll');
     if (!host) return;
     var p = el('p'); p.id = 'lxx-attr-pools';
@@ -415,45 +503,344 @@
     host.appendChild(p);
   }
 
-  // CREATE POOL IS NOT WIRED, AND THE DIALOG NOW SAYS SO.
+  // CREATE POOL was disabled here (`markCreatePoolUnwired`) while nothing could sign an AMMCreate: the
+  // button relabelled "Pool creation is not enabled yet", the pickers faded to .6 and the dropdowns
+  // hidden. RAZA 2026-09-15 asked why; browser/createpool.js now drives the dialog. The design's mock
+  // dropdown rows stay hidden by the inherited `.ad-item:not(.lx-cpitem)` rule, so no invented balance
+  // can appear — only the account's real holdings are built as `.lx-cpitem`.
+
+  // ---- pagination ----------------------------------------------------------------------------------
   //
-  // Nothing in this project references #createPoolModal: the asset dropdown is gated to
-  // `.lx-cpitem` entries that the stripped Stellar layer used to build and nothing builds now, so it
-  // opens EMPTY, and the submit button has no handler at all. AMMCreate exists in this codebase only
-  // inside the launchpad's mint sequence, where a pool is seeded as part of issuing a token.
+  // "whys it only showing 100 pools on XRPL. On Stellar, we're showing all" — and the honest answer
+  // has two halves.
   //
-  // So the dialog opened, offered nothing to pick, and still showed a live "Create Pool & Add
-  // Liquidity" button. browser/bridge.js states the rule for this exact situation — "a button that
-  // looks like it works, on a page about moving money, is the worst thing this file could ship" —
-  // and does the same thing: disable the control and relabel it. No new markup, no new dialog; the
-  // design's own button, saying what is true.
+  // Stellar genuinely shows all of them: Horizon pages without limit, which is why that page costs
+  // ~23s of sequential fetching. xrpl.to does not. `limit` is capped at 100 per request server-side
+  // (asking for 200 returns 100), and the only offset parameter that changes the result, `start`,
+  // ABANDONS THE SORT — `start=0` and `start=100` return the same first pool and volumes that no
+  // longer descend. Measured, not assumed. Walking all 30,728 would be ~308 sequential requests
+  // against a 333-a-DAY budget, and it could not be kept in volume order anyway.
   //
-  // Building it is a real feature (an AMMCreate the user signs, seeding a live pool with real
-  // funds), and no signature has round-tripped on this build yet. That is RAZA's call, not a gap to
-  // paper over with a picker that leads to a dead button.
-  function markCreatePoolUnwired() {
-    var m = $('#createPoolModal');
-    if (!m || m.getAttribute('data-lxxunwired')) return;
-    m.setAttribute('data-lxxunwired', '1');
-    $$('button', m).forEach(function (b) {
-      var t = (b.textContent || '').trim().toLowerCase();
-      if (!/create pool|add liquidity/.test(t)) return;
-      try {
-        b.setAttribute('disabled', 'disabled');
-        b.setAttribute('aria-disabled', 'true');
-        b.style.opacity = '.55';
-        b.style.pointerEvents = 'none';
-        b.textContent = 'Pool creation is not enabled yet';
-      } catch (e) {}
+  // So the page serves the top 100 by volume, which is the ceiling, and now says so instead of
+  // rendering fifty rows under a badge reading 30,728 with no way to reach the rest. The design
+  // ships `#paginationAll` — "Showing 1–10 of 100 pools" plus First/Prev/numbers/Next/Last — and it
+  // had never been wired to anything. Nothing new is introduced; only what the buttons do.
+  var PER = 50;
+  var pageNo = 1;
+
+  function setPageInfo(from, to, total) {
+    var pg = $('#paginationAll');
+    if (!pg) return;
+    var strongs = pg.querySelectorAll('div:first-child strong');
+    if (strongs.length > 1) {
+      strongs[0].textContent = from + '–' + to;
+      strongs[1].textContent = count(total);
+    }
+  }
+
+  function buildPager(h, d, pages) {
+    var pg = $('#paginationAll');
+    if (!pg) return;
+    var ctrls = pg.querySelector('.page-controls');
+    if (!ctrls) return;
+
+    // The design's own First/Prev/Next/Last are kept — they carry its labels — and only the numbers
+    // between them are rebuilt. Found by text rather than by index, because the number of children
+    // changes every time this runs.
+    var kids = [].slice.call(ctrls.children);
+    function find(re) {
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i].tagName === 'BUTTON' && re.test(kids[i].textContent || '')) return kids[i];
+      }
+      return null;
+    }
+    var first = find(/first/i), prev = find(/prev/i), next = find(/next/i), last = find(/last/i);
+    kids.forEach(function (k) {
+      if (k !== first && k !== prev && k !== next && k !== last) k.remove();
     });
+
+    function numBtn(n) {
+      var b = document.createElement('button');
+      if (n === pageNo) b.className = 'active';
+      b.textContent = String(n);
+      b.addEventListener('click', function () { renderPage(h, d, n); });
+      return b;
+    }
+    // Ascending, each inserted before `next` — a descending loop stacks them backwards, which is how
+    // the trade pager once shipped reading "2 1".
+    for (var n = 1; n <= pages; n++) ctrls.insertBefore(numBtn(n), next);
+
+    function nav(btn, target, disabled) {
+      if (!btn) return;
+      var clone = btn.cloneNode(true);              // drops the previous render's listener
+      btn.parentNode.replaceChild(clone, btn);
+      clone.disabled = !!disabled;
+      if (!disabled) clone.addEventListener('click', function () { renderPage(h, d, target); });
+    }
+    nav(first, 1, pageNo === 1);
+    nav(prev, pageNo - 1, pageNo === 1);
+    nav(next, pageNo + 1, pageNo === pages);
+    nav(last, pages, pageNo === pages);
+
+    pg.style.display = pages > 1 ? '' : 'none';
+  }
+
+  // Which column the table is ordered by. The endpoint already returns pools by liquidity, descending, which is what the
+  // page opens on — so the default here has to describe that, not impose a second ordering on top of it.
+  var SORT = { key: 'liq', dir: -1 };
+  function applySort(rows) {
+    if (!SORT.key) return rows;
+    var k = SORT.key, dir = SORT.dir;
+    return rows.slice().sort(function (a, b) {
+      var x = +a[k], y = +b[k];
+      // A pool with no figure for this column sorts last in either direction rather than counting as zero.
+      var xb = !isFinite(x), yb = !isFinite(y);
+      if (xb && yb) return 0;
+      if (xb) return 1;
+      if (yb) return -1;
+      // dir -1 is high-to-low, which is what the table opens on: the bigger value must come FIRST, so it returns dir.
+      return x === y ? 0 : (x > y ? dir : -dir);
+    });
+  }
+  if (!window.__lxxPoolSort) {
+    window.__lxxPoolSort = 1;
+    window.addEventListener('click', function (e) {
+      var th = e.target && e.target.closest && e.target.closest('th[data-lxsort]');
+      if (!th) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var key = th.getAttribute('data-lxsort');
+      SORT = { key: key, dir: (SORT.key === key && SORT.dir === -1) ? 1 : -1 };
+      paintHeadings();
+      var d = window.__lxxPoolsData, hh = listHost();
+      if (d && hh) renderPage(hh, d, 1);
+    }, true);
+  }
+
+  function renderPage(h, d, n) {
+    var total = d.rows.length;
+
+    // NO PAGER, NO PAGING. The phone build carries no #paginationAll at all, so paging there would
+    // hide rows behind a control that does not exist — the mistake this made once already on the
+    // trade page. The phone gets the whole hundred; the desktop pages them.
+    var paged = !!$('#paginationAll');
+    var per = paged ? PER : total;
+    var pages = Math.max(1, Math.ceil(total / per));
+    pageNo = Math.min(Math.max(1, n), pages);
+
+    var from = (pageNo - 1) * per;
+    var to = Math.min(from + per, total);
+
+    h.node.innerHTML = '';
+    var make = h.kind === 'table' ? row : card;
+    var rows = applySort(d.rows);
+    // Absolute rank: page 2 opens at 51, because the number means "51st by volume", not "the first
+    // row I happened to draw".
+    for (var i = from; i < to; i++) h.node.appendChild(make(rows[i], i + 1));
+
+    setPageInfo(from + 1, to, total);
+    buildPager(h, d, pages);
+    fillParticipants();
+  }
+
+  // The same count the pool page shows: the LP token's holder list, which needs the token's currency from amm_info first.
+  // Only for the rows on screen, three at a time, and capped — this is a repair for a missing field, not a column to build
+  // out of a hundred round trips.
+  function rpc(method, params) {
+    return fetch('https://xrplcluster.com/', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var res = j && j.result;
+      if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
+      return res;
+    });
+  }
+
+  var PART_RUN = 0, PART_Q = [];
+  // FILLED FOR WHATEVER IS ON SCREEN, not the first twelve rows (RAZA 2026-09-17: LUMOS/ARMY, rank 42, still reading "—"
+  // while the pool page showed 1). Each missing cell costs two reads — amm_info for the LP token, then its holder count —
+  // so doing all fifty upfront is a hundred requests for figures nobody has scrolled to. This fills a cell when it comes
+  // within a screen of the viewport, three at a time, and each one only ever once.
+  function fillParticipants() {
+    sweepParticipants();
+    if (window.__lxxPartScroll) return;
+    window.__lxxPartScroll = 1;
+    var t = null;
+    var again = function () { clearTimeout(t); t = setTimeout(sweepParticipants, 120); };
+    window.addEventListener('scroll', again, { passive: true });
+    window.addEventListener('resize', again, { passive: true });
+  }
+
+  function sweepParticipants() {
+    var h = window.innerHeight || 800;
+    var cells = [].slice.call(document.querySelectorAll('td[data-lxpart]')).filter(function (td) {
+      var r = td.getBoundingClientRect();
+      return r.bottom > -h && r.top < h * 2;             // on screen, or within a screen of it
+    });
+    cells.forEach(function (td) {
+      var acct = td.getAttribute('data-lxpart');
+      td.removeAttribute('data-lxpart');
+      PART_Q.push(function () {
+        // ONE CALL, AT THE EDGE, CACHED (RAZA 2026-09-17, reporting the same pool a second time: "ARMY / LUMOS pool still
+        // shows no participants on pools main page"). This used to be amm_info plus a holder count from the reader's own
+        // IP — two public-cluster requests per row, and searching "army" fired fifty of them at once. What the cluster
+        // refused came back here as a swallowed error and an em dash that nothing retried.
+        return fetch('/lxapi/xrplparticipants?acct=' + encodeURIComponent(acct))
+          .then(function (x) { return x.json(); })
+          .then(function (d) {
+            if (d && d.ok && d.total != null) { td.textContent = count(d.total); return; }
+            throw new Error('no count');
+          })
+          .catch(function () {
+            // PUT IT BACK, so the next sweep tries again. A cell that loses its account has no second chance, and one
+            // refused request then reads as "this pool has no liquidity providers" for the life of the page.
+            var tries = +(td.getAttribute('data-lxparttry') || 0) + 1;
+            if (tries > 3) return;
+            td.setAttribute('data-lxparttry', tries);
+            td.setAttribute('data-lxpart', acct);
+            setTimeout(sweepParticipants, 1200 * tries);
+          });
+      });
+    });
+    pumpPart();
+  }
+  function pumpPart() {
+    while (PART_RUN < 3 && PART_Q.length) {
+      PART_RUN++;
+      PART_Q.shift()().then(function () { PART_RUN--; pumpPart(); }, function () { PART_RUN--; pumpPart(); });
+    }
+  }
+
+  // THE HEADINGS lumoscore.com USES, read off its live table (RAZA 2026-09-15):
+  //     #   Pair   Liquidity ↓   VOL (TODAY)   FEES (TODAY)   Participants
+  // Only Liquidity carries an arrow — the table is ordered by it and nothing re-sorts — and every
+  // heading is `cursor: default`. This build showed "24h Volume ↕", "Fees (24h) ↕", "Participants ↕":
+  // arrows promising a sort that does not exist.
+  //
+  // A NOTE ON "TODAY": xrpl.to reports a rolling 24 hours, not the UTC day Stellar's figures cover. The
+  // label follows Stellar on RAZA's instruction; the tooltip says what the number actually is.
+  //
+  // And the tab: Stellar says "My Pools", this said "My Positions". Text node only, so the count badge
+  // beside it stays live.
+  function paintHeadings() {
+    var head = $('#poolsBody') && $('#poolsBody').parentNode.querySelector('thead tr');
+    if (head) {
+      // SORTABLE, AS ON THE TRADE TABLE (RAZA 2026-09-17: "Let me short the pool columns (Liq, Vol, Fees, Participants) from
+      // high to low just like im able to sort Trade main page columns"). The arrow marks the column in force and its
+      // direction; the four figure columns take a click, and # and Pair stay inert as they are on lumoscore.com.
+      var WANT = [['#', null, null], ['Pair', null, null], ['Liquidity ', '↓', 'liq'],
+                  ['VOL (TODAY)', '', 'vol'], ['FEES (TODAY)', '', 'fees'], ['Participants ', '', 'holders']];
+      var ths = head.querySelectorAll('th');
+      for (var i = 0; i < ths.length && i < WANT.length; i++) {
+        var th = ths[i];
+        var key = WANT[i][2];
+        th.textContent = WANT[i][0];
+        if (WANT[i][1] != null) {
+          var si = document.createElement('span');
+          si.className = 'sort-i';
+          si.textContent = key === SORT.key ? (SORT.dir < 0 ? '↓' : '↑') : '';
+          th.appendChild(si);
+        }
+        if (key) {
+          th.setAttribute('data-lxsort', key);
+          th.style.cursor = 'pointer';
+          th.title = (i === 3 || i === 4 ? 'Past 24 hours · ' : '') + 'Sort by this column';
+        } else {
+          th.style.cursor = 'default';
+        }
+      }
+    }
+    $$('#poolTabs button[data-tab="mine"], [data-tab="mine"]').forEach(function (b) {
+      [].forEach.call(b.childNodes, function (n) {
+        if (n.nodeType === 3 && /My Positions/i.test(n.nodeValue)) n.nodeValue = n.nodeValue.replace(/My Positions/i, 'My Pools');
+      });
+    });
+  }
+
+  // POOL SEARCH ACROSS THE LEDGER (RAZA 2026-09-15: "Its not searching for all the pools of TOTO"). The design's
+  // box filters the rows already drawn — fifty of thirty thousand — so a token outside the top hundred could never
+  // match. Claimed at window capture (the design's own handler would hide rows), the text is resolved to issuers
+  // through the token search, every pool of each issuer is fetched, and those are drawn with the same pager.
+  var poolQ = 0;
+  function wireSearch(h) {
+    if (window.__lxxPoolSearch) return;
+    window.__lxxPoolSearch = 1;
+    var t = null;
+    window.addEventListener('input', function (e) {
+      var inp = e.target;
+      if (!inp || inp.id !== 'poolSearch') return;
+      e.stopImmediatePropagation();
+      clearTimeout(t);
+      t = setTimeout(function () { searchPools(h, String(inp.value || '').trim()); }, 350);
+    }, true);
+  }
+
+  function searchPools(h, q) {
+    var my = ++poolQ;
+    var all = window.__lxxPoolsData;
+    if (q.length < 2) { if (all) renderPage(h, all, 1); return; }
+    var ql = q.toLowerCase();
+    noteHost(h, 'Searching the XRP Ledger…');
+    fetch('/lxapi/xrplsearch?q=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (my !== poolQ) return;
+        // A REFUSED TOKEN SEARCH IS NOT AN EMPTY LEDGER. Pools are found by looking up the issuers behind the typed word,
+        // so when that lookup fails there is nothing to look pools up BY — and this used to carry on and report "No pools
+        // match that search", which is a claim about the ledger rather than about the request. (RAZA 2026-09-17, searching
+        // "lumos" against pools that do exist.)
+        if (!s || !s.ok) {
+          noteHost(h, 'Pool search is unavailable right now.');
+          var pg0 = $('#paginationAll');
+          if (pg0) pg0.style.display = 'none';
+          return;
+        }
+        var seen = {}, issuers = [];
+        ((s && s.rows) || []).forEach(function (t) {
+          var code = nameOf({ c: t.c, i: t.i }).toLowerCase(), nm = String(t.n || '').toLowerCase();
+          if ((code.indexOf(ql) < 0 && nm.indexOf(ql) < 0) || seen[t.i]) return;
+          seen[t.i] = 1;
+          issuers.push(t.i);
+        });
+        return Promise.all(issuers.slice(0, 8).map(function (iss) {
+          return fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(iss))
+            .then(function (r) { return r.json(); }).catch(function () { return null; });
+        })).then(function (res) {
+          if (my !== poolQ) return;
+          var rows = [], got = {};
+          function add(r) {
+            if (!r || !r.acct || got[r.acct]) return;
+            if (nameOf(r.a1).toLowerCase().indexOf(ql) < 0 && nameOf(r.a2).toLowerCase().indexOf(ql) < 0) return;
+            got[r.acct] = 1;
+            rows.push(r);
+          }
+          res.forEach(function (d) { ((d && d.rows) || []).forEach(add); });
+          ((all && all.rows) || []).forEach(add);             // covers XRP, which has no issuer to search by
+          rows.sort(function (x, y) { return (+y.liq || 0) - (+x.liq || 0); });
+          if (!rows.length) {
+            noteHost(h, 'No pools match that search.');
+            var pg = $('#paginationAll');
+            if (pg) pg.style.display = 'none';
+            return;
+          }
+          renderPage(h, { ok: true, rows: rows, total: rows.length }, 1);
+        });
+      })
+      .catch(function () { if (my === poolQ) noteHost(h, 'Pool search is unavailable right now.'); });
   }
 
   function load() {
     var h = listHost();
     if (!h) return;                                    // not the Pools page
+    // The LUMOS page's "All LUMOS pools" table is Stellar's own layout (Pool · TVL · 24h Volume · Incentives · View pool),
+    // built by ltoken.js from the design's row; this file's Pools-page rows do not belong in it.
+    if ($('.lumos-hero-row')) return;
     lift();
     claimRowClicks();
-    markCreatePoolUnwired();
+    wireSearch(h);
+    // Create Pool is wired now (browser/createpool.js), so the dialog is no longer disabled here.
+    paintHeadings();
     paintHeroCopy();
     noteHost(h, 'Reading the XRP Ledger…');
 
@@ -462,21 +849,43 @@
     // two-writers-on-one-element shape this project keeps getting bitten by. Promise.all costs
     // nothing here: the tokens response is edge-cached and the two requests overlap.
     Promise.all([
-      fetch('/lxapi/xrplpools?n=50').then(function (r) { return r.json(); }),
-      fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
-        .then(function (t) { return (t && t.ok && +t.usd > 0) ? +t.usd : null; })
-        .catch(function () { return null; }),
+      // n=100 — the endpoint's ceiling, and the upstream's. See the note above the pager.
+      // On the LUMOS page the table is "All LUMOS pools", not the site's top hundred (RAZA 2026-09-15).
+      fetch('/lxapi/xrplpools?n=100' + ($('.lumos-hero-row') ? '&issuer=rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' : ''))
+        .then(function (r) { return r.json(); }),
+      fetchUsd(3),
     ]).then(function (both) {
       var d = both[0];
       USD = both[1];
       if (!d || !d.ok || !d.rows.length) { noteHost(h, 'Pool data is unavailable right now.'); return; }
       window.__lxxPoolsData = d;
-      h.node.innerHTML = '';
-      var make = h.kind === 'table' ? row : card;
-      for (var i = 0; i < d.rows.length; i++) h.node.appendChild(make(d.rows[i], i + 1));
+      renderPage(h, d, 1);
+      // The LUMOS page's copy of this table is gated by #poolsBody:not(.lxlt) tr{visibility:hidden}.
+      if ($('#poolsBody')) $('#poolsBody').classList.add('lxlt');
+      // THE TAB SAID "All Pools 100", which is how many rows we fetched, not how many exist.
+      // lumoscore.com shows the real figure there (10,986 on Stellar), and the upstream reports
+      // 30,729 active pools for this ledger — so the badge was understating the ledger by three
+      // orders of magnitude and reading as "this is all there is".
+      //
+      // The COUNT is now the truth even though the table still lists a page of them; that is the
+      // same thing Stellar does. How many rows to serve is a separate question and a real cost
+      // decision — see the note in load().
+      var tabCount = $('#poolTabs .count');
+      if (tabCount && d.total != null) tabCount.textContent = count(d.total);
+
       paintSummary(d.summary);
       paintOverview(d);
       attribution(d);
+      // A table of em dashes is repainted the moment a rate does arrive, rather than waiting for the next visit.
+      if (USD == null) {
+        fetchUsd(4).then(function (u) {
+          if (!(u > 0)) return;
+          USD = u;
+          renderPage(h, d, 1);
+          paintSummary(d.summary);
+          paintOverview(d);
+        });
+      }
     }).catch(function () { noteHost(h, 'Pool data is unavailable right now.'); });
   }
 

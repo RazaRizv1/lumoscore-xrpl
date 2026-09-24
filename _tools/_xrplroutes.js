@@ -1,8 +1,8 @@
 // Stellar clean routes, rewritten to their XRPL equivalents.
 //
 // The build starts from Stellar's containers, and those are full of Stellar's OWN clean routes:
-// "/dashboard", "/trade/stellar", "/wallet". XRPL namespaces everything under /xrpl, so every one of
-// them is a link or a redirect to a page that does not exist here.
+// "/dashboard", "/trade/stellar", "/wallet". Since 2026-09-15 this build uses the SAME scheme with the chain
+// swapped (/trade/xrpl, /pools/xrpl), so only the chain-suffixed routes need rewriting.
 //
 // Found the hard way: seeding a connected state and reloading the landing page dropped me on a 404.
 // lx-homegate does
@@ -50,16 +50,27 @@ const MAP = [
   ['/xrpl/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
   ['/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
 
-  ['/trade/stellar', '/xrpl/trade'],
-  ['/pools/stellar', '/xrpl/pools'],
-  ['/account/stellar', '/xrpl/account'],
-  ['/list-your-token', '/xrpl/list-your-token'],
-  ['/launchpad', '/xrpl/launchpad'],
-  ['/dashboard', '/xrpl/dashboard'],
-  ['/rewards', '/xrpl/rewards'],
-  ['/bridge', '/xrpl/bridge'],
-  ['/wallet', '/xrpl/wallet'],
-  ['/lumos', '/xrpl/lumos'],
+  // STELLAR'S OWN SCHEME, WITH THE CHAIN SWAPPED (RAZA 2026-09-15). Only the three chain-suffixed
+  // routes change; /dashboard, /wallet, /bridge, /launchpad, /rewards, /lumos and /list-your-token are
+  // the same paths on both builds and are left exactly as the design wrote them.
+  ['/trade/stellar', '/trade/xrpl'],
+  ['/pools/stellar', '/pools/xrpl'],
+  ['/account/stellar', '/account/xrpl'],
+
+  // THE PREVIOUS SCHEME, /xrpl/<section>, which this table itself used to write. The containers are
+  // gitignored and persist between builds, so what is on disk today is that shape, not Stellar's --
+  // without these the move would be a no-op on every page. None of the targets contains its source,
+  // so a second run finds nothing to do.
+  ['/xrpl/list-your-token', '/list-your-token'],
+  ['/xrpl/launchpad', '/launchpad'],
+  ['/xrpl/dashboard', '/dashboard'],
+  ['/xrpl/account', '/account/xrpl'],
+  ['/xrpl/rewards', '/rewards'],
+  ['/xrpl/bridge', '/bridge'],
+  ['/xrpl/wallet', '/wallet'],
+  ['/xrpl/trade', '/trade/xrpl'],
+  ['/xrpl/pools', '/pools/xrpl'],
+  ['/xrpl/lumos', '/lumos/xrpl'],
 
   // THE SHARED PAGES POINT AT THE MAIN SITE, ABSOLUTELY.
   //
@@ -81,7 +92,9 @@ const MAP = [
   ['/docs', 'https://lumoscore.com/docs'],
   ['/blog', 'https://lumoscore.com/blog'],
   ['/faq', 'https://lumoscore.com/faq'],
-  ['/mcp', 'https://lumoscore.com/mcp'],
+  // MCP is served by this build now (2026-09-15), so its links stay local — including the absolute ones
+  // an earlier version of this table wrote into the persisted containers.
+  ['https://lumoscore.com/mcp', '/mcp'],
 ];
 
 function esc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }
@@ -93,7 +106,7 @@ function esc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }
 // DERIVED, not listed. The docs are `lumoscore-docs-<topic>.html` on this side and `/docs/<topic>`
 // on the main site, so one rule covers all 34 of them and cannot fall out of step with the set the
 // way a hand-written list of 41 would.
-const SHARED_FILE = /(["'])lumoscore-(mcp|about|blog|blog-post|whitepaper|privacy|terms|support|docs-[a-z0-9-]+?)(-mobile|-dark|-light)?\.html\1/g;
+const SHARED_FILE = /(["'])lumoscore-(about|blog|blog-post|whitepaper|privacy|terms|support|docs-[a-z0-9-]+?)(-mobile|-dark|-light)?\.html\1/g;
 
 // APP pages linked by design filename, which resolve to nothing.
 //
@@ -109,20 +122,21 @@ const SHARED_FILE = /(["'])lumoscore-(mcp|about|blog|blog-post|whitepaper|privac
 // asset-overview, and the admin set, which is not in the public build) are left alone rather than
 // guessed at.
 const APP_FILE = {
-  'home': '/xrpl/dashboard',
+  'home': '/dashboard',
   'landing': '/',
-  'dex': '/xrpl/trade',
-  'dex-asset': '/xrpl/trade',
-  'amm': '/xrpl/pools',
-  'amm-pool': '/xrpl/pools',
-  'bridge': '/xrpl/bridge',
-  'wallet': '/xrpl/wallet',
-  'rewards': '/xrpl/rewards',
-  'lumos-token': '/xrpl/lumos',
-  'launch-token': '/xrpl/launchpad',
-  'launch-review': '/xrpl/launchpad/review',
-  'launch-confirm': '/xrpl/launchpad/confirm',
-  'list-token': '/xrpl/list-your-token',
+  'dex': '/trade/xrpl',
+  'dex-asset': '/trade/xrpl',
+  'amm': '/pools/xrpl',
+  'amm-pool': '/pools/xrpl',
+  'bridge': '/bridge',
+  'wallet': '/wallet',
+  'rewards': '/rewards',
+  'lumos-token': '/lumos/xrpl',
+  'mcp': '/mcp',
+  'launch-token': '/launchpad',
+  'launch-review': '/launchpad/review',
+  'launch-confirm': '/launchpad/confirm',
+  'list-token': '/list-your-token',
 };
 
 const APP_FILE_RE = new RegExp(
@@ -154,6 +168,13 @@ for (const dev of ['desktop', 'mobile']) {
       h = h.replace(re, function (_, q) { n++; return q + to; });
       if (n) { per[from] = (per[from] || 0) + n; total += n; }
     }
+    // BARE "/lumos" becomes "/lumos/xrpl". Its own rule because the lookahead must NOT accept "/": the
+    // table's rules do, and that would read an already-written "/lumos/xrpl" as "/lumos" plus a path and
+    // append the chain a second time on every build.
+    h = h.replace(/(["'`])\/lumos(?=["'`?#])/g, function (_, q) {
+      per['/lumos'] = (per['/lumos'] || 0) + 1; total++;
+      return q + '/lumos/xrpl';
+    });
     h = h.replace(SHARED_FILE, function (_, q, name) {
       files_rewritten++;
       return q + sharedFileUrl(name) + q;
@@ -179,5 +200,5 @@ console.log('xrpl routes: ' + total + ' route reference(s) and ' + files_rewritt
 for (const k of Object.keys(per).sort((a, b) => per[b] - per[a])) {
   // Wide enough for the absolute targets: at 22 the lumoscore.com URLs ran straight into the count
   // and printed "…/lumos/stellar6".
-  console.log('   ' + k.padEnd(21) + ' -> ' + (MAP.find(m => m[0] === k)[1]).padEnd(38) + per[k]);
+  console.log('   ' + k.padEnd(21) + ' -> ' + ((MAP.find(m => m[0] === k) || [0, '/lumos/xrpl'])[1]).padEnd(38) + per[k]);
 }

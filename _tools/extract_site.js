@@ -23,15 +23,16 @@ function cleanMapJson(){
     if(/:/.test(url)) continue;                     // dynamic routes are handled by query conversion
     // key on the BASE name: /rewards is served by lumoscore-rewards-dark.html, but links to it appear
     // as -dark, -light and -mobile, and every one of them is the same page.
-    m[file.replace(/\.html$/, '').replace(/-(dark|light|mobile)$/, '')] = url;
+    const k = file.replace(/\.html$/, '').replace(/-(dark|light|mobile)$/, '');
+    if (!m[k]) m[k] = url;                           // first route wins: /lumos, not /lumos/xrpl
   }
   m['lumoscore-landing'] = '/';
   // dynamic routes with no identifier in the link fall back to the list page
-  m['lumoscore-dex-asset'] = '/xrpl/trade';
-  m['lumoscore-account']   = '/xrpl/account';
+  m['lumoscore-dex-asset'] = '/trade/xrpl';
+  m['lumoscore-account']   = '/account/xrpl';
   // asset-overview was REMOVED — it duplicated Trade-asset without the ability to act on what it
   // showed. Anything still pointing at it resolves to the Trade page instead.
-  m['lumoscore-asset-overview'] = '/xrpl/trade';
+  m['lumoscore-asset-overview'] = '/trade/xrpl';
   return JSON.stringify(m);
 }
 
@@ -48,9 +49,9 @@ function runtime(validArray){
     + '  var base=u.replace(/'+BS+'.html$/,"").replace(/-(dark|light|mobile)$/,"");'
     + '  var p=new URLSearchParams(q), a=p.get("asset");'
     // the two dynamic routes: an ?asset= becomes a path segment
-    + '  if(base==="lumoscore-account")        return a?("/xrpl/account/"+a+h):("/xrpl/account"+h);'
-    + '  if(base==="lumoscore-dex-asset")      return a?("/xrpl/trade/"+a+h):("/xrpl/trade"+h);'
-    + '  if(base==="lumoscore-asset-overview") return a?("/xrpl/trade/"+a+h):("/xrpl/trade"+h);'
+    + '  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);'
+    + '  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);'
+    + '  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);'
     // a pool is addressed by its two assets, which a ?pool=<id> link does not carry — leave it alone
     + '  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;'
     + '  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;'
@@ -409,31 +410,37 @@ function headersFile(isAdmin){
 // Placeholders (:name) match a single segment. Theme never appears in a URL — light and dark are the
 // same page — and device is resolved server-side, not by a separate URL.
 const ROUTES = [
-  // XRPL ONLY. Every route carries /xrpl/ so nothing here can collide with the live Stellar site,
-  // which keeps its own URLs untouched. Dynamic routes first: they carry an identifier in the path.
+  // THE SAME URL SCHEME AS lumoscore.com, chain and all. RAZA 2026-09-15: "The structure on XRPL is
+  // incorrect" -- this build used to namespace every page under /xrpl/<section>, where Stellar puts
+  // the chain AFTER the section (/trade/stellar, /pools/stellar/...) and leaves the chain-less pages
+  // bare (/dashboard, /wallet). Mirrored exactly, with xrpl in stellar's place.
+  //
+  // THE OLD /xrpl/<section> URLS STILL WORK: the middleware 301s them to these (see "1a"), so a link
+  // shared before the move lands on the right page rather than a 404.
   //
   // The shared pages -- /docs/*, /blog, /terms, /privacy, /about, /support, /whitepaper, /faq,
   // /signin, /mcp -- are deliberately ABSENT. They exist once for the company and are already live
-  // on lumoscore.com; publishing a second copy here would compete with the originals in search and
-  // give the same sentence two places to be edited. Their links resolve to the main site, which is
-  // correct as long as this build is served under lumoscore.com/xrpl/.
-  ['/xrpl/trade/:asset',         'lumoscore-dex-asset.html'],   // an asset, with its book and chart
-  ['/xrpl/trade',                'lumoscore-dex.html'],
-  ['/xrpl/account/:address',     'lumoscore-account.html'],
-  ['/xrpl/pools/id/:pool',       'lumoscore-amm-pool.html'],   // fallback: id-only links
-  ['/xrpl/pools/:a/:b',          'lumoscore-amm-pool.html'],
-  ['/xrpl/pools',                'lumoscore-amm.html'],
-  ['/xrpl/launchpad/review',     'lumoscore-launch-review.html'],   // review must precede /xrpl/launchpad
-  ['/xrpl/launchpad/confirm',    'lumoscore-launch-confirm.html'],
-  ['/xrpl/launchpad',            'lumoscore-launch-token.html'],
-  ['/xrpl/list-your-token',      'lumoscore-list-token.html'],
-  ['/xrpl/bridge',               'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
-  ['/xrpl/rewards',              'lumoscore-rewards-dark.html'],
-  ['/xrpl/lumos',                'lumoscore-lumos-token.html'],
-  ['/xrpl/wallet',               'lumoscore-wallet.html'],
-  ['/xrpl/dashboard',            'lumoscore-home.html'],
-  // NOTE: bare '/xrpl' is deliberately NOT a route. It 301s to /xrpl/dashboard via ALIASES, so the
-  // dashboard has exactly one address. Adding it back here would resurrect the duplicate.
+  // on lumoscore.com; publishing a second copy here would compete with the originals in search.
+  ['/trade/xrpl/:asset',         'lumoscore-dex-asset.html'],   // an asset, with its book and chart
+  ['/trade/xrpl',                'lumoscore-dex.html'],
+  ['/account/xrpl/:address',     'lumoscore-account.html'],
+  ['/pools/xrpl/id/:pool',       'lumoscore-amm-pool.html'],   // fallback: id-only links
+  ['/pools/xrpl/:a/:b',          'lumoscore-amm-pool.html'],
+  ['/pools/xrpl',                'lumoscore-amm.html'],
+  ['/launchpad/review',          'lumoscore-launch-review.html'],   // review must precede /launchpad
+  ['/launchpad/confirm',         'lumoscore-launch-confirm.html'],
+  ['/launchpad',                 'lumoscore-launch-token.html'],
+  ['/dashboard',                 'lumoscore-home.html'],
+  ['/bridge',                    'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
+  ['/wallet',                    'lumoscore-wallet.html'],
+  ['/rewards',                   'lumoscore-rewards-dark.html'],
+  // THE LUMOS PAGE IS /lumos/xrpl, as Stellar's is /lumos/stellar (RAZA 2026-09-15). Bare /lumos 301s
+  // here — see "1a2" in the middleware.
+  ['/lumos/xrpl',                'lumoscore-lumos-token.html'],
+  // MCP IS SERVED BY THIS BUILD (RAZA 2026-09-15: "MCP page links to the main website instead of XRPL for
+  // staging"). The page is the design's own; its copy describes the Stellar MCP server.
+  ['/mcp',                       'lumoscore-mcp.html'],
+  ['/list-your-token',           'lumoscore-list-token.html'],
 ];
 
 // Case: fixed segments are lowercase, but an asset segment must keep its case — yUSDC and YUSDC are
@@ -446,14 +453,8 @@ const ALIASES = [
   ['/blogs/*', '/blog/:splat'],
   ['/blogs',   '/blog'],
 
-  // ONE URL FOR THE DASHBOARD, NOT TWO.
-  //
-  // `/xrpl` used to be a ROUTE serving lumoscore-home.html, so both /xrpl and /xrpl/dashboard
-  // answered 200 with the same page. Two urls for one page is a duplicate the canonical has to
-  // paper over, the nav and the connect shim both point at /xrpl/dashboard, and it is the url a
-  // visitor actually landed on — which is how it was reported. A 301 makes /xrpl an entrance
-  // rather than a second address.
-  ['/xrpl', '/xrpl/dashboard'],
+  // The old bare "/xrpl" entrance, and every /xrpl/<section> url, are redirected by the middleware
+  // ("1a") rather than here: one table, next to the routes it points at.
 ];
 
 const CASE_FIXES = [
@@ -507,8 +508,8 @@ const SITEMAP_SKIP = new Set(['/signin', '/launchpad/review', '/launchpad/confir
 // A few pages deserve a stronger signal than the default.
 const SITEMAP_WEIGHT = {
   '/': ['1.0', 'daily'],
-  '/xrpl/trade': ['0.9', 'daily'],
-  '/pools/stellar': ['0.9', 'daily'],
+  '/trade/xrpl': ['0.9', 'daily'],
+  '/pools/xrpl': ['0.9', 'daily'],
   '/blog': ['0.9', 'daily'],
   '/docs': ['0.8', 'weekly'],
   '/whitepaper': ['0.8', 'monthly'],
@@ -517,7 +518,7 @@ const SITEMAP_WEIGHT = {
   // An issuer looking for "list token on Stellar" is exactly who this page is for, so it is not a
   // default-weight page.
   '/list-your-token': ['0.7', 'monthly'],
-  '/lumos': ['0.8', 'weekly'],
+  '/lumos/xrpl': ['0.8', 'weekly'],
   '/bridge': ['0.8', 'weekly'],
   '/launchpad': ['0.8', 'weekly'],
   '/privacy': ['0.3', 'yearly'],
@@ -824,6 +825,9 @@ function blogSeo(p, origin){
 
 function seoFor(pathname){
   const segs = pathname.split('/').filter(Boolean);
+  // STELLAR ONLY. This enrichment asks stellar.expert and titles the page "on Stellar"; now that XRPL
+  // shares the /trade/<chain>/ shape, an unguarded match would describe every XRPL token as a Stellar asset.
+  if ((segs[0] === 'trade' || segs[0] === 'asset' || segs[0] === 'pools') && segs[1] !== 'stellar') return null;
   if ((segs[0] === 'trade' || segs[0] === 'asset') && segs[2]) return { kind: 'asset', id: segs[2] };
   if (segs[0] === 'pools' && segs[2] && segs[3]) return { kind: 'pool', a: segs[2], b: segs[3] };
   if (segs[0] === 'blog' && segs[1]) return { kind: 'blog', slug: segs[1] };
@@ -901,17 +905,17 @@ function legacyClean(pathname, params){
 
   // the two dynamic routes carry their identifier in the query — promote it into the path
   const asset = params && params.get('asset');
-  if (base === 'lumoscore-dex-asset')      return asset ? '/xrpl/trade/' + asset : '/xrpl/trade';
-  if (base === 'lumoscore-asset-overview') return asset ? '/xrpl/trade/' + asset : '/xrpl/trade';
+  if (base === 'lumoscore-dex-asset')      return asset ? '/trade/xrpl/' + asset : '/trade/xrpl';
+  if (base === 'lumoscore-asset-overview') return asset ? '/trade/xrpl/' + asset : '/trade/xrpl';
   // a pool is addressed by its two assets, which ?pool=<id> does not carry — leave it alone
   const pool = params && params.get('pool');
-  if (base === 'lumoscore-amm-pool') return pool ? '/pools/stellar/id/' + pool : '/pools/stellar';
+  if (base === 'lumoscore-amm-pool') return pool ? '/pools/xrpl/id/' + pool : '/pools/xrpl';
 
   // "/" is registered in ROUTES against "index" (the landing page is copied to index.html so the
   // front door is not a redirect), so the ROUTES loop below never matches "lumoscore-landing" and
   // returned null. That mattered because the wallet gate used to redirect with the bare filename:
   // from /asset/stellar/<ASSET> the browser asked for /asset/stellar/lumoscore-landing.html, no 301
-  // fired, and "/xrpl/asset/:asset" then matched with the asset literally being
+  // fired, and "/asset/xrpl/:asset" then matched with the asset literally being
   // "lumoscore-landing.html" — rendering an asset page for an asset that does not exist, i.e. blank.
   if (base === 'lumoscore-landing') return '/';
 
@@ -995,8 +999,8 @@ export async function onRequest(context){
     // "Remove" button on an LP position, which links to ...?pool=<id>&act=withdraw so the pool page
     // opens on the Withdraw tab: the redirect promoted the pool into the path and threw act= away, so
     // the user always landed on Deposit. Drop only the key that was promoted.
-    const promoted = legacy.indexOf('/xrpl/trade/') === 0
-      || legacy.indexOf('/pools/stellar/id/') === 0;
+    const promoted = legacy.indexOf('/trade/xrpl/') === 0
+      || legacy.indexOf('/pools/xrpl/id/') === 0;
     if (promoted){
       const keep = new URLSearchParams(url.search);
       keep.delete('asset'); keep.delete('pool');
@@ -1007,14 +1011,45 @@ export async function onRequest(context){
     return Response.redirect(to.toString(), 301);
   }
 
+  // 1a) THE PREVIOUS URL SCHEME, /xrpl/<section>, permanently to Stellar's shape. Links to it were
+  // shared while it was live, so it redirects rather than 404s. Longest prefix first. Handled here and
+  // not in _redirects for the reason given at legacyClean: an explicit order with no rewrite collisions.
+  if (url.pathname === '/xrpl' || url.pathname.indexOf('/xrpl/') === 0){
+    const OLD = [
+      ['/xrpl/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
+      ['/xrpl/list-your-token', '/list-your-token'], ['/xrpl/launchpad', '/launchpad'],
+      ['/xrpl/dashboard', '/dashboard'], ['/xrpl/account', '/account/xrpl'],
+      ['/xrpl/rewards', '/rewards'], ['/xrpl/bridge', '/bridge'], ['/xrpl/wallet', '/wallet'],
+      ['/xrpl/trade', '/trade/xrpl'], ['/xrpl/pools', '/pools/xrpl'], ['/xrpl/lumos', '/lumos/xrpl'],
+      ['/xrpl/asset', '/trade/xrpl'], ['/xrpl', '/dashboard'],
+    ];
+    for (const pair of OLD){
+      const from = pair[0], to = pair[1];
+      if (url.pathname === from || url.pathname.indexOf(from + '/') === 0){
+        const dest = new URL(to + (to.indexOf('https:') === 0 ? '' : url.pathname.slice(from.length)), url.origin);
+        dest.search = url.search;
+        dest.hash = url.hash;
+        return Response.redirect(dest.toString(), 301);
+      }
+    }
+  }
+
+  // 1a2) /lumos alone -> /lumos/xrpl, this build's LUMOS page (as Stellar's is /lumos/stellar).
+  if (url.pathname === '/lumos'){
+    const dest = new URL('/lumos/xrpl', url.origin);
+    dest.search = url.search;
+    dest.hash = url.hash;
+    return Response.redirect(dest.toString(), 301);
+  }
+
   // 1b) /asset/stellar/<ASSET> -> /trade/stellar/<ASSET>, permanently.
   // The asset-overview page was removed; Trade-asset shows the same facts and can act on them.
   // These urls were published in the sitemap and may already be indexed, so this is a 301 rather
   // than a 404: search engines transfer the ranking to the Trade page instead of dropping it.
   // Bare /asset/stellar (no asset) goes to the Trade list.
-  if (url.pathname === '/xrpl/asset' || url.pathname.indexOf('/xrpl/asset/') === 0){
-    const rest = url.pathname.slice('/xrpl/asset'.length);
-    const to = new URL('/xrpl/trade' + rest, url.origin);
+  if (url.pathname === '/asset/xrpl' || url.pathname.indexOf('/asset/xrpl/') === 0){
+    const rest = url.pathname.slice('/asset/xrpl'.length);
+    const to = new URL('/trade/xrpl' + rest, url.origin);
     to.search = url.search;
     to.hash = url.hash;
     return Response.redirect(to.toString(), 301);
@@ -1320,7 +1355,7 @@ function routesJson(){
   // WHICH PATHS REACH THE FUNCTIONS RUNTIME. Anything not included here is served straight from
   // static storage and `functions/_middleware.js` never runs for it.
   //
-  // This used to enumerate the routes ("/xrpl/trade/*", "/lumoscore-*", …) so that only real
+  // This used to enumerate the routes ("/trade/xrpl/*", "/lumoscore-*", …) so that only real
   // pages cost an invocation. That silently broke the legacy->clean 301: the app navigates with a
   // RELATIVE url (`location.href="lumoscore-dex-asset.html?asset=…"`), so from /trade/stellar the
   // browser asks for **/trade/lumoscore-dex-asset.html**. The middleware matches on the LAST path

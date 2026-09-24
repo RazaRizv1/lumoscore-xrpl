@@ -7,7 +7,7 @@
 //    solar storms". A review step whose whole purpose is "double-check everything below" was
 //    showing somebody else's token.
 //
-// 2. "Confirm & Launch" was a plain <a href="/xrpl/launchpad/confirm">. It navigated to the success
+// 2. "Confirm & Launch" was a plain <a href="/launchpad/confirm">. It navigated to the success
 //    page -- confetti, share buttons, the lot -- having issued nothing at all. That is worse than a
 //    broken button: it tells the user they own a token that does not exist.
 //
@@ -183,11 +183,17 @@
     var o = opts || {};
     var cur = d.currency;
     var supply = String(d.supply);
+    var pool = o.pool;                                   // the throwaway that owns the pool; blackholed at the end
 
     // The issuer needs the base reserve to exist at all, plus its own transaction fees. Whatever is
     // sent here is locked forever once the account is blackholed, so it is funded to the minimum
     // rather than rounded up.
-    var fund = (reserveXrp == null ? 1 : reserveXrp) + 0.5;
+    //
+    // MEASURED, NOT GUESSED (2026-09-17): the three live launchpad issuers were each funded with 1.02 XRP and each still
+    // holds 1.019953 — so 0.02 covers every fee the issuer ever pays. The old `+0.5` locked an extra 0.48 XRP (~$0.62) in a
+    // dead account on every launch, for nothing.
+    var base = (reserveXrp == null ? 1 : reserveXrp);
+    var fund = base + 0.02;
 
     // What the pool gets. The review page states a liquidity share -- 75% of supply against the XRP
     // side -- so the pool has to actually be created, or that row is a promise the launch breaks.
@@ -211,10 +217,43 @@
         tx: { TransactionType: 'Payment', Account: user, Destination: issuer,
               Amount: String(Math.round(fund * 1e6)) } });
 
-    return plan.concat(buildRest(cur, supply, issuer, user, lpTokens, lpXrp));
+    // THE POOL ACCOUNT (RAZA 2026-09-17, matching the 2025 Stellar launches): a second throwaway, funded by the user, which
+    // takes the whole supply, hands the launcher their share, creates the pool and then blackholes itself. The liquidity is
+    // then provably un-ruggable — not by the launcher, not by LumosCore, not by anyone, because no key can sign for it.
+    //
+    // It needs, and this has to be counted exactly or the account ends up a fraction under its own reserve and the launch
+    // dies on the last step:
+    //   base reserve            1.00   to exist at all
+    //   trust line (the token)  0.20   owner reserve, held for the life of the account
+    //   trust line (LP token)   0.20   owner reserve, created by AMMCreate
+    //   AMMCreate cost          0.20   destroyed, not a fee
+    //   margin + fees           0.25   the reserve is a ledger parameter and can rise
+    //   + lpXrp                        the XRP that becomes the pool's own side
+    if (pool) {
+      var poolFund = base + 0.85 + lpXrp;
+      plan.push(
+        { by: 'user', what: 'Fund the liquidity pool account',
+          tx: { TransactionType: 'Payment', Account: user, Destination: pool,
+                Amount: String(Math.round(poolFund * 1e6)) } });
+    }
+
+    return plan.concat(buildRest(cur, supply, issuer, user, lpTokens, lpXrp, pool, d.share));
   }
 
-  function buildRest(cur, supply, issuer, user, lpTokens, lpXrp) {
+  // THE SUPPLY NEVER PASSES THROUGH THE LAUNCHER'S WALLET ANY MORE (RAZA 2026-09-17, matching the 2025 Stellar launches,
+  // measured on mainnet: an operator-made throwaway took the whole supply, sent the launcher their share, deposited the rest
+  // and then set its own master weight to 0).
+  //
+  // Why it matters: whoever holds the LP tokens can withdraw the pool. Leaving them with the launcher — which is what this
+  // flow used to do, and what lumoscore.com still does — means the liquidity can be pulled the moment the token moves. Here
+  // the pool account blackholes itself at the end, so the liquidity is locked for good and the launcher keeps exactly the
+  // share they chose. Nobody collects the pool's 0.2% either; it compounds inside the pool, unclaimable, forever.
+  function buildRest(cur, supply, issuer, user, lpTokens, lpXrp, pool, sharePct) {
+    // What the launcher actually receives: their chosen share of the supply, sent on by the pool account.
+    var userTokens = (isFinite(Number(sharePct)) && Number(supply))
+      ? (Number(supply) * Number(sharePct) / 100) : 0;
+    var holder = pool || user;                           // no pool account (nothing to seed) → the old behaviour
+
     return [
 
       { by: 'issuer', what: 'Enable rippling and set the domain',
@@ -223,27 +262,39 @@
         tx: { TransactionType: 'AccountSet', Account: issuer, SetFlag: 8,
               Domain: hexAscii('lumoscore.com') } },
 
+      // The pool account has to trust the token before the issuer can send it the supply.
+      pool ? {
+        by: 'pool', what: 'Prepare the liquidity pool account',
+        tx: { TransactionType: 'TrustSet', Account: pool,
+              LimitAmount: { currency: cur, issuer: issuer, value: supply } } } : null,
+
       { by: 'user', what: 'Trust the new token',
         tx: { TransactionType: 'TrustSet', Account: user,
               LimitAmount: { currency: cur, issuer: issuer, value: supply } } },
 
-      { by: 'issuer', what: 'Mint the full supply to you',
-        tx: { TransactionType: 'Payment', Account: issuer, Destination: user,
+      { by: 'issuer', what: pool ? 'Mint the full supply' : 'Mint the full supply to you',
+        tx: { TransactionType: 'Payment', Account: issuer, Destination: holder,
               Amount: { currency: cur, issuer: issuer, value: supply } } },
 
-      // THE POOL. Without this the review page's "Liquidity Pool Share 75%" is a promise the launch
-      // never keeps: the whole supply would sit in the launcher's wallet with nothing to trade
-      // against. Created by the USER, because the tokens are theirs by this point.
+      // The launcher's own share, and only that. The rest stays with the pool account for the pool.
+      (pool && userTokens > 0) ? {
+        by: 'pool', what: 'Send you your share',
+        tx: { TransactionType: 'Payment', Account: pool, Destination: user,
+              Amount: { currency: cur, issuer: issuer, value: lxxAmt(userTokens) } } } : null,
+
+      // THE POOL. Without this the review page's "Liquidity Pool Share" is a promise the launch never keeps.
       //
       // AMMCreate is skipped entirely when there is nothing to seed it with, rather than submitted
       // with a zero side, which the ledger rejects.
       (lpTokens > 0 && lpXrp > 0) ? {
-        by: 'user', what: 'Create the liquidity pool',
-        tx: { TransactionType: 'AMMCreate', Account: user,
-              Amount: { currency: cur, issuer: issuer, value: String(lpTokens) },
+        by: pool ? 'pool' : 'user', what: 'Create the liquidity pool',
+        tx: { TransactionType: 'AMMCreate', Account: holder,
+              Amount: { currency: cur, issuer: issuer, value: lxxAmt(lpTokens) },
               Amount2: String(Math.round(lpXrp * 1e6)),
-              // Trading fee in units of 1/1000 of a percent, so 500 is 0.5%.
-              TradingFee: 500 } } : null,
+              // Trading fee in units of 1/1000 of a percent, so 200 is 0.2% — the platform's own rate (RAZA 2026-09-17).
+              // Fixed at creation; on an existing pool it can only be changed by an LP vote, and this pool's only LP is
+              // about to be blackholed, so 0.2% is what it charges for as long as it exists.
+              TradingFee: 200 } } : null,
 
       { by: 'issuer', what: 'Hand over the issuer key',
         tx: { TransactionType: 'SetRegularKey', Account: issuer, RegularKey: BLACKHOLE_KEY } },
@@ -252,7 +303,28 @@
         // 4 = asfDisableMaster. After this nothing can ever sign for the issuer again, so the
         // supply minted above is the supply forever.
         tx: { TransactionType: 'AccountSet', Account: issuer, SetFlag: 4 } },
+
+      // …and the same two for the pool account, which is what locks the liquidity. SetRegularKey FIRST: disabling the
+      // master key first would leave nothing able to sign the SetRegularKey.
+      pool ? {
+        by: 'pool', what: 'Hand over the pool account key',
+        tx: { TransactionType: 'SetRegularKey', Account: pool, RegularKey: BLACKHOLE_KEY } } : null,
+
+      pool ? {
+        by: 'pool', what: 'Lock the liquidity permanently',
+        tx: { TransactionType: 'AccountSet', Account: pool, SetFlag: 4 } } : null,
     ].filter(Boolean);
+  }
+
+  // Token amounts go on the ledger as strings, and an exponent or sixteen significant digits is a rejection. The vendored
+  // core already does this for every other write on the site; the launch plan is built before that library is loaded, so it
+  // gets the same treatment locally.
+  function lxxAmt(n) {
+    var v = Number(n);
+    if (!isFinite(v) || v <= 0) return '0';
+    var s = v.toPrecision(15).replace(/\.?0+$/, '');
+    if (s.indexOf('e') < 0 && s.indexOf('E') < 0) return s;
+    return v.toFixed(Math.max(0, 15 - Math.ceil(Math.log10(Math.abs(v) + 1)))).replace(/\.?0+$/, '');
   }
 
   // ---- running the launch -----------------------------------------------------------------------
@@ -272,7 +344,11 @@
     plan.forEach(function (step, i) {
       chain = chain.then(function () {
         env.onStep(i, 'start', step);
-        var submit = step.by === 'user' ? env.submitUser : env.submitIssuer;
+        // Three signers: the user's wallet, the throwaway issuer, and the throwaway pool account. The last two are generated
+        // in this browser for this launch and blackholed by the end, so signing for them locally is safe — the keys are
+        // worthless the moment the plan finishes.
+        var submit = step.by === 'user' ? env.submitUser
+          : (step.by === 'pool' ? env.submitPool : env.submitIssuer);
         return submit(step.tx).then(function (hash) {
           // WAIT FOR VALIDATION, never just for submission. A submitted transaction has been
           // accepted by one server, not written to a ledger, and the next step depends on the
@@ -342,7 +418,7 @@
       rpc('server_info', {}),
     ]).then(function (r) {
       var acct = r[0] && r[0].result && r[0].result.account_data;
-      if (!acct) throw new Error('The issuing account is not on the ledger yet.');
+      if (!acct) throw new Error('That account is not on the ledger yet.');   // the issuer or the pool account
       var info = r[1] && r[1].result && r[1].result.info;
       var base = (info && info.validated_ledger && info.validated_ledger.base_fee_xrp) || 0.00001;
       var ledger = (info && info.validated_ledger && info.validated_ledger.seq) || 0;
@@ -354,9 +430,9 @@
     });
   }
 
-  function submitIssuerTx(tx, issuerWallet, xrpl) {
+  function submitIssuerTx(tx, wallet, xrpl) {
     return autofill(tx, xrpl).then(function (full) {
-      var signed = issuerWallet.sign(full);
+      var signed = wallet.sign(full);
       return rpc('submit', { tx_blob: signed.tx_blob }).then(function (j) {
         var res = j && j.result;
         var code = res && res.engine_result;
@@ -482,7 +558,10 @@
         var j = both[0], p = both[1];
         var rate = (p && p.ok && p.usd > 0) ? p.usd : null;
         if (!rate) throw new Error('Could not price the launch in XRP right now.');
-        var feeXrp = cfg.usd ? (cfg.usd.create / rate) : 0;
+        // THE POOL FEE IS COLLECTED (RAZA 2026-09-17). The page has always billed `create + liq + pool`, but only `create`
+        // was ever sent anywhere — the $10 pool line was displayed and never charged. lumoscore.com charges
+        // `createFee + poolFee` to its collector, and this now matches it.
+        var feeXrp = cfg.usd ? ((cfg.usd.create + (cfg.usd.pool || 0)) / rate) : 0;
         var liqXrp = cfg.usd ? (cfg.usd.liq / rate) : 0;
 
         var v = j && j.result && j.result.info && j.result.info.validated_ledger;
@@ -490,11 +569,41 @@
 
         return loadLib().then(function (xrpl) {
           var issuer = xrpl.Wallet.generate();
+          // The pool account: generated here, used for this launch only, blackholed by the last step. Nobody keeps its key
+          // because nobody can use it afterwards — which is exactly what makes the liquidity permanently locked.
+          var pool = xrpl.Wallet.generate();
           var plan = buildLaunchPlan(d, issuer.classicAddress, lxc.address(), reserve, {
             feeXrp: feeXrp, feeCollector: cfg.feeCollector, liquidityXrp: liqXrp,
+            pool: pool.classicAddress,
           });
 
           var userSteps = plan.filter(function (s) { return s.by === 'user'; }).length;
+
+          // CHECKED BEFORE THE FIRST PROMPT, never discovered halfway (lumoscore.com does the same, for the same reason).
+          // This launch spends the user's XRP across four separate transactions, and the ledger has no way to undo the ones
+          // that already landed: stopping at step 7 leaves a minted token, a funded issuer and no pool. So the whole cost is
+          // added up and compared with what the account can actually spend — its balance less the reserve it must keep —
+          // before anything is signed.
+          var needXrp = plan.reduce(function (sum, s) {
+            return sum + ((s.by === 'user' && typeof s.tx.Amount === 'string') ? Number(s.tx.Amount) / 1e6 : 0);
+          }, 0) + 0.2 + 0.01;                              // + the user's own trust line reserve, + fees
+          return rpc('account_info', { account: lxc.address(), ledger_index: 'validated' }).then(function (ai) {
+            var ad = ai && ai.result && ai.result.account_data;
+            if (ad) {
+              var inc = (v && Number(v.reserve_inc_xrp)) || 0.2;
+              var locked = reserve + (Number(ad.OwnerCount) || 0) * inc;
+              var spendable = (Number(ad.Balance) || 0) / 1e6 - locked;
+              if (spendable < needXrp) {
+                running = false;
+                status(el, 'Not enough XRP to finish this launch. It needs about <strong>'
+                  + needXrp.toFixed(2) + ' XRP</strong> and this account can spend '
+                  + Math.max(0, spendable).toFixed(2) + ' (the rest is held as the ledger’s reserve). '
+                  + 'Nothing has been sent.');
+                throw new Error('__lxxHandled');
+              }
+            }
+            return null;
+          }).then(function () {
 
           // Straight into it. The page above already asked, so this says what is about to happen
           // and then does it -- the wallet's own prompts are the remaining chances to say no.
@@ -512,19 +621,22 @@
               },
               submitUser: function (tx) { return lxc.submit(tx); },
               submitIssuer: function (tx) { return submitIssuerTx(tx, issuer, xrpl); },
+              submitPool: function (tx) { return submitIssuerTx(tx, pool, xrpl); },
               waitValidated: waitValidated,
             }).then(function (res) {
               running = false;
               if (res.ok) {
                 try {
                   localStorage.setItem('lumos.launch.result', JSON.stringify({
-                    ok: true, issuer: issuer.classicAddress, currency: d.currency,
+                    ok: true, issuer: issuer.classicAddress, pool: pool.classicAddress,
+                    currency: d.currency,
                     ticker: d.ticker, name: d.name, supply: d.supply,
                     hashes: res.completed,
                   }));
                 } catch (e) { /* private mode: the page still shows the result below */ }
                 status(el, log.join('<br>') + '<br><br><strong>Launched.</strong> Issuer '
-                  + esc(issuer.classicAddress) + ' is now blackholed, so the supply is fixed.');
+                  + esc(issuer.classicAddress) + ' is blackholed, so the supply is fixed — and the pool account '
+                  + esc(pool.classicAddress) + ' is blackholed too, so the liquidity can never be withdrawn by anyone.');
                 return;
               }
               // A PARTIAL LAUNCH IS REPORTED IN FULL. The user's money has gone somewhere and the
@@ -541,9 +653,12 @@
                 + '</strong><br>' + res.completed.length + ' of ' + plan.length
                 + ' transactions completed.' + tail);
             });
+          });                                              // ← the affordability gate's chain
         });
       }).catch(function (e) {
         running = false;
+        // The gate above has already explained itself on screen; anything else is a genuine failure to start.
+        if (e && e.message === '__lxxHandled') return;
         status(el, 'Could not start: ' + esc((e && e.message) || e));
       });
     });

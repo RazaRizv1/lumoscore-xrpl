@@ -93,7 +93,55 @@ function trimMarquee(html) {
   return html.slice(0, items[0].start) + body + html.slice(items[items.length - 1].end);
 }
 
-let pages = 0, netsDropped = 0, walletsDropped = 0, skipped = 0, marquees = 0;
+// ---- the SEARCH network selector, which had the two networks exactly backwards ------------------
+//
+// A separate component from the sign-in sheet above: `.lx-nsel-*` in the header, whose options carry
+// `data-net` and scope SEARCH (its handler writes `lumos.searchNet`). On the XRP LEDGER build it
+// shipped:
+//
+//   <button class="lx-nsel-opt" data-net="stellar">          Stellar          — selectable
+//   <button class="lx-nsel-opt is-off" data-net="xrpl"
+//           aria-disabled="true" disabled>                   XRPL  <em>Soon</em>
+//
+// So on the XRP Ledger site, the XRP Ledger was the disabled one, badged "Soon", and Stellar was the
+// only thing a visitor could pick. The design's own handler returns early on a disabled option, so
+// it was genuinely unclickable rather than merely styled that way.
+//
+// Stellar STAYS selectable — RAZA, 2026-09-08: "Just show Stellar and XRPL networks", and both are
+// real products. Only the disabled state and the "Soon" badge come off, plus the label is spelled
+// the way the rest of the site spells it.
+//
+// NO SELECTION IS FAKED HERE. Marking the option `is-on` in markup would show a tick that the
+// script's own state (`localStorage['lumos.searchNet']`, empty until someone chooses) does not
+// share — a filter that looks applied and is not.
+//
+// Asserts the inherited shape and returns null if it differs, like everything else in this file.
+function fixSearchNet(html) {
+  const at = html.indexOf('data-net="xrpl"');
+  if (at < 0) return null;
+  const open = html.lastIndexOf('<button', at);
+  if (open < 0) return null;
+  const close = html.indexOf('</button>', at);
+  if (close < 0) return null;
+  const end = close + '</button>'.length;
+
+  const was = html.slice(open, end);
+  if (was.indexOf('lx-nsel-opt') < 0) return null;            // not this component
+  // Idempotent: once the badge and the disabled state are gone there is nothing left to do.
+  if (was.indexOf('lx-nsel-soon') < 0 && was.indexOf('disabled') < 0) return null;
+
+  let now = was
+    .replace('class="lx-nsel-opt is-off"', 'class="lx-nsel-opt"')
+    .replace(' aria-disabled="true"', '')
+    .replace(/ disabled(?=[ >])/, '')
+    .replace(/<em class="lx-nsel-soon">[^<]*<\/em>/, '')
+    .replace('>XRPL<', '>XRP Ledger<');
+
+  if (now === was) return null;
+  return html.slice(0, open) + now + html.slice(end);
+}
+
+let pages = 0, netsDropped = 0, walletsDropped = 0, skipped = 0, marquees = 0, nsel = 0;
 
 for (const dev of ['desktop', 'mobile']) {
   const file = `lumoscore-xrpl-${dev}.html`;
@@ -106,6 +154,9 @@ for (const dev of ['desktop', 'mobile']) {
 
     const mq = trimMarquee(html);
     if (mq) { html = mq; json[k] = mq; changed = true; marquees++; }
+
+    const ns = fixSearchNet(html);
+    if (ns) { html = ns; json[k] = ns; changed = true; nsel++; }
 
     if (html.indexOf('data-net-id=') < 0) continue;      // sign-in sheet only
 
@@ -145,4 +196,6 @@ for (const dev of ['desktop', 'mobile']) {
 
 console.log('xrpl net picker: ' + pages + ' page key(s); dropped ' + netsDropped
   + ' network card(s) and ' + walletsDropped + ' wallet card(s)'
-  + '; ' + marquees + ' marquee(s) trimmed' + (skipped ? '; SKIPPED ' + skipped + ' with an unexpected shape' : ''));
+  + '; ' + marquees + ' marquee(s) trimmed'
+  + '; ' + nsel + ' search-network selector(s) un-disabled'
+  + (skipped ? '; SKIPPED ' + skipped + ' with an unexpected shape' : ''));

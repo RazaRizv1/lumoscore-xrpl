@@ -136,8 +136,37 @@ const ID = 'lx-xrplaunchpad';
 // The form rules and the review/launch behaviour ship together: the review page reads the draft the
 // form wrote, and a change to one without the other is how a review step ends up describing a
 // different token than the one that was validated.
-let page = fs.readFileSync(__dirname + '/browser/launchpad.js', 'utf8')
+const launchpadSrc = fs.readFileSync(__dirname + '/browser/launchpad.js', 'utf8');
+let page = launchpadSrc
   + '\n' + fs.readFileSync(__dirname + '/browser/mint.js', 'utf8');
+
+// ---- THE MINT-COST FAQ, DERIVED FROM THE PRICES THE PAGE ACTUALLY CHARGES -------------------------
+//
+// The Launchpad's cost panel is painted from `var USD` in browser/launchpad.js, which currently runs
+// REDUCED TEST PRICING. The FAQ beside it was static text reading "A flat $25: $5 to create the
+// token, $10 of starting liquidity …, and $10 for pool and network setup" — so while the panel
+// quoted 3.18 XRP ≈ $4.29, the same page told the reader it cost $25. The identical sentence is also
+// inside `lx-faq-ld`, the FAQPage structured data search engines read, so the site was publishing a
+// price it does not charge.
+//
+// Parsed from the browser source rather than restated here, so the two cannot drift: restore the
+// real numbers in that one file and this sentence follows on the next build.
+//
+// "$10 for pool and network setup" IS NOT REINSTATED, and that is deliberate. `USD.pool` is read
+// nowhere — the third row comes from `ledgerXrp()`, which is the XRP Ledger's own account reserve
+// plus the AMM's owner reserve, currently about 1.7 XRP. That is not a LumosCore fee and it moves
+// with the ledger's reserve settings, so it is described rather than priced. Whether the product
+// should charge that $10 is a pricing decision, not a copy fix.
+const usdMatch = launchpadSrc.match(/var\s+USD\s*=\s*\{\s*create:\s*([\d.]+)\s*,\s*liq:\s*([\d.]+)/);
+if (!usdMatch) {
+  console.error('  ! could not read `var USD = { create, liq }` from browser/launchpad.js — aborting');
+  process.exit(1);
+}
+const money = (n) => '$' + (Number(n) % 1 === 0 ? String(Number(n)) : Number(n).toFixed(2));
+const COST_Q = 'What does it cost to mint a token?';
+const COST_A = money(usdMatch[1]) + ' to create the token and ' + money(usdMatch[2])
+  + ' of starting liquidity that goes into your own pool, plus the XRP Ledger’s own account and pool '
+  + 'reserves. You pay in XRP at the live rate, and the exact total is shown before you sign.';
 
 // Injected rather than written into the browser file, so the address exists in exactly one place and
 // that place is the one the checksum gate above guards.
@@ -171,7 +200,7 @@ function isLaunchpad(h) {
     || h.indexOf('lumos.launch.draft') >= 0;
 }
 
-let files = 0, pages = 0, stripped = 0, typeRemoved = 0;
+let files = 0, pages = 0, stripped = 0, typeRemoved = 0, faqs = 0, lds = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -193,6 +222,39 @@ for (const dev of ['desktop', 'mobile']) {
     h = stripById(h, 'lx-lpticker').html;
 
     h = stripById(h, ID).html;
+
+    // The visible answer first, then the structured data rebuilt FROM the visible answers, so the
+    // two can never state different prices — the same shape _xrplbridgecopy uses for its FAQ.
+    h = h.replace(
+      /(<h3 class="lx-faq-q"[^>]*>\s*What does it cost to mint a token\?\s*<\/h3>[\s\S]{0,300}?<p class="lx-faq-a"[^>]*>)([\s\S]*?)(<\/p>)/,
+      function (m0, open, body, close) {
+        if (body.trim() === COST_A) return m0;            // already current
+        faqs++;
+        return open + COST_A + close;
+      });
+
+    const pairs = [];
+    const pre = /<h3 class="lx-faq-q"[^>]*>([\s\S]{0,300}?)<\/h3>[\s\S]{0,300}?<p class="lx-faq-a"[^>]*>([\s\S]*?)<\/p>/g;
+    let pm;
+    while ((pm = pre.exec(h))) {
+      pairs.push({
+        q: pm[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(),
+        a: pm[2].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(),
+      });
+    }
+    if (pairs.length) {
+      const ld = {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: pairs.map(function (p) {
+          return { '@type': 'Question', name: p.q, acceptedAnswer: { '@type': 'Answer', text: p.a } };
+        }),
+      };
+      const before = h;
+      h = h.replace(/(<script type="application\/ld\+json" id="lx-faq-ld">)([\s\S]*?)(<\/script>)/,
+        function (m0, open, body, close) { return open + JSON.stringify(ld) + close; });
+      if (h !== before) lds++;
+    }
 
     // STELLAR'S TICKER RULE, stated as fact under the ticker field. Stellar codes are 1-12
     // alphanumeric characters and the design narrowed that to "2-6 uppercase letters"; the XRP
@@ -244,5 +306,6 @@ for (const dev of ['desktop', 'mobile']) {
 
 console.log('xrpl launchpad: injected on ' + pages + ' page key(s) across ' + files
   + ' container(s); stripped the Stellar issuance layer from ' + stripped
-  + '; removed the project-type block from ' + typeRemoved);
+  + '; removed the project-type block from ' + typeRemoved
+  + '; mint-cost FAQ rewritten on ' + faqs + ', structured data rebuilt on ' + lds);
 if (!pages) console.error('  ! no page carried the launchpad — nothing was wired');

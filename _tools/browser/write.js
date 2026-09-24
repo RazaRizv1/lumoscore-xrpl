@@ -46,15 +46,28 @@
 
   function short(a) { return a && a.length > 12 ? a.slice(0, 5) + '…' + a.slice(-4) : (a || ''); }
 
-  function rpc(method, params) {
+  // EVERY READ HAS A DEADLINE (RAZA 2026-09-17: a swap that "just stucks there"). Measured the same day: `ripple_path_find`
+  // answers in 0.4s buying RLUSD and 28.4s selling it, and `fetch` will wait on a public node indefinitely — so one slow
+  // answer left "Finding a route…" on screen with no error and no way forward.
+  function rpc(method, params, ms) {
+    var ctl = null;
+    try { ctl = new AbortController(); } catch (e) {}
+    var limit = ms || (method === 'ripple_path_find' ? 12000 : 20000);
+    var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, limit);
     return fetch(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: method, params: [params || {}] })
+      body: JSON.stringify({ method: method, params: [params || {}] }),
+      signal: ctl ? ctl.signal : undefined
     }).then(function (r) { return r.json(); }).then(function (j) {
+      clearTimeout(timer);
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
       return res;
+    }, function (e) {
+      clearTimeout(timer);
+      throw new Error((e && e.name === 'AbortError') ? 'The ledger did not answer in time — try again.'
+        : ((e && e.message) || 'ledger unavailable'));
     });
   }
 
@@ -68,6 +81,200 @@
       e.setAttribute('data-logoed', '1');
     } catch (_) {}
     e.textContent = text;
+  }
+
+  var XRP_THUMB = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+  function thumbOf(a) {
+    if (!a || !a.issuer) return XRP_THUMB;
+    return '/lxapi/xrplthumb?iss=' + encodeURIComponent(a.issuer) + '&cur=' + encodeURIComponent(a.currency || '') + '&w=48';
+  }
+  // Scanning is a phone action: on a desktop the camera points at the user. Same UA test the site already
+  // uses to decide which page to serve.
+  function isPhone() {
+    try { return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || ''); } catch (e) { return false; }
+  }
+
+  // ---- Receive: Stellar's layout -------------------------------------------------------------------
+  // RAZA 2026-09-15: "The receive popup is not same as on Stellar." lumoscore.com rebuilds this body as
+  // .lx-rc — the QR on a white card with accent corners and the logo in its centre, a globe-marked
+  // "Your … address" label, the address in a copyable box, and a one-line warning. The inherited sheet
+  // carries every .lx-rc* rule; only the markup was missing, because the layer that wrote it was Stellar's.
+  var GLOBE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>';
+  var WARN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+  // The Receive dialog's copy controls toast "Copied to clipboard", as lumoscore.com's do — see wallet.js setChip.
+  function stripCopyLabels() {
+    $$('#modalReceive [data-copy-label], .lx-rc [data-copy-label]').forEach(function (b) { b.removeAttribute('data-copy-label'); });
+  }
+
+  function enhanceReceive() {
+    var me = addr();
+    // The address is written into markup, so it must be a real r-address and nothing else.
+    if (!me || !window.lxx || !window.lxx.isAddress(me)) return;
+    $$('.qr-display').forEach(function (disp) {
+      var body = disp.closest('.modal-body');
+      if (!body || body.getAttribute('data-lxrc') === '1') return;
+      body.setAttribute('data-lxrc', '1');
+      var wrap = document.createElement('div');
+      wrap.className = 'lx-rc';
+      wrap.innerHTML = '<div class="lx-rc-qrwrap"><div class="qr-frame"><svg></svg></div>'
+        + '<span class="lx-rc-corner tl"></span><span class="lx-rc-corner tr"></span>'
+        + '<span class="lx-rc-corner bl"></span><span class="lx-rc-corner br"></span>'
+        + '<div class="lx-rc-qrlogo"><img src="/assets/favicon.png" alt=""></div></div>'
+        + '<div class="lx-rc-addrlabel">' + GLOBE + ' Your XRP Ledger address</div>'
+        + '<div class="lx-rc-addr" data-copy="' + me + '">' + me + '</div>'
+        + '<div class="lx-recv-note lx-rc-note">' + WARN
+        + '<span><strong>XRP Ledger assets only.</strong> Other networks = lost funds.</span></div>';
+      var ov = body.closest('.modal-overlay');
+      if (ov) ov.classList.add('lx-recv-modal');
+      body.innerHTML = '';
+      body.appendChild(wrap);
+      var ad = wrap.querySelector('.lx-rc-addr');
+      ad.addEventListener('click', function () {
+        try { if (navigator.clipboard) navigator.clipboard.writeText(ad.getAttribute('data-copy') || me); } catch (e) {}
+        ad.classList.add('lx-copied');
+        setTimeout(function () { ad.classList.remove('lx-copied'); }, 1400);
+      });
+    });
+  }
+
+  // ---- Send: recipient Paste and Scan ----------------------------------------------------------------
+  // A scanned or pasted value may be a bare address or a wallet URI carrying one (and maybe a tag).
+  // Returns true only when an XRP Ledger address was found and written.
+  function fillRecipient(rec, raw) {
+    var t = String(raw || '').trim();
+    var am = t.match(/r[1-9A-HJ-NP-Za-km-z]{24,34}/);
+    if (!am || !window.lxx || !window.lxx.isAddress(am[0])) return false;
+    rec.value = am[0];
+    try { rec.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+    var tm = t.match(/[?&](?:dt|tag|destinationTag)=(\d{1,10})\b/i);
+    var tg = document.getElementById('lxwTag');
+    if (tm && tg) tg.value = tm[1];
+    return true;
+  }
+
+  // jsQR, self-hosted beside xrpl.js and fetched only when someone taps Scan — Stellar's scanner.
+  var qrLib = null;
+  function loadQrLib() {
+    if (qrLib) return qrLib;
+    qrLib = new Promise(function (res, rej) {
+      if (window.jsQR) return res(window.jsQR);
+      var s = document.createElement('script');
+      s.src = '/assets/vendor/jsqr-1.4.0.js';
+      s.onload = function () { window.jsQR ? res(window.jsQR) : rej(new Error('The scanner failed to load.')); };
+      s.onerror = function () { qrLib = null; rej(new Error('The scanner failed to load.')); };
+      document.head.appendChild(s);
+    });
+    return qrLib;
+  }
+  // The camera sheet. Everything that can end it goes through stop(), so the camera is never left running.
+  function scanQr(onText) {
+    if (!window.isSecureContext) { say('The camera needs a secure (https) connection.', 'bad'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('This browser cannot open the camera.', 'bad'); return; }
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center';
+    var vid = document.createElement('video');
+    vid.setAttribute('playsinline', ''); vid.muted = true; vid.autoplay = true;
+    vid.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0';
+    var frame = document.createElement('div');
+    frame.style.cssText = 'position:relative;width:66vw;max-width:300px;aspect-ratio:1;border:3px solid rgba(255,255,255,.9);border-radius:18px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)';
+    var hint = document.createElement('div');
+    hint.textContent = 'Point at an XRP Ledger address QR code';
+    hint.style.cssText = 'position:absolute;left:0;right:0;bottom:14vh;text-align:center;color:#fff;font:600 14px system-ui,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.8)';
+    var cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.textContent = 'Cancel';
+    cancel.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);bottom:6vh;padding:11px 26px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.5);color:#fff;font:700 14px system-ui,sans-serif;cursor:pointer';
+    ov.appendChild(vid); ov.appendChild(frame); ov.appendChild(hint); ov.appendChild(cancel);
+    document.body.appendChild(ov);
+    var stream = null, raf = 0, dead = false;
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); stop(); } }
+    function stop() {
+      if (dead) return;
+      dead = true;
+      try { cancelAnimationFrame(raf); } catch (e) {}
+      try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+      try { vid.srcObject = null; } catch (e) {}
+      document.removeEventListener('keydown', onKey, true);
+      if (ov.parentNode) ov.parentNode.removeChild(ov);
+    }
+    document.addEventListener('keydown', onKey, true);
+    cancel.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); stop(); });
+    var cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+    loadQrLib().then(function (dec) {
+      return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (st) {
+        if (dead) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+        stream = st;
+        vid.srcObject = st;
+        return vid.play().catch(function () {}).then(function () {
+          (function tickScan() {
+            if (dead) return;
+            if (vid.readyState === vid.HAVE_ENOUGH_DATA) {
+              var w = 480, h = Math.max(1, Math.round(vid.videoHeight * (w / (vid.videoWidth || w))));
+              if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+              cx.drawImage(vid, 0, 0, w, h);
+              var r = null;
+              try { r = dec(cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'attemptBoth' }); } catch (e) {}
+              if (r && r.data) { stop(); onText(r.data); return; }
+            }
+            raf = requestAnimationFrame(tickScan);
+          })();
+        });
+      });
+    }).catch(function (err) {
+      stop();
+      var n = (err && err.name) || '';
+      if (n === 'NotAllowedError' || n === 'SecurityError') say('Camera permission was declined.', 'bad');
+      else if (n === 'NotFoundError' || n === 'OverconstrainedError') say('No camera found on this device.', 'bad');
+      else say((err && err.message) || 'Could not open the camera.', 'bad');
+    });
+  }
+
+  function addRecipientButtons(rec) {
+    if (rec.__lxxRecBtns) return;
+    rec.__lxxRecBtns = 1;
+    var wrap = document.createElement('div');
+    wrap.style.position = 'relative';
+    rec.parentNode.insertBefore(wrap, rec);
+    wrap.appendChild(rec);
+    var bar = document.createElement('div');
+    bar.className = 'lx-recbtns';
+    if (isPhone()) {
+      var sb = document.createElement('button');
+      sb.type = 'button';
+      sb.className = 'lx-paste-btn lx-scan-btn';
+      sb.setAttribute('data-logoed', '1');
+      sb.setAttribute('aria-label', 'Scan a QR code');
+      sb.title = 'Scan a QR code';
+      sb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M21 16v3a2 2 0 0 1-2 2h-3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M7 12h10"></path></svg>';
+      sb.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        scanQr(function (txt) {
+          if (fillRecipient(rec, txt)) say('Address scanned.', 'good');
+          else say('That QR code has no XRP Ledger address in it.', 'bad');
+        });
+      });
+      bar.appendChild(sb);
+    }
+    var pb = document.createElement('button');
+    pb.type = 'button';
+    pb.className = 'lx-paste-btn';
+    pb.setAttribute('data-logoed', '1');                           // five letters: keep the logo healer off it
+    pb.textContent = 'Paste';
+    pb.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (!navigator.clipboard || !navigator.clipboard.readText) { say('Clipboard unavailable — paste with Ctrl+V.', 'bad'); return; }
+      navigator.clipboard.readText().then(function (x) {
+        if (!fillRecipient(rec, x)) { rec.value = String(x || '').trim(); }
+        say('');
+        try { rec.focus(); } catch (e2) {}
+      }, function () { say('Clipboard blocked — paste with Ctrl+V.', 'bad'); });
+    });
+    bar.appendChild(pb);
+    wrap.appendChild(bar);
+    function fit() {
+      try { var bw = bar.getBoundingClientRect().width; if (bw > 0) rec.style.paddingRight = Math.round(bw + 14) + 'px'; } catch (e) {}
+    }
+    rec.style.paddingRight = isPhone() ? '118px' : '70px';
+    fit(); setTimeout(fit, 60); setTimeout(fit, 400);
   }
 
   // ---- Receive QR ----------------------------------------------------------------------------------
@@ -223,6 +430,23 @@
 
   function sendModal() { return $('#modalSend'); }
 
+  // A REAL LOGO (RAZA 2026-09-15: "Wallet → Swap popup, most of the logos are incorrect"). The page's logo healer paints any
+  // one-letter badge from a ticker lookup that knows nothing about XRP Ledger issuers — XYIELD came out as a letter, LUMOS
+  // as a stock flame. An <img> child is the one thing the healer leaves alone, so the token's own thumbnail goes in one.
+  function icoImg(host, a) {
+    host.textContent = '';
+    host.setAttribute('data-logoed', '1');
+    host.style.background = 'transparent';
+    host.style.overflow = 'hidden';
+    host.style.padding = '0';
+    var im = document.createElement('img');
+    im.alt = '';
+    im.src = thumbOf(a);
+    im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%';
+    im.onerror = function () { if (im.parentNode) im.parentNode.removeChild(im); plain(host, a.code.charAt(0).toUpperCase()); };
+    host.appendChild(im);
+  }
+
   function setSendAsset(a) {
     var m = sendModal();
     if (!m || !a) return;
@@ -237,6 +461,14 @@
       [].forEach.call(btn.childNodes, function (nd) {
         if (nd.nodeType === 3 && nd.nodeValue.trim()) nd.nodeValue = ' ' + a.code + ' ';
       });
+    }
+
+    var lp = $('.lx-asset-pick', m);
+    if (lp) {
+      var lc = $('.lx-ap-code', lp);
+      if (lc) plain(lc, a.code);
+      var li = $('.lx-ap-ico', lp);
+      if (li) { plain(li, ''); li.style.setProperty('--lxlogo', 'url("' + thumbOf(a) + '")'); }
     }
 
     var bal = $('.field-meta strong', m);
@@ -275,7 +507,7 @@
       var ic = document.createElement('span');
       ic.style.cssText = 'width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;'
         + 'justify-content:center;font-size:10px;font-weight:800;background:linear-gradient(135deg,#2a2a35,#1a1a23)';
-      plain(ic, a.code.charAt(0).toUpperCase());
+      icoImg(ic, a);
       var nm = document.createElement('span');
       nm.style.cssText = 'flex:1;font-weight:700';
       plain(nm, a.code);
@@ -306,6 +538,32 @@
       }
       document.addEventListener('click', away, true);
     });
+  }
+
+  // STELLAR'S FAILURE TOAST (RAZA 2026-09-17: "When Wallet → send trx is canceled, you need to show the same message that
+  // you show on Stellar"). lumoscore.com ends a failed send with `lxToast(err.message || "Send failed", true)` — a toast at
+  // the foot of the page with a red mark — and a wallet that refuses carries no message, which is why the Stellar screenshot
+  // reads exactly "Send failed". Same element and classes the copy toast on the Wallet page already uses; only the mark
+  // differs, so the two cannot drift apart visually.
+  function toastBad(msg) {
+    if (!document.getElementById('lx-toastbad-css')) {
+      var st = document.createElement('style');
+      st.id = 'lx-toastbad-css';
+      st.textContent = '.lx-ctoast-stack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}'
+        + '.lx-ctoast{background:var(--text,#16171b);color:var(--bg,#fff);padding:11px 18px 11px 14px;border-radius:10px;font-family:"Hanken Grotesk",system-ui,sans-serif;font-size:16px;font-weight:600;display:inline-flex;align-items:center;gap:9px;white-space:nowrap;box-shadow:0 12px 32px rgba(0,0,0,.28),0 2px 8px rgba(0,0,0,.16)}'
+        + '.lx-ctoast .ci{width:18px;height:18px;border-radius:50%;background:var(--green,#35c07f);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px}'
+        + '.lx-ctoast.bad .ci{background:#e5484d}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    var stack = document.querySelector('.lx-ctoast-stack');
+    if (!stack) { stack = document.createElement('div'); stack.className = 'lx-ctoast-stack'; document.body.appendChild(stack); }
+    var t = document.createElement('div');
+    t.className = 'lx-ctoast bad';
+    var ic = document.createElement('span'); ic.className = 'ci'; ic.textContent = '✕';
+    var tx = document.createElement('span'); tx.textContent = msg || 'Send failed';
+    t.appendChild(ic); t.appendChild(tx);
+    stack.appendChild(t);
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 2600);
   }
 
   // Status line. Reuses the modal's own body so nothing new is introduced; created once, then reused.
@@ -423,6 +681,17 @@
           return { err: 'That account requires a destination tag — fill in the Destination tag field, or the payment will not be credited.' };
         }
         if (a.code === 'XRP') return {};
+
+        // PAYING A TOKEN BACK TO ITS OWN ISSUER IS A REDEMPTION, and it needs no trust line — the
+        // issuer is not "holding" its own obligation, it is retiring it. The check below refused it
+        // with "That account has no trust line for ARMY, so it cannot receive it", which is not just
+        // unhelpful but false: that account is the one account that can always receive ARMY.
+        //
+        // Found by driving the real Send flow with the ARMY issuer as the destination. The refusal
+        // is conservative rather than dangerous — it blocks a valid payment instead of allowing an
+        // invalid one — but it blocks the standard way to redeem with a gateway.
+        if (dest.account === a.issuer) return {};
+
         // A token can only be received by an account that trusts it. Without this the payment fails
         // with tecPATH_DRY, whose wording tells the user nothing.
         return rpc('account_lines', { account: dest.account, peer: a.issuer, ledger_index: 'validated' })
@@ -464,6 +733,14 @@
       if (chk && chk.err) { go.disabled = false; say(chk.err, 'bad'); return; }
       say((chk && chk.warn ? chk.warn + ' ' : '') + 'Approve the payment in your wallet…');
 
+      // AND IF THE WALLET NEVER ANSWERS, SAY SO. A refusal that the extension reports lands in the catch below and is
+      // shown; dismissing the popup WITHOUT answering reports nothing at all, and the dialog sat on "Approve the payment
+      // in your wallet…" indefinitely (RAZA 2026-09-17: "on Stellar it shows an error, on XRP it doesnt"). This does not
+      // claim the payment failed — it cannot know that — it says what is true and what to do.
+      var nudge = setTimeout(function () {
+        say('Still waiting for your wallet. If you closed or declined the request, nothing was sent — press Cancel and try again.');
+      }, 20000);
+
       var tx = { TransactionType: 'Payment', Account: addr(), Destination: dest.account };
       if (dest.tag != null) tx.DestinationTag = dest.tag;
       if (a.code === 'XRP') {
@@ -475,6 +752,7 @@
       }
 
       return window.lxc.submit(tx).then(function (hash) {
+        clearTimeout(nudge);
         say('Sent. ' + short(hash), 'good');
         amtIn.value = '';
         toIn.value = '';
@@ -482,14 +760,51 @@
         // Cleared with the rest of the form. A tag left behind belongs to the last recipient, and the
         // next payment would silently carry someone else's deposit reference.
         if (tg) tg.value = '';
+        // AND THE DIALOG CLOSES (RAZA 2026-09-17: "once the amount is sent, please close the popup"). Long enough to read
+        // the hash, then out of the way — the balances behind it refresh a moment later.
+        setTimeout(function () { closeSend(); }, 1800);
         setTimeout(function () { if (window.__lxxReload) window.__lxxReload(); }, 3500);
+      }, function (e) {
+        clearTimeout(nudge);
+        throw e;
       });
     }).catch(function (e) {
-      say((e && e.message) || 'The payment could not be sent.', 'bad');
+      // A wallet that refuses, does not answer, or hands back no hash tells us the same thing and nothing more: the payment
+      // did not go. Stellar says "Send failed" for exactly that case, so this says it too, instead of naming the extension's
+      // internals at someone who has just pressed Reject. A message the LEDGER gave — an unfunded account, a missing trust
+      // line — is real information and still travels.
+      var msg = String((e && e.message) || '');
+      var plumbing = !msg || /did not return a transaction hash|did not respond|rejected in|could not sign|user (declined|rejected)/i.test(msg);
+      say(plumbing ? '' : msg, 'bad');
+      toastBad(plumbing ? 'Send failed' : msg);
     }).then(function () {
       go.disabled = false;
       go.textContent = label;
     });
+  }
+
+  function closeSend() {
+    var m = sendModal();
+    if (!m) return;
+    var x = m.querySelector('.modal-close, [data-close]');
+    if (x) x.click();
+    else { m.classList.remove('open'); m.style.display = 'none'; }
+  }
+
+  // Blanks the form. Called when the dialog opens, so nothing survives from the last time it was used.
+  function resetSend() {
+    var m = sendModal();
+    if (!m) return;
+    var amt = $('.field-amt input', m);
+    var to = $('.field-input.mono', m) || $('input.mono', m);
+    var tg = tagInput();
+    if (amt) amt.value = '';
+    // …except the one case where an address was asked for deliberately: "Send to this wallet" arrives as /wallet?to=r…
+    // and opens this dialog by clicking Send, so that address must survive the reset it triggers.
+    if (to) { to.value = pendingTo || ''; }
+    pendingTo = null;
+    if (tg) tg.value = '';
+    say('');
   }
 
   function wireSend() {
@@ -503,6 +818,30 @@
     if (!amtIn || !go) return;                                   // markup not ready yet
     m.setAttribute('data-lxw', '1');
 
+    // STELLAR'S SEND ROW (RAZA 2026-09-15: "Max button is different on XRPL. Paste button is missing. On
+    // mobile … barcode scan icon is missing"). lumoscore.com hides the design's asset button behind its own
+    // .lx-asset-pick, moves Max INTO the amount field as .lx-max-inline, and puts Paste (with Scan on a
+    // phone) inside the recipient box. The inherited sheet carries every one of those rules.
+    var famt = $('.field-amt', m);
+    if (pick && famt && !$('.lx-asset-pick', m)) {
+      pick.style.display = 'none';
+      var np = document.createElement('button');
+      np.type = 'button';
+      np.className = 'lx-asset-pick';
+      np.setAttribute('data-lx-noswap', '');
+      np.innerHTML = '<span class="lx-ap-ico" data-logoed="1"></span><span class="lx-ap-code" data-logoed="1">XRP</span>'
+        + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+      pick.parentNode.insertBefore(np, pick.nextSibling);
+      pick = np;
+    }
+    if (max && famt && max.parentNode !== famt) {
+      famt.classList.add('lx-send-amt');
+      max.classList.add('lx-max-inline');
+      famt.appendChild(max);
+    }
+    if (toIn) addRecipientButtons(toIn);
+    if (sendPick) setSendAsset(sendPick);
+
     // The recipient placeholder shipped as Stellar's: "G... or domain.com*username". On this ledger
     // that is an address format that cannot exist, telling the user to type something invalid.
     if (toIn) toIn.setAttribute('placeholder', 'r… XRP Ledger address');
@@ -511,6 +850,7 @@
     addTagField(m);
 
     if (pick) {
+      // pick is Stellar's .lx-asset-pick by now (above); the design's own button is hidden.
       pick.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
         openAssetMenu(pick);
@@ -538,7 +878,61 @@
   // correct behaviour under a label from another chain, which is the worst way for this to be wrong.
   //
   // So the display keeps trying until there is something real to show, independently of the wiring.
+  var sendPre = null, pendingTo = null;
+  window.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest && e.target.closest('button');
+    if (!b || !/^\s*send\s*$/i.test(b.textContent || '')) return;
+    if (b.closest('.modal-overlay') || b.classList.contains('qa-row-btn')) return;
+    // wallet.js leaves the row's asset here just before it clicks this button.
+    sendPre = window.__lxxSendPre || 'XRP';
+    window.__lxxSendPre = null;
+    // EMPTY EVERY TIME IT OPENS (RAZA 2026-09-17: "there's already an address filled in which is not correct", and "if i
+    // paste in the address but not click review & send and just close the popup, it should just refresh it"). The design
+    // keeps this dialog in the DOM between openings, so a half-filled form came back with it — including a recipient
+    // address from a payment the reader had decided not to make.
+    setTimeout(function () { resetSend(); applySendPre(); }, 0);
+  }, true);
+  // "SEND TO THIS WALLET" hands the address over as /wallet?to=<r-address> (RAZA 2026-09-16); the Send dialog opens with it
+  // filled in, as a click on Send would.
+  (function () {
+    var to = '';
+    try { to = new URLSearchParams(window.location.search).get('to') || ''; } catch (e) {}
+    if (!to || !window.lxx || !window.lxx.isAddress(to)) return;
+    var tries = 0;
+    (function openIt() {
+      var btn = [].slice.call(document.querySelectorAll('.quick-actions .qa-btn, button')).filter(function (b) {
+        return /^\s*send\s*$/i.test(b.textContent || '') && !b.closest('.modal-overlay') && b.getBoundingClientRect().height > 0;
+      })[0];
+      if (!btn) { if (++tries < 40) setTimeout(openIt, 250); return; }
+      pendingTo = to;                                    // survives the open-time reset; see resetSend()
+      btn.click();
+      var fill = 0;
+      (function put() {
+        var m = sendModal();
+        var toIn = m && ($('.field-input.mono', m) || $('input.mono', m));
+        if (!toIn) { if (++fill < 20) setTimeout(put, 150); return; }
+        toIn.value = to;
+        toIn.dispatchEvent(new Event('input', { bubbles: true }));
+      })();
+    })();
+  })();
+
+  function applySendPre() {
+    if (!sendPre) return;
+    var list = held();
+    if (!list.length) return;                                   // balances still loading; the poll retries
+    var pickA = null;
+    if (sendPre !== 'XRP') {
+      var p = sendPre.split('|');
+      pickA = list.filter(function (h) { return h.issuer === p[1] && (h.currency === p[0] || h.code === p[2]); })[0] || null;
+    }
+    if (!pickA) pickA = list.filter(function (h) { return !h.issuer; })[0] || list[0];
+    sendPre = null;
+    setSendAsset(pickA);
+  }
+
   function refreshSendAsset() {
+    if (sendPre) { applySendPre(); return; }
     if (sendPick) return;
     var first = held()[0];
     if (first) setSendAsset(first);
@@ -675,22 +1069,118 @@
     return { from: fields[0], to: fields[1] };
   }
 
+  // STELLAR'S TWO STEPS (RAZA 2026-09-17: "the swap popup is still not the same as stellar"). Its dialog opens clean —
+  // FROM, TO, and "Review Swap" — and the rate, route, price impact and fees appear only once the reader has asked to
+  // review. This build showed all of it immediately, under a button already reading "Confirm Swap", so the first screen
+  // was busier than Stellar's and skipped the review entirely.
+  //
+  // Same markup, same dialog: the two summary boxes are hidden until Review is pressed, and the button then becomes
+  // Confirm. Changing anything afterwards puts it back to Review, because a summary that outlives the amount it describes
+  // is worse than no summary.
+  function swapPanels(m) {
+    var rate = $('.swap-rate', m);
+    return [rate, rate && rate.nextElementSibling && rate.nextElementSibling.tagName === 'DIV' ? rate.nextElementSibling : null];
+  }
+  function setReviewState(m, reviewing) {
+    if (!m) return;
+    m.__lxReview = !!reviewing;
+    swapPanels(m).forEach(function (el) { if (el) el.style.display = reviewing ? '' : 'none'; });
+    var go = $('.modal-foot .btn-primary', m);
+    if (!go) return;
+    var wrote = false;
+    [].forEach.call(go.childNodes, function (n) {
+      if (n.nodeType === 3 && n.nodeValue.trim()) { n.nodeValue = reviewing ? ' Confirm Swap ' : ' Review Swap '; wrote = true; }
+    });
+    if (!wrote) go.insertBefore(document.createTextNode(reviewing ? ' Confirm Swap ' : ' Review Swap '), go.firstChild);
+  }
+  // Any change to the trade sends the dialog back to its first screen.
+  function resetReview() {
+    swapModals().forEach(function (m) { if (m.__lxReview) setReviewState(m, false); });
+  }
+
+  // The design's in-field asset button, hidden and replaced by the chip Stellar uses — inserted right after it, exactly
+  // where lumoscore.com puts it, so the inherited `#modalSwap .lx-swap-pick` rules lay it out. Built once per field.
+  function swapPick(fld, which) {
+    if (!fld) return null;
+    var made = $('.lx-swap-pick', fld);
+    if (made) return made;
+    var orig = $('.asset-pick', fld);
+    if (!orig || !orig.parentNode) return null;
+    orig.style.display = 'none';
+    var ap = document.createElement('button');
+    ap.type = 'button';
+    ap.className = 'lx-asset-pick lx-swap-pick';
+    ap.setAttribute('data-lx-noswap', '');
+    var ico = document.createElement('span');
+    ico.className = 'lx-ap-ico';
+    ico.setAttribute('data-lx-noswap', '');
+    var code = document.createElement('span');
+    code.className = 'lx-ap-code';
+    code.setAttribute('data-lx-noswap', '');
+    code.textContent = (which === 'from' ? (swapFrom && swapFrom.code) : (swapTo && swapTo.code)) || 'Select';
+    ap.appendChild(ico);
+    ap.appendChild(code);
+    ap.insertAdjacentHTML('beforeend', '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+      + ' stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+    ap.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      swapMenu(ap, which);
+    });
+    orig.parentNode.insertBefore(ap, orig.nextSibling);
+    return ap;
+  }
+
   function setSwapAsset(which, a) {
     if (which === 'from') swapFrom = a; else swapTo = a;
+    resetReview();                                       // the summary belonged to the old pair
     swapModals().forEach(function (m) {
       var f = swapFields(m);
       var fld = which === 'from' ? f.from : f.to;
       if (!fld) return;
+      // STELLAR'S PICKER SITS BELOW THE AMOUNT, NOT INSIDE IT (RAZA 2026-09-17: "On LUMOS token page, Swap popup, XRP has
+      // it different than Stellar"). Both builds ship the SAME markup — the design puts an `.asset-pick` button inside
+      // `.field-amt` — and lumoscore.com hides it at runtime and inserts its own `.lx-asset-pick.lx-swap-pick` chip after
+      // it. Every style that chip needs is already in this build; nothing here is new UI, it is the same move Stellar
+      // makes on the same markup.
+      var chip = swapPick(fld, which);
+      if (chip) {
+        var cIco = $('.lx-ap-ico', chip), cCode = $('.lx-ap-code', chip);
+        if (cIco) icoImg(cIco, a);
+        if (cCode) cCode.textContent = a.code;
+      }
       var btn = $('.asset-pick', fld);
       if (btn) {
         var ico = $('.a-ico', btn);
-        if (ico) plain(ico, a.code.charAt(0).toUpperCase());
+        if (ico) icoImg(ico, a);
         [].forEach.call(btn.childNodes, function (nd) {
           if (nd.nodeType === 3 && nd.nodeValue.trim()) nd.nodeValue = ' ' + a.code + ' ';
         });
       }
       var meta = $('.field-label .meta', fld);
-      if (meta && which === 'from') meta.textContent = 'Balance: ' + fmt(a.spendable, 6) + ' ' + a.code;
+      if (meta && which === 'from') {
+        meta.textContent = 'Balance: ' + fmt(a.spendable, 6) + ' ' + a.code;
+        // STELLAR'S MAX CHIP beside the balance (RAZA 2026-09-16: "On LUMOS token page, if we click swap, it needs to be like
+        // it is on Stellar"), which this dialog shipped without — there was no way to swap a whole holding.
+        var mx = $('.lx-maxchip', meta.parentNode);
+        if (!mx) {
+          mx = document.createElement('button');
+          mx.type = 'button';
+          mx.className = 'lx-maxchip';
+          mx.textContent = 'Max';
+          mx.style.cssText = 'margin-left:8px;padding:1px 7px;border:1px solid var(--border);border-radius:6px;background:none;'
+            + 'font:inherit;font-size:11px;font-weight:700;color:var(--accent,#f0821e);cursor:pointer';
+          mx.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var inp = $('.field-amt input', fld);
+            if (!inp || !swapFrom) return;
+            inp.value = String(+Number(swapFrom.spendable).toFixed(6));
+            quoteSwap();
+          });
+          meta.parentNode.appendChild(mx);
+        }
+      }
     });
     quoteSwap();
   }
@@ -717,7 +1207,7 @@
       var ic = document.createElement('span');
       ic.style.cssText = 'width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;'
         + 'justify-content:center;font-size:10px;font-weight:800;background:linear-gradient(135deg,#2a2a35,#1a1a23)';
-      plain(ic, a.code.charAt(0).toUpperCase());
+      icoImg(ic, a);
       var nm = document.createElement('span');
       nm.style.cssText = 'flex:1;font-weight:700';
       plain(nm, a.code);
@@ -757,6 +1247,10 @@
       box.style.color = tone === 'bad' ? '#e5484d' : (tone === 'good' ? 'var(--green,#22c55e)' : 'var(--text-muted,#9aa)');
       box.style.display = text ? '' : 'none';
     });
+    // A finished swap says so and then gets out of the way (RAZA 2026-09-16: "just hide the message 'Swap complete' in 2
+    // seconds. It just stays there"). Errors stay put.
+    clearTimeout(swapSay.t);
+    if (text && /^swap complete/i.test(text)) swapSay.t = setTimeout(function () { swapSay(''); }, 2000);
   }
 
   function swapInfoRow(m, label, value) {
@@ -769,6 +1263,53 @@
         return;
       }
     }
+  }
+
+  // THE REVERSE QUOTE. `ripple_path_find` answers "what must I send to deliver exactly this?" in its `source_amount`, which
+  // is the question a typed receive amount asks. The send amount it returns is written into FROM and the normal forward
+  // quote then runs on it, so what is signed is still priced by the route the ledger actually found.
+  function quoteFromReceive(m) {
+    var me = addr();
+    if (!me || !swapFrom || !swapTo) return;
+    var f = swapFields(m);
+    var inEl = $('.field-amt input', f.from), outEl = $('.field-amt input', f.to);
+    var want = parseFloat(String(outEl && outEl.value).replace(/,/g, ''));
+    if (!(want > 0)) {
+      if (inEl) inEl.value = '';
+      swapQuote = null;
+      clearSwapQuote(m);
+      swapSay('');
+      return;
+    }
+    if (swapFrom.code === swapTo.code && swapFrom.issuer === swapTo.issuer) {
+      swapSay('Pick two different assets.', 'bad');
+      return;
+    }
+    var seq = ++swapSeq;
+    swapSay('Finding a route…');
+    rpc('ripple_path_find', {
+      source_account: me,
+      destination_account: me,
+      destination_amount: amtObj(swapTo, want),
+      source_currencies: [swapFrom.code === 'XRP' ? { currency: 'XRP' } : { currency: swapFrom.currency, issuer: swapFrom.issuer }],
+      ledger_index: 'validated'
+    }).then(function (r) {
+      if (seq !== swapSeq) return;
+      var alt = (r.alternatives || [])[0];
+      var src = alt && alt.source_amount;
+      if (!src) {
+        swapInfoRow(m, 'route', 'no route');
+        swapSay('No route between those two assets right now.', 'bad');
+        return;
+      }
+      var need = (typeof src === 'string') ? (+src / DROP) : +src.value;
+      if (!(need > 0)) return;
+      if (inEl) inEl.value = String(+need.toFixed(6));
+      quoteSwap();                                        // prices what will actually be signed
+    }).catch(function () {
+      if (seq !== swapSeq) return;
+      swapSay('That route could not be priced right now.', 'bad');
+    });
   }
 
   function quoteSwap() {
@@ -807,7 +1348,11 @@
         var got = alt.destination_amount;
         var outVal = (typeof got === 'string') ? (+got / DROP) : +got.value;
         swapQuote = { alt: alt, out: outVal, inAmount: amount };
-        if (outEl) outEl.value = String(+outVal.toFixed(6));
+        // Kept live: the design re-disables its own button whenever it rebuilds the dialog's footer.
+        var goBtn = $('.modal-foot .btn-primary', m);
+        if (goBtn) { goBtn.disabled = false; goBtn.removeAttribute('disabled'); }
+        // Not over the box being typed in: while TO has focus the reader's own figure stays put.
+        if (outEl && document.activeElement !== outEl) outEl.value = String(+outVal.toFixed(6));
         var rate = outVal / amount;
         $$('.swap-rate span', m).forEach(function (sp, i) {
           if (i === 0) sp.innerHTML = '';
@@ -894,11 +1439,40 @@
       tx.Paths = swapQuote.alt.paths_computed;
     }
 
-    swapSay('Approve the swap in your wallet…');
-    window.lxc.submit(tx).then(function (hash) {
-      swapSay('Swapped. ' + short(hash) + ' — approve the platform fee to finish.', 'good');
-      return collectFee(amount);
+    // THE TRUST LINE IS MADE ON THE WAY (RAZA 2026-09-15: "If the user doesnt hold the asset, the trustline will be
+    // automatically created upon the swap"), which is why the dialog's "Add Trustline" banner is hidden. A token the account
+    // does not trust cannot be delivered to it, so the line goes first and the payment follows once it is on the ledger.
+    var needLine = !!swapTo.issuer && !held().some(function (h) {
+      return h.issuer === swapTo.issuer && h.currency === swapTo.currency;
+    });
+    var first = Promise.resolve();
+    swapSteps = needLine ? 3 : 2;                         // what every label and memo below counts against
+    if (needLine) {
+      swapSay('Approve the ' + swapTo.code + ' trust line (1 of 3) in your wallet…');
+      first = window.lxc.submit({
+        TransactionType: 'TrustSet', Account: me,
+        LimitAmount: { currency: swapTo.currency, issuer: swapTo.issuer, value: '1000000000' },
+        // The least recognisable prompt of the three, so it says what it is (RAZA 2026-09-17).
+        Memos: [{ Memo: {
+          MemoType: hexAscii('LumosCore'),
+          MemoFormat: hexAscii('text/plain'),
+          MemoData: hexAscii('LumosCore: trust line for ' + swapTo.code + ', required before this account can receive it '
+            + '- transaction 1 of 3. The platform fee and the swap follow.')
+        } }]
+      }).then(function () {
+        // Four seconds is a ledger close plus room; the payment fails harmlessly if it is not there yet.
+        return new Promise(function (res) { setTimeout(res, 4500); });
+      });
+    }
+
+    first.then(function () {
+      return collectFee(amount);                          // the fee is transaction 1 of 2 now — see the note below
     }).then(function () {
+      var ofN = swapSteps || 2;
+      swapSay('Approve the swap (' + ofN + ' of ' + ofN + ') in your wallet…');
+      return window.lxc.submit(tx);
+    }).then(function (hash) {
+      swapSay('Swap complete. ' + short(hash), 'good');
       setTimeout(function () { if (window.__lxxReload) window.__lxxReload(); }, 3000);
     }).catch(function (e) {
       swapSay((e && e.message) || 'The swap could not be completed.', 'bad');
@@ -910,19 +1484,50 @@
   // carries exactly one operation, so the fee cannot ride along inside the swap. Two approvals is the
   // honest shape of this on this ledger.
   //
-  // It runs AFTER the swap, not before. If it ran first and the swap were then rejected, the user
-  // would have paid for nothing. This way the only failure mode is that LumosCore does not collect a
-  // fee it is owed — which is a cost to us, not to them, and that is the right way round.
+  // IT RUNS FIRST NOW (RAZA 2026-09-17: "lets do the fees signature instead of swap. the second signature will be for swap.
+  // But make sure to mention in memo that the first trx is for fees"). It used to run after the swap so that a rejected swap
+  // could never cost anything; first means a fee can be paid for a swap that is then rejected, and the messages below say so
+  // rather than leaving someone to work it out from their balance. The memo names the charge on the wallet's review screen.
   function collectFee(amount) {
     return feeInXrp(amount).then(function (feeXrp) {
       if (!(feeXrp > 0)) return;
+      var of = swapSteps || 2;
+      swapSay('Approve the platform fee (' + (of - 1) + ' of ' + of + ') in your wallet…');
       return window.lxc.submit({
         TransactionType: 'Payment', Account: addr(),
         Destination: COLLECTOR,
-        Amount: window.lxx.toDrops(feeXrp)
-      }).then(function () { swapSay('Swap complete.', 'good'); })
-        .catch(function () { swapSay('Swap completed; the platform fee was not paid.', 'bad'); });
+        Amount: window.lxx.toDrops(feeXrp),
+        Memos: [feeMemo(swapFrom.code, swapTo.code, of - 1, of)]
+      }).catch(function (e) {
+        var m = (e && e.message) || '';
+        throw new Error(/reject|denied|cancel/i.test(m)
+          ? 'The platform fee was not approved, so nothing was swapped.'
+          : (m || 'The platform fee could not be paid, so nothing was swapped.'));
+      });
     });
+  }
+
+  // Memo bytes are hex on this ledger; Xaman and GemWallet both show the decoded text on the review screen.
+  function hexAscii(str) {
+    var out = '';
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c > 127) continue;
+      out += ('0' + c.toString(16)).slice(-2).toUpperCase();
+    }
+    return out;
+  }
+  var swapSteps = 2;                                     // 3 when this swap also has to add a trust line
+  function feeMemo(payCode, getCode, n, of) {
+    var rate = typeof window.__lxFeeRate === 'number' ? window.__lxFeeRate : 0.002;
+    return {
+      Memo: {
+        MemoType: hexAscii('LumosCore'),
+        MemoFormat: hexAscii('text/plain'),
+        MemoData: hexAscii('LumosCore platform fee ' + (+(rate * 100).toFixed(2)) + '% - transaction '
+          + (n || 1) + ' of ' + (of || 2) + '. The ' + payCode + ' to ' + getCode + ' swap is the next transaction.')
+      }
+    };
   }
 
   // The fee is a percentage of the trade, charged in XRP because the collector holds no trust lines
@@ -972,6 +1577,11 @@
     swapInfoRow(m, 'network fee', '~0.000012 XRP');
   }
 
+  // Ripple's RLUSD, by its issuer — several tokens share the ticker.
+  var RLUSD = { currency: '524C555344000000000000000000000000000000', issuer: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De' };
+  // This project's own token, whose page carries a copy of this dialog.
+  var LUMOS = { currency: '4C554D4F53000000000000000000000000000000', issuer: 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' };
+
   function wireSwap() {
     swapModals().forEach(function (m) {
       if (m.getAttribute('data-lxw') === '1') return;
@@ -987,7 +1597,19 @@
       var inEl = $('.field-amt input', f.from);
       if (inEl) {
         var t = null;
-        inEl.addEventListener('input', function () { clearTimeout(t); t = setTimeout(quoteSwap, 300); });
+        inEl.addEventListener('input', function () { resetReview(); clearTimeout(t); t = setTimeout(quoteSwap, 300); });
+      }
+      // TYPING INTO "TO" FILLS "FROM" (RAZA 2026-09-17: "if im entering value in TO field, FROM doesn't autocalculate").
+      // The ledger routes a payment by what is SENT, so the typed receive amount is turned into a send amount at the
+      // current rate and the real quote is then asked for on that — the same shape as the Trade-Asset swap box.
+      var outEl0 = $('.field-amt input', f.to);
+      if (outEl0) {
+        var t2 = null;
+        outEl0.addEventListener('input', function () {
+          resetReview();
+          clearTimeout(t2);
+          t2 = setTimeout(function () { quoteFromReceive(m); }, 300);
+        });
       }
       var flip = $('.swap-arrow', m);
       if (flip) {
@@ -1000,13 +1622,68 @@
         });
       }
       var go = $('.modal-foot .btn-primary', m);
-      if (go) go.addEventListener('click', function (e) { e.preventDefault(); doSwap(); });
+      if (go) {
+        // THE BUTTON SHIPS DISABLED (RAZA 2026-09-17: "Also the swapping doesnt work here"). The design's markup is
+        // `<button class="btn-primary" disabled="">` — its own script would have enabled it once its own validation passed,
+        // and that script is stripped here, so the swap could never be started at all. Everything behind it was correct:
+        // with the attribute off, the same click builds Payment / SendMax 0.100255 XRP / Amount 4,975 LUMOS to self.
+        // doSwap() does the validating now, so the control stays live and says why when something is missing.
+        go.disabled = false;
+        go.removeAttribute('disabled');
+        go.addEventListener('click', function (e) {
+          e.preventDefault();
+          // First press reviews, second press signs — Stellar's shape, in one dialog.
+          if (!m.__lxReview) {
+            if (!swapQuote) { swapSay('Enter an amount first.', 'bad'); return; }
+            setReviewState(m, true);
+            return;
+          }
+          doSwap();
+        });
+      }
+      setReviewState(m, false);                          // opens on the clean first screen
+
+      // …and again every time the dialog is OPENED. Wiring happens once, at load, but the design rebuilds this dialog when
+      // it opens — which puts its own "Confirm Swap" label and both summary boxes back. Watched, the same way the fee row
+      // on Trade-Asset has to be.
+      if (window.MutationObserver && !m.__lxOpenObs) {
+        m.__lxOpenObs = new MutationObserver(function () {
+          var open = m.classList.contains('open') || m.style.display === 'flex';
+          if (open && !m.__lxReview) setReviewState(m, false);
+        });
+        m.__lxOpenObs.observe(m, { attributes: true, attributeFilter: ['class', 'style'] });
+      }
     });
 
+    // XRP → RLUSD BY DEFAULT (RAZA 2026-09-15: "make XRP and RLUSD as the default choice instead of LUMOS"). RLUSD is
+    // offered even without a trust line; the quote says so if this account cannot receive it yet.
+    //
+    // ON THE $LUMOS PAGE THE DEFAULT IS LUMOS (RAZA 2026-09-16: "On LUMOS token page, if we click swap, it needs to be like it
+    // is on Stellar" — where that button opens XLM → LUMOS). Swapping to RLUSD from a page about LUMOS is not what the button
+    // says it does; the earlier instruction was about the dashboard's Custom Swap, which still defaults to RLUSD.
     if (!swapFrom || !swapTo) {
       var list = held();
-      if (list.length >= 2) { setSwapAsset('from', list[0]); setSwapAsset('to', list[1]); }
+      if (list.length) {
+        var xrpA = list.filter(function (h) { return !h.issuer; })[0] || list[0];
+        var onLumosPage = !!document.querySelector('.lumos-hero-row') || /\/lumos(\/|$)/.test(window.location.pathname);
+        var want = onLumosPage
+          ? (list.filter(function (h) { return h.issuer === LUMOS.issuer && h.currency === LUMOS.currency; })[0]
+             || { code: 'LUMOS', currency: LUMOS.currency, issuer: LUMOS.issuer, balance: 0, spendable: 0 })
+          : (list.filter(function (h) { return h.issuer === RLUSD.issuer && h.currency === RLUSD.currency; })[0]
+             || { code: 'RLUSD', currency: RLUSD.currency, issuer: RLUSD.issuer, balance: 0, spendable: 0 });
+        if (!swapFrom) setSwapAsset('from', xrpA);
+        if (!swapTo) setSwapAsset('to', want);
+      }
     }
+
+    // THE TRUST-LINE GATE GOES (RAZA 2026-09-15: "If the user doesnt hold the asset, the trustline will be automatically
+    // created upon the swap", and 2026-09-16 asking for this dialog to match Stellar's, which has no such banner). The swap
+    // below adds the line itself, so a button demanding it first is a step Stellar does not have.
+    swapModals().forEach(function (m) {
+      [].forEach.call(m.querySelectorAll('.trustline-gate, [data-trustline-gate]'), function (g) {
+        g.style.display = 'none';
+      });
+    });
   }
 
   // ---- Trustlines ------------------------------------------------------------------------------------
@@ -1053,7 +1730,7 @@
   function tlPaintExisting() {
     var me = addr();
     if (!me) return;
-    return rpc('account_lines', { account: me, ledger_index: 'validated', limit: 400 })
+    return window.lxx.allLines(rpc, me)
       .then(function (r) {
         var lines = (r.lines || []).filter(function (l) {
           return !(window.lxx && window.lxx.isLpToken && window.lxx.isLpToken(l.currency));
@@ -1277,6 +1954,8 @@
   // QR must repaint if the connected wallet changes. Polling briefly is simpler than subscribing to
   // three different layers, and it stops on its own.
   function tick() {
+    enhanceReceive();
+    stripCopyLabels();
     paintQR();
     fixReceive();
     wireSend();
@@ -1285,8 +1964,29 @@
     wireTrustlines();
   }
 
+  // Opens the swap dialog from somewhere other than the wallet's own Swap button — the dashboard's
+  // "Custom Swap / Orders" card. Everything is wired first, because on that page the dialog is the
+  // only thing from this file that is on screen and the poll may not have reached it yet.
+  //
+  // Published on `window` rather than exported to a second copy of this logic: this is the same
+  // element, the same fields and the same signing path the wallet uses. There is no second swap
+  // implementation anywhere, which is the point.
+  window.__lxxOpenSwap = function () {
+    tick();
+    var m = $('#modalSwap');
+    if (!m) return false;
+    openModal(m);
+    // Balances can still be in flight on a cold load; the dialog is usable as soon as they land and
+    // this repaint is what fills the From balance and the asset pickers when they do.
+    [80, 300, 900, 2000].forEach(function (ms) { setTimeout(tick, ms); });
+    return true;
+  };
+
   function boot() {
-    if (!$('#modalSend') && !$('.qr-display') && !$('#tlExistingList')) return;   // not a page with these
+    // `#modalSwap` joins the list because the dashboard carries that dialog and none of the other
+    // three. Without it this returned immediately there, so wireSwap() never ran and the Custom Swap
+    // card had nothing to open — the dialog was present, correct and completely inert.
+    if (!$('#modalSend') && !$('.qr-display') && !$('#tlExistingList') && !$('#modalSwap')) return;
     wireCancels();
     tick();
     var n = 0;
@@ -1300,7 +2000,7 @@
       // rather than once — the elements may not exist on the first frame.
       if (b && /receive/i.test(b.textContent || '')) {
         [60, 220, 600].forEach(function (ms) {
-          setTimeout(function () { paintQR(); fixReceive(); }, ms);
+          setTimeout(function () { enhanceReceive(); paintQR(); fixReceive(); }, ms);
         });
       }
     }, true);

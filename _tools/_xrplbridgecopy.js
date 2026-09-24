@@ -27,8 +27,14 @@ const fs = require('fs');
 const { read, getContents } = require(__dirname + '/lib.js');
 const B = String.fromCharCode(92);
 
-const SUB = 'See which networks the XRP Ledger can reach through Axelar. '
-  + 'Route discovery only — transfers are not enabled from this page yet.';
+// Shaped like Stellar's, which names the asset flow and the provider in one line. The previous
+// version ("See which networks the XRP Ledger can reach through Axelar. Route discovery only…")
+// described a chain-list panel this page no longer has — that panel was invented UI and has been
+// removed in favour of the design's own destination dropdown, so the subtitle describing it went
+// with it. The second sentence stays: the wizard is real and the transfer is not wired.
+// Both bridges are named (RAZA 2026-09-15: "If we're also using Wanchain bridge, so you should mention that as well").
+const SUB = 'Bridge assets from the XRP Ledger to other networks through Axelar and Wanchain. '
+  + 'Transfers are not enabled from this page yet.';
 
 // Keyed by the FIRST WORDS of the question as it currently reads, so a question that has already
 // been corrected is not matched twice and nothing is rewritten by position.
@@ -37,7 +43,7 @@ const FAQ = [
     match: 'How do I bridge assets',
     q: 'How do I bridge assets to or from the XRP Ledger?',
     a: 'Not from this page yet. LumosCore currently shows which networks the XRP Ledger can reach '
-      + 'through Axelar; picking a route does not move anything, and nothing here will ask you to '
+      + 'through Axelar and Wanchain; picking a route does not move anything, and nothing here will ask you to '
       + 'approve a transaction. Bridging is still being built, and the page says so rather than '
       + 'offering a button that looks like it works.',
   },
@@ -46,7 +52,7 @@ const FAQ = [
     q: 'Do I have to claim anything on the other side?',
     a: 'There is nothing to claim, because no transfer happens yet. The claim step you may have seen '
       + 'belongs to Circle’s CCTP on the Stellar build, where an asset is burned on one chain and '
-      + 'redeemed on the other. Axelar routing does not work that way, and this answer will describe '
+      + 'redeemed on the other. Axelar and Wanchain routing do not work that way, and this answer will describe '
       + 'the real steps once a route can actually be executed.',
   },
   {
@@ -64,6 +70,15 @@ const FAQ = [
       + 'been removed.',
   },
   {
+    // The question this transform wrote earlier. Rewritten again so it names both bridges; once it reads
+    // "What are Axelar and Wanchain?" neither this key nor the CCTP one matches, so a second run changes nothing.
+    match: 'What is Axelar',
+    q: 'What are Axelar and Wanchain?',
+    a: 'Two interchain networks that connect blockchains to each other. LumosCore lists every destination '
+      + 'Axelar reaches from the XRP Ledger, fetched live from its registry so it cannot go stale, together '
+      + 'with Wanchain, whose bridge carries XRP to its own chain.',
+  },
+  {
     match: 'What are the cross-chain fees',
     q: 'What are the cross-chain fees?',
     a: 'None today, because no transfer takes place. When bridging is enabled the platform fee is the '
@@ -74,7 +89,7 @@ const FAQ = [
     match: 'Can I bridge my own',
     q: 'Can I bridge my own XRP Ledger token?',
     a: 'Not while transfers are off — no asset can be bridged from this page yet. Which assets a '
-      + 'route carries is decided by Axelar, so the honest answer for any particular token has to '
+      + 'route carries is decided by Axelar or Wanchain, so the honest answer for any particular token has to '
       + 'wait until that route can be quoted.',
   },
 ];
@@ -108,7 +123,16 @@ for (const dev of ['desktop', 'mobile']) {
 
     // ---- subtitle ------------------------------------------------------------------------------
     h = h.replace(/(<div class="sub">)([\s\S]*?)(<\/div>)/, function (m0, open, body, close) {
-      if (!/CCTP|USDC natively/i.test(body)) return m0;
+      // ALREADY-APPLIED IS THE ONLY THING THIS SHOULD SKIP, and the gate has to say so directly.
+      // It used to test only for the words it was replacing (CCTP / "USDC natively"), which made it
+      // a one-way door: once this transform had run, its own output no longer matched, so changing
+      // SUB later silently did nothing and the build cheerfully reported "0 subtitle(s)". Same shape
+      // as the hand-written skip-gates that quietly disabled correct rules three times on this fork.
+      //
+      // Now: skip only when the text is already exactly what we want, and otherwise recognise both
+      // the inherited Stellar copy and anything this transform wrote before.
+      if (body === esc(SUB)) return m0;
+      if (!/CCTP|USDC natively|Axelar/i.test(body)) return m0;
       subs++; touched++;
       return open + esc(SUB) + close;
     });

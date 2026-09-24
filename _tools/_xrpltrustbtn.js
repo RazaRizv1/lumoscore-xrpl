@@ -1,85 +1,22 @@
-// The way into the Trustlines dialog.
+// The Trustlines button on the wallet's action row — REMOVED.
 //
-// RAZA, 2026-09-08: "Also the trustline option is not there."
+// History: 2026-09-08 RAZA reported "the trustline option is not there", and this transform ADDED a
+// fourth `.qa-btn` ("Trustlines") beside Send / Receive / Swap, opening the design's #modalTrustlines,
+// which browser/write.js wires. 2026-09-15 RAZA, comparing with lumoscore.com: "THere's an extra Trustline
+// button on the right side that we dont have on Stellar." Stellar's row is three buttons, so this one goes.
 //
-// It is not. `#modalTrustlines` is in the markup, styled, and fully wired by browser/write.js —
-// search, suggestions, the existing-lines list, add and remove. Nothing anywhere opens it. The
-// wallet's action row has three buttons (Send, Receive, Swap) and there is no fourth.
+// WHAT THAT COSTS, stated plainly: the Trustlines dialog has no other opener on this build, so adding or
+// removing a trust line from the wallet page is not reachable any more — the same state as Stellar's
+// production wallet. Trust lines are still created where they are needed: a limit order that fills opens
+// one, and the ledger requires one before a token can be received. Raised with RAZA.
 //
-// This is not a missing feature so much as a missing button, and the design already anticipates it:
-// the container's own modal wiring reads
-//
-//     else if (label.indexOf('trustlines') >= 0) openModalById('modalTrustlines');
-//
-// so a `.qa-btn` whose label is "Trustlines" is exactly the control that code was written for. That
-// is what this adds — the same component as its three siblings, the design's own shield icon taken
-// from the dialog's heading, and no new markup patterns, styles, or dialogs of any kind. Nothing
-// here is invented; it is the button the design is already listening for.
-//
-// ON A TRUSTLINE-BASED LEDGER THIS IS NOT OPTIONAL. An XRPL account cannot hold any issued token
-// until it has a trust line for it, so "add a trustline" is the step before a first token ever
-// arrives. Shipping the dialog with no way to reach it means the wallet cannot do the one thing the
-// ledger requires first.
-//
-// WORTH RAISING SEPARATELY, and deliberately not touched here: Stellar has the same gap. Its wallet
-// carries the same dialog, the same three buttons, and no opener either — and its FAQ, which is in
-// the page's indexed JSON-LD, answers "How do I add or remove a trustline?" with "In Wallet, use Add
-// asset with the code and issuer". There is no "Add asset" control in that build; the string appears
-// only in the FAQ answer itself. That is a production page telling people to use something that does
-// not exist, but production is not this project's to change.
+// The containers are gitignored and persist, so they already carry the button; this strips it by its
+// `data-lxtl` marker (desktop `.qa-btn`, phone `.action-btn`). Idempotent: a second run finds nothing.
 const fs = require('fs');
 const { read, getContents } = require(__dirname + '/lib.js');
-
 const B = String.fromCharCode(92);
 
-// The design's own trustline mark, lifted from the dialog heading it opens, at the size its sibling
-// buttons use.
-const ICON = '<svg class="ic-mini" width="14" height="14" viewBox="0 0 24 24" fill="none" '
-  + 'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
-  + '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
-
-// THE TWO ACTION ROWS ARE DIFFERENT COMPONENTS, so each gets the button its own row is made of.
-// Desktop is `.qa-btn` with the label as bare text, matched by the container's label sniffing.
-// Mobile is `.action-btn` carrying `data-open-modal="modalX"`, which names its dialog outright — a
-// better contract, and the one used here rather than relying on the label on that layout.
-const DESKTOP_BTN = '<button class="qa-btn" data-lxtl>' + ICON
-  + '\n              Trustlines\n            </button>';
-
-const MOBILE_ICON = ICON.replace('class="ic-mini" width="14" height="14"', 'width="16" height="16"');
-const MOBILE_BTN = '<button class="action-btn" data-open-modal="modalTrustlines" data-lxtl>'
-  + '<div class="ic">' + MOBILE_ICON + '</div>'
-  + '<span class="lbl">Trustlines</span></button>';
-
-// Where this button goes: immediately after Swap, the last of the existing actions. Buttons cannot
-// nest, so the next </button> closes the one that was opened.
-function after(html, openTag, isSwap) {
-  let i = 0;
-  for (;;) {
-    const open = html.indexOf(openTag, i);
-    if (open < 0) return -1;
-    const close = html.indexOf('</button>', open);
-    if (close < 0) return -1;
-    const end = close + '</button>'.length;
-    if (isSwap(html.slice(open, end))) return end;
-    i = end;
-  }
-}
-
-// Returns { at, btn } for whichever action row this page has, or null.
-function target(p) {
-  if (p.indexOf('<button class="qa-btn"') >= 0) {
-    const at = after(p, '<button class="qa-btn"', (s) => /\bSwap\b/.test(s.replace(/<[^>]*>/g, ' ')));
-    return at < 0 ? null : { at: at, btn: '\n            ' + DESKTOP_BTN };
-  }
-  if (p.indexOf('<button class="action-btn"') >= 0) {
-    const at = after(p, '<button class="action-btn"', (s) => s.indexOf('data-open-modal="modalSwap"') >= 0);
-    return at < 0 ? null : { at: at, btn: MOBILE_BTN };
-  }
-  return null;
-}
-
-let containers = 0, pages = 0, already = 0, missed = 0;
-
+let removed = 0, containers = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = `lumoscore-xrpl-${dev}.html`;
   let data; try { data = read(file); } catch (e) { continue; }
@@ -87,25 +24,31 @@ for (const dev of ['desktop', 'mobile']) {
   let changed = false;
 
   for (const k of Object.keys(json)) {
-    const p = json[k];
-    // Only pages that have BOTH the action row and the dialog it would open. A button that opens
-    // nothing is worse than no button.
-    //
-    // Matched on the BUTTON, not the class name: `qa-btn` also appears in the stylesheet, which
-    // every page carries, so testing for the bare string selected 40 page keys that have no action
-    // row at all — landing, launch-confirm, asset-overview — and then failed the Swap assertion on
-    // every one of them. The gate is the markup or it is nothing.
-    const hasRow = p.indexOf('<button class="qa-btn"') >= 0
-      || p.indexOf('<button class="action-btn"') >= 0;
-    if (!hasRow || p.indexOf('modalTrustlines') < 0) continue;
-
-    if (p.indexOf('data-lxtl') >= 0) { already++; continue; }        // idempotent re-run
-
-    const t = target(p);
-    if (!t) { missed++; continue; }
-
-    json[k] = p.slice(0, t.at) + t.btn + p.slice(t.at);
-    changed = true; pages++;
+    let p = json[k];
+    if (typeof p !== 'string' || p.indexOf('data-lxtl') < 0) continue;
+    // THIS LOOP USED TO HANG THE WHOLE BUILD, silently and forever (hit 2026-09-16: two rebuilds sat at this transform for
+    // hours). A mention of `data-lxtl` outside a button's own opening tag — a script that sets the attribute, say — was
+    // renamed to `data-lxtl-seen` to skip it, but `indexOf('data-lxtl')` matches that rename's own prefix, so the next pass
+    // found the same spot, renamed it again, and grew the string without end. Skipping past the mention by INDEX cannot do
+    // that, and it needs no rename, so the restore below is gone too.
+    let from = 0;
+    for (;;) {
+      const at = p.indexOf('data-lxtl', from);
+      if (at < 0) break;
+      const open = p.lastIndexOf('<button', at);
+      const close = p.indexOf('</button>', at);
+      if (open < 0 || close < 0) break;
+      // Only a button whose own opening tag carries the marker; anything else would be a CSS/JS mention.
+      if (p.slice(open, p.indexOf('>', open)).indexOf('data-lxtl') < 0) {
+        from = at + 'data-lxtl'.length;
+        continue;
+      }
+      let start = open;
+      while (start > 0 && (p[start - 1] === ' ' || p[start - 1] === '\n')) start--;   // its indentation
+      p = p.slice(0, start) + p.slice(close + '</button>'.length);
+      removed++;
+    }
+    if (p !== json[k]) { json[k] = p; changed = true; }
   }
 
   if (changed) {
@@ -114,13 +57,4 @@ for (const dev of ['desktop', 'mobile']) {
     fs.writeFileSync(file, data.slice(0, s) + serialized + data.slice(e), 'utf8');
   }
 }
-
-if (missed) {
-  console.error('xrpl trustline button: ABORTED — ' + missed + ' page key(s) have the Trustlines '
-    + 'dialog and an action row, but no Swap button to sit beside. The row changed shape; re-read '
-    + 'it before guessing where this goes.');
-  process.exit(1);
-}
-
-console.log('xrpl trustline button: added on ' + pages + ' page key(s) across ' + containers
-  + ' container(s)' + (already ? '; ' + already + ' already had one' : ''));
+console.log('xrpl trustline button: removed ' + removed + ' across ' + containers + ' container(s)');

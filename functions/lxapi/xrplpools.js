@@ -42,12 +42,14 @@ async function upstream(path, env) {
 const num = (v) => { const n = Number(v); return isFinite(n) ? n : null; };
 
 // The upstream marks the native side with issuer "XRPL" and currency "XRP".
-function side(a) {
+// `amount` comes from currentLiquidity, not from the asset object — the asset object never carried
+// a value, which is why `v` was null on every row until this was passed in.
+function side(a, amount) {
   if (!a) return null;
   return {
     c: String(a.currency || ''),
     i: a.issuer === 'XRPL' ? '' : String(a.issuer || ''),
-    v: num(a.value),
+    v: num(amount != null ? amount : a.value),
     m: String(a.md5 || ''),
   };
 }
@@ -82,7 +84,15 @@ export async function onRequest(context) {
       return {
         id: String(p._id || ''),
         acct: String(p.ammAccount || ''),
-        a1: side(p.asset1), a2: side(p.asset2),
+        // THE POOL COMPOSITION WAS AVAILABLE ALL ALONG and this mapping dropped it.
+        //
+        // `side()` reads asset1/asset2, which carry the currency and issuer but no amount — so a1.v
+        // and a2.v came back null on every row, and I told RAZA the two sides could not be shown
+        // without an amm_info per pool. That was wrong: the upstream puts the amounts in a separate
+        // object, `currentLiquidity.asset1Amount` / `asset2Amount`, and it is already in the same
+        // response. Nothing extra is fetched to fill these.
+        a1: side(p.asset1, p.currentLiquidity && p.currentLiquidity.asset1Amount),
+        a2: side(p.asset2, p.currentLiquidity && p.currentLiquidity.asset2Amount),
         // tradingFee is in units of 1/1000 of a percent, so 205 is 0.205%.
         fee: num(p.tradingFee) == null ? null : num(p.tradingFee) / 1000,
         liq: num(a.liquidity), vol: num(a.volume), fees: num(a.fees), apy: num(a.apy),

@@ -82,22 +82,45 @@
       var item = seq[j], cell = t[j];
       var usd = null, ch7 = null;
 
+      var ch24 = null, pxXrp = null;
       if (item.xrp) {
         usd = data.usd;                                   // 1 XRP, by definition
         var x = data.t['XRP'];
+        ch24 = x ? x[1] : null;
         ch7 = x ? x[2] : null;
       } else {
         var row = data.t[slug(item.issuer, item.currency)];
         if (row) {
           usd = (data.usd != null) ? row[0] * data.usd : null;
+          ch24 = row[1];
           ch7 = row[2];
+          pxXrp = row[0];
         }
       }
 
       if (cell.card) {
-        paintCard(cell.row, usd, ch7);
+        // THE 24h FIGURE, matching the desktop cell beside it. This passed `ch7` while the table's
+        // price cell was changed to carry the 24h move, so the same holding reported two different
+        // percentages depending on the device: XRP read "-4.26%" on a desktop and "-7.92%" on a
+        // phone, one measured over a day and the other over a week, neither labelled. The phone's
+        // card has one percentage slot, so it shows the same period the desktop's does.
+        paintCard(cell.row, usd, ch24);
       } else {
-        cell.price.textContent = money(usd);
+        // THE HEADER OVER THIS CELL READS "PRICE · 24H" AND THE CELL HELD ONLY A PRICE. The 24h
+        // change was in the payload the whole time — the entry is [price, change24h, change7d] and
+        // only [2] was ever read. lumoscore.com puts both in this one cell ("$0.1759 -4.63%"), which
+        // is what makes its header true, and the classes it uses are already styled in the inherited
+        // sheet: `#assetsTable .price-cell .lx-p1{display:flex;…}` and `.lx-chg`. Building it any
+        // other way would mean writing CSS for a cell the design already dressed.
+        priceCell(cell.price, usd, ch24, pxXrp);
+        // "≈ $x" under the balance, as Stellar's balance cell has it.
+        var b2 = cell.row.querySelector('.b2');
+        if (b2) {
+          var bal0 = item.xrp ? ((xrp && xrp.balance) || 0) : (+item.balance || 0);
+          b2.textContent = (usd != null && bal0 > 0) ? ('≈ ' + money(bal0 * usd)) : '';
+        }
+        // Still written, though the column is hidden to match Stellar — see the note in wallet.js.
+        // Costs nothing and keeps the cell honest if that column is ever brought back.
         paintChange(cell.chg, ch7);
       }
     }
@@ -146,6 +169,13 @@
     var vs = (window.lxxTotals && window.lxxTotals()) || null;
     if (!vs || !data || !(data.usd > 0)) return;
     var xrpTot = totUsd / data.usd;
+    // The "Total worth: ~X XRP" on the My Assets heading, written by wallet.js's summary.
+    window.__lxxWorthXrp = xrpTot;
+    try {
+      var me0 = localStorage.getItem('lumos.address');
+      if (me0 && totUsd > 0 && !window.__lxxPaintingCached) localStorage.setItem('lumos.xrpl.total.' + me0, JSON.stringify({ x: xrpTot, u: totUsd, c: ch7, t: Date.now() }));
+    } catch (e) {}
+    try { if (window.__lxxSetChip) window.__lxxSetChip(); } catch (e) {}
 
     var vEl = vs.value;
     if (vEl) {
@@ -157,7 +187,7 @@
       var txt = xrpTot.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' ';
       if (first && first.nodeType === 3) first.nodeValue = txt;
       else vEl.insertBefore(document.createTextNode(txt), vEl.firstChild);
-      if (unit) unit.textContent = 'XRP';
+      if (unit) { unit.textContent = 'XRP'; unit.classList.add('lxp'); }   // gated until claimed
     }
 
     var sub = vs.sub;
@@ -185,10 +215,43 @@
     }
   }
 
+  // Price and its 24h move in one cell, in the design's own wrappers. Rebuilt each pass rather than
+  // appended to, because this layer retries until the rows exist and must not stack two changes.
+  function priceCell(td, usd, ch, pxXrp) {
+    if (!td) return;
+    td.classList.add('price-cell');
+    td.textContent = '';
+    var p1 = document.createElement('div');
+    p1.className = 'p1 lx-p1';
+    var m = document.createElement('span');
+    m.textContent = money(usd);
+    p1.appendChild(m);
+    var c = document.createElement('span');
+    c.className = 'lx-chg';
+    // Left EMPTY rather than em-dashed when there is no figure: the inherited sheet fades this in
+    // with `.lx-chg:not(:empty){opacity:1}`, so an em dash would show as a permanent stray mark.
+    if (ch != null && isFinite(ch)) {
+      c.textContent = pct(ch);
+      c.style.color = ch >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
+    }
+    p1.appendChild(c);
+    td.appendChild(p1);
+    // Stellar's second line: the price in the native asset ("5.1943 XLM"), for tokens only.
+    if (pxXrp > 0) {
+      var dp = Math.min(12, Math.max(4, 3 - Math.floor(Math.log10(pxXrp))));
+      var px = document.createElement('div');
+      px.className = 'lx-pxlm';
+      px.textContent = pxXrp.toFixed(dp).replace(/0+$/, '').replace(/\.$/, '') + ' XRP';
+      td.appendChild(px);
+    }
+  }
+
   function paintChange(el, v) {
     var s = pct(v);
-    el.textContent = s == null ? '—' : s;
-    el.style.color = s == null ? '' : (v >= 0 ? 'var(--green,#22c55e)' : '#e5484d');
+    // Empty, as Stellar's is: the column's header is hidden, so a figure here floated under no heading.
+    el.textContent = '';
+    el.style.color = '';
+    el.title = s == null ? '' : ('7d ' + s);
   }
 
   // The card layout has no price column, so one is added under the balance rather than squeezed in
@@ -219,6 +282,7 @@
   // was found stating the requirement verbatim in its response body — see the fuller note in
   // browser/trade.js.
   function attribution() {
+    return;                                              // removed: RAZA 2026-09-16, "I still see xrpl.to on wallet page. Remove it from here and all other pages"
     if (!data || !data.attribution) return;
     if (document.getElementById('lxx-attr')) return;
     var host = $('#assetsTable') || $('#assetList');
@@ -237,6 +301,33 @@
     a.style.cssText = 'color:inherit;text-decoration:underline;text-underline-offset:2px';
     p.appendChild(a);
     anchor.appendChild(p);
+  }
+
+  // THE TOP OF THE PAGE PAINTS FIRST (RAZA 2026-09-15: "this section takes forever to load, it should load the
+  // quickest"). The total needs every holding priced, and pricing a long wallet costs the price feed two to three
+  // seconds cold (measured 2.2s). So the last total this browser worked out for THIS address is shown at once and
+  // replaced when the live one lands — the same trick Stellar's wallet uses for its headline. Only the connected
+  // address's own figure, and nothing older than a week.
+  function paintCachedTotal() {
+    try {
+      if (data) return;
+      var me = localStorage.getItem('lumos.address');
+      var c = me && JSON.parse(localStorage.getItem('lumos.xrpl.total.' + me) || 'null');
+      if (!c || !(c.x > 0) || !(c.u > 0) || !(Date.now() - c.t < 7 * 86400000)) return;
+      var vs = window.lxxTotals && window.lxxTotals();
+      if (!vs) return;
+      data = { usd: c.u / c.x };
+      window.__lxxPaintingCached = true;                        // not written back: it is the old figure
+      paintTotal(c.u, c.c);
+      window.__lxxPaintingCached = false;
+      data = null;
+      if (c.c == null) {
+        if (vs.pill) vs.pill.style.visibility = 'hidden';
+        if (vs.secondary) vs.secondary.textContent = '';
+      }
+      // Tells wallet.js the design's mock is already gone, so its clearing pass does not blank this figure.
+      if (vs.root) vs.root.setAttribute('data-lxxcleared', '1');
+    } catch (e) { data = null; }
   }
 
   // A SINGLE ATTEMPT WAS NOT ENOUGH, and the way it failed is the reason this retries.
@@ -259,6 +350,8 @@
   function start(attempt) {
     if (!$('#assetsTable') && !$('#assetList')) return;      // not a wallet page
     attempt = attempt || 1;
+    if (attempt === 1 && window.__lxxPricesStarted) return;     // the event and the poll both start it
+    window.__lxxPricesStarted = 1;
     var held = (window.__lxxData && window.__lxxData.held) || [];
     var slugs = held.map(function (h) { return slug(h.issuer, h.currency); });
     fetchPrices(slugs).then(function (j) {
@@ -301,6 +394,10 @@
     if (window.__lxxData) { clearInterval(timer); start(); }
     else if (tries > 60) clearInterval(timer);               // ~30s, then stop
   }, 500);
+  // Straight away when wallet.js announces its data, rather than on the next half-second poll.
+  window.addEventListener('lxx:walletdata', function () { clearInterval(timer); start(); });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paintCachedTotal);
+  else paintCachedTotal();
 
   window.__lxxPricesApply = apply;
 })();

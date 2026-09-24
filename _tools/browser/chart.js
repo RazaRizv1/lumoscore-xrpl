@@ -80,7 +80,8 @@
     // attributes -- only in CSS declarations -- so stroke='var(...)' leaves the path with no colour
     // and the chart renders as an invisible 180-segment line. Everything measured fine: correct
     // box, correct viewBox, hit-testable. Only the screenshot showed it.
-    var stroke = up ? '#22c55e' : '#e5484d';
+    // The brand accent, as lumoscore.com's LUMOS chart draws it — not green-or-red by direction.
+    var stroke = '#ea6a2c';
 
     var gradId = 'lxxChartGrad';
     var defs = svgEl('defs');
@@ -126,22 +127,149 @@
     // still does its job of hiding the design's mock until real data has landed.
     host.classList.add('lxlt');
 
-    // Hover readout, using the tooltip elements the design already ships.
-    var tip = $('#chartTooltip'), tDate = $('#ctDate'), tPrice = $('#ctPriceXrpl2');
-    if (tip) {
-      host.onmousemove = function (ev) {
-        var r = host.getBoundingClientRect();
-        var frac = (ev.clientX - r.left) / Math.max(1, r.width);
-        var idx = Math.max(0, Math.min(pts.length - 1, Math.round(frac * (pts.length - 1))));
-        var p = pts[idx];
-        if (tDate) tDate.textContent = new Date(p[0]).toLocaleDateString('en-GB',
-          { day: 'numeric', month: 'short', year: 'numeric' });
-        if (tPrice) tPrice.textContent = money(p[1]);
-        tip.style.opacity = '1';
-      };
-      host.onmouseleave = function () { tip.style.opacity = ''; };
-    }
+    wireHover(host, pts, W, H, x, y);
   }
+
+  // THE HOVER CARD lumoscore.com draws (RAZA 2026-09-15: "there's no hover on chart like on Stellar"): a dot on the line,
+  // a guide, and a card with the date, the price, the volume in dollars and the trade count. Its .lx-chtip / .lx-chdot /
+  // .lx-chvl rules are inherited. Trades come from /lxapi/xrpltrades, fetched for the whole range when it draws, so a
+  // hovered point either shows its count or no Trades row — never a placeholder.
+  var TR = {};
+  function whenLabel(t) {
+    var d = new Date(t);
+    if (state.range === '1H' || state.range === '24H') return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    if (state.range === '7D') return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function compact(v) {
+    if (!(v > 0)) return '$0';
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K';
+    return v >= 0.01 ? ('$' + v.toFixed(2)) : '<$0.01';
+  }
+  function wireHover(host, pts, W, H, x, y) {
+    host.__lxxHov = { pts: pts, W: W, H: H, x: x, y: y };
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    ['lx-chtip', 'lx-chdot', 'lx-chvl'].forEach(function (c) {
+      if (host.querySelector('.' + c)) return;
+      var n = document.createElement('div');
+      n.className = c;
+      n.setAttribute('data-logoed', '1');
+      n.style.opacity = '0';
+      host.appendChild(n);
+    });
+    if (host.__lxxHovWired) return;
+    host.__lxxHovWired = 1;
+    function line(cls, t) {
+      var n = document.createElement('div');
+      n.className = cls;
+      if (t != null) n.textContent = t;
+      n.setAttribute('data-logoed', '1');
+      return n;
+    }
+    function hide() {
+      ['lx-chtip', 'lx-chdot', 'lx-chvl'].forEach(function (c) { var n = host.querySelector('.' + c); if (n) n.style.opacity = '0'; });
+    }
+    function move(cx) {
+      var S = host.__lxxHov, svg = host.querySelector('svg');
+      var tip = host.querySelector('.lx-chtip'), dot = host.querySelector('.lx-chdot'), vl = host.querySelector('.lx-chvl');
+      if (!S || !svg || !tip || !dot || !vl || S.pts.length < 2) return;
+      var r = svg.getBoundingClientRect(), hr = host.getBoundingClientRect();
+      var frac = Math.max(0, Math.min(1, (cx - r.left) / Math.max(1, r.width)));
+      var idx = Math.round(frac * (S.pts.length - 1)), p = S.pts[idx];
+      var lx = r.left - hr.left + S.x(idx) / S.W * r.width;
+      var ly = r.top - hr.top + S.y(p[1]) / S.H * r.height;
+      dot.style.left = lx + 'px'; dot.style.top = ly + 'px'; dot.style.opacity = '1';
+      vl.style.left = lx + 'px'; vl.style.top = (r.top - hr.top) + 'px'; vl.style.bottom = 'auto';
+      vl.style.height = r.height + 'px'; vl.style.opacity = '1';
+      tip.textContent = '';
+      tip.appendChild(line('d', whenLabel(p[0])));
+      tip.appendChild(line('l', 'Price'));
+      tip.appendChild(line('p', money(p[1])));
+      var vol = (+p[5] || 0) * (XRP_USD || 0);               // volume is in XRP (see XRP_USD)
+      var rv = line('lxrow');                                // shown for a quiet candle too, as "$0"
+      rv.appendChild(line('l', 'Volume'));
+      rv.appendChild(line('p', compact(vol)));
+      tip.appendChild(rv);
+      var step = S.pts[1][0] - S.pts[0][0];
+      var te = idx < S.pts.length - 1 ? S.pts[idx + 1][0] : p[0] + step;
+      var tkey = state.id + '|' + p[0] + '|' + te;
+      tip.__lxxKey = tkey;
+      var n = TR[tkey];
+      var addTrades = function (cnt) {
+        if (tip.querySelector('.lxx-trades-row')) return;
+        var rt = line('lxrow lxx-trades-row');
+        rt.appendChild(line('l', 'Trades'));
+        rt.appendChild(line('p', cnt.toLocaleString('en-US')));
+        tip.appendChild(rt);
+      };
+      if (n != null) addTrades(n);
+      else {
+        // A window the range fetch could not count (the upstream refuses bursts) is asked for on its own once the
+        // pointer settles; the row is added when the number arrives, never as a placeholder.
+        clearTimeout(host.__lxxTrT);
+        host.__lxxTrT = setTimeout(function () {
+          var parts = String(state.id || '').split('-');
+          if (!parts[1] || TR[tkey] != null) return;
+          fetch('/lxapi/xrpltrades?iss=' + encodeURIComponent(parts[0]) + '&cur=' + encodeURIComponent(parts[1])
+            + '&s=' + p[0] + '&e=' + te)
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d || !d.ok || d.truncated || d.n == null) return;
+              TR[tkey] = +d.n;
+              if (tip.__lxxKey === tkey && tip.style.opacity === '1') addTrades(+d.n);
+            }, function () {});
+        }, 160);
+      }
+      if (XRP_USD == null && Date.now() - (host.__lxxRateAt || 0) > 15000) {
+        host.__lxxRateAt = Date.now();
+        fetch('/lxapi/xrplprices').then(function (r) { return r.json(); })
+          .then(function (j) { if (j && j.ok && j.usd > 0) XRP_USD = j.usd; }, function () {});
+      }
+      tip.style.opacity = '1';
+      var tw = tip.offsetWidth, th = tip.offsetHeight, tx = lx + 14;
+      if (tx + tw > hr.width) tx = lx - tw - 14;
+      if (tx < 2) tx = 2;
+      tip.style.left = tx + 'px';
+      tip.style.top = Math.max(2, ly - th - 12) + 'px';
+    }
+    host.addEventListener('mousemove', function (e) { move(e.clientX); });
+    host.addEventListener('mouseleave', hide);
+    host.addEventListener('touchstart', function (e) { var t = e.touches && e.touches[0]; if (t) move(t.clientX); }, { passive: true });
+    host.addEventListener('touchmove', function (e) { var t = e.touches && e.touches[0]; if (t) move(t.clientX); }, { passive: true });
+  }
+  function prefetchTrades(pts) {
+    if (!pts || pts.length < 2 || pts.length > 400) return;
+    var parts = String(state.id || '').split('-'), iss = parts[0], cur = parts[1];
+    if (!iss || !cur) return;
+    var step = pts[1][0] - pts[0][0];
+    var b = pts.map(function (q) { return q[0]; });
+    b.push(pts[pts.length - 1][0] + step);
+    var id0 = state.id, range0 = state.range;
+    // Twelve windows per request (the endpoint's cap), three requests at a time.
+    var starts = [];
+    for (var s0 = 0; s0 < b.length - 1; s0 += 12) starts.push(s0);
+    function worker() {
+      if (!starts.length || id0 !== state.id || range0 !== state.range) return null;
+      var i = starts.shift();
+      var ch = b.slice(i, Math.min(b.length, i + 13));
+      return fetch('/lxapi/xrpltrades?iss=' + encodeURIComponent(iss) + '&cur=' + encodeURIComponent(cur) + '&b=' + ch.join(','))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && d.n) d.n.forEach(function (n, j) { if (n != null) TR[id0 + '|' + ch[j] + '|' + ch[j + 1]] = n; });
+        }, function () {})
+        .then(worker);
+    }
+    worker(); worker(); worker();
+  }
+
+  // XRP/USD for the Volume line: xrplohlc's volume column is in XRP (its last 24 hourly values × XRP/USD equal the
+  // token's published 24h volume; read as LUMOS they came to $0.00007).
+  var XRP_USD = null;
+  fetch('/lxapi/xrplprices').then(function (r) { return r.json(); })
+    .then(function (j) { if (j && j.ok && j.usd > 0) XRP_USD = j.usd; }, function () {});
+  // Read-only view of the hover's inputs, for checking the live page.
+  window.__lxxChartState = function () { return { id: state.id, range: state.range, trades: Object.keys(TR).length, xrpUsd: XRP_USD }; };
 
   function load(range) {
     var host = $('#priceChart');

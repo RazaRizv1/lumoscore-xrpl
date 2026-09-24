@@ -71,6 +71,33 @@ const PHRASES = [
   ['~0.00001 APT', '~0.00001 XRP'],
   // The search box's own example query, in its hint row.
   ['asset:APT', 'asset:XRP'],
+
+  // ---- THE "HOW IT WORKS" DIALOGS ------------------------------------------------------------------
+  //
+  // Three of them, one per section, each reached from a visible (i) or "How it works?" control, and
+  // each explaining the product in another chain's terms. Found by scanning every `id="*modal*"` block
+  // in dist for wrong-chain words — these are prose, so no data layer was ever going to repaint them.
+  //
+  // THE BRIDGE ONE CONTRADICTED ITS OWN PAGE. The page routes through Axelar — its subtitle, its
+  // destination list and its title all say so — while this dialog told the reader the transfer goes
+  // "via Wormhole and LayerZero". Two different bridge providers named on one screen is worse than
+  // either being wrong on its own.
+  ['Cross-chain transfers via Wormhole and LayerZero.',
+    'Cross-chain transfers via Axelar.'],
+  ['Transfers route through Wormhole and LayerZero, so you receive the destination asset directly.',
+    'Transfers route through Axelar, so you receive the destination asset directly.'],
+
+  // The Trade dialog, on a page titled "How the XRP Ledger DEX works".
+  ['Trade any Aptos-issued asset', 'Trade any XRP Ledger-issued asset'],
+  ['swap with APT, or place limit orders', 'swap with XRP, or place limit orders'],
+  ['Aptos automatically finds the cheapest route',
+    'The XRP Ledger automatically finds the cheapest route'],
+  // "Anchors" is Stellar's word for a gateway that issues a redeemable asset; the XRP Ledger calls
+  // them issuers. Left as a separate rule from the sentence above so either can match on its own.
+  ['across multiple pairs and Anchors', 'across multiple pairs and issuers'],
+
+  // The AMM dialog's worked example, which paired LUMOS with the wrong native asset.
+  ['(for example LUMOS and APT)', '(for example LUMOS and XRP)'],
   // THE LAUNCH SCREENS. "Once your token is minted on the Aptos network" on the review step, and
   // "Your token is now live on the Aptos network" on the confirmation — the two moments where
   // someone has just committed real money to issuing an asset and is being told which chain it
@@ -108,6 +135,110 @@ const PHRASES = [
   // 2 pages fixed and 1 still matching, and that single leftover was the phone.
   ['Add extra APT to the initial liquidity pool', 'Add extra XRP to the initial liquidity pool'],
   ['Add extra APT to your initial liquidity pool', 'Add extra XRP to your initial liquidity pool'],
+
+  // ---- "EIGHT NETWORKS" — A NUMBER NOTHING ON THIS BUILD SUPPORTS -------------------------------
+  //
+  // Inherited from the Stellar build, where the bridge was Circle CCTP to eight EVM chains. This
+  // fork routes through AXELAR, and the real figure is 14: `/lxapi/xrplbridge` intersects the
+  // design's destination dropdown (18 entries) with Axelar's live registry (58 chains) and returns
+  // `supportedCount`. Measured 2026-09-11 — Arbitrum, Avalanche, Base, BNB Chain, Ethereum, Hedera,
+  // Linea, Mantle, Optimism, Polygon, Scroll, Sei, Solana, Sui. The four in the dropdown that Axelar
+  // does not currently reach (Near, Starknet, World Chain, zkSync Era) are excluded, so 14 is also
+  // exactly how many destinations a visitor can pick on the bridge page.
+  //
+  // TO RE-CHECK: `curl https://lumoscore.com/lxapi/xrplbridge | jq .supportedCount`. If Axelar adds
+  // those four back this becomes 18, and under-stating is the safe direction to be wrong in.
+  //
+  // Three sentences, three different wordings, and they are NOT interchangeable:
+  //   * the landing/docs-FAQ one is product copy;
+  //   * the docs-introduction one has ALREADY been through _xrpldocs, which rewrote CCTP to "the
+  //     bridge" and left the ungrammatical "over Circle's the bridge" — matched here as it actually
+  //     reads, not as it was authored ([[lumoscore-xrpl-wrong-chain-copy]]);
+  //   * the ABOUT page is outside _xrpldocs's `lumoscore-docs*` gate, so it still says both
+  //     "Stellar" and "CCTP" — the wrong source chain AND the wrong provider on one line.
+  ['bridge USDC to and from eight other chains',
+    'bridge USDC to and from 14 other networks'],
+  ["Move USDC between the XRP Ledger and eight networks over Circle's the bridge.",
+    'Move USDC between the XRP Ledger and 14 networks through Axelar.'],
+  ["USDC between Stellar and eight networks over Circle's CCTP.",
+    'USDC between the XRP Ledger and 14 networks through Axelar.'],
+
+  // ---- AND THE PAGE CONTRADICTED ITSELF ABOUT WHETHER THE BRIDGE WORKS ---------------------------
+  //
+  // Fixing the NUMBER above left the bigger problem: the general FAQ said you can bridge, in the
+  // present tense, while `/lxapi/xrplbridge` returns `transfers: false` and the bridge page itself
+  // says "Transfers are not enabled from this page yet."
+  //
+  // Worse, the contradiction was on ONE PAGE. The landing FAQ's cross-chain section — already
+  // corrected by _xrplbridgecopy — answers "How do I bridge assets to or from the XRP Ledger?" with
+  // "Not from this page yet", "None today, because no transfer takes place" and "Not while transfers
+  // are off". Four questions earlier the same page promised the feature outright.
+  //
+  // Reworded, not deleted: the bridge page is real and its routes are real, so the honest statement
+  // is that it is in development — the same line the cross-chain answers already take. RAZA's
+  // standing rule for this whole build is "make it honest and disabled first, like create pool".
+  //
+  // ORDER IS LOAD-BEARING: these match the text the "eight other chains" rule above PRODUCES, and
+  // applyPhrases walks PHRASES in array order, so they must stay below it. On a container that has
+  // already been through a previous build the first rule is a no-op and these match directly; on a
+  // fresh one the first rule runs and then these do.
+  ['You can swap assets, provide liquidity to AMM pools, bridge USDC to and from 14 other networks '
+    + 'and issue your own token, all without giving up custody of your funds.',
+    'You can swap assets, provide liquidity to AMM pools and issue your own token, all without '
+    + 'giving up custody of your funds. A cross-chain bridge to 14 other networks is in development; '
+    + 'transfers are not enabled yet.'],
+  ['Trading, pools, token issuance and USDC bridging in one place.',
+    'Trading, pools and token issuance in one place, with cross-chain bridging in development.'],
+
+  // ---- THE SAME CLAIM, THREE MORE TIMES, ABOVE THE FOLD ----------------------------------------
+  //
+  // The FAQ rewrite above left the landing page's marketing still listing "bridge" as something the
+  // product does today. Three lines, all on the landing page:
+  //
+  //   1. the products section's sub-head  — "Trade, pool, bridge, deploy, and manage …"
+  //   2. the Cross-Chain product card     — "LumosCore integrates the most trusted bridging
+  //                                          solution for each chain."
+  //   3. the "Everything in one place" card — "Trade, provide liquidity, bridge, launch a token …"
+  //
+  // (3) was not named in the request; it is included because it is the SAME sentence pattern as (1)
+  // on the same screen, and correcting one while leaving the other would read as an oversight.
+  //
+  // MINIMAL EDITS, NOT REWRITES. In the two capability lists only the word "bridge" comes out — the
+  // rhythm, the surrounding claims and the design's voice are untouched. The Cross-Chain card keeps
+  // its own opening line ("without memorizing ten different bridges"); only the sentence asserting a
+  // live integration is replaced, with the same fact the bridge page and the cross-chain FAQ already
+  // state. Nothing is deleted: the card, the section and the link all stay.
+  //
+  // "One Interface. Multiple chains. Zero tab-switching." is deliberately untouched — LumosCore does
+  // span two chains, so that one is positioning rather than a claim about this build.
+  ['Trade, pool, bridge, deploy, and manage your entire multichain portfolio from a single interface.',
+    'Trade, pool, deploy, and manage your entire multichain portfolio from a single interface.'],
+  ['Move assets between networks without memorizing ten different bridges. LumosCore integrates the '
+    + 'most trusted bridging solution for each chain.',
+    'Move assets between networks without memorizing ten different bridges. Routing runs through '
+    + 'Axelar; transfers are not enabled yet.'],
+  ['Trade, provide liquidity, bridge, launch a token and manage your portfolio from a single interface.',
+    'Trade, provide liquidity, launch a token and manage your portfolio from a single interface.'],
+
+  // THE FOOTER TAGLINE — the last bridging claim, and the most widely published one: it sits in
+  // `.ft-brand` on 74 page keys, so it is on essentially every page of the site rather than just the
+  // landing page. Same minimal edit as the capability lists above: only the bridging claim comes
+  // out. "Multichain … on multiple networks" stays, because LumosCore genuinely runs on two chains —
+  // it is the one word describing a feature this build does not have that had to go.
+  ['Multichain infrastructure for issuing, trading and bridging assets on multiple networks.',
+    'Multichain infrastructure for issuing and trading assets on multiple networks.'],
+
+  // THE MCP FAQ, ON THE SITE ROOT. `_xrpldocs.js` already carries both of these rules and they are
+  // correct — but that transform gates on `key.indexOf('lumoscore-docs') !== 0`, so it only ever
+  // reached the docs pages. The landing page and the MCP page describe the product with the same two
+  // sentences and were never in its scope, which is how the highest-traffic page on the site ended
+  // up telling readers the MCP server "exposes Stellar market data".
+  //
+  // Put here rather than by widening _xrpldocs's gate: that gate is deliberate (docs and blog posts
+  // may discuss other chains on purpose) and these two sentences are product copy, which is exactly
+  // what this file is for.
+  ['exposes Stellar market data', 'exposes XRP Ledger market data'],
+  ['about Stellar asset prices', 'about XRP Ledger asset prices'],
 
   ['Aptos wallet', 'XRP Ledger wallet'],
   ['Aptos DEX', 'XRP Ledger DEX'],
@@ -301,6 +432,43 @@ function rewriteBare(html) {
       return open + fixed + close;
     });
   });
+
+  // THE TRADE PAGE'S CHAIN PILL WAS THREE DIFFERENT CHAINS AT ONCE.
+  //
+  // Every other page ships two search-filter pills, data-chain="xrpl" and data-chain="stellar",
+  // which the loop above relabels. The dex (Trade) page ships ONE, and it is a different variant the
+  // loop never matched:
+  //
+  //     <button class="sp-filter-pill" data-chain="hedera">   <- marker says Hedera
+  //       <span class="ch-ico" …><img src="data:image/webp;…"> <- icon is STELLAR's mark
+  //       Aptos <span …>(9)</span>                             <- label says Aptos
+  //
+  // Marker, icon and label each name a different chain, and none of the three is the XRP Ledger.
+  //
+  // It is NOT visible: `lx-searchfix` hides `#spFilters` with `display:none !important` on all 95
+  // pages, because a chain filter is meaningless on a single-chain build — verified on the live page
+  // (computed display none, zero width, no offsetParent). So this is shipped-but-invisible markup,
+  // the same category as the Stellar wallet list in the dead connect modal, and it is fixed for the
+  // same reason: a crawler reads the HTML, not the CSS.
+  //
+  // Relabelled rather than deleted. The design's own handler only ever does `filterBtns.forEach`,
+  // so removing it would be safe — but the other 94 pages keep their pills in that same hidden row,
+  // and making this one match them leaves every page the same shape. The icon becomes the design's
+  // own `ch-ico xrpl` span, copied from those pages rather than invented, and the count span is
+  // carried through untouched.
+  {
+    const re = /<button([^>]*)data-chain="hedera"([^>]*)>([\s\S]{0,8000}?)<\/button>/gi;
+    s = s.replace(re, function (m0, pre, post, body) {
+      if (m0.indexOf('sp-filter-pill') < 0 || body.indexOf('Aptos') < 0) return m0;
+      let b = body
+        .replace(/<span class="ch-ico"[^>]*>[\s\S]*?<\/span>/i, '<span class="ch-ico xrpl">X</span>')
+        .replace(/\bAptos\b/, 'XRP Ledger');
+      if (b === body) return m0;
+      n++;
+      per['data-chain="hedera" pill'] = (per['data-chain="hedera" pill'] || 0) + 1;
+      return '<button' + pre + 'data-chain="xrpl"' + post + '>' + b + '</button>';
+    });
+  }
 
   return { html: s, n: n };
 }

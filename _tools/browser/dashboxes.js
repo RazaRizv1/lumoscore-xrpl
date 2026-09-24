@@ -58,31 +58,60 @@
   // the page cannot disagree about how many chains are reachable — and it cannot go stale, because
   // Axelar's own list is what answers. 58 at the time of writing; it is not written down here.
   //
-  // "Axelar" rather than the "Wanchain and Axelar" in XRPL_FACTS: Axelar is what is actually
-  // implemented and what the bridge page says. Naming a second bridge the build does not use would be
-  // the same kind of claim as the Circle CCTP line this replaced.
-  //
-  // The ASSET stays an em dash on purpose. Transfers are not wired — the bridge does route discovery
-  // only and says so — so there is no asset being moved to name yet.
-  set('cvia', 'Axelar');
-  set('casset', '—');
+  // BOTH BRIDGES, AND THE SAME COUNT THE BRIDGE PAGE LISTS (RAZA 2026-09-15: "For Cross-chain, im sure its
+  // incorrect"). The card read "14 · — · Axelar" beside a bridge page offering 59 destinations through Axelar and
+  // Wanchain. The count is now built exactly as that page builds its list: every chain in Axelar's XRP Ledger
+  // registry, plus Wanchain, the XRP Ledger itself excluded. The asset is XRP, which is what both bridges carry
+  // out of this ledger.
+  // EACH CARD OPENS ITS OWN PAGE (RAZA 2026-09-16: "when im tapping on Cross-chain Explore bridge, it takes me to pools main page").
+  // The cards are anchors with the right href, but an inherited row-click layer answered first and sent the tap elsewhere
+  // (measured: /trade/xrpl from the bridge card). Taken at window capture, so the card's own href is the one followed.
+  if (!window.__lxxDbxNav) {
+    window.__lxxDbxNav = 1;
+    window.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest && e.target.closest('a.lx-dbx-card[href]');
+      if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      window.location.href = a.getAttribute('href');
+    }, true);
+  }
+  set('cvia', 'Axelar · Wanchain');
+  set('casset', 'XRP');
   j('/lxapi/xrplbridge').then(function (b) {
-    if (b && b.ok && b.count > 0) set('cnet', num(b.count));
+    if (!b || !b.ok) { set('cnet', '—'); return; }
+    var seen = {};
+    (b.rows || []).concat([{ name: 'Wanchain' }]).forEach(function (r) {
+      var k = String((r && r.name) || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (k && k !== 'xrpledger') seen[k] = 1;
+    });
+    var n = Object.keys(seen).length;
+    if (n > 0) set('cnet', num(n));
   }).catch(function () { set('cnet', '—'); });
 
   // ---- Pools + Trade -----------------------------------------------------------------------------
-  j('/lxapi/xrplpools').then(function (p) {
-    if (!p || p.ok !== true) return;
-    if (p.total != null) set('ppool', num(p.total));
-    var s = p.summary || {};
-    // The pool figures are in XRP and need the rate, which lives on the tokens endpoint.
-    return j('/lxapi/xrpltokens').then(function (t) {
-      var r = rate(t);
-      if (!r) return;
-      if (s.liquidity > 0) set('ptvl', usd(s.liquidity * r));
-      if (s.vol24 > 0) set('pvol', usd(s.vol24 * r));
-    });
-  }).catch(function () {});
+  // FIFTEEN-MINUTE FIGURES (RAZA 2026-09-16: "load the details for pools every 15 mins so that for the user it doesn't load in
+  // real time"). The last figures are kept in this browser and shown at once; they are asked for again only once they are
+  // fifteen minutes old.
+  var PK = 'lumos.dash.pools', pc = null;
+  try { pc = JSON.parse(localStorage.getItem(PK) || 'null'); } catch (e) {}
+  if (pc && pc.v) { set('ppool', pc.v.ppool); set('ptvl', pc.v.ptvl); set('pvol', pc.v.pvol); }
+  if (!(pc && pc.v && Date.now() - pc.t < 15 * 60000)) {
+    var pv = {};
+    j('/lxapi/xrplpools').then(function (p) {
+      if (!p || p.ok !== true) return;
+      if (p.total != null) { pv.ppool = num(p.total); set('ppool', pv.ppool); }
+      var s = p.summary || {};
+      // The pool figures are in XRP and need the rate, which lives on the tokens endpoint.
+      return j('/lxapi/xrpltokens').then(function (t) {
+        var r = rate(t);
+        if (!r) return;
+        if (s.liquidity > 0) { pv.ptvl = usd(s.liquidity * r); set('ptvl', pv.ptvl); }
+        if (s.vol24 > 0) { pv.pvol = usd(s.vol24 * r); set('pvol', pv.pvol); }
+        if (pv.ppool && pv.ptvl && pv.pvol) { try { localStorage.setItem(PK, JSON.stringify({ t: Date.now(), v: pv })); } catch (e) {} }
+      });
+    }).catch(function () {});
+  }
 
   j('/lxapi/xrpltokens').then(function (t) {
     if (!t || t.ok !== true) return;

@@ -26,6 +26,34 @@ eq('encode round trip',    C.encodeCurrency('LUMOS'), '4C554D4F53000000000000000
 eq('encode leaves 3-char', C.encodeCurrency('CSC'), 'CSC');
 
 console.log('');
+console.log('=== limit orders (OfferCreate amounts, checkable by hand) ===');
+// ARMY, as it appears on the ledger: 5-letter code in 40-hex form, and its real issuer.
+const ARMY = { currency: '41524D5900000000000000000000000000000000', issuer: 'rGG3wQ4kUzd7Jnmk1n5NWPZjjut62kCBfC' };
+// BUY 10 ARMY at 0.0052199 XRP each. 10 x 0.0052199 = 0.052199 XRP = 52,199 drops. The creator BUYS
+// the token (TakerPays) and SELLS the XRP (TakerGets); no flags.
+eq('buy: token is TakerPays, XRP drops are TakerGets', C.offerFor('buy', ARMY, 10, 0.0052199),
+   { TakerGets: '52199', TakerPays: { currency: ARMY.currency, issuer: ARMY.issuer, value: '10' }, Flags: 0 });
+// SELL 250 ARMY at 0.004. 250 x 0.004 = 1 XRP = 1,000,000 drops. tfSell so all 250 sell.
+eq('sell: token is TakerGets, tfSell set', C.offerFor('sell', ARMY, 250, 0.004),
+   { TakerGets: { currency: ARMY.currency, issuer: ARMY.issuer, value: '250' }, TakerPays: '1000000', Flags: 524288 });
+eq('tfSell is the documented 0x00080000', C.TF_SELL, 524288);
+// 3 x 0.1 is 0.30000000000000004 in floating point; truncating would place the order one drop short.
+eq('XRP side rounded, not truncated', C.offerFor('buy', ARMY, 3, 0.1).TakerGets, '300000');
+eq('refuses a zero price',            C.offerFor('buy', ARMY, 10, 0), null);
+eq('refuses a negative amount',       C.offerFor('sell', ARMY, -1, 0.004), null);
+eq('refuses a non-number',            C.offerFor('buy', ARMY, 'abc', 0.004), null);
+eq('refuses an unknown side',         C.offerFor('short', ARMY, 10, 0.004), null);
+eq('refuses a token with no issuer',  C.offerFor('buy', { currency: ARMY.currency }, 10, 0.004), null);
+eq('refuses XRP on the token side',   C.offerFor('buy', { currency: 'XRP', issuer: ARMY.issuer }, 10, 0.004), null);
+// 0.0001 x 0.001 = 0.0000001 XRP = a tenth of a drop, which rounds to 0 and the ledger rejects (temBAD_OFFER).
+eq('refuses an order under half a drop', C.offerFor('buy', ARMY, 0.0001, 0.001), null);
+eq('token value never in exponent form', C.iouValue(0.0000001), '0.0000001');
+eq('token value capped at 15 significant digits', C.iouValue(123456789.123456789), '123456789.123457');
+eq('token value drops float noise and trailing zeros', C.iouValue(0.1 + 0.2), '0.3');
+eq('large token value stays plain digits', C.iouValue(1e21), '1000000000000000000000');
+eq('token value refuses zero', C.iouValue(0), null);
+
+console.log('');
 console.log('=== reserves (arithmetic that can be checked by hand) ===');
 // 375.382386 XRP, 104 owned objects, base 1 + 0.2 each = 21.8 reserved
 eq('spendable', C.spendableXrp(375382386, 104, { base: 1, inc: 0.2 }),
