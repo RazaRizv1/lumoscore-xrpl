@@ -33,6 +33,7 @@
 
   var API = '/lxapi/oneclick';
   var API_AX = '/lxapi/axelar';
+  var API_TH = '/lxapi/thorchain';
   var COLLECTOR = '__LX_XRPL_COLLECTOR__';
   var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
   var MIN_DROPS = 2000000;          // 1Click's own floor, surfaced before it has to refuse a quote
@@ -74,6 +75,18 @@
   //
   // There is no pair both can serve, so nothing has to be preferred and no rule can go stale in a way
   // that silently picks the worse one.
+  // ---- the THORChain route -------------------------------------------------------------------------
+  // The only one of the three that competes rather than covering new ground: it overlaps NEAR Intents
+  // on ten chains and adds one nobody else serves. So where both can carry a pair, BOTH ARE ASKED and
+  // the better price wins -- which is the whole reason it earns a place. On the first pairs measured
+  // THORChain beat NEAR Intents to Bitcoin by about 11% and lost to it on Ether and Dogecoin; neither
+  // is reliably better, so preferring one by rule would be choosing the worse answer roughly half the
+  // time.
+  var TH = null;                    // {pools[], e8, xrpTradeable}
+  var TH_NATIVE = {};               // THORChain chain id -> its native pool asset, e.g. BTC -> BTC.BTC
+  var THQ = null;                   // the THORChain quote for the current pair
+  var BEST = '';                    // which route the page is currently showing: ni | th | ax
+
   var AX = null;                    // {gateway, assets[], destinations[]}
   var AX_BY_SYM = {};
   var HOLD = {};                    // currency|issuer -> balance the wallet actually holds
@@ -264,7 +277,13 @@
   // same option then serves "XRP to Ethereum" (NEAR Intents) and "WETH to Ethereum" (Axelar) without
   // appearing twice, which is also what a reader expects: they are choosing where the money goes, not
   // which registry names it.
-  var PLACES = {};                  // normalised label -> {label, ni?, ax?}
+  // THORChain names chains its own way again -- a third naming of the same places. Mapped to the same
+  // labels so Bitcoin is ONE option served by two routes, not two options that look identical.
+  var TH_NAME = { BTC: 'Bitcoin', ETH: 'Ethereum', BCH: 'Bitcoin Cash', LTC: 'Litecoin',
+    DOGE: 'Dogecoin', AVAX: 'Avalanche', BSC: 'BNB Chain', BASE: 'Base', SOL: 'Solana',
+    TRON: 'Tron', GAIA: 'Cosmos Hub', THOR: 'THORChain' };
+
+  var PLACES = {};                  // normalised label -> {label, ni?, ax?, th?}
   function buildPlaces() {
     PLACES = {};
     var put = function (label) {
@@ -274,19 +293,42 @@
     };
     Object.keys(BY_CHAIN).forEach(function (c) { if (NI_CHAIN[c]) put(NI_CHAIN[c]).ni = c; });
     if (AX) AX.destinations.forEach(function (c) { put(AX_NAME[c] || c).ax = c; });
+    Object.keys(TH_NATIVE).forEach(function (c) {
+      if (c === 'XRP' || !TH_NAME[c]) return;          // XRP is the origin, not a destination
+      put(TH_NAME[c]).th = c;
+    });
     return PLACES;
   }
 
-  // Which route serves the current pair, or '' when nothing does.
-  function routeFor(src, key) {
-    var p = PLACES[key];
-    if (!src || !p) return '';
+  // The chain's NATIVE pool, which is the only thing this route is offered for. THORChain also pools
+  // tokens (ETH.USDC-0X…), and a symbol carrying a dash is one of those -- comparing a token quote
+  // against a native one would be comparing two different deliveries.
+  function buildThNative() {
+    TH_NATIVE = {};
+    if (!TH) return;
+    TH.pools.forEach(function (p) {
+      if (p.symbol.indexOf('-') >= 0) return;
+      if (!TH_NATIVE[p.chain]) TH_NATIVE[p.chain] = p.asset;
+    });
+  }
+
+  // EVERY route that can carry this pair, not one. Where more than one can, the price decides -- see
+  // settle(). An IOU is Axelar's alone; XRP can go by any of the three depending on where.
+  function routesFor(src, key) {
+    var p = PLACES[key], out = [];
+    if (!src || !p) return out;
     var axOk = p.ax && src.ax && src.ax.chains.indexOf(p.ax) >= 0;
-    if (src.native) {
-      if (p.ni && BY_CHAIN[p.ni]) return 'ni';        // wider and cheaper where both could serve
-      return axOk ? 'ax' : '';
-    }
-    return axOk ? 'ax' : '';                          // an IOU is Axelar's alone
+    if (!src.native) return axOk ? ['ax'] : [];
+    if (p.ni && BY_CHAIN[p.ni]) out.push('ni');
+    if (p.th && TH && TH.xrpTradeable) out.push('th');
+    if (axOk) out.push('ax');
+    return out;
+  }
+  // Kept for the callers that only need to know WHETHER something serves the pair, and which one when
+  // there is exactly one.
+  function routeFor(src, key) {
+    var r = routesFor(src, key);
+    return r.length ? r[0] : '';
   }
 
   // Everywhere the CURRENT source asset can go, which is what the destination list must show.
@@ -491,11 +533,21 @@
     // CHOOSING A DESTINATION ASSET IS A NEAR INTENTS IDEA. Only that route swaps, so only it has a
     // list of things you could come out as. Axelar delivers the SAME asset it was handed, so the
     // picker stands down and names that asset instead of offering choices that cannot apply.
-    var chain = routeFor(SRC, key) === 'ni' ? niId(key) : null;
+    var routes = routesFor(SRC, key);
+    var chain = routes.indexOf('ni') >= 0 ? niId(key) : null;
     if (!chain) {
+      // WHICH ASSET ARRIVES DEPENDS ON THE ROUTE, and the first version assumed it was always the one
+      // being sent. That is true of Axelar, which hands the same asset out the other side -- and
+      // wrong of THORChain, which SWAPS. Cosmos Hub then read "4.137837 XRP" when the figure was
+      // 4.137837 ATOM: the number was right and the label was a different asset entirely, which is
+      // the most dangerous way for a bridge to be wrong.
+      var p = PLACES[key];
+      var thSym = (routes.indexOf('th') >= 0 && p && p.th && TH_NATIVE[p.th])
+        ? (String(TH_NATIVE[p.th]).split('.')[1] || '') : '';
+      var label = thSym || (SRC ? SRC.symbol : '—');
       var nmAx = as.querySelector('.nm');
-      if (nmAx) nmAx.textContent = SRC ? SRC.symbol : '—';
-      setIcon(as.querySelector('.br-ic'), SRC && SRC.native ? XRP_LOGO : '', SRC ? SRC.symbol : '');
+      if (nmAx) nmAx.textContent = label;
+      setIcon(as.querySelector('.br-ic'), (!thSym && SRC && SRC.native) ? XRP_LOGO : '', label);
       as.style.cursor = '';
       DEST = null;
       return;
@@ -778,7 +830,7 @@
     var dst = $('[data-rv="dst"]');
     var host = dst && dst.parentElement && dst.parentElement.parentElement;
     if (!host || host.querySelector('[data-rv="fee"]')) return;
-    [['fee', 'LumosCore fee'], ['eta', 'Estimated time']].forEach(function (p) {
+    [['route', 'Route'], ['fee', 'LumosCore fee'], ['eta', 'Estimated time']].forEach(function (p) {
       var r = document.createElement('div');
       r.className = 'r';
       var k = document.createElement('span');
@@ -812,10 +864,39 @@
     qTimer = setTimeout(doQuote, 350);
   }
   function doQuote() {
-    var chain = destChain();
-    var route = routeFor(SRC, chain);
-    if (route === 'ax') return quoteAx(chain);
-    return quoteNi(chain);
+    var key = destChain();
+    var routes = routesFor(SRC, key);
+    QUOTE = null; THQ = null; AXQ = null; BEST = '';
+    if (!routes.length) { paintQuote(null, ''); return; }
+    // Axelar never shares a pair with the others, so when it is the route there is nothing to race.
+    if (routes.length === 1 && routes[0] === 'ax') return quoteAx(key);
+
+    var seq = ++qSeq;
+    var jobs = [];
+    if (routes.indexOf('ni') >= 0) jobs.push(quoteNi(key, seq));
+    if (routes.indexOf('th') >= 0) jobs.push(quoteTh(key, seq));
+    if (!jobs.length) return quoteAx(key);
+    paintQuote(null, jobs.length > 1 ? 'Comparing routes…' : 'Quoting…');
+    // allSettled, not all: one route refusing is ordinary -- a dust minimum here, an unsupported
+    // recipient there -- and must not cost the user the other route's answer.
+    Promise.all(jobs.map(function (p) { return p.catch(function () { return null; }); }))
+      .then(function () { if (seq === qSeq) settle(); });
+  }
+
+  // WHICH ANSWER THE PAGE SHOWS. Compared on the delivered amount, and only when the two are
+  // delivering THE SAME THING: NEAR Intents can be asked for any token on a chain, THORChain quotes
+  // that chain's native coin, and comparing 30 USDC against 0.0027 ETH is not a comparison. So when
+  // the chosen destination asset is not the native one, NEAR Intents is simply the route -- it is the
+  // only one that can deliver what was asked for.
+  function settle() {
+    var niOut = QUOTE ? Number(QUOTE.amountOutFormatted) : null;
+    var thOut = THQ ? (Number(THQ.expected) / (THQ.e8 || 1e8)) : null;
+    var sameAsset = QUOTE && THQ && DEST && DEST.token && !DEST.token.contractAddress;
+    if (sameAsset) BEST = (thOut > niOut) ? 'th' : 'ni';
+    else if (QUOTE) BEST = 'ni';
+    else if (THQ) BEST = 'th';
+    else BEST = '';
+    paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : (LAST_NOTE || 'No route for this amount'));
   }
 
   // Axelar prices the RELAY, not the trade: there is no exchange here, the same asset comes out the
@@ -853,20 +934,38 @@
       .catch(function () { if (seq === qSeq) paintQuote(null, 'Relay price unavailable'); });
   }
 
-  function quoteNi(chain) {
+  // THORChain prices its own swap and, unlike Axelar, BUILDS THE MEMO ITSELF -- the quote carries the
+  // exact memo and the inbound address to send to, so this page forwards one rather than composing
+  // one. The inbound address rotates as vaults churn, which is why it is taken from the quote every
+  // time and never remembered.
+  function quoteTh(key, seq) {
+    var amt = amountXrp(), to = recipient();
+    var p = PLACES[key];
+    var asset = p && p.th && TH_NATIVE[p.th];
+    if (!amt || !asset || !to) return Promise.resolve();
+    var n = netDrops(amt);                       // LumosCore's cut comes off first, as on NEAR Intents
+    // THORChain denominates everything in 1e8 regardless of the asset's own precision, so XRP's six
+    // decimals still go on the wire as eight. Converted through integers, not a float.
+    var e8 = String(Math.round(n.net * 100));    // drops (1e6) -> 1e8
+    return fetch(API_TH + '?op=quote&to=' + encodeURIComponent(asset)
+      + '&amount=' + e8 + '&destination=' + encodeURIComponent(to))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (seq !== qSeq) return;
+        if (j && j.ok) { THQ = j; THQ.asset = asset; THQ.symbol = String(asset).split('.')[1] || asset; }
+        else if (j && j.error) LAST_NOTE = String(j.error);
+      })
+      .catch(function () {});
+  }
+
+  function quoteNi(chain, seq) {
     var amt = amountXrp(), me = addr();
-    QUOTE = null; AXQ = null;
-    if (!amt || !DEST || !chain) { paintQuote(null, ''); return; }
+    if (!amt || !DEST || !chain) return Promise.resolve();
     var n = netDrops(amt);
-    if (n.net < MIN_DROPS) {
-      paintQuote(null, 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP');
-      return;
-    }
+    if (n.net < MIN_DROPS) { LAST_NOTE = 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP'; return Promise.resolve(); }
     var to = recipient();
-    if (!to) { paintQuote(null, 'Enter a destination address'); return; }
-    var seq = ++qSeq;
-    paintQuote(null, 'Quoting…');
-    fetch(API + '?op=quote', {
+    if (!to) { LAST_NOTE = 'Enter a destination address'; return Promise.resolve(); }
+    return fetch(API + '?op=quote', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         dry: true, originAsset: ORIGIN.assetId, destinationAsset: DEST.token.assetId,
@@ -875,10 +974,10 @@
     }).then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
       .then(function (res) {
         if (seq !== qSeq) return;                       // a newer keystroke won
-        if (res.s === 201 && res.j && res.j.quote) { QUOTE = res.j.quote; paintQuote(res.j.quote, ''); }
-        else paintQuote(null, String((res.j && (res.j.error || res.j.message)) || 'No route for this amount'));
+        if (res.s === 201 && res.j && res.j.quote) QUOTE = res.j.quote;
+        else LAST_NOTE = String((res.j && (res.j.error || res.j.message)) || 'No route for this amount');
       })
-      .catch(function () { if (seq === qSeq) paintQuote(null, 'Quote unavailable'); });
+      .catch(function () {});
   }
 
   function paintQuote(q, note) {
@@ -894,6 +993,13 @@
       if (AXQ) {
         if (v) v.textContent = fmt(AXQ.delivered, 6);
         if (u) u.textContent = 'after ' + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee';
+      } else if (BEST === 'th' && THQ) {
+        // NAMED, because the page has just chosen on the reader's behalf. When both routes answered,
+        // saying which one won and that it was the better price is the difference between a decision
+        // and a black box.
+        if (v) v.textContent = fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8);
+        if (u) u.textContent = 'via THORChain' + (QUOTE ? ' — better price' : '')
+          + (THQ.seconds != null ? (' · ~' + THQ.seconds + 's') : '');
       } else {
         if (v) v.textContent = q ? fmt(q.amountOutFormatted, 6) : '—';
         if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
@@ -911,6 +1017,8 @@
     if (AXQ) {
       // Same asset in and out; what changes is the amount.
       set('[data-rv="recv"]', fmt(AXQ.delivered, 6) + ' ' + sym);
+    } else if (BEST === 'th' && THQ) {
+      set('[data-rv="recv"]', fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8) + ' ' + THQ.symbol);
     } else {
       set('[data-rv="recv"]', q ? (fmt(q.amountOutFormatted, 6) + ' ' + DEST.token.symbol)
         : ('— ' + (DEST && DEST.token ? DEST.token.symbol : '')));
@@ -934,7 +1042,18 @@
       }
     }
     var t = $('[data-rv="eta"]');
-    if (t) t.textContent = AXQ ? 'a few minutes' : (q && q.timeEstimate ? ('~' + q.timeEstimate + 's') : '—');
+    if (t) {
+      t.textContent = AXQ ? 'a few minutes'
+        : (BEST === 'th' && THQ && THQ.seconds != null) ? ('~' + THQ.seconds + 's')
+        : (q && q.timeEstimate) ? ('~' + q.timeEstimate + 's') : '—';
+    }
+    // Which route is carrying this, said plainly. Three routes behind one wizard means the page is
+    // making a choice, and a reader is entitled to know which.
+    var rv = $('[data-rv="route"]');
+    if (rv) {
+      rv.textContent = AXQ ? 'Axelar' : BEST === 'th' ? 'THORChain'
+        : BEST === 'ni' ? 'NEAR Intents' : '—';
+    }
   }
 
   function paintSteps() {
@@ -995,21 +1114,26 @@
     if (window.lxc && !window.lxc.canSign()) return 'This wallet cannot sign';
     var chain = destChain();
     if (!chain) return 'Choose a destination';
-    var route = routeFor(SRC, chain);
-    if (!route) return (SRC ? SRC.symbol : 'This asset') + ' cannot reach ' + placeLabel(chain);
-    if (route === 'ni' && !DEST) return 'Choose a destination asset';
+    var routes = routesFor(SRC, chain);
+    if (!routes.length) return (SRC ? SRC.symbol : 'This asset') + ' cannot reach ' + placeLabel(chain);
+    var route = routes[0];
+    if (routes.indexOf('ni') >= 0 && !DEST && routes.length === 1) return 'Choose a destination asset';
     var amt = amountXrp();
     if (!amt) return 'Enter an amount';
-    // The 2 XRP floor is 1Click's, so it applies to that route only; Axelar has no minimum beyond
-    // needing to cover its own relay fee, which quoteAx() reports with the actual figure.
-    if (route === 'ni' && netDrops(amt).net < MIN_DROPS) return 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP';
+    // The 2 XRP floor is 1Click's, so it applies only when NEAR Intents is the ONLY route. THORChain
+    // has its own dust threshold and reports it in words, and Axelar's floor is simply covering the
+    // relay fee -- so a pair another route could carry must not be blocked by a minimum that is not
+    // its own.
+    if (routes.length === 1 && route === 'ni' && netDrops(amt).net < MIN_DROPS) {
+      return 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP';
+    }
     if (SRC && SRC.balance != null && amt > SRC.balance) return 'More than your ' + SRC.symbol + ' balance';
     if (!recipient()) return 'Enter a destination address';
     // THE REAL REASON, not a generic wait. A recipient the destination chain would reject is refused
     // by the proxy with "recipient does not look like a base address" -- and the first version threw
     // that away and left the button reading "Waiting for a quote", which describes a network delay
     // rather than something the user can act on.
-    if (route === 'ax' ? !AXQ : !QUOTE) return LAST_NOTE || 'Waiting for a quote';
+    if (!(AXQ || QUOTE || THQ)) return LAST_NOTE || 'Waiting for a quote';
     return '';
   }
   function setCta() {
@@ -1102,6 +1226,46 @@
       });
   }
 
+  // THORChain: one Payment to the vault the quote named, carrying the memo the quote built.
+  //
+  // NOTHING IS COMPOSED HERE. Axelar's route hand-builds four memos and has to check them because a
+  // malformed one loses the transfer; THORChain hands back the exact memo string and the inbound
+  // address, so the only job is to carry them across unchanged. The address is taken from THQ and
+  // never from anything remembered -- THORChain rotates vaults, and sending to yesterday's is sending
+  // to nobody.
+  function sendTh() {
+    var me = addr(), amt = amountXrp(), n = netDrops(amt);
+    if (!THQ || !THQ.inbound || !THQ.memo) { busy = false; setCta(); return; }
+    say('Confirm the transfer in your wallet…');
+    window.lxc.submit({
+      TransactionType: 'Payment', Account: me, Destination: THQ.inbound,
+      Amount: String(n.net),
+      Memos: [{ Memo: { MemoData: hex(THQ.memo) } }],
+    }).then(function (hash) {
+      try {
+        var k = 'lumos.th.txs';
+        var list = JSON.parse(localStorage.getItem(k) || '[]');
+        list.unshift({ at: Date.now(), hash: hash, route: 'thorchain', asset: THQ.asset,
+          sent: amt, expected: Number(THQ.expected) / (THQ.e8 || 1e8), to: recipient() });
+        localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
+      } catch (e) {}
+      say('Sent — THORChain is swapping it');
+      busy = false;
+      setTimeout(setCta, 8000);
+      // The fee is second here too, and its failure is ours.
+      if (n.fee > 0) {
+        window.lxc.submit({
+          TransactionType: 'Payment', Account: me, Destination: COLLECTOR, Amount: String(n.fee),
+          Memos: [{ Memo: { MemoData: hex('lx:th') } }],
+        }).catch(function () {});
+      }
+    }).catch(function (e) {
+      busy = false;
+      say(String((e && e.message) || 'Transfer failed'));
+      setTimeout(function () { busy = false; setCta(); }, 4000);
+    });
+  }
+
   function send() {
     if (busy) return;
     var why = blockReason();
@@ -1109,7 +1273,10 @@
     busy = true;
     var b0 = ctaButton();
     if (b0) { b0.style.pointerEvents = 'none'; b0.style.opacity = '.7'; }
-    if (routeFor(SRC, destChain()) === 'ax') return sendAx();
+    // Whichever route the page SHOWED is the one it sends by. Re-deriving it here could send by a
+    // route the user was never quoted.
+    if (AXQ) return sendAx();
+    if (BEST === 'th') return sendTh();
     var amt = amountXrp(), n = netDrops(amt), me = addr();
     var b = ctaButton();
     if (b) { b.style.pointerEvents = 'none'; b.style.opacity = '.7'; }
@@ -1215,8 +1382,12 @@
       var via = [];
       if (ORIGIN) via.push('NEAR Intents');
       if (AX) via.push('Axelar');
+      if (TH) via.push('THORChain');
+      var list = via.length > 1
+        ? via.slice(0, -1).join(', ') + ' and ' + via[via.length - 1]
+        : via.join('');
       document.title = 'Bridge from the XRP Ledger'
-        + (n ? (' — ' + n + ' networks via ' + via.join(' and ')) : '') + ' | LumosCore';
+        + (n ? (' — ' + n + ' networks via ' + list) : '') + ' | LumosCore';
     } catch (e) {}
   }
 
@@ -1280,8 +1451,9 @@
     Promise.all([
       fetch(API + '?op=tokens').then(function (r) { return r.json(); }).catch(function () { return null; }),
       fetch(API_AX + '?op=assets').then(function (r) { return r.json(); }).catch(function () { return null; }),
+      fetch(API_TH + '?op=pools').then(function (r) { return r.json(); }).catch(function () { return null; }),
     ]).then(function (res) {
-      var d = res[0], a = res[1];
+      var d = res[0], a = res[1], t = res[2];
       if (d && d.ok && Array.isArray(d.tokens)) {
         TOKENS = d.tokens; NATIVES = d.natives || {}; KEYED = !!d.keyed;
         BY_CHAIN = {};
@@ -1294,10 +1466,12 @@
         AX_BY_SYM = {};
         a.assets.forEach(function (x) { AX_BY_SYM[x.symbol] = x; });
       }
-      // EITHER route alone is a usable page. Both down is not.
-      if (!ORIGIN && !AX) { say('Routes unavailable — try again shortly'); return; }
+      if (t && t.ok && Array.isArray(t.pools) && t.xrpTradeable) { TH = t; buildThNative(); }
+      // ANY ONE route alone is a usable page. All three down is not.
+      if (!ORIGIN && !AX && !TH) { say('Routes unavailable — try again shortly'); return; }
       window.__lxxNiChains = Object.keys(BY_CHAIN).filter(function (c) { return NI_CHAIN[c]; });
       window.__lxxAxAssets = AX ? AX.assets.map(function (x) { return x.symbol; }) : [];
+      window.__lxxThChains = Object.keys(TH_NATIVE);
       return loadHoldings().then(function () {
         // SOURCE FIRST, THEN DESTINATIONS. The destination list is a function of the chosen source, so
         // building it before SRC has been rebound against the freshly-loaded registries shows the list
