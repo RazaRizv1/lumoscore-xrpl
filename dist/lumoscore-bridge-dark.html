@@ -7174,6 +7174,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 
   var API = '/lxapi/oneclick';
+  var API_AX = '/lxapi/axelar';
   var COLLECTOR = 'rBDV4nwHzg5ByAYJtPWrbBZnuUXSUtFr94';
   var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
   var MIN_DROPS = 2000000;          // 1Click's own floor, surfaced before it has to refuse a quote
@@ -7202,7 +7203,25 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   var TOKENS = null, NATIVES = {}, KEYED = false;
   var BY_CHAIN = {};                // chain -> [token]
   var ORIGIN = null;                // the XRP token
-  var DEST = null;                  // {chain, token}
+
+  // ---- the Axelar route ----------------------------------------------------------------------------
+  // THE TWO ROUTES DO NOT OVERLAP, which is what makes choosing between them a lookup rather than a
+  // judgement. NEAR Intents moves XRP and only XRP, to 35 chains. Axelar moves the 17 ITS assets
+  // registered on this ledger, to 7 chains -- and of those, XRP reaches only xrpl-evm and hedera,
+  // neither of which NEAR Intents serves. So:
+  //
+  //   source is an IOU              -> Axelar (NEAR Intents cannot carry it at all)
+  //   source is XRP, dest on NI     -> NEAR Intents (wider, cheaper, delivers native gas)
+  //   source is XRP, dest elsewhere -> Axelar (xrpl-evm, hedera)
+  //
+  // There is no pair both can serve, so nothing has to be preferred and no rule can go stale in a way
+  // that silently picks the worse one.
+  var AX = null;                    // {gateway, assets[], destinations[]}
+  var AX_BY_SYM = {};
+  var HOLD = {};                    // currency|issuer -> balance the wallet actually holds
+  var SRC = null;                   // the chosen source asset (XRP or an ITS IOU)
+  var DEST = null;                  // {chain, token}  (token is the NI token, or null on Axelar)
+  var AXQ = null;                   // the Axelar gas estimate for the current pair
   var QUOTE = null;                 // the last live dry quote
   var LAST_NOTE = '';               // why there is no quote, in words the user can act on
   var XRP_SPEND = null;
@@ -7339,72 +7358,200 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       .catch(function () { XRP_SPEND = null; });
   }
 
+  // ---- what the wallet is actually holding ---------------------------------------------------------
+  // The source list is the user's own balances INTERSECTED with Axelar's registry, not the registry on
+  // its own. You can only send what you hold, so offering seventeen assets to someone who holds one is
+  // seventeen ways to reach an error. It also bounds the picker without a rule having to.
+  function holdKey(cur, iss) { return String(cur) + '|' + String(iss || ''); }
+  function loadHoldings() {
+    var me = addr();
+    HOLD = {};
+    if (!me || !AX) return Promise.resolve();
+    return rpcB('account_lines', { account: me, ledger_index: 'validated', limit: 400 })
+      .then(function (d) {
+        var lines = (d && d.result && d.result.lines) || [];
+        lines.forEach(function (l) {
+          var bal = parseFloat(l.balance);
+          if (!(bal > 0)) return;                        // a zero or negative line is not a holding
+          HOLD[holdKey(l.currency, l.account)] = bal;
+        });
+      })
+      .catch(function () {});
+  }
+
+  // XRP first, then every registered asset the wallet holds.
+  function sourceAssets() {
+    var out = [];
+    var xrp = AX && AX_BY_SYM.XRP;
+    out.push({ symbol: 'XRP', native: true, decimals: 6, currency: 'XRP', issuer: null,
+      balance: XRP_SPEND, ax: xrp || null });
+    if (!AX) return out;
+    AX.assets.forEach(function (a) {
+      if (a.native) return;
+      var bal = HOLD[holdKey(a.currency, a.issuer)];
+      if (!(bal > 0)) return;
+      out.push({ symbol: a.symbol, native: false, decimals: a.decimals,
+        currency: a.currency, issuer: a.issuer, balance: bal, ax: a });
+    });
+    return out;
+  }
+
+  // A DESTINATION IS A PLACE; THE ROUTE IS HOW YOU GET THERE. The two registries use different ids for
+  // the same chain -- NEAR Intents says `eth`, `sol`, `pol`; Axelar says `ethereum`, `solana`,
+  // `polygon` -- and keying the list on the id produced two options called "Ethereum" that collided on
+  // their display name. Five destinations vanished (35 offered, 32 shown) and every Axelar route with
+  // them, because whichever id was written second won and the other was simply gone.
+  //
+  // So the list is keyed on the PLACE, and each place remembers the id each route calls it by. The
+  // same option then serves "XRP to Ethereum" (NEAR Intents) and "WETH to Ethereum" (Axelar) without
+  // appearing twice, which is also what a reader expects: they are choosing where the money goes, not
+  // which registry names it.
+  var PLACES = {};                  // normalised label -> {label, ni?, ax?}
+  function buildPlaces() {
+    PLACES = {};
+    var put = function (label) {
+      var k = norm(label);
+      if (!PLACES[k]) PLACES[k] = { label: label };
+      return PLACES[k];
+    };
+    Object.keys(BY_CHAIN).forEach(function (c) { if (NI_CHAIN[c]) put(NI_CHAIN[c]).ni = c; });
+    if (AX) AX.destinations.forEach(function (c) { put(AX_NAME[c] || c).ax = c; });
+    return PLACES;
+  }
+
+  // Which route serves the current pair, or '' when nothing does.
+  function routeFor(src, key) {
+    var p = PLACES[key];
+    if (!src || !p) return '';
+    var axOk = p.ax && src.ax && src.ax.chains.indexOf(p.ax) >= 0;
+    if (src.native) {
+      if (p.ni && BY_CHAIN[p.ni]) return 'ni';        // wider and cheaper where both could serve
+      return axOk ? 'ax' : '';
+    }
+    return axOk ? 'ax' : '';                          // an IOU is Axelar's alone
+  }
+
+  // Everywhere the CURRENT source asset can go, which is what the destination list must show.
+  // Changing the source changes it: an IOU collapses the list from 37 places to a handful.
+  function reachablePlaces() {
+    var set = {};
+    if (!SRC) return set;
+    Object.keys(PLACES).forEach(function (k) {
+      var r = routeFor(SRC, k);
+      if (r) set[k] = r;
+    });
+    return set;
+  }
+
+  // Axelar's chain ids are not all the names the page shows, and CASE MATTERS UPSTREAM -- the Stellar
+  // ITS contract refuses 'ethereum' while accepting 'Ethereum'. These are the ids the registry itself
+  // returns, so they go on the wire exactly as received; this map only decides what to CALL them.
+  var AX_NAME = { 'xrpl-evm': 'XRPL EVM', hedera: 'Hedera', ethereum: 'Ethereum',
+    stellar: 'Stellar', monad: 'Monad', solana: 'Solana', polygon: 'Polygon' };
+  // Kept for the two places that still name a raw route id. placeLabel() is what the UI uses.
+  function chainLabel(c) { return NI_CHAIN[c] || AX_NAME[c] || c; }
+
   // ---- destinations --------------------------------------------------------------------------------
   function wireDestinations() {
     var opts = $$('.brd-opt');
     if (!opts.length) return 0;
     var menu = opts[0].parentNode;
-    var wanted = {};                         // normalised display name -> chain key
-    Object.keys(NI_CHAIN).forEach(function (k) { if (BY_CHAIN[k]) wanted[norm(NI_CHAIN[k])] = k; });
+    // EVERY chain EITHER route can serve gets an option node, built once. Which of them is VISIBLE is
+    // a separate question answered by refreshDestinations(), because it changes with the source asset
+    // and the nodes must not be rebuilt each time -- rebuilding is what loses listeners and what made
+    // twenty-three destinations unclickable the first time round.
+    buildPlaces();
 
     var have = {};
     opts.forEach(function (o) {
       var key = norm(o.getAttribute('data-net'));
       have[key] = 1;
-      var chain = wanted[key];
-      if (chain) {
-        // Revealed with an INLINE important declaration. The inherited Stellar stylesheet hides eleven
-        // of these with `!important` because Circle CCTP could not reach them, and that CSS came across
-        // with the fork — a stylesheet outliving the layer whose decision it encoded. An inline
-        // important is the one thing that reliably outranks it regardless of which <style> lands last.
-        o.style.setProperty('display', 'flex', 'important');
-        o.setAttribute('data-lxchain', chain);
-      } else {
-        o.style.setProperty('display', 'none', 'important');
-        o.removeAttribute('data-lxchain');
-      }
+      if (PLACES[key]) o.setAttribute('data-lxplace', key);
+      else o.removeAttribute('data-lxplace');
     });
 
-    Object.keys(NI_CHAIN).forEach(function (k) {
-      if (!BY_CHAIN[k]) return;
-      var nm = NI_CHAIN[k];
-      if (have[norm(nm)]) return;
-      have[norm(nm)] = 1;
-      menu.appendChild(extraOption(opts[0], k, nm));
+    Object.keys(PLACES).forEach(function (k) {
+      if (have[k]) return;
+      have[k] = 1;
+      menu.appendChild(extraOption(opts[0], k, PLACES[k].label));
     });
 
     $$('.brd-opt', menu).sort(function (a, b) {
       return String(a.getAttribute('data-net')).localeCompare(String(b.getAttribute('data-net')));
     }).forEach(function (o) { menu.appendChild(o); });
 
-    var shown = $$('.brd-opt', menu).filter(function (o) { return o.getAttribute('data-lxchain'); });
-    window.__lxxBridgeNets = shown.map(function (o) { return o.getAttribute('data-net'); });
+    return refreshDestinations();
+  }
+
+  // Shown or hidden per the CURRENT source asset.
+  //
+  // Revealed with an INLINE important declaration. The inherited Stellar stylesheet hides eleven of
+  // these with `!important` because Circle CCTP could not reach them, and that CSS came across with
+  // the fork -- a stylesheet outliving the layer whose decision it encoded. An inline important is the
+  // one thing that reliably outranks it regardless of which <style> the build emits last.
+  function refreshDestinations() {
+    var reach = reachablePlaces();
+    var shown = [];
+    $$('.brd-opt').forEach(function (o) {
+      var c = o.getAttribute('data-lxplace');
+      if (c && reach[c]) {
+        o.style.setProperty('display', 'flex', 'important');
+        o.setAttribute('data-lxroute', reach[c]);
+        shown.push(o.getAttribute('data-net'));
+      } else {
+        o.style.setProperty('display', 'none', 'important');
+        o.removeAttribute('data-lxroute');
+      }
+    });
+    window.__lxxBridgeNets = shown;
+    // A destination already chosen that the new source cannot reach is CLEARED rather than left
+    // standing: leaving it would show a pair that no route serves while the trigger insists it is set.
+    var cur = destChain();
+    if (cur && !reach[cur]) {
+      var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
+      if (nm) nm.textContent = 'Select Network';
+      if (trg) trg.classList.add('is-empty');
+      DEST = null; QUOTE = null; AXQ = null;
+    }
     return shown.length;
   }
 
   function extraOption(tpl, chain, name) {
     var o = tpl.cloneNode(true);                       // a clone carries no listeners
     o.setAttribute('data-net', name);
-    o.setAttribute('data-lxchain', chain);
+    o.setAttribute('data-lxplace', chain);
     o.setAttribute('data-lxadded', '1');
     o.removeAttribute('style');
     o.style.setProperty('display', 'flex', 'important');
     var ic = o.querySelector('.brd-ic');
-    if (ic) { ic.removeAttribute('style'); ic.textContent = ''; setIcon(ic, chainLogo(chain), name); }
+    // `chain` is a PLACE key here; the artwork comes from the NEAR Intents side when that route knows
+    // the place, and falls back to letters when only Axelar reaches it.
+    if (ic) { ic.removeAttribute('style'); ic.textContent = ''; setIcon(ic, chainLogo(niId(chain)), name); }
     var nm = o.querySelector('.brd-nm');
     if (nm) { nm.setAttribute('data-logoed', '1'); nm.textContent = name; }
     return o;
   }
 
   // Which chain the design's trigger is currently showing.
+  // Resolved off the OPTION NODE rather than by matching the label against a map. Two maps now supply
+  // display names (NEAR Intents' chains and Axelar's), and matching against one of them would have
+  // quietly failed for every chain that came from the other -- the exact shape of the bug where a
+  // destination is pickable and then dead. The option carries the id it was built with.
   function destChain() {
     var trg = $('.brd-trigger'), tn = trg && trg.querySelector('.nm');
     if (!trg || trg.classList.contains('is-empty') || !tn) return null;
-    var k = norm(tn.textContent);
-    var found = null;
-    Object.keys(NI_CHAIN).forEach(function (c) { if (norm(NI_CHAIN[c]) === k && BY_CHAIN[c]) found = c; });
+    var k = norm(tn.textContent), found = null;
+    $$('.brd-opt').forEach(function (o) {
+      if (found) return;
+      if (norm(o.getAttribute('data-net')) === k) found = o.getAttribute('data-lxplace') || null;
+    });
     return found;
   }
+  // The id the chosen route calls this place by. Everything on the wire uses one of these two, never
+  // the place key, which exists only to hold them together.
+  function niId(key) { var p = PLACES[key]; return (p && p.ni) || null; }
+  function axId(key) { var p = PLACES[key]; return (p && p.ax) || null; }
+  function placeLabel(key) { var p = PLACES[key]; return (p && p.label) || key; }
 
   // ---- the destination asset picker ----------------------------------------------------------------
   function destTokens(chain) {
@@ -7481,8 +7628,20 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   function paintDestAsset(dst) {
-    var chain = destChain(), as = ensureDestRow(dst);
-    if (!as || !chain) return;
+    var key = destChain(), as = ensureDestRow(dst);
+    if (!as || !key) return;
+    // CHOOSING A DESTINATION ASSET IS A NEAR INTENTS IDEA. Only that route swaps, so only it has a
+    // list of things you could come out as. Axelar delivers the SAME asset it was handed, so the
+    // picker stands down and names that asset instead of offering choices that cannot apply.
+    var chain = routeFor(SRC, key) === 'ni' ? niId(key) : null;
+    if (!chain) {
+      var nmAx = as.querySelector('.nm');
+      if (nmAx) nmAx.textContent = SRC ? SRC.symbol : '—';
+      setIcon(as.querySelector('.br-ic'), SRC && SRC.native ? XRP_LOGO : '', SRC ? SRC.symbol : '');
+      as.style.cursor = '';
+      DEST = null;
+      return;
+    }
     var opts = destTokens(chain);
     if (!DEST || DEST.chain !== chain) DEST = opts[0] ? { chain: chain, token: opts[0] } : null;
     if (!DEST) return;
@@ -7503,7 +7662,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function toggleDestMenu(as) {
     var old = document.querySelector('.lx-destmenu');
     if (old) { old.parentNode.removeChild(old); return; }
-    var chain = destChain();
+    var key = destChain();
+    var chain = key && routeFor(SRC, key) === 'ni' ? niId(key) : null;
     if (!chain) return;
     var opts = destTokens(chain);
     if (opts.length < 2) return;
@@ -7547,6 +7707,151 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         document.removeEventListener('click', away, true);
       }, true);
     });
+  }
+
+  // ---- the source asset ----------------------------------------------------------------------------
+  // The design's source chip is fixed text reading "XRP". It becomes a picker as soon as the wallet
+  // holds something else Axelar can carry -- and stays inert when it does not, so a wallet with only
+  // XRP sees exactly what it saw before.
+  function paintSourceAsset() {
+    var s2 = $('.br-step[data-step="2"]');
+    var side = s2 && s2.querySelectorAll('.br-side')[0];
+    var as = side && side.querySelector('.br-asset');
+    if (!as) return;
+    // REBOUND TO THE FRESH ENTRY EVERY TIME, keeping the user's CHOICE (which is the symbol) but never
+    // their stale COPY of it. The first version kept the existing object whenever its symbol was still
+    // in the list -- and SRC is first set by the early paint, before the Axelar registry has arrived,
+    // so it held `ax: null` forever. Every Axelar destination then evaluated as unreachable and the
+    // route was invisible while both registries reported loaded.
+    var list = sourceAssets();
+    var keep = SRC && list.filter(function (a) { return a.symbol === SRC.symbol; })[0];
+    SRC = keep || list[0];
+    var nm = as.querySelector('.nm');
+    if (nm && nm.textContent !== SRC.symbol) {
+      nm.textContent = SRC.symbol;
+      nm.setAttribute('data-logo', '');
+      nm.setAttribute('data-logoed', '1');
+    }
+    setIcon(as.querySelector('.br-ic'), SRC.native ? XRP_LOGO : '', SRC.symbol);
+    as.style.cursor = list.length > 1 ? 'pointer' : '';
+    if (!as.__lxxSrcMenu) {
+      as.__lxxSrcMenu = 1;
+      as.addEventListener('click', function (e) {
+        if (sourceAssets().length < 2) return;
+        e.preventDefault(); e.stopPropagation(); toggleSrcMenu(as);
+      });
+    }
+  }
+
+  function toggleSrcMenu(as) {
+    var old = document.querySelector('.lx-srcmenu');
+    if (old) { old.parentNode.removeChild(old); return; }
+    var list = sourceAssets();
+    if (list.length < 2) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'brd open lx-srcmenu';
+    wrap.style.cssText = 'position:absolute;z-index:60;left:0;top:calc(100% + 6px);min-width:250px';
+    var menu = document.createElement('div');
+    menu.className = 'brd-menu';
+    menu.style.cssText = 'display:block;position:static;max-height:300px;overflow:auto';
+    list.forEach(function (a) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'brd-opt lx-srcopt';
+      b.style.setProperty('display', 'flex', 'important');
+      var ic = document.createElement('span');
+      ic.className = 'brd-ic';
+      setIcon(ic, a.native ? XRP_LOGO : '', a.symbol);
+      var nmx = document.createElement('span');
+      nmx.className = 'brd-nm';
+      nmx.setAttribute('data-logo', '');
+      nmx.setAttribute('data-logoed', '1');
+      nmx.textContent = a.symbol + (a.balance != null ? ('  ' + fmt(a.balance, 6)) : '');
+      b.appendChild(ic); b.appendChild(nmx);
+      b.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        SRC = a; QUOTE = null; AXQ = null;
+        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        refreshDestinations();
+        paintSteps(); requote();
+      });
+      menu.appendChild(b);
+    });
+    wrap.appendChild(menu);
+    var host = as.parentNode;
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+    host.appendChild(wrap);
+    setTimeout(function () {
+      document.addEventListener('click', function away() {
+        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        document.removeEventListener('click', away, true);
+      }, true);
+    });
+  }
+
+  // ---- Axelar: the arithmetic and the memos --------------------------------------------------------
+  // A single XRPL Payment carries one Amount, and the validators read it as BOTH the amount to bridge
+  // and the source of the relay gas: transfer_amount = Amount - gas_fee_amount. So the figure the user
+  // types is what LEAVES, and what arrives is that minus gas -- stated on the page rather than
+  // discovered afterwards.
+  function axUnits(v, dp) {
+    // The asset's smallest unit as an integer string. Rounded, never truncated: truncation shaves a
+    // unit off what the user typed, which for a 6dp asset is a drop and for an 18dp one is nothing,
+    // but the same mistake in the other direction overdraws.
+    var n = Math.round(Number(v) * Math.pow(10, dp));
+    if (!isFinite(n) || n < 0) return null;
+    if (n > Number.MAX_SAFE_INTEGER) return null;      // refuse rather than return a plausible wrong number
+    return String(n);
+  }
+  function axFromUnits(u, dp) { return Number(u) / Math.pow(10, dp); }
+
+  // MemoType is the field NAME, MemoData the value, both hex-encoded ASCII. Four memos, and the order
+  // does not matter to the validators -- their presence and their exact spelling does.
+  //
+  // A MALFORMED MEMO IS NOT RECOVERABLE. Axelar's own documentation is explicit: a message with
+  // malformed memos never indexes on the GMP API and cannot be retried or refunded, unlike an
+  // underfunded one which at least lands as INSUFFICIENT_GAS and can be topped up. That is why this
+  // builds the memos in one place and why axCheck() below re-reads them before anything is signed.
+  function axMemos(destChainId, destAddr, gasFeeStr) {
+    return [
+      { Memo: { MemoType: hex('type'), MemoData: hex('interchain_transfer') } },
+      { Memo: { MemoType: hex('destination_address'), MemoData: hex(String(destAddr).replace(/^0x/i, '')) } },
+      { Memo: { MemoType: hex('destination_chain'), MemoData: hex(destChainId) } },
+      { Memo: { MemoType: hex('gas_fee_amount'), MemoData: hex(String(gasFeeStr)) } },
+    ];
+  }
+
+  // Reads the built transaction back and refuses unless every invariant holds. Deliberately checks the
+  // OUTPUT rather than the inputs: the bug worth catching is one where the arithmetic was right and the
+  // encoding was not.
+  function axCheck(tx, want) {
+    var m = tx.Memos || [];
+    if (m.length !== 4) return 'expected four memos, built ' + m.length;
+    var got = {};
+    for (var i = 0; i < m.length; i++) {
+      var mm = m[i] && m[i].Memo;
+      if (!mm || !/^[0-9A-F]*$/.test(mm.MemoType || '') || !/^[0-9A-F]*$/.test(mm.MemoData || '')) {
+        return 'a memo is not upper-case hex';
+      }
+      got[unhex(mm.MemoType)] = unhex(mm.MemoData);
+    }
+    if (got.type !== 'interchain_transfer') return 'wrong memo type';
+    if (got.destination_chain !== want.chain) return 'destination chain does not match';
+    if (got.destination_address !== String(want.addr).replace(/^0x/i, '')) return 'destination address does not match';
+    if (got.gas_fee_amount !== String(want.gas)) return 'gas amount does not match';
+    // gas_fee_amount must be STRICTLY less than Amount, or nothing is left to deliver.
+    var amt = tx.Amount, sent, gas = Number(want.gas);
+    if (typeof amt === 'string') { if (!/^[0-9]+$/.test(amt)) return 'XRP amount is not drops'; sent = Number(amt); }
+    else if (amt && amt.value) { sent = Number(amt.value) * Math.pow(10, want.dp); gas = Number(want.gas) * Math.pow(10, want.dp); }
+    else return 'amount has no recognisable form';
+    if (!(gas < sent)) return 'the relay fee is not less than the amount';
+    if (tx.Destination !== want.gateway) return 'destination is not the Axelar gateway';
+    return '';
+  }
+  function unhex(h) {
+    var s = '';
+    for (var i = 0; i + 1 < String(h).length; i += 2) s += String.fromCharCode(parseInt(String(h).substr(i, 2), 16));
+    return s;
   }
 
   // ---- quoting -------------------------------------------------------------------------------------
@@ -7649,8 +7954,50 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     qTimer = setTimeout(doQuote, 350);
   }
   function doQuote() {
-    var amt = amountXrp(), chain = destChain(), me = addr();
-    QUOTE = null;
+    var chain = destChain();
+    var route = routeFor(SRC, chain);
+    if (route === 'ax') return quoteAx(chain);
+    return quoteNi(chain);
+  }
+
+  // Axelar prices the RELAY, not the trade: there is no exchange here, the same asset comes out the
+  // other side. So the only unknown is the gas, and what arrives is simply the amount minus it.
+  function quoteAx(key) {
+    var amt = amountXrp();
+    QUOTE = null; AXQ = null;
+    // The id Axelar knows this place by. Everything upstream and every memo uses THIS, never the
+    // place key, which exists only to let one option serve both routes.
+    var chain = axId(key);
+    if (!amt || !SRC || !chain) { paintQuote(null, ''); return; }
+    var to = recipient();
+    if (!to) { paintQuote(null, 'Enter a destination address'); return; }
+    var seq = ++qSeq;
+    paintQuote(null, 'Pricing the relay…');
+    fetch(API_AX + '?op=gas&symbol=' + encodeURIComponent(SRC.symbol) + '&dest=' + encodeURIComponent(chain))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (seq !== qSeq) return;
+        if (!j || !j.ok) { paintQuote(null, String((j && j.error) || 'No relay price for this pair')); return; }
+        var dp = SRC.decimals;
+        var sent = axUnits(amt, dp);
+        if (sent == null) { paintQuote(null, 'Amount is out of range'); return; }
+        var gas = j.gas;
+        if (!(Number(gas) < Number(sent))) {
+          // Stated as the real reason, with the real number, because "try a larger amount" without one
+          // is a guessing game -- the relay fee to Ethereum is over a whole XRP.
+          paintQuote(null, 'Relay fee is ' + fmt(axFromUnits(gas, dp), 6) + ' ' + SRC.symbol + ' — send more');
+          return;
+        }
+        AXQ = { chain: chain, gas: gas, dp: dp, sent: sent,
+          delivered: axFromUnits(Number(sent) - Number(gas), dp) };
+        paintQuote(null, '');
+      })
+      .catch(function () { if (seq === qSeq) paintQuote(null, 'Relay price unavailable'); });
+  }
+
+  function quoteNi(chain) {
+    var amt = amountXrp(), me = addr();
+    QUOTE = null; AXQ = null;
     if (!amt || !DEST || !chain) { paintQuote(null, ''); return; }
     var n = netDrops(amt);
     if (n.net < MIN_DROPS) {
@@ -7677,14 +8024,22 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   function paintQuote(q, note) {
-    LAST_NOTE = q ? "" : String(note || "");
+    LAST_NOTE = (q || AXQ) ? '' : String(note || '');
     var s2 = $('.br-step[data-step="2"]');
     var dst = s2 && s2.querySelectorAll('.br-side')[1];
     var am = dst && dst.querySelector('.br-amt');
     if (am) {
       var v = am.querySelector('.v'), u = am.querySelector('.usd');
-      if (v) v.textContent = q ? fmt(q.amountOutFormatted, 6) : '—';
-      if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
+      // On Axelar the same asset comes out the other side, so there is no USD line to show that the
+      // quote did not give us -- and inventing one from a price feed is how a page ends up disagreeing
+      // with itself. It states the relay fee instead, which is the number that actually changed.
+      if (AXQ) {
+        if (v) v.textContent = fmt(AXQ.delivered, 6);
+        if (u) u.textContent = 'after ' + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee';
+      } else {
+        if (v) v.textContent = q ? fmt(q.amountOutFormatted, 6) : '—';
+        if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
+      }
     }
     paintReview(q, note);
     setCta();
@@ -7692,19 +8047,36 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
   function paintReview(q, note) {
     var amt = amountXrp(), n = netDrops(amt);
+    var sym = SRC ? SRC.symbol : 'XRP';
     var set = function (sel, txt) { var e = $(sel); if (e && e.textContent !== txt) e.textContent = txt; };
-    set('[data-rv="send"]', amt ? (fmt(amt, 6) + ' XRP') : '0 XRP');
-    set('[data-rv="recv"]', q ? (fmt(q.amountOutFormatted, 6) + ' ' + DEST.token.symbol)
-      : ('— ' + (DEST ? DEST.token.symbol : '')));
+    set('[data-rv="send"]', amt ? (fmt(amt, 6) + ' ' + sym) : ('0 ' + sym));
+    if (AXQ) {
+      // Same asset in and out; what changes is the amount.
+      set('[data-rv="recv"]', fmt(AXQ.delivered, 6) + ' ' + sym);
+    } else {
+      set('[data-rv="recv"]', q ? (fmt(q.amountOutFormatted, 6) + ' ' + DEST.token.symbol)
+        : ('— ' + (DEST && DEST.token ? DEST.token.symbol : '')));
+    }
     set('[data-rv="sendnet"]', 'XRP Ledger');
     var trg = $('.brd-trigger'), tn = trg && trg.querySelector('.nm');
     set('[data-rv="recvnet"]', (trg && !trg.classList.contains('is-empty') && tn) ? tn.textContent : '—');
     set('[data-rv="src"]', addr() ? short(addr()) : '—');
     set('[data-rv="dst"]', recipient() ? short(recipient()) : '—');
     var f = $('[data-rv="fee"]');
-    if (f) f.textContent = amt ? (fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)') : '—';
+    if (f) {
+      if (AXQ) {
+        // AXELAR'S RELAY FEE, AND ONLY THAT. LumosCore takes no cut on this route, which is a
+        // consequence rather than a gift: the collector holds no trust lines, so it can receive XRP
+        // and nothing else, and charging a percentage of a WETH transfer would mean converting it to
+        // XRP through a price nobody quoted. Undercharging is our cost; a fabricated conversion rate
+        // on a page moving money is not acceptable at any price. Revisit if it ever matters.
+        f.textContent = fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + sym + ' relay fee';
+      } else {
+        f.textContent = amt ? (fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)') : '—';
+      }
+    }
     var t = $('[data-rv="eta"]');
-    if (t) t.textContent = q && q.timeEstimate ? ('~' + q.timeEstimate + 's') : '—';
+    if (t) t.textContent = AXQ ? 'a few minutes' : (q && q.timeEstimate ? ('~' + q.timeEstimate + 's') : '—');
   }
 
   function paintSteps() {
@@ -7715,8 +8087,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         var bal = src.querySelector('.br-amtrow .bal');
         if (bal) {
           var mx = bal.querySelector('.max');
-          var have = XRP_SPEND != null && XRP_SPEND >= 0;
-          var txt = 'Balance: ' + (have ? fmt(XRP_SPEND, 2) + ' XRP' : '—') + ' ';
+          // The balance of whatever is SELECTED, not always XRP -- the source can now be any ITS
+          // asset the wallet holds.
+          var sb = SRC ? SRC.balance : XRP_SPEND;
+          var ssym = SRC ? SRC.symbol : 'XRP';
+          var have = sb != null && sb >= 0;
+          var txt = 'Balance: ' + (have ? fmt(sb, 6) + ' ' + ssym : '—') + ' ';
           [].slice.call(bal.childNodes).forEach(function (nd) { if (nd.nodeType === 3) bal.removeChild(nd); });
           bal.insertBefore(document.createTextNode(txt), bal.firstChild);
           if (mx) {
@@ -7725,12 +8101,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
             if (mx.textContent !== 'MAX') mx.textContent = 'MAX';
           }
         }
-        var as = src.querySelector('.br-asset');
-        if (as) {
-          var nm = as.querySelector('.nm');
-          if (nm && nm.textContent !== 'XRP') nm.textContent = 'XRP';
-          setIcon(as.querySelector('.br-ic'), XRP_LOGO);
-        }
+        paintSourceAsset();
         amtInput();
         paintSourceUsd();
       }
@@ -7764,18 +8135,23 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function blockReason() {
     if (!addr()) return 'Connect a wallet';
     if (window.lxc && !window.lxc.canSign()) return 'This wallet cannot sign';
-    if (!DEST) return 'Choose a destination';
+    var chain = destChain();
+    if (!chain) return 'Choose a destination';
+    var route = routeFor(SRC, chain);
+    if (!route) return (SRC ? SRC.symbol : 'This asset') + ' cannot reach ' + placeLabel(chain);
+    if (route === 'ni' && !DEST) return 'Choose a destination asset';
     var amt = amountXrp();
     if (!amt) return 'Enter an amount';
-    var n = netDrops(amt);
-    if (n.net < MIN_DROPS) return 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP';
-    if (XRP_SPEND != null && amt > XRP_SPEND) return 'More than your spendable balance';
+    // The 2 XRP floor is 1Click's, so it applies to that route only; Axelar has no minimum beyond
+    // needing to cover its own relay fee, which quoteAx() reports with the actual figure.
+    if (route === 'ni' && netDrops(amt).net < MIN_DROPS) return 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP';
+    if (SRC && SRC.balance != null && amt > SRC.balance) return 'More than your ' + SRC.symbol + ' balance';
     if (!recipient()) return 'Enter a destination address';
     // THE REAL REASON, not a generic wait. A recipient the destination chain would reject is refused
     // by the proxy with "recipient does not look like a base address" -- and the first version threw
     // that away and left the button reading "Waiting for a quote", which describes a network delay
     // rather than something the user can act on.
-    if (!QUOTE) return LAST_NOTE || 'Waiting for a quote';
+    if (route === 'ax' ? !AXQ : !QUOTE) return LAST_NOTE || 'Waiting for a quote';
     return '';
   }
   function setCta() {
@@ -7801,11 +8177,81 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (b) b.textContent = msg;
   }
 
+  // An integer of smallest units back to an exact decimal string, WITHOUT going through a float.
+  // 813066381885034 units of an 18-decimal token is 0.000813066381885034, and dividing by 1e18 to get
+  // there is how a value picks up a rounding error on the way into a transaction. String arithmetic
+  // cannot do that.
+  function unitsToDecimal(u, dp) {
+    var s = String(u).replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
+    if (!dp) return s || '0';
+    while (s.length <= dp) s = '0' + s;
+    var whole = s.slice(0, s.length - dp);
+    var frac = s.slice(s.length - dp).replace(/0+$/, '');
+    return frac ? (whole + '.' + frac) : whole;
+  }
+  // The raw text the user typed, not a float round-trip, for the same reason.
+  function typedRaw() {
+    var inp = amtInput();
+    return inp ? String(inp.value || '').replace(/[^0-9.]/g, '') : '';
+  }
+
+  function sendAx() {
+    var me = addr(), to = recipient();
+    if (!AXQ || !SRC || !AX) { busy = false; setCta(); return; }
+    // Taken from the QUOTE, not re-derived from the page. The quote is what priced this exact pair,
+    // and re-reading the dropdown here would let a destination changed mid-flight be signed against a
+    // relay fee quoted for somewhere else.
+    var chain = AXQ.chain;
+    var dp = SRC.decimals, gasUnits = AXQ.gas;
+
+    // THE AMOUNT IS THE TOTAL THAT LEAVES. The validators split it: transfer_amount = Amount -
+    // gas_fee_amount. So the user's figure goes in whole and the relay takes its share out of it,
+    // which is what the page has been showing them.
+    var tx = {
+      TransactionType: 'Payment', Account: me, Destination: AX.gateway,
+      Amount: SRC.native ? axUnits(typedRaw(), 6)
+        : { currency: SRC.currency, issuer: SRC.issuer, value: typedRaw() },
+      Memos: axMemos(chain, to, SRC.native ? gasUnits : unitsToDecimal(gasUnits, dp)),
+    };
+
+    // READ BACK BEFORE SIGNING. A malformed memo here is not a failed transfer, it is a lost one --
+    // Axelar's own docs say such a message never indexes and cannot be recovered, unlike an
+    // underfunded one which lands as INSUFFICIENT_GAS and can be topped up. So the built transaction
+    // is re-parsed and every invariant re-checked against what was intended, and anything short of
+    // agreement stops here rather than at the ledger.
+    var bad = axCheck(tx, { chain: chain, addr: to, gateway: AX.gateway, dp: dp,
+      gas: SRC.native ? gasUnits : unitsToDecimal(gasUnits, dp) });
+    if (bad) { busy = false; say('Not sent — ' + bad); setTimeout(setCta, 5000); return; }
+
+    say('Confirm the transfer in your wallet…');
+    window.lxc.submit(tx)
+      .then(function (hash) {
+        try {
+          var k = 'lumos.ax.txs';
+          var list = JSON.parse(localStorage.getItem(k) || '[]');
+          list.unshift({ at: Date.now(), hash: hash, route: 'axelar', chain: chain,
+            sym: SRC.symbol, sent: typedRaw(), delivered: AXQ.delivered, to: to });
+          localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
+        } catch (e) {}
+        say('Sent — Axelar is relaying it');
+        busy = false;
+        setTimeout(setCta, 8000);
+      })
+      .catch(function (e) {
+        busy = false;
+        say(String((e && e.message) || 'Transfer failed'));
+        setTimeout(function () { busy = false; setCta(); }, 4000);
+      });
+  }
+
   function send() {
     if (busy) return;
     var why = blockReason();
     if (why) return;
     busy = true;
+    var b0 = ctaButton();
+    if (b0) { b0.style.pointerEvents = 'none'; b0.style.opacity = '.7'; }
+    if (routeFor(SRC, destChain()) === 'ax') return sendAx();
     var amt = amountXrp(), n = netDrops(amt), me = addr();
     var b = ctaButton();
     if (b) { b.style.pointerEvents = 'none'; b.style.opacity = '.7'; }
@@ -7904,10 +8350,15 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // ---- boot ----------------------------------------------------------------------------------------
+  // Names the routes the page can actually serve right now, not the two it was built for -- if one
+  // registry is down the title should not promise it.
   function title(n) {
     try {
+      var via = [];
+      if (ORIGIN) via.push('NEAR Intents');
+      if (AX) via.push('Axelar');
       document.title = 'Bridge from the XRP Ledger'
-        + (n ? (' — ' + n + ' networks via NEAR Intents') : '') + ' | LumosCore';
+        + (n ? (' — ' + n + ' networks via ' + via.join(' and ')) : '') + ' | LumosCore';
     } catch (e) {}
   }
 
@@ -7964,25 +8415,42 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }, true);
     }
 
-    fetch(API + '?op=tokens')
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (!d || !d.ok || !Array.isArray(d.tokens)) throw new Error('no tokens');
+    // BOTH REGISTRIES, and the page waits for both before deciding what it offers. Settling them
+    // separately would paint a destination list from one route and then rebuild it when the other
+    // arrived, which is a visible flicker and, worse, a window in which a user can pick a chain that
+    // is about to disappear.
+    Promise.all([
+      fetch(API + '?op=tokens').then(function (r) { return r.json(); }).catch(function () { return null; }),
+      fetch(API_AX + '?op=assets').then(function (r) { return r.json(); }).catch(function () { return null; }),
+    ]).then(function (res) {
+      var d = res[0], a = res[1];
+      if (d && d.ok && Array.isArray(d.tokens)) {
         TOKENS = d.tokens; NATIVES = d.natives || {}; KEYED = !!d.keyed;
         BY_CHAIN = {};
         TOKENS.forEach(function (t) { (BY_CHAIN[t.blockchain] = BY_CHAIN[t.blockchain] || []).push(t); });
         ORIGIN = (BY_CHAIN.xrp || [])[0] || null;
         delete BY_CHAIN.xrp;                      // never a destination
-        if (!ORIGIN) throw new Error('no XRP origin');
-        window.__lxxNiChains = Object.keys(BY_CHAIN).filter(function (c) { return NI_CHAIN[c]; });
+      }
+      if (a && a.ok && Array.isArray(a.assets)) {
+        AX = a;
+        AX_BY_SYM = {};
+        a.assets.forEach(function (x) { AX_BY_SYM[x.symbol] = x; });
+      }
+      // EITHER route alone is a usable page. Both down is not.
+      if (!ORIGIN && !AX) { say('Routes unavailable — try again shortly'); return; }
+      window.__lxxNiChains = Object.keys(BY_CHAIN).filter(function (c) { return NI_CHAIN[c]; });
+      window.__lxxAxAssets = AX ? AX.assets.map(function (x) { return x.symbol; }) : [];
+      return loadHoldings().then(function () {
+        // SOURCE FIRST, THEN DESTINATIONS. The destination list is a function of the chosen source, so
+        // building it before SRC has been rebound against the freshly-loaded registries shows the list
+        // for whatever SRC was left holding -- which, on first load, is a source that knew nothing
+        // about Axelar.
+        paintSourceAsset();
         title(wireDestinations());
         paintSteps();
-      })
-      .catch(function () {
-        // Nothing is claimed when the list cannot be had: the page keeps the destinations it shipped
-        // with and the button says why it will not move.
-        say('Routes unavailable — try again shortly');
+        setCta();
       });
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
