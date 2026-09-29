@@ -66,7 +66,10 @@ const SEO = {
   ],
   'lumoscore-bridge': [
     'Bridge Assets to the XRP Ledger | LumosCore',
-    'Move assets to and from the XRP Ledger through Wanchain and Axelar, without leaving your wallet.',
+    // Wanchain was never built -- investigated and dropped -- and this description was the LAST place
+    // still naming it, after the subtitle, the FAQ, the JSON-LD and the "How it works" dialog were all
+    // corrected. It is also the one a search result shows, so it was the copy most people would read.
+    'Bridge XRP to 39 networks through NEAR Intents, Axelar and THORChain — one signature, nothing to claim.',
   ],
   'lumoscore-rewards': [
     'LUMOS Rewards on the XRP Ledger — LP and Holder Incentives | LumosCore',

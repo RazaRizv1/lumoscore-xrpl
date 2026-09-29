@@ -76,18 +76,43 @@
       window.location.href = a.getAttribute('href');
     }, true);
   }
-  set('cvia', 'Axelar · Wanchain');
+  // THREE ROUTES, AND THE COUNT THE BRIDGE PAGE ACTUALLY OFFERS.
+  //
+  // This card read "59 networks · XRP · via Axelar · Wanchain" while the bridge page offered 39
+  // through NEAR Intents, Axelar and THORChain. Both halves were wrong, and for the same reason the
+  // bridge page's own copy was: WANCHAIN WAS NEVER BUILT -- investigated, then dropped -- and the
+  // count came from /lxapi/xrplbridge, the endpoint belonging to the route-DISCOVERY layer the real
+  // bridge replaced. It counted Axelar's registry plus one for Wanchain.
+  //
+  // THE CHAIN NAMES ARE STAMPED IN FROM browser/nibridge.js AT BUILD TIME (__LX_BRIDGE_PLACES__), not
+  // copied. A second hand-maintained list is exactly how this card came to disagree with the page it
+  // links to, and a comment asking the next person to remember would not have helped. The registries
+  // are still asked live -- a chain the routes drop should vanish from the count without a build --
+  // and the names only decide which answers are the SAME PLACE.
+  set('cvia', 'NEAR Intents · Axelar · THORChain');
   set('casset', 'XRP');
-  j('/lxapi/xrplbridge').then(function (b) {
-    if (!b || !b.ok) { set('cnet', '—'); return; }
+  (function () {
+    var NAMES = __LX_BRIDGE_PLACES__;          // {ni:{id:label}, ax:{id:label}, th:{id:label}}
+    var norm = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
     var seen = {};
-    (b.rows || []).concat([{ name: 'Wanchain' }]).forEach(function (r) {
-      var k = String((r && r.name) || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (k && k !== 'xrpledger') seen[k] = 1;
-    });
-    var n = Object.keys(seen).length;
-    if (n > 0) set('cnet', num(n));
-  }).catch(function () { set('cnet', '—'); });
+    var add = function (label) { var k = norm(label); if (k && k !== 'xrpledger' && k !== 'xrp') seen[k] = 1; };
+    Promise.all([
+      j('/lxapi/oneclick?op=tokens').catch(function () { return null; }),
+      j('/lxapi/axelar?op=assets').catch(function () { return null; }),
+      j('/lxapi/thorchain?op=pools').catch(function () { return null; }),
+    ]).then(function (r) {
+      var ni = r[0], ax = r[1], th = r[2];
+      if (ni && ni.ok && ni.tokens) ni.tokens.forEach(function (t) { if (NAMES.ni[t.blockchain]) add(NAMES.ni[t.blockchain]); });
+      if (ax && ax.ok && ax.destinations) ax.destinations.forEach(function (c) { add(NAMES.ax[c] || c); });
+      if (th && th.ok && th.pools && th.xrpTradeable) {
+        th.pools.forEach(function (p) { if (p.symbol.indexOf('-') < 0 && NAMES.th[p.chain]) add(NAMES.th[p.chain]); });
+      }
+      var n = Object.keys(seen).length;
+      // A COUNT OF ZERO IS NOT A COUNT. All three registries down is the only way to get here, and an
+      // em dash says "unknown" where a bold 0 would say "this bridge reaches nowhere".
+      set('cnet', n > 0 ? num(n) : '—');
+    }).catch(function () { set('cnet', '—'); });
+  })();
 
   // ---- Pools + Trade -----------------------------------------------------------------------------
   // FIFTEEN-MINUTE FIGURES (RAZA 2026-09-16: "load the details for pools every 15 mins so that for the user it doesn't load in
