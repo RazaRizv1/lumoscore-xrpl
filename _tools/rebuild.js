@@ -16,7 +16,20 @@
 //     the replacement before that strip would simply hand it back to be removed again.
 //   * _xrplstripstellar last — it removes by id, so it must run after every injector has settled,
 //     and running it last also means a re-run cannot leave a stripped layer resurrected.
+//   * _xrplbridgepolish AFTER _xrplnearintents — the polish styles the route panel that the bridge
+//     client builds, and its stylesheet must land later in source order to win against the design's.
 // Everything between is independent; the order there is just stable so diffs stay readable.
+//
+// _xrplbridge IS GONE FROM THIS LIST, replaced by _xrplnearintents, and that was overdue rather than
+// a change of plan. It injected the route-DISCOVERY layer: a live list of the chains Axelar reaches,
+// with transfers stated as not wired. All three routes are now built, and _xrplnearintents strips
+// `lx-xrplbridge` along with `lx-cctp-js` — so leaving it here injected a layer purely to have it
+// removed a step later.
+//
+// It was ALSO the reason the bridge was one `node _tools/rebuild.js` away from disappearing. The real
+// bridge reached production by running its transform BY HAND; this recipe still rebuilt the page with
+// the discovery layer, so anyone running the documented command would have quietly shipped a bridge
+// that says "Transfers are not enabled from this page yet" over three working routes.
 //
 // _xrpltypescale IS DELIBERATELY ABSENT. The Stellar base already carries Stellar's 1.1x scale, so
 // running it here yields 1.21x — measured: .ft-col h4 at 20.9px on Stellar against 22.99px here,
@@ -31,7 +44,7 @@ const STELLAR = 'C:' + path.sep + 'LumosCore';
 const CHAIN = [
   '_xrplnav', '_xrplconnect', '_xrplwhead', '_xrplfeerate', '_xrplaunchpad', '_xrpldash', '_xrpldashtop', '_xrpltrade',
   '_xrpldexasset', '_xrplpools', '_xrplpoolsmock', '_xrplcreatepool', '_xrplqorders', '_xrplpooldetail', '_xrplaccount', '_xrplwallet', '_xrpltrustbtn', '_xrplrewards',
-  '_xrplltoken', '_xrplbridge', '_xrplsearch', '_xrplcopy', '_xrplreveal', '_xrplseo',
+  '_xrplltoken', '_xrplnearintents', '_xrplbridgepolish', '_xrplsearch', '_xrplcopy', '_xrplreveal', '_xrplseo',
   '_xrplnetpicker', '_xrplchoosenet', '_xrpldashboxes', '_xrpllisting', '_xrplroutes', '_nofollow',
   '_xrplorphan', '_xrplbridgecopy', '_xrplbridgehiw', '_xrpldocs', '_xrplcopy2', '_xrplstripstellar',
   // LAST, and that position is load-bearing: it mirrors each page's visible FAQ into its schema.org

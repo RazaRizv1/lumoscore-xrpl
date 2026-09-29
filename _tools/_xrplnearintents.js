@@ -60,6 +60,55 @@ if (missingOnPage.length || missingOnServer.length) {
   process.exit(1);
 }
 
+// ---- THE SHIPPED ARTWORK, STAMPED IN --------------------------------------------------------------
+// The client prefers assets/networks/<slug>.png over the CoinGecko proxy, and two facts about those
+// files belong to the BUILD rather than to the browser: which of them exist, and what version they are.
+//
+// WHY A VERSION AT ALL. dist/_headers serves /assets/* as 'max-age=31536000, immutable', so a browser
+// that has fetched a logo will not revalidate it for a YEAR. Replacing a file in place reaches nobody
+// who has visited before -- the Stellar build hit exactly this, with RAZA still seeing an old mark long
+// after a build that definitely shipped the new one. The token below is a hash of the logo bytes, so it
+// moves only when a logo actually changes, and then busts all of them exactly once.
+const crypto = require('crypto');
+const A_NET = __dirname + '/../assets/networks';
+const A_NI = __dirname + '/../assets/tokens/ni';
+const ICONV = (() => {
+  try {
+    const h = crypto.createHash('md5');
+    fs.readdirSync(A_NET).sort().forEach((n) => { h.update(n); h.update(fs.readFileSync(A_NET + '/' + n)); });
+    return h.digest('hex').slice(0, 8);
+  } catch (e) { return '0'; }
+})();
+const NI_TOKENS = (() => {
+  const o = {};
+  try { fs.readdirSync(A_NI).forEach((f) => { const m = f.match(/^([A-Za-z0-9._-]+)\.png$/); if (m) o[m[1]] = 1; }); } catch (e) {}
+  return o;
+})();
+const NET_FILES = (() => {
+  const o = {};
+  try { fs.readdirSync(A_NET).forEach((f) => { const m = f.match(/^([A-Za-z0-9._-]+)\.png$/); if (m) o[m[1]] = 1; }); } catch (e) {}
+  return o;
+})();
+// A PLACEHOLDER THAT DOES NOT GET REPLACED IS A BROKEN URL ON EVERY LOGO, and it would ship looking
+// fine to every check that does not fetch an image. Renaming one in the client is the obvious way to
+// cause it, so the build refuses rather than emitting `?v=__LX_ICONV__`.
+for (const tok of ['__LX_ICONV__', '__LX_NI_TOKENS__', '__LX_NET_FILES__']) {
+  if (page.indexOf(tok) < 0) {
+    console.error('  ' + tok + ' is not in browser/nibridge.js — the logo stamp has nowhere to go, aborting');
+    process.exit(1);
+  }
+}
+page = page.split('__LX_ICONV__').join(ICONV)
+  .split('__LX_NI_TOKENS__').join(JSON.stringify(NI_TOKENS))
+  .split('__LX_NET_FILES__').join(JSON.stringify(NET_FILES));
+
+// WHICH DESTINATIONS STILL HAVE NO MARK, said out loud on every run. The client falls back to a grey
+// letter disc, which is honest and not a failure -- but silence is how thirty-four of them came to
+// look like that without anyone noticing.
+const want = [...(page.match(/var NET_FILE = \{([\s\S]*?)\n  \};/) || [null, ''])[1]
+  .matchAll(/:\s*'([a-z0-9]+)'/g)].map((m) => m[1]);
+const noArt = [...new Set(want.filter((f) => !NET_FILES[f]))];
+
 page = injectCollector(page, 'browser/nibridge.js');
 const SCRIPT = '<script id="' + ID + '">' + '\n' + core + '\n' + page + '\n</' + 'script>';
 
@@ -102,4 +151,6 @@ for (const dev of ['desktop', 'mobile']) {
 console.log('xrpl NEAR Intents bridge: injected on ' + pages + ' page key(s) across ' + files
   + ' container(s); ' + fnKeys.length + ' destination chains agree with the Pages Function; '
   + 'stripped ' + stripped + ' older bridge layer(s)');
+console.log('  logos: ' + Object.keys(NET_FILES).length + ' network, ' + Object.keys(NI_TOKENS).length
+  + ' token, v=' + ICONV + (noArt.length ? ('; no artwork yet for ' + noArt.join(', ')) : ''));
 if (!pages) { console.error('  ! no page carried br-steps — nothing was wired'); process.exit(1); }

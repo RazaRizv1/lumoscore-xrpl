@@ -35,7 +35,12 @@
   var API_AX = '/lxapi/axelar';
   var API_TH = '/lxapi/thorchain';
   var COLLECTOR = '__LX_XRPL_COLLECTOR__';
-  var XRP_LOGO = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+  // THE SHIPPED FILE, NOT THE THUMBNAIL PROXY. This was
+  // '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48', which fetches through xrpl.to -- and
+  // xrpl.to allows 333 requests per day per IP. Measured on the live page 2026-09-29: the XRP mark
+  // came back `complete=true naturalWidth=0` with a 429 in the console, so the asset row on the one
+  // asset this ledger always has rendered as a broken image. A logo is not worth a metered request.
+  var XRP_LOGO = '';                 // set once ICONV is known, just below
   var MIN_DROPS = 2000000;          // 1Click's own floor, surfaced before it has to refuse a quote
 
   // THE DESTINATION CHAINS, and the names the page shows for them.
@@ -86,6 +91,9 @@
   var TH_NATIVE = {};               // THORChain chain id -> its native pool asset, e.g. BTC -> BTC.BTC
   var THQ = null;                   // the THORChain quote for the current pair
   var BEST = '';                    // which route the page is currently showing: ni | th | ax
+  var QUOTING = false;              // a quote is in flight -- distinct from having been refused one
+  var PICKED = '';                  // a route the reader chose by hand, overriding the better price
+  var PICKED_FOR = '';              // the destination it was chosen ON; it means nothing anywhere else
 
   var AX = null;                    // {gateway, assets[], destinations[]}
   var AX_BY_SYM = {};
@@ -95,6 +103,24 @@
   var AXQ = null;                   // the Axelar gas estimate for the current pair
   var QUOTE = null;                 // the last live dry quote
   var LAST_NOTE = '';               // why there is no quote, in words the user can act on
+  // ONE NOTE PER ROUTE, because a shared one gets ATTRIBUTED TO THE WRONG ROUTE. Measured on the
+  // live page: THORChain answered "trading is halted, can't process swap" and NEAR Intents answered
+  // something else entirely, and because both wrote LAST_NOTE the route panel printed THORChain's
+  // halt under BOTH cards. A bridge telling someone NEAR Intents has halted trading -- when it has
+  // not, and when the real reason was different and fixable -- is worse than saying nothing.
+  var NOTE = { ni: '', th: '', ax: '' };
+
+  // A ROUTE'S OWN INTERNAL FAULT IS NOT A MESSAGE FOR A READER. Measured live 2026-09-29: every
+  // XRP-origin quote to 1Click came back with their `{"message":"Internal server error",
+  // "correlationId":...,"path":"/v0/quote"}` -- their fault, their wording, and printed verbatim on
+  // the route card it tells the reader nothing they can act on and reads like a fault in this page.
+  // Anything a user CAN act on (a dust minimum, a bad address, a halted chain) is passed through
+  // unchanged, because those are the messages worth having.
+  function upstreamNote(msg) {
+    return /internal server error|bad gateway|service unavailable|gateway time|^\s*5\d\d\s*$/i.test(msg)
+      ? 'Not answering right now — another route may still carry this.'
+      : msg;
+  }
   var XRP_SPEND = null;
   var busy = false;
 
@@ -109,17 +135,103 @@
     return x.toLocaleString('en-US', { maximumFractionDigits: dp == null ? 6 : dp });
   }
 
-  // The chain's mark is its NATIVE token's logo, fetched through our own proxy on the coingecko id
-  // 1Click gives that token. No second registry of chain logos to go stale, and no direct CoinGecko
-  // call from the page (their free tier 429s on bursts; the proxy caches for a week).
-  function chainLogo(chain) {
-    var list = BY_CHAIN[chain] || [];
+  // ---- chain and token artwork ---------------------------------------------------------------------
+  //
+  // SHIPPED FILES FIRST, THE PROXY ONLY AS A FALLBACK, and that order is the whole point.
+  //
+  // This resolved every mark at runtime through `/lxapi/oneclick?op=logo` -> CoinGecko, which is the
+  // EXACT fallback the Stellar build already measured as 404ing from Cloudflare's edge (CoinGecko
+  // refuses those requests; _nilogos.js exists because of it). The result here was five chains with
+  // artwork and thirty-four grey letter discs -- reported by RAZA 2026-09-29, "many network logos
+  // dont show up in the destination networks dropdown".
+  //
+  // The files are the same ones the Stellar build fetched, checked and self-hosted: 96x96 PNGs under
+  // assets/networks/, never hotlinked. The proxy stays for the handful with no file, because a chain
+  // added to 1Click tomorrow should still get a mark without a build.
+  //
+  // KEYED ON THE PLACE LABEL, NOT THE NEAR INTENTS CHAIN ID. Four destinations -- XRPL EVM, Hedera,
+  // Cosmos Hub, THORChain -- are reached by Axelar or THORChain and have no NI id at all, so a map
+  // keyed on that id could never give them a logo however complete it was.
+  var ICONV = '__LX_ICONV__';        // stamped by _xrplnearintents.js from the logo bytes
+  var NI_TOKEN = __LX_NI_TOKENS__;   // which assets/tokens/ni/*.png actually shipped, read at build
+  // WHICH NETWORK FILES ACTUALLY SHIPPED, also read at build. NET_FILE below names the slug a chain
+  // WOULD use; this says whether that file is there. The two are separate because five of the thirty-
+  // nine destinations have no artwork yet, and naming a file that does not exist is not harmless: an
+  // <img> can fall back to letters on error, but the stylesheet in paintOptionCss() cannot, so a
+  // missing file would paint an EMPTY disc -- a worse answer than the letters it replaced.
+  var NET_HAVE = __LX_NET_FILES__;
+  var NET_FILE = {
+    Ethereum: 'ethereum', Arbitrum: 'arbitrum', Base: 'base', Optimism: 'optimism',
+    Polygon: 'polygon', Avalanche: 'avalanche', 'BNB Chain': 'bnbchain', Scroll: 'scroll',
+    Gnosis: 'gnosis', Berachain: 'berachain', Monad: 'monad', Plasma: 'plasma',
+    'X Layer': 'xlayer', Robinhood: 'hood', Hyperliquid: 'hyperliquid', Solana: 'solana',
+    Near: 'near', Sui: 'sui', Starknet: 'starknet', Aptos: 'aptos', Movement: 'movement',
+    TON: 'ton', Tron: 'tron', Cardano: 'cardano', Bitcoin: 'bitcoin', Litecoin: 'litecoin',
+    Dogecoin: 'dogecoin', 'Bitcoin Cash': 'bitcoincash', Dash: 'dash', Zcash: 'zcash',
+    Fogo: 'fogo', ADI: 'adi', Hedera: 'hedera', Stellar: 'stellar', Abstract: 'abstract',
+    Aleo: 'aleo', 'Cosmos Hub': 'cosmoshub', THORChain: 'thorchain',
+    // The EVM sidechain carries the XRP Ledger's own mark, which is whose chain it is. There is no
+    // separate brand for it and inventing one would be worse than sharing the real one.
+    'XRPL EVM': 'xrpl', 'XRP Ledger': 'xrpl'
+  };
+  function netFile(label) {
+    var f = NET_FILE[label];
+    return f && NET_HAVE[f] ? ('/assets/networks/' + f + '.png?v=' + ICONV) : '';
+  }
+
+  // THE DESIGN'S OWN OPTIONS ARE PAINTED BY STYLESHEET, not by touching the nodes.
+  //
+  // Eighteen options ship in the container and the design re-renders that list; setting a background
+  // on the node itself is a fight with its render loop, and the Stellar build lost it visibly (the
+  // list showing the design's ETH-token diamond while the selected field showed the network mark).
+  // An `!important` background outranks the inline one without touching the node, so there is nothing
+  // to fight and nothing to flash.
+  //
+  // This covers the SOURCE chip too. "XRP Ledger" had no artwork anywhere in this build -- there was
+  // no assets/networks/ folder at all -- so the source side of both steps rendered a broken-image
+  // cross next to the wallet that is connected.
+  function paintOptionCss() {
+    try {
+      if (document.getElementById('lx-xnetbg')) return;
+      var css = '';
+      Object.keys(NET_FILE).forEach(function (n) {
+        var u = netFile(n);
+        if (!u) return;                            // no file shipped -- leave the letters alone
+        css += '.brd-opt[data-net="' + n + '"] .brd-ic{background:url(' + u + ') center/cover no-repeat !important;'
+          + 'color:transparent !important}';
+      });
+      if (NET_HAVE.xrpl) {
+        css += '.br-netbox .br-net[data-lxsrc] .br-ic,.br-step[data-step="1"] .br-side:first-child .br-ic'
+          + '{background:url(/assets/networks/xrpl.png?v=' + ICONV + ') center/cover no-repeat !important;'
+          + 'color:transparent !important}';
+      }
+      var st = document.createElement('style');
+      st.id = 'lx-xnetbg';
+      st.textContent = css;
+      (document.head || document.documentElement).appendChild(st);
+    } catch (_) {}
+  }
+  // `label` is what the page CALLS the place. The NI chain id is still accepted, because two callers
+  // hold one and the lookup is cheap.
+  function chainLogo(label) {
+    var direct = netFile(label) || netFile(NI_CHAIN[label] || '');
+    if (direct) return direct;
+    var list = BY_CHAIN[label] || [];
     var nat = list.filter(function (t) { return !t.contractAddress; })[0] || list[0];
     return nat && nat.coingeckoId ? (API + '?op=logo&id=' + encodeURIComponent(nat.coingeckoId)) : '';
   }
-  function tokenLogo(t) {
-    return t && t.coingeckoId ? (API + '?op=logo&id=' + encodeURIComponent(t.coingeckoId)) : '';
+  // Destination TOKEN logos ship too (assets/tokens/ni/SYMBOL.png, the same files the Stellar build
+  // fetched from the coingeckoId 1Click itself gives each asset -- so the art is keyed on the identity
+  // being delivered, not on a ticker guess).
+  function symLogo(sym) {
+    var s = String(sym || '').replace(/[^A-Za-z0-9._-]/g, '');
+    return s && NI_TOKEN[s] ? ('/assets/tokens/ni/' + s + '.png?v=' + ICONV) : '';
   }
+  function tokenLogo(t) {
+    if (!t) return '';
+    return symLogo(t.symbol) || (t.coingeckoId ? (API + '?op=logo&id=' + encodeURIComponent(t.coingeckoId)) : '');
+  }
+  XRP_LOGO = symLogo('XRP');
 
   // Letters in a disc, the way the design marks a network it has no artwork for. Needed as a real
   // fallback rather than a nicety: plenty of these chains have no CoinGecko logo and the request 404s,
@@ -177,9 +289,13 @@
     trg.classList.remove('is-empty');
     var ic = trg.querySelector('.br-ic');
     if (ic) {
+      // THE SHIPPED FILE IS ASKED FOR FIRST, and that is the fix for "no logos shown after the
+      // network is selected" (RAZA 2026-09-29). This used to copy the src off the option's <img> --
+      // but the design's own eighteen options carry their mark as a CSS BACKGROUND, not an img, so
+      // for every one of those the lookup found nothing and fell through to grey letters. The option
+      // that had a logo in the list lost it the moment it was chosen.
       var img = o.querySelector('.brd-ic img');
-      if (img) setIcon(ic, img.getAttribute('src'), name);
-      else markLetters(ic, name);
+      setIcon(ic, chainLogo(name) || (img ? img.getAttribute('src') : ''), name);
     }
     var dd = o.closest('.brd');
     if (dd) dd.classList.remove('open');
@@ -424,9 +540,10 @@
     o.removeAttribute('style');
     o.style.setProperty('display', 'flex', 'important');
     var ic = o.querySelector('.brd-ic');
-    // `chain` is a PLACE key here; the artwork comes from the NEAR Intents side when that route knows
-    // the place, and falls back to letters when only Axelar reaches it.
-    if (ic) { ic.removeAttribute('style'); ic.textContent = ''; setIcon(ic, chainLogo(niId(chain)), name); }
+    // ON THE LABEL, not on niId(chain). That read the artwork off the NEAR Intents side only, so the
+    // four places NI does not serve -- XRPL EVM, Hedera, Cosmos Hub, THORChain -- could never have a
+    // mark, and every chain whose CoinGecko fetch 404d fell to letters as well.
+    if (ic) { ic.removeAttribute('style'); ic.textContent = ''; setIcon(ic, chainLogo(name), name); }
     var nm = o.querySelector('.brd-nm');
     if (nm) { nm.setAttribute('data-logoed', '1'); nm.textContent = name; }
     return o;
@@ -494,6 +611,16 @@
     var row = srcRow.cloneNode(true);
     var amt = row.querySelector('.br-amt');
     if (amt) {
+      // THE CLONE MUST NOT CARRY THE SOURCE'S BALANCE FURNITURE. The step-2 layer moves the balance
+      // and MAX into the source amount box (as Stellar's does), and both are meaningless on the
+      // receiving side -- the balrow's ::before would print "Available to send" over the figure the
+      // destination is quoting, and a MAX button there would do nothing at all.
+      var bx = amt.querySelector('.lx-balrow');
+      if (bx && bx.parentNode) bx.parentNode.removeChild(bx);
+      var kp = amt.querySelector('img.lx-amt-keep');
+      if (kp && kp.parentNode) kp.parentNode.removeChild(kp);
+      var ai = amt.querySelector('.lx-amt-in');
+      if (ai && ai.parentNode) ai.parentNode.removeChild(ai);
       // The clone arrives holding the SOURCE's values -- and on first paint that is the amount the
       // user just typed. Shown on the receiving side it would read as a quote nobody asked for and
       // that nothing had priced, which is the one thing this file must never do.
@@ -547,7 +674,12 @@
       var label = thSym || (SRC ? SRC.symbol : '—');
       var nmAx = as.querySelector('.nm');
       if (nmAx) nmAx.textContent = label;
-      setIcon(as.querySelector('.br-ic'), (!thSym && SRC && SRC.native) ? XRP_LOGO : '', label);
+      // THE ARRIVING ASSET'S OWN MARK. This only ever offered XRP_LOGO, and only when the route was
+      // NOT THORChain -- so every THORChain destination showed a grey letter disc beside a real
+      // figure (ATOM on Cosmos Hub, measured 2026-09-29). The shipped file is asked for by symbol,
+      // which covers the natives THORChain swaps into, and letters remain the fallback.
+      setIcon(as.querySelector('.br-ic'),
+        symLogo(label) || ((!thSym && SRC && SRC.native) ? XRP_LOGO : ''), label);
       as.style.cursor = '';
       DEST = null;
       return;
@@ -776,8 +908,46 @@
   function amtInput() {
     var s2 = $('.br-step[data-step="2"]');
     var side = s2 && s2.querySelectorAll('.br-side')[0];
-    var v = side && side.querySelector('.br-amt .v');
-    if (!v) return null;
+    var box = side && side.querySelector('.br-amt');
+    if (!box) return null;
+
+    // THE LOGO HEALER EATS THE AMOUNT BOX, and this is the one place that can stop it.
+    //
+    // Measured on the live page 2026-09-29. Type a digit; within half a second the source .br-amt
+    // comes back as `data-logo="XRP"` with a base64 XRP mark as its background and ZERO children --
+    // the .v, the .usd and the input inside them all replaced. amtInput() then returns null forever,
+    // amountXrp() reads 0, and no quote is ever requested: the page sits on "Comparing routes…" with
+    // both route cards disabled and nothing in the console. It is a silent, total failure of the
+    // send path, and it only appeared once the step-2 redesign gave this box a 12px radius -- the
+    // healer repaints any short-text element that looks like a badge.
+    //
+    // FOUR ESCAPES WERE TESTED AGAINST THE REAL TRIGGER, not reasoned about:
+    //     control, nothing                 eaten, input destroyed
+    //     data-logo="" + data-logoed="1"   eaten, input destroyed
+    //     an inert <img> child             SURVIVES
+    // The attribute pair is the obvious fix and it does not work -- it stops the logo ENGINE, not the
+    // healer. Only a child the healer refuses to paint over does, which is what ensureDestRow already
+    // relies on for the destination row.
+    if (!box.querySelector('img.lx-amt-keep')) {
+      var keep = document.createElement('img');
+      keep.className = 'lx-amt-keep';
+      keep.alt = '';
+      keep.setAttribute('aria-hidden', 'true');
+      keep.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none';
+      box.insertBefore(keep, box.firstChild);
+    }
+    // SELF-HEALING, because the escape cannot help a box that was eaten before it was applied -- an
+    // older cached page, or any future painter that gets there first. Rebuilding is safe: .v and .usd
+    // carry no state this file does not rewrite on the next paint anyway.
+    var v = box.querySelector('.v');
+    if (!v) {
+      box.removeAttribute('data-logo');
+      box.style.background = '';
+      box.style.boxShadow = '';
+      v = document.createElement('div'); v.className = 'v';
+      var u = document.createElement('div'); u.className = 'usd';
+      box.appendChild(v); box.appendChild(u);
+    }
     var inp = v.querySelector('.lx-amt-in');
     if (inp) return inp;
     v.textContent = '';                                  // the mocked "100" goes
@@ -866,16 +1036,21 @@
   function doQuote() {
     var key = destChain();
     var routes = routesFor(SRC, key);
-    QUOTE = null; THQ = null; AXQ = null; BEST = '';
+    QUOTE = null; THQ = null; AXQ = null; BEST = ''; QUOTING = false;
+    NOTE = { ni: '', th: '', ax: '' };
+    // A hand-picked route belongs to the destination it was picked on. Moving to another one drops it
+    // rather than carrying it somewhere it may not even be offered.
+    if (PICKED_FOR !== key) { PICKED = ''; PICKED_FOR = ''; }
     if (!routes.length) { paintQuote(null, ''); return; }
     // Axelar never shares a pair with the others, so when it is the route there is nothing to race.
-    if (routes.length === 1 && routes[0] === 'ax') return quoteAx(key);
+    if (routes.length === 1 && routes[0] === 'ax') { QUOTING = true; return quoteAx(key); }
 
     var seq = ++qSeq;
     var jobs = [];
     if (routes.indexOf('ni') >= 0) jobs.push(quoteNi(key, seq));
     if (routes.indexOf('th') >= 0) jobs.push(quoteTh(key, seq));
-    if (!jobs.length) return quoteAx(key);
+    if (!jobs.length) { QUOTING = true; return quoteAx(key); }
+    QUOTING = true;
     paintQuote(null, jobs.length > 1 ? 'Comparing routes…' : 'Quoting…');
     // allSettled, not all: one route refusing is ordinary -- a dust minimum here, an unsupported
     // recipient there -- and must not cost the user the other route's answer.
@@ -889,6 +1064,7 @@
   // the chosen destination asset is not the native one, NEAR Intents is simply the route -- it is the
   // only one that can deliver what was asked for.
   function settle() {
+    QUOTING = false;
     var niOut = QUOTE ? Number(QUOTE.amountOutFormatted) : null;
     var thOut = THQ ? (Number(THQ.expected) / (THQ.e8 || 1e8)) : null;
     var sameAsset = QUOTE && THQ && DEST && DEST.token && !DEST.token.contractAddress;
@@ -896,6 +1072,12 @@
     else if (QUOTE) BEST = 'ni';
     else if (THQ) BEST = 'th';
     else BEST = '';
+    // A HAND-PICKED ROUTE WINS, but only if it actually answered. Honouring a choice whose quote came
+    // back empty would leave the page showing a route it cannot send by, with no figures and a live
+    // Bridge button -- worse than quietly falling back to the one that did answer.
+    if (PICKED && PICKED_FOR === destChain()) {
+      if ((PICKED === 'ni' && QUOTE) || (PICKED === 'th' && THQ) || (PICKED === 'ax' && AXQ)) BEST = PICKED;
+    }
     paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : (LAST_NOTE || 'No route for this amount'));
   }
 
@@ -904,34 +1086,43 @@
   function quoteAx(key) {
     var amt = amountXrp();
     QUOTE = null; AXQ = null;
+    // EVERY WAY OUT OF THIS FUNCTION CLEARS `QUOTING`. It has seven of them, and a route left marked
+    // as still quoting shows "Quoting…" on its card forever -- which looks like a hung request rather
+    // than the refusal it actually is.
+    var done = function (note) { QUOTING = false; NOTE.ax = note || ''; paintQuote(null, note || ''); };
     // The id Axelar knows this place by. Everything upstream and every memo uses THIS, never the
     // place key, which exists only to let one option serve both routes.
     var chain = axId(key);
-    if (!amt || !SRC || !chain) { paintQuote(null, ''); return; }
+    if (!amt || !SRC || !chain) { done(); return; }
     var to = recipient();
-    if (!to) { paintQuote(null, 'Enter a destination address'); return; }
+    if (!to) { done('Enter a destination address'); return; }
     var seq = ++qSeq;
+    QUOTING = true;
     paintQuote(null, 'Pricing the relay…');
     fetch(API_AX + '?op=gas&symbol=' + encodeURIComponent(SRC.symbol) + '&dest=' + encodeURIComponent(chain))
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (seq !== qSeq) return;
-        if (!j || !j.ok) { paintQuote(null, String((j && j.error) || 'No relay price for this pair')); return; }
+        if (!j || !j.ok) { done(String((j && j.error) || 'No relay price for this pair')); return; }
         var dp = SRC.decimals;
         var sent = axUnits(amt, dp);
-        if (sent == null) { paintQuote(null, 'Amount is out of range'); return; }
+        if (sent == null) { done('Amount is out of range'); return; }
         var gas = j.gas;
         if (!(Number(gas) < Number(sent))) {
           // Stated as the real reason, with the real number, because "try a larger amount" without one
           // is a guessing game -- the relay fee to Ethereum is over a whole XRP.
-          paintQuote(null, 'Relay fee is ' + fmt(axFromUnits(gas, dp), 6) + ' ' + SRC.symbol + ' — send more');
+          done('Relay fee is ' + fmt(axFromUnits(gas, dp), 6) + ' ' + SRC.symbol + ' — send more');
           return;
         }
         AXQ = { chain: chain, gas: gas, dp: dp, sent: sent,
           delivered: axFromUnits(Number(sent) - Number(gas), dp) };
-        paintQuote(null, '');
+        // NAMED AS THE ROUTE IN USE. Everything else reads AXQ directly, so BEST was left empty on this
+        // path -- which the route panel reads as "no route chosen", leaving the Axelar card unmarked
+        // and its figures unrendered on the one route where it is the only option there is.
+        BEST = 'ax';
+        done('');
       })
-      .catch(function () { if (seq === qSeq) paintQuote(null, 'Relay price unavailable'); });
+      .catch(function () { if (seq === qSeq) done('Relay price unavailable'); });
   }
 
   // THORChain prices its own swap and, unlike Axelar, BUILDS THE MEMO ITSELF -- the quote carries the
@@ -953,7 +1144,7 @@
       .then(function (j) {
         if (seq !== qSeq) return;
         if (j && j.ok) { THQ = j; THQ.asset = asset; THQ.symbol = String(asset).split('.')[1] || asset; }
-        else if (j && j.error) LAST_NOTE = String(j.error);
+        else if (j && j.error) { NOTE.th = upstreamNote(String(j.error)); LAST_NOTE = NOTE.th; }
       })
       .catch(function () {});
   }
@@ -962,9 +1153,9 @@
     var amt = amountXrp(), me = addr();
     if (!amt || !DEST || !chain) return Promise.resolve();
     var n = netDrops(amt);
-    if (n.net < MIN_DROPS) { LAST_NOTE = 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP'; return Promise.resolve(); }
+    if (n.net < MIN_DROPS) { NOTE.ni = LAST_NOTE = 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP'; return Promise.resolve(); }
     var to = recipient();
-    if (!to) { LAST_NOTE = 'Enter a destination address'; return Promise.resolve(); }
+    if (!to) { NOTE.ni = LAST_NOTE = 'Enter a destination address'; return Promise.resolve(); }
     return fetch(API + '?op=quote', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -975,7 +1166,10 @@
       .then(function (res) {
         if (seq !== qSeq) return;                       // a newer keystroke won
         if (res.s === 201 && res.j && res.j.quote) QUOTE = res.j.quote;
-        else LAST_NOTE = String((res.j && (res.j.error || res.j.message)) || 'No route for this amount');
+        else {
+          NOTE.ni = upstreamNote(String((res.j && (res.j.error || res.j.message)) || 'No route for this amount'));
+          LAST_NOTE = NOTE.ni;
+        }
       })
       .catch(function () {});
   }
@@ -1006,6 +1200,7 @@
       }
     }
     paintReview(q, note);
+    paintRoutePanel();
     setCta();
   }
 
@@ -1056,12 +1251,155 @@
     }
   }
 
+  // ---- the ROUTE panel -----------------------------------------------------------------------------
+  //
+  // The card on the right of step 2: which routes can carry this pair, which one is being used, and
+  // what it delivers. _xrplbridgepolish.js ships the panel's markup and styles; the cards are rendered
+  // here because this is the only place that knows which routes serve a pair and what each quoted.
+  //
+  // THE PANEL IS WHERE THE PAGE SHOWS ITS WORKING. Three routes behind one wizard means the page keeps
+  // choosing on the reader's behalf, and a chosen route that is never named is a black box asking to
+  // be trusted with money. Every candidate is listed, each with its own answer, and the one being
+  // used is marked -- so "THORChain, and it pays more" is visible rather than implied.
+  var ROUTE_META = {
+    ni: { name: 'NEAR Intents', mark: 'nearintents',
+      sub: 'Delivers the destination chain’s own token, not a wrapped copy' },
+    ax: { name: 'Axelar', mark: 'axelar',
+      sub: 'Carries interchain tokens, and is the only way to XRPL EVM' },
+    th: { name: 'THORChain', mark: 'thorchain',
+      sub: 'Swaps into the destination chain’s native coin' },
+  };
+  var SICON = {
+    recv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>',
+    fee: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>',
+    time: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  };
+  function esc2(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  // What each candidate route currently has to say. Pending is its own state: before the quotes come
+  // back every route would otherwise read "no quote for this amount", which is an answer none of them
+  // has given yet and reads as a refusal.
+  function routeRows() {
+    var key = destChain();
+    if (!SRC || !key) return [];
+    return routesFor(SRC, key).map(function (r) {
+      var o = { route: r, meta: ROUTE_META[r], state: 'ok', recv: '', eta: '', error: '' };
+      if (r === 'ni') {
+        if (QUOTE) {
+          o.recv = fmt(QUOTE.amountOutFormatted, 6) + ' ' + ((DEST && DEST.token) ? DEST.token.symbol : '');
+          if (QUOTE.timeEstimate != null) o.eta = '~' + QUOTE.timeEstimate + 's';
+        } else o.state = QUOTING ? 'wait' : 'none';
+      } else if (r === 'th') {
+        if (THQ) {
+          o.recv = fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8) + ' ' + THQ.symbol;
+          if (THQ.seconds != null) o.eta = '~' + THQ.seconds + 's';
+        } else o.state = QUOTING ? 'wait' : 'none';
+      } else {
+        if (AXQ) { o.recv = fmt(AXQ.delivered, 6) + ' ' + SRC.symbol; o.eta = 'a few minutes'; }
+        else o.state = QUOTING ? 'wait' : 'none';
+      }
+      // ITS OWN ANSWER, never the last one anybody gave.
+      if (o.state === 'none') o.error = NOTE[r] || 'No quote for this amount.';
+      return o;
+    });
+  }
+
+  // The fee line, stated per route because the three charge differently and a single figure would be
+  // wrong for two of them. LumosCore's own rate is read live so the 250K-LUMOS tier shows 0.1%.
+  function routeFee(r) {
+    var pct = +(feeRate() * 100).toFixed(2) + '%';
+    if (r === 'ax') {
+      // No LumosCore cut on this route -- the collector holds no trust lines, so it cannot take a
+      // percentage of an issued token. See the note in paintReview.
+      return AXQ ? (fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee') : 'destination gas';
+    }
+    if (r === 'th') return pct + ' + THORChain’s swap rate';
+    return pct + ' + solver fee';
+  }
+
+  function paintRoutePanel() {
+    var panel = $('.lx-brroute[data-lxroute]');
+    if (!panel) return;
+    var host = panel.querySelector('[data-lxroute-opts]');
+    var stats = panel.querySelector('[data-lxroute-stats]');
+    if (!host || !stats) return;
+    var rows = routeRows();
+    if (!rows.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+
+    var h = '';
+    rows.forEach(function (o) {
+      var sel = o.route === BEST;
+      var dis = o.state === 'none';
+      h += '<button type="button" class="lx-brr" data-lxroutepick="' + o.route + '"'
+        + (dis ? ' disabled' : '') + ' aria-pressed="' + (sel ? 'true' : 'false') + '">'
+        + '<div class="lx-brr-top">'
+        + '<span class="lx-brr-mark" data-logo="" data-logoed="1">'
+        + '<img src="/assets/networks/' + o.meta.mark + '.png?v=' + ICONV + '" alt=""></span>'
+        + '<span class="lx-brr-hd"><span class="lx-brr-nm" data-logoed="1">' + esc2(o.meta.name) + '</span>'
+        + '<span class="lx-brr-sub">' + esc2(o.meta.sub) + '</span></span>';
+      // The tag names WHY this one, and only where that is a fact rather than a slogan: it appears on
+      // the chosen route when a rival actually answered too, so "BEST PRICE" always means it beat
+      // something. A badge on a route that was the only option would be marketing.
+      if (sel && rows.length > 1 && rows.filter(function (x) { return x.state === 'ok'; }).length > 1) {
+        h += '<span class="lx-brr-tag">Best price</span>';
+      } else if (sel) {
+        h += '<span class="lx-brr-tag">In use</span>';
+      }
+      h += '</div>';
+      if (o.state === 'none') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
+      else if (o.state === 'wait') h += '<span class="lx-brr-soon">Quoting…</span>';
+      h += '<' + '/button>';
+    });
+    if (host.innerHTML !== h) host.innerHTML = h;
+
+    var cur = rows.filter(function (x) { return x.route === BEST; })[0];
+    var sh = '';
+    if (cur && cur.state === 'ok') {
+      var row = function (ic, k, v) {
+        return '<div class="lx-brs-row"><span class="lx-brs-ic">' + SICON[ic] + '</span>'
+          + '<span class="lx-brs-k">' + k + '</span><span class="lx-brs-v">' + esc2(v) + '</span></div>';
+      };
+      sh = row('recv', 'Receive', cur.recv || '—')
+        + row('fee', 'Bridge fee', routeFee(cur.route))
+        + row('time', 'Estimated time', cur.eta || '—')
+        + '<div class="lx-brs-note">Delivered straight to the address you gave — there is nothing to '
+        + 'claim on the other side.</div>';
+    }
+    if (stats.innerHTML !== sh) stats.innerHTML = sh;
+    stats.hidden = !sh;
+  }
+
+  // CHOOSING A ROUTE BY HAND. The page picks the better price, and the reader is allowed to disagree
+  // -- speed, a wallet that already knows one bridge, or simple preference. The choice is remembered
+  // only for the destination it was made on, because "I want THORChain" cannot mean anything on a
+  // chain THORChain does not serve, and a preference that silently survives a change of destination
+  // is how a page ends up using a route the reader never chose for a pair they never saw.
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest && e.target.closest('[data-lxroutepick]');
+    if (!b || b.disabled) return;
+    e.preventDefault(); e.stopPropagation();
+    var r = b.getAttribute('data-lxroutepick');
+    var key = destChain();
+    if (!r || !key || routesFor(SRC, key).indexOf(r) < 0) return;
+    PICKED_FOR = key; PICKED = r;
+    BEST = r;
+    paintQuote(BEST === 'ni' ? QUOTE : null, '');
+  }, true);
+
   function paintSteps() {
     var s2 = $('.br-step[data-step="2"]');
     if (s2) {
       var sides = s2.querySelectorAll('.br-side'), src = sides[0], dst = sides[1];
       if (src) {
-        var bal = src.querySelector('.br-amtrow .bal');
+        // NOT '.br-amtrow .bal'. The step-2 layer moves this node into the amount box, where the
+        // reference design puts it, and a selector pinned to where it used to live simply stopped
+        // finding it -- balance and MAX both gone, with no error.
+        var bal = src.querySelector('.bal');
         if (bal) {
           var mx = bal.querySelector('.max');
           // The balance of whatever is SELECTED, not always XRP -- the source can now be any ITS
@@ -1443,6 +1781,10 @@
         }
       }, true);
     }
+
+    // Before anything is fetched: the artwork is shipped, so the marks can be right on the first
+    // paint rather than after two registries have answered.
+    paintOptionCss();
 
     // BOTH REGISTRIES, and the page waits for both before deciding what it offers. Settling them
     // separately would paint a destination list from one route and then rebuild it when the other

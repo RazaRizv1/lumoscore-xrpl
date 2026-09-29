@@ -28,20 +28,30 @@
 (function(){
   if(window.__lxBhiw)return; window.__lxBhiw=1;
   var STEPS=[
-    ["Pick a destination","Choose the network you want to reach. The list comes from Axelar and Wanchain and is fetched live, so it cannot offer a route that has since been removed."],
-    ["Nothing is signed","Looking up routes is read-only. No funds move and no transaction is signed, so nothing is left pending if you close the tab."],
-    ["Nothing to claim","There is no claim step, because no transfer happens yet. The claim step you may have seen belongs to Circle’s CCTP on the Stellar build, and Axelar and Wanchain routing do not work that way."],
-    ["Fees once it is live","None today, because no transfer takes place. When bridging is enabled the platform fee is the same as everywhere else on LumosCore, and each chain’s own network fee is paid to that chain, never to us."]
+    ["Pick a destination and an amount","Choose where you want the money to arrive and how much to send. Each route publishes its own list of destinations and LumosCore fetches all three live, so the picker cannot offer a route that has since been withdrawn."],
+    ["LumosCore picks the route","Where NEAR Intents and THORChain can both carry the transfer, both are asked for a live quote and the one that delivers MORE is used. An Axelar interchain token goes by Axelar, which is the only route that carries it. The route that will carry your transfer is named on the review before you sign."],
+    ["One signature, nothing to claim","You sign a single XRP Ledger payment and the route delivers to the address you gave — no second transaction, and no gas needed on the destination. The claim step you may have seen belongs to Circle’s CCTP on the Stellar build; none of the routes here work that way."],
+    ["Fees, all shown before you sign","LumosCore takes 0.2%, or 0.1% if you hold 250,000 LUMOS or more. Each route charges its own cost on top — a solver fee, destination gas, or a swap rate — and the amount you are quoted is what arrives after all of it."]
   ];
   var el=null, trigger=null;
 
   // Plain text only — written with textContent below, never innerHTML.
+  // READ FROM THE PICKER, so the dialog and the list a user is looking at cannot disagree. The old
+  // fallback to window.__lxxBridgeData.supported is gone: that object was published by the route-
+  // DISCOVERY layer (lx-xrplbridge), which the bridge client now strips, so it has been permanently
+  // undefined since the real routes shipped -- a fallback that could only ever produce the "no list"
+  // sentence while looking like it had a second source.
   function where(){
-    var d=window.__lxxBridgeData;
-    // The full list the destination picker offers (bridge.js publishes it), not the old fourteen.
-    var list=(window.__lxxBridgeNets&&window.__lxxBridgeNets.length)?window.__lxxBridgeNets.slice():((d&&d.supported&&d.supported.length)?d.supported.slice():null);
+    var list=(window.__lxxBridgeNets&&window.__lxxBridgeNets.length)?window.__lxxBridgeNets.slice():null;
     if(!list)return "the networks in the destination picker on this page.";
     if(list.length===1)return String(list[0])+".";
+    // CAPPED. This wrote every destination into one sentence, which was fine at fourteen and is a
+    // thirty-nine-item comma list now -- a paragraph nobody reads, in a dialog explaining the page.
+    // The picker itself is the place to browse them; this says enough to show the range.
+    var CAP=12;
+    if(list.length>CAP){
+      return list.slice(0,CAP).join(", ")+" and "+(list.length-CAP)+" more — the full list is in the destination picker.";
+    }
     return list.slice(0,-1).join(", ")+" and "+list[list.length-1]+".";
   }
 
@@ -60,13 +70,14 @@
       +'<div class="lx-bhiw-head"><h3>How the bridge works</h3>'
       +'<button class="lx-bhiw-x" type="button" aria-label="Close" data-lxbhiw-close><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>'
       +'<div class="lx-bhiw-body">'
-      +'<p class="lx-bhiw-lede">LumosCore shows which networks the XRP Ledger can reach through <b>Axelar</b> and <b>Wanchain</b>, '
-      +'two interchain networks that connect blockchains to each other. <b>Transfers are not enabled yet</b>, '
-      +'so picking a route does not move anything, and nothing here will ask you to approve a transaction.</p>'
+      +'<p class="lx-bhiw-lede">LumosCore moves assets off the XRP Ledger through three independent networks — '
+      +'<b>NEAR Intents</b>, <b>Axelar</b> and <b>THORChain</b>. They reach different places and price '
+      +'differently, so the page asks every route that can carry your transfer and uses the one that pays out most.</p>'
       +'<ol class="lx-bhiw-steps">'+steps+'</ol>'
-      +'<div class="lx-bhiw-note"><b>Still being built.</b> The page says so rather than offering a button '
-      +'that looks like it works. These steps will describe the real transfer once a route can actually be '
-      +'executed.</div>'
+      +'<div class="lx-bhiw-note"><b>What each route is for.</b> NEAR Intents carries XRP to the most '
+      +'destinations and delivers the chain’s own token rather than a wrapped copy. Axelar carries the '
+      +'interchain tokens registered on this ledger, and is the only way to the XRPL EVM sidechain and to '
+      +'Hedera. THORChain competes with the first on price and adds Cosmos Hub.</div>'
       +'<div class="lx-bhiw-chains"><b>Where it goes:</b> <span class="lx-bhiw-where"></span></div>'
       +'</div></div>';
     document.body.appendChild(el);

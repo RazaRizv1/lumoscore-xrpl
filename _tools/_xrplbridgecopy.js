@@ -27,70 +27,107 @@ const fs = require('fs');
 const { read, getContents } = require(__dirname + '/lib.js');
 const B = String.fromCharCode(92);
 
-// Shaped like Stellar's, which names the asset flow and the provider in one line. The previous
-// version ("See which networks the XRP Ledger can reach through Axelar. Route discovery only…")
-// described a chain-list panel this page no longer has — that panel was invented UI and has been
-// removed in favour of the design's own destination dropdown, so the subtitle describing it went
-// with it. The second sentence stays: the wizard is real and the transfer is not wired.
-// Both bridges are named (RAZA 2026-09-15: "If we're also using Wanchain bridge, so you should mention that as well").
-const SUB = 'Bridge assets from the XRP Ledger to other networks through Axelar and Wanchain. '
-  + 'Transfers are not enabled from this page yet.';
+// Shaped like Stellar's, which names the asset flow and the provider in one line.
+//
+// WHAT THIS REPLACED, AND WHY IT MATTERED (RAZA 2026-09-29, "its nothing like that we've updated on
+// Stellar"). It read:
+//
+//   "Bridge assets from the XRP Ledger to other networks through Axelar and Wanchain.
+//    Transfers are not enabled from this page yet."
+//
+// Both halves were false by the time he read them. WANCHAIN WAS NEVER BUILT — it was investigated and
+// dropped (470 pairs, not one of them XRPL), so the page was naming a route that has never existed.
+// And transfers ARE enabled: NEAR Intents, Axelar and THORChain all quote and all send. A bridge
+// telling people it cannot move money, over three routes that move money, is the worst direction for
+// this particular page to be wrong in — it costs a user nothing to believe and everything to act on.
+//
+// The copy lagged because it lives in a transform of its own, and the route work never came back to
+// it. Nothing structural prevents that happening again; what helps is that all four places the claim
+// appears (subtitle, FAQ, the indexed JSON-LD, and the "How it works" dialog in browser/bridgehiw.js)
+// now say the same thing, so a future drift is visible on the page rather than only in a script body.
+const SUB = 'Bridge XRP to thirty-nine networks with NEAR Intents or THORChain, or move an Axelar '
+  + 'interchain token to where Axelar reaches — whichever route pays out more.';
 
 // Keyed by the FIRST WORDS of the question as it currently reads, so a question that has already
 // been corrected is not matched twice and nothing is rewritten by position.
+const ROUTES_Q = 'Which bridges does LumosCore use here?';
+const ROUTES_A = 'Three, and they are good at different things. NEAR Intents moves XRP to thirty-five '
+  + 'networks and delivers the chain’s own token rather than a wrapped copy. Axelar moves the '
+  + 'interchain tokens registered on the XRP Ledger, and is the only route to the XRPL EVM sidechain '
+  + 'and to Hedera. THORChain overlaps the first on ten chains and adds Cosmos Hub, so where both can '
+  + 'carry a transfer both are asked and the better price wins.';
+
+// EVERY ANSWER BELOW STATES ONLY WHAT THE PAGE DOES. That is the same rule the earlier version
+// followed and the reason it was honest while the routes were unbuilt; what changed is the page, not
+// the rule. Where a route's behaviour differs from the others the answer says which one it is talking
+// about, because "the bridge" now means three different mechanisms and a sentence true of one of them
+// is not automatically true of the rest.
+//
+// SOME KEYS MATCH COPY THIS TRANSFORM ITSELF WROTE EARLIER. They are kept rather than replaced: a
+// container rebuilt from the Stellar base carries the CCTP wording, a container rebuilt from here
+// carries the Axelar/Wanchain wording, and both have to converge on the same end state. The entries
+// run in order, so an early key can hand its output to a later one within a single pass.
 const FAQ = [
   {
     match: 'How do I bridge assets',
     q: 'How do I bridge assets to or from the XRP Ledger?',
-    a: 'Not from this page yet. LumosCore currently shows which networks the XRP Ledger can reach '
-      + 'through Axelar and Wanchain; picking a route does not move anything, and nothing here will ask you to '
-      + 'approve a transaction. Bridging is still being built, and the page says so rather than '
-      + 'offering a button that looks like it works.',
+    a: 'Pick a destination and an amount, then review and sign one XRP Ledger payment. LumosCore '
+      + 'chooses the route for you: NEAR Intents and THORChain both quote XRP to most destinations '
+      + 'and whichever delivers more is the one used, while an Axelar interchain token you already '
+      + 'hold goes by Axelar. The route that will carry it is named on the review before you sign.',
   },
   {
     match: 'Do I have to claim',
     q: 'Do I have to claim anything on the other side?',
-    a: 'There is nothing to claim, because no transfer happens yet. The claim step you may have seen '
-      + 'belongs to Circle’s CCTP on the Stellar build, where an asset is burned on one chain and '
-      + 'redeemed on the other. Axelar and Wanchain routing do not work that way, and this answer will describe '
-      + 'the real steps once a route can actually be executed.',
+    a: 'No. All three routes deliver to the address you give, with no second signature and no gas '
+      + 'needed on arrival. That is different from Circle’s CCTP on the Stellar build, where an asset '
+      + 'is burned on one chain and you redeem it on the other; nothing here works that way.',
   },
   {
     match: 'What if I close the tab',
     q: 'What if I close the tab?',
-    a: 'Nothing is stranded, because nothing is in flight. Looking up routes is read-only — no funds '
-      + 'move and no transaction is signed, so there is no pending state to come back to.',
+    a: 'Once the payment is signed and submitted, the route carries it whether or not the page is '
+      + 'open — it is the XRP Ledger transaction that commits you, not the tab. If you close it '
+      + 'before signing, nothing has happened and nothing is owed. NEAR Intents refunds to the same '
+      + 'wallet that paid if a transfer cannot be completed.',
   },
+  // THREE KEYS, ONE ANSWER. This question has been rewritten twice before, so three different
+  // sentences can be sitting in a container depending on when it was last built — the inherited
+  // "What is Circle CCTP?", this transform's "What are Axelar and Wanchain?", and the current one.
+  // Each key writes the SAME final text rather than handing a placeholder to the next entry: a chain
+  // of rewrites only converges if every link runs, and the first version of this shipped a literal
+  // "placeholder" if the second key ever failed to match.
+  { match: 'What is Circle CCTP', q: ROUTES_Q, a: ROUTES_A },
+  { match: 'What are Axelar', q: ROUTES_Q, a: ROUTES_A },
+  { match: 'Which bridges does LumosCore use', q: ROUTES_Q, a: ROUTES_A },
   {
-    match: 'What is Circle CCTP',
-    q: 'What is Axelar?',
-    a: 'An interchain network that connects blockchains to each other. LumosCore asks it which '
-      + 'destinations are reachable from the XRP Ledger and lists them here. The list is fetched live '
-      + 'rather than written into the page, so it cannot go stale and offer a route that has since '
-      + 'been removed.',
-  },
-  {
-    // The question this transform wrote earlier. Rewritten again so it names both bridges; once it reads
-    // "What are Axelar and Wanchain?" neither this key nor the CCTP one matches, so a second run changes nothing.
-    match: 'What is Axelar',
-    q: 'What are Axelar and Wanchain?',
-    a: 'Two interchain networks that connect blockchains to each other. LumosCore lists every destination '
-      + 'Axelar reaches from the XRP Ledger, fetched live from its registry so it cannot go stale, together '
-      + 'with Wanchain, whose bridge carries XRP to its own chain.',
+    // LEFT ALONE UNTIL NOW BECAUSE IT WAS RIGHT. It no longer is: it said the XRP Ledger reaches "58
+    // other networks through Axelar" and that transfers were off. Both numbers and the claim were
+    // written for the route-discovery panel.
+    match: 'Which chains are supported',
+    q: 'Which chains are supported?',
+    a: 'Thirty-nine destinations. NEAR Intents reaches thirty-five of them — including Bitcoin, '
+      + 'Ethereum, Solana, Cardano, TON, Tron and Stellar — and carries XRP only. Axelar carries the '
+      + 'interchain tokens registered here, and reaches the XRPL EVM sidechain and Hedera, which '
+      + 'nothing else on this page does. THORChain adds Cosmos Hub. The lists are fetched live from '
+      + 'each network rather than written into the page, so none of them can go stale.',
   },
   {
     match: 'What are the cross-chain fees',
     q: 'What are the cross-chain fees?',
-    a: 'None today, because no transfer takes place. When bridging is enabled the platform fee is the '
-      + 'same as everywhere else on LumosCore: 0.2% of the amount, or 0.1% if you hold 250,000 LUMOS '
-      + 'or more. Each chain’s own network fee is separate and is paid to that chain, never to us.',
+    a: 'LumosCore takes 0.2% of the amount, or 0.1% if you hold 250,000 LUMOS or more — the same rate '
+      + 'as everywhere else on the site. Each route charges its own cost on top and each is shown '
+      + 'before you sign: NEAR Intents takes a solver fee, Axelar charges destination gas quoted in '
+      + 'XRP, and THORChain prices its swap into the amount you are quoted. The XRP Ledger’s own '
+      + 'transaction fee is a fraction of a drop and is paid to the ledger, never to us.',
   },
   {
     match: 'Can I bridge my own',
     q: 'Can I bridge my own XRP Ledger token?',
-    a: 'Not while transfers are off — no asset can be bridged from this page yet. Which assets a '
-      + 'route carries is decided by Axelar or Wanchain, so the honest answer for any particular token has to '
-      + 'wait until that route can be quoted.',
+    a: 'Only if Axelar has registered it as an interchain token — that route carries the assets on '
+      + 'its own registry, such as WETH, WBTC, USDC and SHX, and nothing else. NEAR Intents and '
+      + 'THORChain both take XRP alone. So an arbitrary issued token cannot be bridged from this '
+      + 'page, and the destination list narrows to Axelar’s the moment you select one that can.',
   },
 ];
 
@@ -98,7 +135,10 @@ function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-let files = 0, pages = 0, subs = 0, qas = 0, lds = 0;
+// `seen` is page keys this transform RECOGNISED; `pages` is the ones it had to change. They differ on
+// every re-run of a settled container, and telling them apart is what stops the warning below from
+// crying wolf once the copy is correct.
+let files = 0, pages = 0, seen = 0, subs = 0, qas = 0, lds = 0;
 
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
@@ -119,6 +159,7 @@ for (const dev of ['desktop', 'mobile']) {
     const hasHero = h.indexOf('br-hero') >= 0 || h.indexOf('Cross-Chain Bridge') >= 0;
     const hasFaq = h.indexOf('lx-faq-q') >= 0 && /CCTP|claimable|burn/i.test(h);
     if (!hasHero && !hasFaq) continue;
+    seen++;
     let touched = 0;
 
     // ---- subtitle ------------------------------------------------------------------------------
@@ -149,9 +190,14 @@ for (const dev of ['desktop', 'mobile']) {
         const qText = m[2].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
         const at = m.index;
         if (qText.indexOf(item.match) === 0) {
-          out += rest.slice(0, at) + m[1] + esc(item.q) + m[3] + m[4] + m[5] + esc(item.a) + m[7];
+          const rebuilt = m[1] + esc(item.q) + m[3] + m[4] + m[5] + esc(item.a) + m[7];
+          out += rest.slice(0, at) + rebuilt;
           rest = rest.slice(at + m[0].length);
-          qas++; touched++;
+          // COUNT CHANGES, NOT MATCHES. Several keys deliberately match the text this transform
+          // itself wrote, so a settled container still matches most of them — and the count then
+          // reported "35 FAQ answer(s)" on a run that produced byte-identical output. A re-run that
+          // looks like it rewrote the page is how a real idempotence bug gets waved through.
+          if (rebuilt !== m[0]) { qas++; touched++; }
           done = true;
         } else {
           out += rest.slice(0, at + m[0].length);
@@ -200,6 +246,7 @@ for (const dev of ['desktop', 'mobile']) {
   }
 }
 
-console.log('xrpl bridge copy: ' + pages + ' page key(s) across ' + files + ' container(s) — '
-  + subs + ' subtitle(s), ' + qas + ' FAQ answer(s), ' + lds + ' structured-data block(s)');
-if (!pages) console.error('  ! no bridge page matched — nothing was rewritten');
+console.log('xrpl bridge copy: ' + pages + ' of ' + seen + ' recognised page key(s) changed across '
+  + files + ' container(s) — ' + subs + ' subtitle(s), ' + qas + ' FAQ answer(s), '
+  + lds + ' structured-data block(s)');
+if (!seen) console.error('  ! no bridge or FAQ page matched at all — nothing was rewritten');
