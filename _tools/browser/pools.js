@@ -128,13 +128,12 @@
     });
   })();
 
+  // THE CACHED RATE, from xrpl-core. This used to retry three times and then give up with null, and
+  // null blanks every USD figure on the page -- all fifty rows' Liquidity, Volume and Fees at once,
+  // with the numbers themselves present in the response the whole time. The rate comes from xrpl.to
+  // at 333 requests a day per IP, so a refusal is ordinary rather than exceptional.
   function fetchUsd(tries) {
-    return fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
-      .then(function (t) { if (t && t.ok && +t.usd > 0) return +t.usd; throw new Error('retry'); })
-      .catch(function () {
-        if (!(tries > 0)) return null;
-        return new Promise(function (res) { setTimeout(res, 2000); }).then(function () { return fetchUsd(tries - 1); });
-      });
+    return (window.lxx && window.lxx.fetchUsd) ? window.lxx.fetchUsd(tries) : Promise.resolve(null);
   }
 
   function usdText(xrpAmount) {

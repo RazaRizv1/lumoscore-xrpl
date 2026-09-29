@@ -4225,10 +4225,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -5910,18 +5959,40 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         + USD_REAL.create + ' / $' + USD_REAL.liq + '. Restore USD in browser/launchpad.js.');
     }
 
+    // THE RATE, AND A CACHED ONE IF THIS CALL CANNOT GET IT.
+    //
+    // Without a rate the cost panel stays hidden for eight seconds and then shows four em dashes --
+    // the timeout above, which exists so the design's mock ("173.50 APT ≈ $25") can never be mistaken
+    // for a price. That is the right failure, but it is a bad experience for something as ordinary as
+    // a rate limit: this endpoint fronts xrpl.to, which allows 333 requests a day per IP.
+    //
+    // A rate from the last six hours is used only to QUOTE a cost in XRP, and the USD side of every
+    // row is recomputed from the same number, so the panel stays internally consistent whichever
+    // rate it used. It never invents one: no live rate and no cache still means dashes.
+    var useRate = function (v, cached) {
+      xrpUsd = v;
+      // The review page prices its fee and liquidity from the same rate this page quotes, so the
+      // number a user agreed to on the form is the number they are asked to send.
+      window.__lxxXrpUsd = v;
+      window.__lxxXrpUsdCached = !!cached;
+      paintCosts();
+      watchCosts();
+    };
     fetch('/lxapi/xrplprices')
       .then(function (r) { return r.json(); })
       .then(function (p) {
-        if (!p || !p.ok || !(p.usd > 0)) return;
-        xrpUsd = p.usd;
-        // The review page prices its fee and liquidity from the same rate this page quotes, so the
-        // number a user agreed to on the form is the number they are asked to send.
-        window.__lxxXrpUsd = p.usd;
-        paintCosts();
-        watchCosts();
+        if (p && p.ok && p.usd > 0) {
+          if (window.lxx && window.lxx.usdSave) window.lxx.usdSave(p.usd);
+          useRate(p.usd, false);
+          return;
+        }
+        var c = (window.lxx && window.lxx.usdCached) ? window.lxx.usdCached() : null;
+        if (c > 0) useRate(c, true);
       })
-      .catch(function () { /* no rate: the design's own figures stand */ })
+      .catch(function () {
+        var c = (window.lxx && window.lxx.usdCached) ? window.lxx.usdCached() : null;
+        if (c > 0) useRate(c, true);
+      })
       // Reserves are governance-settable and have been lowered twice, so they are read rather than
       // assumed. A failure here leaves the defaults above, which are today's values.
       .then(function () {
@@ -7031,10 +7102,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;

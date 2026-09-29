@@ -711,18 +711,40 @@
         + USD_REAL.create + ' / $' + USD_REAL.liq + '. Restore USD in browser/launchpad.js.');
     }
 
+    // THE RATE, AND A CACHED ONE IF THIS CALL CANNOT GET IT.
+    //
+    // Without a rate the cost panel stays hidden for eight seconds and then shows four em dashes --
+    // the timeout above, which exists so the design's mock ("173.50 APT ≈ $25") can never be mistaken
+    // for a price. That is the right failure, but it is a bad experience for something as ordinary as
+    // a rate limit: this endpoint fronts xrpl.to, which allows 333 requests a day per IP.
+    //
+    // A rate from the last six hours is used only to QUOTE a cost in XRP, and the USD side of every
+    // row is recomputed from the same number, so the panel stays internally consistent whichever
+    // rate it used. It never invents one: no live rate and no cache still means dashes.
+    var useRate = function (v, cached) {
+      xrpUsd = v;
+      // The review page prices its fee and liquidity from the same rate this page quotes, so the
+      // number a user agreed to on the form is the number they are asked to send.
+      window.__lxxXrpUsd = v;
+      window.__lxxXrpUsdCached = !!cached;
+      paintCosts();
+      watchCosts();
+    };
     fetch('/lxapi/xrplprices')
       .then(function (r) { return r.json(); })
       .then(function (p) {
-        if (!p || !p.ok || !(p.usd > 0)) return;
-        xrpUsd = p.usd;
-        // The review page prices its fee and liquidity from the same rate this page quotes, so the
-        // number a user agreed to on the form is the number they are asked to send.
-        window.__lxxXrpUsd = p.usd;
-        paintCosts();
-        watchCosts();
+        if (p && p.ok && p.usd > 0) {
+          if (window.lxx && window.lxx.usdSave) window.lxx.usdSave(p.usd);
+          useRate(p.usd, false);
+          return;
+        }
+        var c = (window.lxx && window.lxx.usdCached) ? window.lxx.usdCached() : null;
+        if (c > 0) useRate(c, true);
       })
-      .catch(function () { /* no rate: the design's own figures stand */ })
+      .catch(function () {
+        var c = (window.lxx && window.lxx.usdCached) ? window.lxx.usdCached() : null;
+        if (c > 0) useRate(c, true);
+      })
       // Reserves are governance-settable and have been lowered twice, so they are read rather than
       // assumed. A failure here leaves the defaults above, which are today's values.
       .then(function () {

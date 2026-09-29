@@ -4566,10 +4566,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -6910,10 +6959,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -7988,10 +8086,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -9409,10 +9556,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -10940,10 +11136,59 @@ function offerFor(side, token, amount, price) {
   return { TakerGets: tok, TakerPays: drops, Flags: TF_SELL };
 }
 
+// ---- the XRP/USD rate, with a cache -----------------------------------------------------------
+//
+// ONE FAILED CALL MUST NOT BLANK A PAGE OF MONEY. Eight browser files on this build ask
+// /lxapi/xrpltokens?n=1 for the rate, and not one of them remembered the answer. Every USD figure is
+// gated on it, so a single refusal takes the lot: measured on the live pools table 2026-09-29, all
+// fifty rows showed "—" for Liquidity, Volume and Fees while the endpoint's own data was sitting in
+// the response beside them, complete. A reload fixed it, which is exactly what makes it easy to miss.
+//
+// It is not a rare failure either. The rate comes from xrpl.to, which allows 333 requests per day per
+// IP -- a cap this session reached by itself -- and a 429 looks identical to an outage from here.
+//
+// Stellar hit this in the same shape and answered it the same way: lumos.xlmUsd, a last-good rate in
+// localStorage, read when the live call fails. This is that, for XRP. Six hours matches Stellar's
+// window (216e5): long enough to cover an outage, short enough that a stale rate cannot drift far
+// enough to matter for a headline figure -- and every page that can show a PRICE still quotes it
+// live rather than from here.
+const USD_KEY = 'lumos.xrpUsd';
+const USD_TTL = 216e5;
+
+function usdCached() {
+  try {
+    const c = JSON.parse(localStorage.getItem(USD_KEY) || 'null');
+    if (c && +c.v > 0 && (Date.now() - c.ts) < USD_TTL) return +c.v;
+  } catch (e) {}
+  return null;
+}
+function usdSave(v) {
+  if (+v > 0) { try { localStorage.setItem(USD_KEY, JSON.stringify({ v: +v, ts: Date.now() })); } catch (e) {} }
+  return +v || null;
+}
+// Retries, then the cache, then null. Callers keep their own "null means show a dash" behaviour --
+// this only makes null much rarer, and never invents a rate.
+function fetchUsd(tries) {
+  return fetch('/lxapi/xrpltokens?n=1')
+    .then(function (r) { return r.json(); })
+    .then(function (t) {
+      if (t && t.ok && +t.usd > 0) return usdSave(+t.usd);
+      throw new Error('retry');
+    })
+    .catch(function () {
+      if (tries > 0) {
+        return new Promise(function (res) { setTimeout(res, 2000); })
+          .then(function () { return fetchUsd(tries - 1); });
+      }
+      return usdCached();
+    });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
-  iouValue, TF_SELL, offerFor };
+  iouValue, TF_SELL, offerFor,
+  usdCached, usdSave, fetchUsd };
 
 // Dual environment on purpose: required by the tests in node, and injected verbatim into the page.
 if (typeof module !== 'undefined' && module.exports) module.exports = LXX;
@@ -11576,63 +11821,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   window.__lxxSearchRun = run;
 })();
 
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-nofollow">(function(){
-  var KEEP=[];
-  function own(h){
-    if(!h)return true;
-    if(h===location.host)return true;                       // covers localhost and the staging host
-    h=h.toLowerCase();
-    if(h==="lumoscore.com"||h.slice(-14)===".lumoscore.com")return true;
-    for(var i=0;i<KEEP.length;i++)if(h===KEEP[i])return true;
-    return false;
-  }
-  function stamp(a){
-    var raw=a.getAttribute("href");
-    if(!raw)return;
-    var c=raw.charAt(0);
-    if(c==="#"||c==="/"||c==="?")return;                    // relative: ours by definition
-    var u;
-    try{ u=new URL(a.href,location.href); }catch(_){ return; }
-    // mailto:, tel:, javascript: -- not links a crawler follows, and not ours to annotate
-    if(u.protocol!=="http:"&&u.protocol!=="https:")return;
-    if(own(u.host))return;
-    var rel=(a.getAttribute("rel")||"").split(" ");
-    var out=[],seen={};
-    for(var i=0;i<rel.length;i++){ var t=rel[i]; if(!t||seen[t])continue; seen[t]=1; out.push(t); }
-    if(seen.nofollow)return;                                // already done: no write, no mutation
-    out.push("nofollow");
-    if(!seen.noopener)out.push("noopener");
-    a.setAttribute("rel",out.join(" "));
-  }
-  function sweep(root){
-    var n=(root&&root.querySelectorAll)?root:document;
-    var list=n.querySelectorAll("a[href]");
-    for(var i=0;i<list.length;i++)stamp(list[i]);
-    // the root itself can BE the anchor when one is inserted on its own
-    if(root&&root.tagName==="A")stamp(root);
-  }
-  function boot(){
-    sweep(document);
-    try{
-      // childList for anchors that appear with their data; href for an anchor that is re-pointed
-      // later. NOT rel -- stamp() is idempotent so a rel mutation would be a wasted pass, and this
-      // observer must never react to its own write.
-      new MutationObserver(function(muts){
-        for(var i=0;i<muts.length;i++){
-          var m=muts[i];
-          if(m.type==="attributes"){ if(m.target)stamp(m.target); continue; }
-          for(var j=0;j<m.addedNodes.length;j++){
-            var nd=m.addedNodes[j];
-            if(nd.nodeType===1)sweep(nd);
-          }
-        }
-      }).observe(document.documentElement,
-        {childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
-    }catch(_){}
-  }
-  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
-  else boot();
-})();</script><script id="lx-xrpldashboxes">
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrpldashboxes">
 // The dashboard's four product cards, filled with real XRP Ledger figures.
 //
 // The CARDS THEMSELVES ARE NOT DRAWN HERE. They are build-time markup with twelve data-k slots, put
@@ -11831,5 +12020,61 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }).catch(function () {});
 })();
 
-</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad","lumoscore-home":"/dashboard","lumoscore-bridge":"/bridge","lumoscore-wallet":"/wallet","lumoscore-rewards":"/rewards","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp","lumoscore-list-token":"/list-your-token","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+</script><script id="lx-nofollow">(function(){
+  var KEEP=[];
+  function own(h){
+    if(!h)return true;
+    if(h===location.host)return true;                       // covers localhost and the staging host
+    h=h.toLowerCase();
+    if(h==="lumoscore.com"||h.slice(-14)===".lumoscore.com")return true;
+    for(var i=0;i<KEEP.length;i++)if(h===KEEP[i])return true;
+    return false;
+  }
+  function stamp(a){
+    var raw=a.getAttribute("href");
+    if(!raw)return;
+    var c=raw.charAt(0);
+    if(c==="#"||c==="/"||c==="?")return;                    // relative: ours by definition
+    var u;
+    try{ u=new URL(a.href,location.href); }catch(_){ return; }
+    // mailto:, tel:, javascript: -- not links a crawler follows, and not ours to annotate
+    if(u.protocol!=="http:"&&u.protocol!=="https:")return;
+    if(own(u.host))return;
+    var rel=(a.getAttribute("rel")||"").split(" ");
+    var out=[],seen={};
+    for(var i=0;i<rel.length;i++){ var t=rel[i]; if(!t||seen[t])continue; seen[t]=1; out.push(t); }
+    if(seen.nofollow)return;                                // already done: no write, no mutation
+    out.push("nofollow");
+    if(!seen.noopener)out.push("noopener");
+    a.setAttribute("rel",out.join(" "));
+  }
+  function sweep(root){
+    var n=(root&&root.querySelectorAll)?root:document;
+    var list=n.querySelectorAll("a[href]");
+    for(var i=0;i<list.length;i++)stamp(list[i]);
+    // the root itself can BE the anchor when one is inserted on its own
+    if(root&&root.tagName==="A")stamp(root);
+  }
+  function boot(){
+    sweep(document);
+    try{
+      // childList for anchors that appear with their data; href for an anchor that is re-pointed
+      // later. NOT rel -- stamp() is idempotent so a rel mutation would be a wasted pass, and this
+      // observer must never react to its own write.
+      new MutationObserver(function(muts){
+        for(var i=0;i<muts.length;i++){
+          var m=muts[i];
+          if(m.type==="attributes"){ if(m.target)stamp(m.target); continue; }
+          for(var j=0;j<m.addedNodes.length;j++){
+            var nd=m.addedNodes[j];
+            if(nd.nodeType===1)sweep(nd);
+          }
+        }
+      }).observe(document.documentElement,
+        {childList:true,subtree:true,attributes:true,attributeFilter:["href"]});
+    }catch(_){}
+  }
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
+  else boot();
+})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad","lumoscore-home":"/dashboard","lumoscore-bridge":"/bridge","lumoscore-wallet":"/wallet","lumoscore-rewards":"/rewards","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp","lumoscore-list-token":"/list-your-token","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>
