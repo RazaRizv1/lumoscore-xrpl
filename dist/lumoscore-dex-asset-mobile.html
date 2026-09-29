@@ -10098,6 +10098,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     try {
       var d0 = window.__lxxAssetData, a0 = window.__lxxAssetRef;
       var usdPerXrp = (d0 && d0.price && d0.usd) ? d0.usd / d0.price : 0;
+      // THIS PAGE LEARNS THE XRP/USD RATE FOR FREE, from the asset payload it already has, so it
+      // feeds the shared cache rather than keeping it. Every other page gates its USD figures on one
+      // metered call to xrpl.to (333/day/IP), and a visit here warms that cache for all of them.
+      if (usdPerXrp > 0 && window.lxx && window.lxx.usdSave) window.lxx.usdSave(usdPerXrp);
       c.host.__lxpts = pts.map(function (p) {
         return { t: p[0], v: CH_VIEW.vs === 'USD' ? p[1] : p[1] * usdPerXrp, vol: isFinite(p[5]) ? p[5] : 0 };
       });
@@ -11526,7 +11530,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     Promise.all([
       fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(asset.issuer)).then(function (r) { return r.json(); }),
-      fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); }).catch(function () { return null; })
+      // Through the shared helper: it saves a good rate and falls back to the last one when the call
+      // is refused. Without it a 429 dropped this tab's pool figures from dollars to raw XRP.
+      (window.lxx && window.lxx.fetchUsd) ? window.lxx.fetchUsd(1).then(function (u) { return { ok: 1, usd: u }; })
+        : fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); }).catch(function () { return null; })
     ]).then(function (both) {
       var d = both[0], t = both[1];
       var usd = (t && t.ok && +t.usd > 0) ? +t.usd : null;
