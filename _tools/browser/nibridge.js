@@ -1208,6 +1208,24 @@
     var amt = amountXrp(), n = netDrops(amt);
     var sym = SRC ? SRC.symbol : 'XRP';
     var set = function (sel, txt) { var e = $(sel); if (e && e.textContent !== txt) e.textContent = txt; };
+    // A FIGURE IS NOT ERASED WHILE ITS REPLACEMENT IS BEING FETCHED.
+    //
+    // Advancing to review re-quotes -- correctly, because a quote goes stale and the freshest number
+    // belongs on the screen where someone commits. But the re-quote nulls QUOTE/THQ/AXQ first, so the
+    // review painted "You receive —", "Route —", "Estimated time —" for about a second and a half
+    // before the new answer landed. Dashes on a confirmation screen read as "this transfer has no
+    // value and no route", which is the wrong thing to show someone a moment before they sign.
+    //
+    // While a quote is in flight the last figures stay put. That is safe because the CTA is on
+    // "Quoting…" and cannot be pressed, and because a refusal still clears them: `keep` only defers
+    // the placeholder, it never suppresses a real answer.
+    var keep = function (sel, txt) {
+      if (QUOTING && !QUOTE && !THQ && !AXQ) {
+        var e0 = $(sel);
+        if (e0 && e0.textContent && e0.textContent !== '—' && e0.textContent.indexOf('—') !== 0) return;
+      }
+      set(sel, txt);
+    };
     set('[data-rv="send"]', amt ? (fmt(amt, 6) + ' ' + sym) : ('0 ' + sym));
     if (AXQ) {
       // Same asset in and out; what changes is the amount.
@@ -1215,7 +1233,7 @@
     } else if (BEST === 'th' && THQ) {
       set('[data-rv="recv"]', fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8) + ' ' + THQ.symbol);
     } else {
-      set('[data-rv="recv"]', q ? (fmt(q.amountOutFormatted, 6) + ' ' + DEST.token.symbol)
+      keep('[data-rv="recv"]', q ? (fmt(q.amountOutFormatted, 6) + ' ' + DEST.token.symbol)
         : ('— ' + (DEST && DEST.token ? DEST.token.symbol : '')));
     }
     set('[data-rv="sendnet"]', 'XRP Ledger');
@@ -1236,19 +1254,71 @@
         f.textContent = amt ? (fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)') : '—';
       }
     }
-    var t = $('[data-rv="eta"]');
-    if (t) {
-      t.textContent = AXQ ? 'a few minutes'
-        : (BEST === 'th' && THQ && THQ.seconds != null) ? ('~' + THQ.seconds + 's')
-        : (q && q.timeEstimate) ? ('~' + q.timeEstimate + 's') : '—';
-    }
+    keep('[data-rv="eta"]', AXQ ? 'a few minutes'
+      : (BEST === 'th' && THQ && THQ.seconds != null) ? ('~' + THQ.seconds + 's')
+      : (q && q.timeEstimate) ? ('~' + q.timeEstimate + 's') : '—');
     // Which route is carrying this, said plainly. Three routes behind one wizard means the page is
     // making a choice, and a reader is entitled to know which.
-    var rv = $('[data-rv="route"]');
-    if (rv) {
-      rv.textContent = AXQ ? 'Axelar' : BEST === 'th' ? 'THORChain'
-        : BEST === 'ni' ? 'NEAR Intents' : '—';
-    }
+    keep('[data-rv="route"]', AXQ ? 'Axelar' : BEST === 'th' ? 'THORChain'
+      : BEST === 'ni' ? 'NEAR Intents' : '—');
+    paintReviewLegs();
+  }
+
+  // THE REVIEW'S LOGOS, BOTH SLOTS ON BOTH LEGS.
+  //
+  // Each .br-rv-leg has two icon slots: .ic.lx-rvnet for the NETWORK and a bare .ic for the ASSET.
+  // Nothing in this build was filling the asset slots, so they still held what the design baked in --
+  // and on the receive leg that is a hardcoded XRP mark. Bridging to Cosmos Hub showed an XRP logo
+  // beside the words "4.157246 ATOM", on the last screen before a signature. Same failure as the
+  // step-2 label bug, one screen later and with the money committed.
+  //
+  // The network slots were being filled, by an INHERITED Stellar script (lx-bridge3js) that copies
+  // innerHTML out of the source wallet chip and the destination trigger. On the send leg that chip
+  // holds the XRP TOKEN logo here, so it was putting a token mark in a network slot. That script is
+  // stripped at build now: it was a second writer for nodes this file has to own anyway, and two
+  // layers painting one wizard is how this page came to offer routes it did not have.
+  function paintReviewLegs() {
+    var s3 = $('.br-step[data-step="3"]');
+    if (!s3) return;
+    var legs = s3.querySelectorAll('.br-rv-leg');
+    if (legs.length < 2) return;
+    var key = destChain();
+    var place = key && PLACES[key] ? PLACES[key].label : '';
+    // What ARRIVES, by the same rule paintDestAsset uses -- never assumed to be what was sent.
+    var recvSym = '';
+    if (AXQ) recvSym = SRC ? SRC.symbol : '';
+    else if (BEST === 'th' && THQ) recvSym = THQ.symbol;
+    else if (DEST && DEST.token) recvSym = DEST.token.symbol;
+
+    var put = function (host, src, fallback) {
+      if (!host) return;
+      host.setAttribute('data-logo', '');
+      host.setAttribute('data-logoed', '1');
+      if (!src) { if (fallback) markLetters(host, fallback); return; }
+      var img = host.querySelector('img.lx-rvimg');
+      if (!img) {
+        host.textContent = '';
+        img = document.createElement('img');
+        img.className = 'lx-rvimg';
+        img.alt = '';
+        img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover;display:block';
+        host.appendChild(img);
+      }
+      if (img.getAttribute('src') !== src) img.src = src;
+    };
+    var slots = function (leg) {
+      var all = leg.querySelectorAll('.v .ic');
+      var net = leg.querySelector('.v .ic.lx-rvnet');
+      var asset = null;
+      for (var i = 0; i < all.length; i++) if (all[i] !== net) { asset = all[i]; break; }
+      return { net: net, asset: asset };
+    };
+
+    var a = slots(legs[0]), b = slots(legs[1]);
+    put(a.net, netFile('XRP Ledger'), 'XRP');
+    put(a.asset, SRC ? symLogo(SRC.symbol) : '', SRC ? SRC.symbol : '');
+    put(b.net, netFile(place), place);
+    put(b.asset, symLogo(recvSym), recvSym);
   }
 
   // ---- the ROUTE panel -----------------------------------------------------------------------------
@@ -1390,6 +1460,212 @@
     BEST = r;
     paintQuote(BEST === 'ni' ? QUOTE : null, '');
   }, true);
+
+  // ---- recent transactions -------------------------------------------------------------------------
+  //
+  // THREE WRITERS AND NO READER. Every send already recorded itself into localStorage --
+  // lumos.ni.txs, lumos.ax.txs, lumos.th.txs -- and nothing ever read them back. The table under the
+  // wizard was inherited markup with an empty <tbody>: a heading, a header row, and permanent
+  // silence. A user could bridge, see "Sent", scroll down, and find no trace of it.
+  //
+  // It also had the wrong COLUMNS for a page with three routes. The inherited header is
+  // Time / Source address / Destination address / From / To / Explorer -- no "Bridge used", which is
+  // the one column this build needs more than Stellar's does, because here the route is chosen for
+  // you and the record is the only place that says which one carried it.
+  //
+  // The chip classes below are the design's own (.br-asschip, .am, .nt, .lx-buse, .br-xplink, and the
+  // .brm-txc card on phones). Measured before using them: the container already ships 21 rules for
+  // them, inherited with the base -- so these rows are styled by the same stylesheet Stellar's are,
+  // including in dark mode and on mobile, with nothing new to maintain.
+  var TX_PER = 25, TX_PAGE = 1;
+  var TX_META = { ni: 'NEAR Intents', ax: 'Axelar', th: 'THORChain' };
+  var TX_MARK = { ni: 'nearintents', ax: 'axelar', th: 'thorchain' };
+
+  // ONE SHAPE OUT OF THREE. The stores grew separately and none of them agrees with another: Axelar
+  // writes {sym, sent, delivered, chain}, THORChain {asset:"GAIA.ATOM", sent, expected}, NEAR Intents
+  // {inAmt, out, sym, chain, status}. Normalising here rather than branching in the renderer is what
+  // keeps "what arrived" from being read off the wrong field for one route -- the same mistake that
+  // put "4.137837 XRP" under a figure that was ATOM.
+  function txRecords() {
+    var read = function (k) { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } };
+    var out = [];
+    read('lumos.ni.txs').forEach(function (r) {
+      out.push({ at: r.at, hash: r.hash, route: 'ni', sent: r.inAmt, sentSym: 'XRP',
+        recv: r.out, recvSym: r.sym, place: NI_CHAIN[r.chain] || r.chain || '',
+        to: r.to || '', status: r.status || '' });
+    });
+    read('lumos.ax.txs').forEach(function (r) {
+      // Axelar hands the same asset out the other side, so sent and received share a symbol.
+      out.push({ at: r.at, hash: r.hash, route: 'ax', sent: r.sent, sentSym: r.sym,
+        recv: r.delivered, recvSym: r.sym, place: AX_NAME[r.chain] || r.chain || '',
+        to: r.to || '', status: '' });
+    });
+    read('lumos.th.txs').forEach(function (r) {
+      var p = String(r.asset || '').split('.');
+      out.push({ at: r.at, hash: r.hash, route: 'th', sent: r.sent, sentSym: 'XRP',
+        recv: r.expected, recvSym: p[1] || '', place: TH_NAME[p[0]] || p[0] || '',
+        to: r.to || '', status: '' });
+    });
+    return out.filter(function (r) { return r && r.hash; })
+      .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+  }
+
+  function txWhen(ts) {
+    var s = Math.max(0, Math.round((Date.now() - (ts || 0)) / 1000));
+    if (s < 60) return 'Just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' hr ago';
+    var d = Math.floor(s / 86400);
+    return d + (d === 1 ? ' day ago' : ' days ago');
+  }
+
+  // The asset's logo with its network's mark in the corner, the way the design draws it everywhere
+  // else. `data-logo=""`/`data-logoed="1"` on the wrapper because these ARE short-text elements on a
+  // rounded chip, which is exactly what the logo healer hunts.
+  function txChip(sym, place) {
+    var a = symLogo(sym);
+    var n = netFile(place);
+    return '<span class="br-asschip">'
+      + '<span class="br-ic lx-netic" data-logo="" data-logoed="1">'
+      + (a ? ('<img loading="lazy" decoding="async" src="' + esc2(a) + '" alt="">') : '')
+      + '</span><span><span class="am">' + esc2(sym || '') + '</span>'
+      + '<span class="nt">' + esc2(place || '') + '</span></span></span>';
+  }
+  function txAmt(v, sym, place) {
+    var n = Number(v);
+    var shown = isFinite(n) ? fmt(n, (n > 0 && n < 1) ? 8 : 6) : '—';
+    return '<span class="br-asschip">'
+      + '<span class="br-ic lx-netic" data-logo="" data-logoed="1">'
+      + (symLogo(sym) ? ('<img loading="lazy" decoding="async" src="' + esc2(symLogo(sym)) + '" alt="">') : '')
+      + '</span><span><span class="am">' + shown + ' ' + esc2(sym || '') + '</span>'
+      + '<span class="nt">' + esc2(place || '') + '</span></span></span>';
+  }
+  var XP_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path>'
+    + '<path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6">'
+    + '</path></svg>';
+  // BITHOMP, ON THE HASH WE ACTUALLY HAVE. The link goes to the XRP Ledger payment the user signed --
+  // the one transaction this page knows the hash of and can be sure exists. The routes have their own
+  // trackers, and they are deliberately NOT linked here: none of them was tested against a real
+  // transfer, and a confident link to a 404 is worse on a money page than no link at all.
+  function txExplorer(hash) {
+    return 'https://bithomp.com/explorer/' + encodeURIComponent(hash);
+  }
+  function txRoute(r) {
+    var m = TX_MARK[r.route], n = TX_META[r.route] || r.route;
+    return '<span class="lx-buse-r">'
+      + (NET_HAVE[m] ? ('<img src="/assets/networks/' + m + '.png?v=' + ICONV + '" alt="" '
+        + 'style="width:18px;height:18px;border-radius:50%;object-fit:cover;display:inline-block;vertical-align:-4px;margin-right:6px">') : '')
+      + '<span>' + esc2(n) + '</span></span>';
+  }
+  // Only NEAR Intents reports one, and only it can: it polls a status endpoint. A blank cell for the
+  // other two is honest -- once their payment is on the ledger, neither route tells us any more.
+  function txStatus(r) {
+    if (!r.status || r.status === 'PENDING_DEPOSIT') return '';
+    var ok = r.status === 'SUCCESS';
+    var bad = r.status === 'FAILED' || r.status === 'REFUNDED';
+    var label = ok ? 'Delivered' : (r.status === 'REFUNDED' ? 'Refunded'
+      : r.status === 'FAILED' ? 'Failed' : 'Processing');
+    var col = ok ? '#0f9257' : bad ? '#ef4444' : 'var(--text-soft)';
+    return '<span style="margin-left:8px;font-size:11px;font-weight:600;color:' + col + '">' + label + '</span>';
+  }
+
+  var TX_HEAD = '<tr><th>Time</th><th>From</th><th>Source address</th><th>To</th>'
+    + '<th>Destination address</th><th>Bridge used</th>'
+    + '<th class="br-xph" aria-label="Explorer"></th></tr>';
+
+  function paintTxs() {
+    var all = txRecords();
+    var pages = Math.max(1, Math.ceil(all.length / TX_PER));
+    if (TX_PAGE > pages) TX_PAGE = pages;
+    var slice = all.slice((TX_PAGE - 1) * TX_PER, TX_PAGE * TX_PER);
+    var me = addr();
+
+    // ---- desktop table ----
+    var tbl = $('.br-table');
+    if (tbl) {
+      var thead = tbl.querySelector('thead');
+      if (thead && thead.innerHTML !== TX_HEAD) thead.innerHTML = TX_HEAD;
+      var tb = tbl.querySelector('tbody');
+      if (tb) {
+        var h = '';
+        if (!all.length) {
+          // AN EMPTY TABLE IS NOT AN EMPTY STATE. It was a header row over nothing, which reads as a
+          // page that failed to load rather than one with no history yet.
+          h = '<tr><td colspan="7" style="padding:26px 12px;text-align:center;color:var(--text-soft)">'
+            + 'No transfers from this browser yet. Bridge something and it will be listed here.</td></tr>';
+        } else {
+          slice.forEach(function (r) {
+            h += '<tr>'
+              + '<td>' + esc2(txWhen(r.at)) + '</td>'
+              + '<td>' + txAmt(r.sent, r.sentSym, 'XRP Ledger') + '</td>'
+              + '<td class="mono">' + (me ? ('<a class="lx-txaddr" href="https://bithomp.com/explorer/'
+                + encodeURIComponent(me) + '" target="_blank" rel="noopener">' + esc2(short(me)) + '</a>') : '—') + '</td>'
+              + '<td>' + txAmt(r.recv, r.recvSym, r.place) + txStatus(r) + '</td>'
+              + '<td class="mono">' + (r.to ? esc2(short(r.to)) : '—') + '</td>'
+              + '<td class="lx-buse">' + txRoute(r) + '</td>'
+              + '<td class="br-xp"><a class="br-xplink" href="' + esc2(txExplorer(r.hash))
+              + '" target="_blank" rel="noopener" aria-label="View on Bithomp" '
+              + 'title="View this payment on Bithomp">' + XP_ICON + '</a></td>'
+              + '</tr>';
+          });
+        }
+        if (tb.innerHTML !== h) tb.innerHTML = h;
+      }
+      // ---- pager, only when there is a second page to go to ----
+      var wrap = tbl.parentNode;
+      var pg = wrap && wrap.querySelector('.lx-txpager');
+      if (pages > 1) {
+        if (!pg) {
+          pg = document.createElement('div');
+          pg.className = 'lx-txpager';
+          pg.style.cssText = 'display:flex;align-items:center;gap:8px;justify-content:flex-end;'
+            + 'padding:12px 4px 0;font:400 13px/1 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-soft)';
+          wrap.appendChild(pg);
+          pg.addEventListener('click', function (e) {
+            var b = e.target.closest && e.target.closest('[data-txpage]');
+            if (!b) return;
+            e.preventDefault();
+            TX_PAGE = Number(b.getAttribute('data-txpage')) || 1;
+            paintTxs();
+          });
+        }
+        var ph = '<span style="margin-right:auto">Showing ' + (((TX_PAGE - 1) * TX_PER) + 1) + '–'
+          + Math.min(TX_PAGE * TX_PER, all.length) + ' of ' + all.length + '</span>';
+        for (var i = 1; i <= pages; i++) {
+          ph += '<button type="button" data-txpage="' + i + '" style="min-width:28px;height:28px;'
+            + 'border-radius:8px;border:1px solid var(--border);cursor:pointer;font:inherit;'
+            + 'background:' + (i === TX_PAGE ? 'var(--accent,#ea6a2c)' : 'transparent') + ';'
+            + 'color:' + (i === TX_PAGE ? '#fff' : 'var(--text)') + '">' + i + '</button>';
+        }
+        if (pg.innerHTML !== ph) pg.innerHTML = ph;
+      } else if (pg) pg.remove();
+    }
+
+    // ---- phones: the design has no table, it has cards ----
+    var host = $('.lx-brmhost');
+    if (host) {
+      var mh = '';
+      if (!all.length) {
+        mh = '<div style="padding:22px 12px;text-align:center;color:var(--text-soft);font-size:13.5px">'
+          + 'No transfers from this browser yet.</div>';
+      } else {
+        slice.forEach(function (r) {
+          mh += '<div class="brm-txc lx-brmtx">'
+            + '<div class="brm-tr1"><span class="brm-tm">' + esc2(txWhen(r.at)) + '</span>'
+            + '<a class="br-xplink" style="margin-left:auto" href="' + esc2(txExplorer(r.hash))
+            + '" target="_blank" rel="noopener" title="View this payment on Bithomp">' + XP_ICON + '</a></div>'
+            + '<div class="brm-flow">' + txAmt(r.sent, r.sentSym, 'XRP Ledger')
+            + '<span class="br-ar">→</span>' + txAmt(r.recv, r.recvSym, r.place) + '</div>'
+            + (r.to ? ('<div class="brm-recv">To ' + esc2(short(r.to)) + ' · via ' + txRoute(r) + '</div>')
+              : ('<div class="brm-recv">via ' + txRoute(r) + '</div>'))
+            + '</div>';
+        });
+      }
+      if (host.innerHTML !== mh) host.innerHTML = mh;
+    }
+  }
+  window.__lxxPaintTxs = paintTxs;
 
   function paintSteps() {
     var s2 = $('.br-step[data-step="2"]');
@@ -1552,6 +1828,7 @@
           list.unshift({ at: Date.now(), hash: hash, route: 'axelar', chain: chain,
             sym: SRC.symbol, sent: typedRaw(), delivered: AXQ.delivered, to: to });
           localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
+          try { paintTxs(); } catch (_) {}
         } catch (e) {}
         say('Sent — Axelar is relaying it');
         busy = false;
@@ -1586,6 +1863,7 @@
         list.unshift({ at: Date.now(), hash: hash, route: 'thorchain', asset: THQ.asset,
           sent: amt, expected: Number(THQ.expected) / (THQ.e8 || 1e8), to: recipient() });
         localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
+          try { paintTxs(); } catch (_) {}
       } catch (e) {}
       say('Sent — THORChain is swapping it');
       busy = false;
@@ -1683,10 +1961,13 @@
     try {
       var k = 'lumos.ni.txs';
       var list = JSON.parse(localStorage.getItem(k) || '[]');
+      // `to` was missing here and present in the other two stores, so a NEAR Intents row in the
+      // history had no destination address to show -- on the widest of the three routes.
       list.unshift({ at: Date.now(), hash: r.hash, dep: r.q.depositAddress,
-        inAmt: r.q.amountInFormatted, out: r.q.amountOutFormatted,
+        inAmt: r.q.amountInFormatted, out: r.q.amountOutFormatted, to: recipient(),
         sym: DEST.token.symbol, chain: DEST.chain, status: 'PENDING_DEPOSIT' });
       localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
+          try { paintTxs(); } catch (_) {}
     } catch (e) {}
   }
 
@@ -1710,6 +1991,9 @@
       for (var i = 0; i < list.length; i++) if (list[i].dep === dep) list[i].status = st;
       localStorage.setItem(k, JSON.stringify(list));
     } catch (e) {}
+    // The row already on screen says "Processing"; this is the moment it becomes Delivered, Refunded
+    // or Failed, and it is the only status any of the three routes reports back.
+    try { paintTxs(); } catch (_) {}
   }
 
   // ---- boot ----------------------------------------------------------------------------------------
@@ -1783,8 +2067,10 @@
     }
 
     // Before anything is fetched: the artwork is shipped, so the marks can be right on the first
-    // paint rather than after two registries have answered.
+    // paint rather than after two registries have answered. The history is local, so it can be drawn
+    // now too -- it does not depend on a single registry answering.
     paintOptionCss();
+    try { paintTxs(); } catch (_) {}
 
     // BOTH REGISTRIES, and the page waits for both before deciding what it offers. Settling them
     // separately would paint a destination list from one route and then rebuild it when the other

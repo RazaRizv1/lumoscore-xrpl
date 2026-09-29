@@ -126,7 +126,15 @@ for (const dev of ['desktop', 'mobile']) {
     const before = h;
 
     // Both the CCTP layer (in case this runs on a fresh container) and the Axelar layer this replaces.
-    for (const id of ['lx-cctp-js', OLD, ID]) {
+    //
+    // `lx-bridge3js` joins them, and it is the subtlest of the three. It is Stellar build output that
+    // fills the REVIEW legs' network icons by copying innerHTML out of the source wallet chip and the
+    // destination trigger. On this build the source chip carries the XRP TOKEN logo, so it kept
+    // putting a token mark into a network slot -- and it never touched the ASSET slots at all, which
+    // is why a transfer to Cosmos Hub showed a hardcoded XRP mark beside "4.157246 ATOM". The bridge
+    // client paints all four slots itself; leaving this in place would be a second writer racing it
+    // on a 250ms interval.
+    for (const id of ['lx-cctp-js', 'lx-bridge3js', OLD, ID]) {
       const gone = stripById(h, id);
       h = gone.html;
       if (id !== ID) stripped += gone.removed;
