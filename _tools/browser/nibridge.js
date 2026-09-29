@@ -98,6 +98,7 @@
   var AX = null;                    // {gateway, assets[], destinations[]}
   var AX_BY_SYM = {};
   var HOLD = {};                    // currency|issuer -> balance the wallet actually holds
+  var LINES = [];                   // every funded trust line, so the picker can name what it cannot carry
   var SRC = null;                   // the chosen source asset (XRP or an ITS IOU)
   var DEST = null;                  // {chain, token}  (token is the NI token, or null on Axelar)
   var AXQ = null;                   // the Axelar gas estimate for the current pair
@@ -324,22 +325,49 @@
     });
   }
 
+  // THE LEDGER, THE WAY EVERY OTHER CLIENT ON THIS BUILD READS IT.
+  //
+  // This used to GET /lxapi/xrplhistory?method=account_info&params=… -- and that endpoint is not an
+  // RPC proxy at all. It is "recent exchanges for one token", an xrpl.to trades feed that takes a
+  // token id, so every call answered HTTP 200 with {ok:true, error:"unknown token", rows:[]}.
+  //
+  // A 200 WITH AN ERROR INSIDE IT IS WHY THIS SURVIVED. `.catch()` never fired, `d.result` was simply
+  // undefined, and both callers treat that as "no data": XRP_SPEND became null and HOLD stayed empty.
+  // So the balance read "—" and the source picker offered XRP and nothing else -- on a wallet holding
+  // plenty of both. Two of the four things RAZA reported, from one wrong URL, with no error anywhere.
+  //
+  // xrplcluster.com is what account.js, wallet.js and createpool.js all use, and the shape they use:
+  // POST, params wrapped in an array, result unwrapped by the caller.
+  var RPC = 'https://xrplcluster.com/';
   function rpcB(method, params) {
-    return fetch('/lxapi/xrplhistory?method=' + encodeURIComponent(method)
-      + '&params=' + encodeURIComponent(JSON.stringify(params || {})))
-      .then(function (r) { return r.json(); });
+    return fetch(RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] }),
+    }).then(function (r) { return r.json(); });
   }
   function loadSpendable() {
     var me = addr();
     if (!me) { XRP_SPEND = null; return Promise.resolve(); }
-    return rpcB('account_info', { account: me, ledger_index: 'validated' })
-      .then(function (d) {
-        var acc = d && d.result && d.result.account_data;
+    // THE RESERVE IS READ FROM THE LEDGER, NOT ASSUMED. It was hardcoded at 1 XRP base + 0.2 per
+    // owned object -- today's schedule, and today's only: both figures were TEN TIMES higher before
+    // 2024 and are governance-settable by amendment. An understated reserve makes MAX offer more
+    // than the account can actually send, which is the same class of bug as Stellar's MAX button
+    // overstating a balance. server_info is one extra request on a page that already makes several.
+    return Promise.all([
+      rpcB('account_info', { account: me, ledger_index: 'validated' }),
+      rpcB('server_info', {}).catch(function () { return null; }),
+    ])
+      .then(function (r) {
+        var acc = r[0] && r[0].result && r[0].result.account_data;
         if (!acc) { XRP_SPEND = null; return; }
-        // The reserve is not spendable. 1 XRP base + 0.2 per owned object, which is the current
-        // mainnet schedule; xrpl-core owns this arithmetic elsewhere and this mirrors it.
+        var v = r[1] && r[1].result && r[1].result.info && r[1].result.info.validated_ledger;
+        var base = Number(v && v.reserve_base_xrp);
+        var inc = Number(v && v.reserve_inc_xrp);
+        if (!(base > 0)) base = 1;                       // the schedule as measured 2026-09-08
+        if (!(inc > 0)) inc = 0.2;
         var bal = fromDrops(acc.Balance);
-        var reserve = 1 + 0.2 * Number(acc.OwnerCount || 0);
+        var reserve = base + inc * Number(acc.OwnerCount || 0);
         XRP_SPEND = Math.max(0, bal - reserve);
       })
       .catch(function () { XRP_SPEND = null; });
@@ -357,10 +385,12 @@
     return rpcB('account_lines', { account: me, ledger_index: 'validated', limit: 400 })
       .then(function (d) {
         var lines = (d && d.result && d.result.lines) || [];
+        LINES = [];
         lines.forEach(function (l) {
           var bal = parseFloat(l.balance);
           if (!(bal > 0)) return;                        // a zero or negative line is not a holding
           HOLD[holdKey(l.currency, l.account)] = bal;
+          LINES.push({ currency: l.currency, issuer: l.account, balance: bal });
         });
       })
       .catch(function () {});
@@ -381,6 +411,35 @@
         currency: a.currency, issuer: a.issuer, balance: bal, ax: a });
     });
     return out;
+  }
+
+  // EVERYTHING ELSE THE WALLET HOLDS, named rather than hidden.
+  //
+  // Only XRP and the assets on Axelar's interchain registry can leave this ledger -- NEAR Intents and
+  // THORChain both carry XRP alone. So a wallet holding LUMOS and RLUSD saw a source picker with one
+  // entry, no caret and no explanation, and no way to tell whether the page had failed to load its
+  // balances or simply could not carry them. (It had ALSO failed to load them, which is the RPC bug
+  // fixed above, and from the outside the two were indistinguishable.)
+  //
+  // These are listed and disabled, each saying why. That is not the same as being able to bridge them
+  // -- doing that needs a DEX swap into XRP first, the way the Stellar build swaps a non-XLM source
+  // into USDC before handing it to a route -- but it replaces a silent limit with a stated one.
+  function otherHoldings() {
+    var known = {};
+    sourceAssets().forEach(function (a) { known[holdKey(a.currency, a.issuer)] = 1; });
+    // decodeCurrency returns { code, display, kind } -- NOT a string. Using its return value directly
+    // rendered "[object Object]" as the ticker and, via the letter fallback, a disc reading "OBJ" on
+    // every row. `kind` also answers the LP question without a second call: 'lp' is a pool share.
+    var dec = (window.lxx && window.lxx.decodeCurrency) || null;
+    return LINES.filter(function (l) { return !known[holdKey(l.currency, l.issuer)]; })
+      .map(function (l) {
+        var d = null;
+        try { d = dec ? dec(l.currency) : null; } catch (e) { d = null; }
+        var lp = !!(d && d.kind === 'lp');
+        var sym = (d && d.display) || String(l.currency).slice(0, 6);
+        return { symbol: lp ? 'Pool share' : sym, balance: l.balance, lp: lp };
+      })
+      .sort(function (a, b) { return b.balance - a.balance; });
   }
 
   // A DESTINATION IS A PLACE; THE ROUTE IS HOW YOU GET THERE. The two registries use different ids for
@@ -693,7 +752,12 @@
       nm.setAttribute('data-logo', '');
       nm.setAttribute('data-logoed', '1');
     }
-    setIcon(as.querySelector('.br-ic'), tokenLogo(DEST.token));
+    // THE SYMBOL IS PASSED AS THE FALLBACK, and its absence is what RAZA saw as "logo of destination
+    // network on step 2 is missing". setIcon draws letters only when it is GIVEN a name; called with
+    // one argument it returns having drawn nothing at all, so an asset with no shipped logo and a
+    // CoinGecko id that 404s from the edge left the slot completely empty -- not a grey disc, not a
+    // broken image, just a hole beside the ticker. XLM was exactly that case.
+    setIcon(as.querySelector('.br-ic'), tokenLogo(DEST.token), DEST.token.symbol);
     as.style.cursor = opts.length > 1 ? 'pointer' : '';
     if (!as.__lxxMenu) {
       as.__lxxMenu = 1;
@@ -722,7 +786,7 @@
       b.style.setProperty('display', 'flex', 'important');
       var ic = document.createElement('span');
       ic.className = 'brd-ic';
-      setIcon(ic, tokenLogo(t));
+      setIcon(ic, tokenLogo(t), t.symbol);       // letters, never an empty disc -- see paintDestAsset
       var nmx = document.createElement('span');
       nmx.className = 'brd-nm';
       nmx.setAttribute('data-logoed', '1');
@@ -774,12 +838,16 @@
       nm.setAttribute('data-logo', '');
       nm.setAttribute('data-logoed', '1');
     }
-    setIcon(as.querySelector('.br-ic'), SRC.native ? XRP_LOGO : '', SRC.symbol);
-    as.style.cursor = list.length > 1 ? 'pointer' : '';
+    setIcon(as.querySelector('.br-ic'), SRC.native ? symLogo(SRC.symbol) || XRP_LOGO : symLogo(SRC.symbol), SRC.symbol);
+    // OPENS WHENEVER THERE IS ANYTHING TO SAY, not only when there is a second thing to choose. A
+    // wallet holding LUMOS and RLUSD has one bridgeable asset and two that need explaining, and
+    // gating the caret on `list.length > 1` is what made that limit invisible.
+    var more = list.length > 1 || otherHoldings().length > 0;
+    as.style.cursor = more ? 'pointer' : '';
     if (!as.__lxxSrcMenu) {
       as.__lxxSrcMenu = 1;
       as.addEventListener('click', function (e) {
-        if (sourceAssets().length < 2) return;
+        if (sourceAssets().length < 2 && !otherHoldings().length) return;
         e.preventDefault(); e.stopPropagation(); toggleSrcMenu(as);
       });
     }
@@ -789,7 +857,8 @@
     var old = document.querySelector('.lx-srcmenu');
     if (old) { old.parentNode.removeChild(old); return; }
     var list = sourceAssets();
-    if (list.length < 2) return;
+    var other = otherHoldings();
+    if (list.length < 2 && !other.length) return;
     var wrap = document.createElement('div');
     wrap.className = 'brd open lx-srcmenu';
     wrap.style.cssText = 'position:absolute;z-index:60;left:0;top:calc(100% + 6px);min-width:250px';
@@ -803,7 +872,7 @@
       b.style.setProperty('display', 'flex', 'important');
       var ic = document.createElement('span');
       ic.className = 'brd-ic';
-      setIcon(ic, a.native ? XRP_LOGO : '', a.symbol);
+      setIcon(ic, symLogo(a.symbol) || (a.native ? XRP_LOGO : ''), a.symbol);
       var nmx = document.createElement('span');
       nmx.className = 'brd-nm';
       nmx.setAttribute('data-logo', '');
@@ -819,6 +888,42 @@
       });
       menu.appendChild(b);
     });
+
+    // WHAT THIS WALLET HOLDS THAT NO ROUTE CARRIES, under a heading that says so. Disabled, because
+    // they cannot be bridged -- but present, because a balance the page can see and will not name is
+    // indistinguishable from a page that failed to load it.
+    if (other.length) {
+      var hd = document.createElement('div');
+      hd.setAttribute('data-logoed', '1');
+      hd.style.cssText = 'padding:10px 12px 6px;font:700 10.5px/1 "Hanken Grotesk",system-ui,sans-serif;'
+        + 'letter-spacing:.08em;text-transform:uppercase;color:var(--text-soft);'
+        + 'border-top:1px solid var(--border);margin-top:6px';
+      hd.textContent = 'No route carries these';
+      menu.appendChild(hd);
+      other.forEach(function (o) {
+        var b2 = document.createElement('button');
+        b2.type = 'button';
+        b2.className = 'brd-opt lx-srcopt';
+        b2.disabled = true;
+        b2.style.setProperty('display', 'flex', 'important');
+        b2.style.opacity = '.5';
+        b2.style.cursor = 'default';
+        b2.title = o.lp
+          ? 'A pool share, not a transferable asset'
+          : o.symbol + ' is not on Axelar’s interchain registry, and NEAR Intents and THORChain carry XRP only';
+        var ic2 = document.createElement('span');
+        ic2.className = 'brd-ic';
+        setIcon(ic2, symLogo(o.symbol), o.symbol);
+        var nm2 = document.createElement('span');
+        nm2.className = 'brd-nm';
+        nm2.setAttribute('data-logo', '');
+        nm2.setAttribute('data-logoed', '1');
+        nm2.textContent = o.symbol + '  ' + fmt(o.balance, 6);
+        b2.appendChild(ic2); b2.appendChild(nm2);
+        menu.appendChild(b2);
+      });
+    }
+
     wrap.appendChild(menu);
     var host = as.parentNode;
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
@@ -1373,6 +1478,11 @@
         else o.state = QUOTING ? 'wait' : 'none';
       }
       // ITS OWN ANSWER, never the last one anybody gave.
+      // NOTHING TYPED YET IS NOT A REFUSAL. Landing on step 2 with an empty amount used to mark every
+      // route disabled and print "No quote for this amount." under it -- so the first thing the page
+      // said about its routes was that none of them worked, before being asked anything. Stellar
+      // shows the route selected and waiting. `idle` is that state: enabled, chosen, no figures yet.
+      if (o.state === 'none' && !amountXrp()) o.state = 'idle';
       if (o.state === 'none') o.error = NOTE[r] || 'No quote for this amount.';
       return o;
     });
@@ -1401,9 +1511,17 @@
     if (!rows.length) { panel.hidden = true; return; }
     panel.hidden = false;
 
+    // WHICH CARD IS MARKED, which is a DISPLAY question and not the same as which route will carry
+    // the transfer. BEST is the executable choice and stays empty until something has been quoted;
+    // using it here left the panel with nothing selected on arrival. The first candidate is shown
+    // instead, so the page always says what it intends to use -- and because this is display only,
+    // it cannot make the page send by a route that was never priced.
+    var usable = rows.filter(function (x) { return x.state !== 'none'; });
+    var shown = BEST || (usable[0] && usable[0].route) || '';
+
     var h = '';
     rows.forEach(function (o) {
-      var sel = o.route === BEST;
+      var sel = o.route === shown;
       var dis = o.state === 'none';
       h += '<button type="button" class="lx-brr" data-lxroutepick="' + o.route + '"'
         + (dis ? ' disabled' : '') + ' aria-pressed="' + (sel ? 'true' : 'false') + '">'
@@ -1415,14 +1533,20 @@
       // The tag names WHY this one, and only where that is a fact rather than a slogan: it appears on
       // the chosen route when a rival actually answered too, so "BEST PRICE" always means it beat
       // something. A badge on a route that was the only option would be marketing.
+      // "Best price" only once it has actually beaten something; "In use" once a quote exists;
+      // "Ready" before an amount is typed, because nothing is in use yet and saying so would be a
+      // claim about a transfer that has not been priced.
       if (sel && rows.length > 1 && rows.filter(function (x) { return x.state === 'ok'; }).length > 1) {
         h += '<span class="lx-brr-tag">Best price</span>';
+      } else if (sel && o.state === 'idle') {
+        h += '<span class="lx-brr-tag">Ready</span>';
       } else if (sel) {
         h += '<span class="lx-brr-tag">In use</span>';
       }
       h += '</div>';
       if (o.state === 'none') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
       else if (o.state === 'wait') h += '<span class="lx-brr-soon">Quoting…</span>';
+      else if (o.state === 'idle') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">Enter an amount to price this route.</div>';
       h += '<' + '/button>';
     });
     if (host.innerHTML !== h) host.innerHTML = h;
