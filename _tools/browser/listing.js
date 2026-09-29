@@ -73,6 +73,43 @@
     });
     var to = $('#ltTo');
     if (to) { to.textContent = COLLECTOR; to.setAttribute('title', COLLECTOR); }
+
+    // THE FORM CONTROLS ARE NOT PROSE, and the walk above only reaches text nodes inside the blocks
+    // listed in BLOCKS. So the two fields a person actually fills in were still Stellar's:
+    //
+    //   <select id="ltNet"> carried exactly ONE option, `stellar | Stellar` — the network picker on
+    //   an XRP Ledger site offering only the other chain, above a sentence saying LumosCore curates
+    //   on the XRP Ledger today.
+    //
+    //   <input id="ltIssuer" placeholder="G…"> — G is STELLAR's address prefix. XRPL issuers start
+    //   with r, so the field was prompting for an address of the wrong shape entirely, on the one
+    //   input where a wrong value cannot be recovered from later.
+    //
+    // Nothing is submitted from this page yet (see the header), so neither had reached a record --
+    // but both are read by anyone filling the form in, and the placeholder is the kind of hint people
+    // copy the shape of.
+    var net = $('#ltNet');
+    if (net && net.tagName === 'SELECT') {
+      var opts = net.options || [];
+      var hasXrpl = false;
+      for (var i = 0; i < opts.length; i++) {
+        if (String(opts[i].value).toLowerCase() === 'xrpl') { hasXrpl = true; break; }
+      }
+      if (!hasXrpl) {
+        // Rewritten in place rather than replaced: the design owns this control, and a fresh <select>
+        // would lose whatever styling and listeners it ships with.
+        for (var j = opts.length - 1; j >= 0; j--) net.remove(j);
+        var o = document.createElement('option');
+        o.value = 'xrpl';
+        o.textContent = 'XRP Ledger';
+        net.appendChild(o);
+      }
+      net.value = 'xrpl';
+    }
+    var iss = $('#ltIssuer');
+    if (iss && /^G/.test(iss.getAttribute('placeholder') || '')) {
+      iss.setAttribute('placeholder', 'r…');
+    }
   }
 
   // The live rate, from the same endpoint the rest of the build prices against, so the listing fee

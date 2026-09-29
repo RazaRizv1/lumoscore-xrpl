@@ -32,6 +32,11 @@ const B = String.fromCharCode(92);
 
 // from -> to. Longest first so a phrase is never half-rewritten by a shorter one.
 const PHRASES = [
+  // THE /mcp HERO EYEBROW, sitting directly above a paragraph that reads "Connect your AI agent to
+  // LumosCore on the XRP Ledger". The page named a different chain than its own first sentence, in
+  // the largest small-caps line on the screen.
+  ['MCP Server for Aptos', 'MCP Server for the XRP Ledger'],
+
   // A FAQ ANSWER POINTING AT A CONTROL THAT DOES NOT EXIST. "In Wallet, use Add asset with the code
   // and issuer" — there is no Add asset on the Wallet page, and no trust-line control anywhere: the
   // button was removed on 2026-09-15 and the answer was not. Measured on the live page, every
@@ -294,6 +299,27 @@ const unseen = new Set(PHRASES.map(function (p) { return p[0]; }));
 const SCRIPT_LITERALS = [
   ["'Reserves 0.5 APT from your account'", "'Reserves 0.2 XRP from your account'"],
   ['"Reserves 0.5 APT from your account"', '"Reserves 0.2 XRP from your account"'],
+
+  // THE /mcp HERO TERMINAL. It is a typewriter animation driven by a `steps` array inside a script,
+  // so every copy pass this repo runs stepped straight over it -- and it is the single most watched
+  // element on the page, replaying on a loop under a heading that says "on the XRP Ledger":
+  //
+  //   ✓ Connected to Aptos mainnet
+  //   🤖 Swap 500 APT for USDC   ⚡ Calling swap_tool…   from: APT
+  //   ✓ Swap complete!  500 APT → 1,247.82 USDC   View on AptosScan
+  //
+  // `swap_tool` is wrong on its own terms too: the command list further down the same page names the
+  // tool `swap`, which is what the server actually exposes. The demo was inventing a tool.
+  //
+  // The figures are rewritten to an XRP Ledger pair at a plausible rate rather than kept: 500 XRP at
+  // today's ~1.49 is about 744 RLUSD, and leaving "1,247.82" would state an exchange rate this page
+  // has no business asserting.
+  ["'✓ Connected to Aptos mainnet'", "'✓ Connected to XRP Ledger mainnet'"],
+  ["'🤖 Swap 500 APT for USDC'", "'🤖 Swap 500 XRP for RLUSD'"],
+  ["'⚡ Calling swap_tool…'", "'⚡ Calling swap…'"],
+  ["'   from: APT · amount: 500 · to: USDC'", "'   from: XRP · amount: 500 · to: RLUSD'"],
+  ["'500 APT → 1,247.82 USDC'", "'500 XRP → 744.10 RLUSD'"],
+  ["'View on AptosScan'", "'View on Bithomp'"],
 ];
 
 // [regex with a leading capture group, replacement]. The capture is whatever preceded the match and

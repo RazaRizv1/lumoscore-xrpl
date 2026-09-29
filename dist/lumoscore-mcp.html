@@ -2948,7 +2948,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
   <div class="lxh-particles" id="lxhParticles"></div>
   <div class="lxh-in">
     <div class="lxh-l" id="lxhLeft">
-      <div class="lxh-anim" data-d="0"><div class="lxh-badge"><i></i><span>MCP Server for Aptos</span></div></div>
+      <div class="lxh-anim" data-d="0"><div class="lxh-badge"><i></i><span>MCP Server for the XRP Ledger</span></div></div>
       <h1 class="lxh-anim" data-d="120">Your AI agent,<br><span class="grad">on-chain.</span></h1>
       <p class="lxh-sub lxh-anim" data-d="240">Connect your AI agent to LumosCore on the XRP Ledger. Trade, seed liquidity, launch tokens, bridge across chains, manage your wallet, and claim LUMOS rewards &mdash; all in natural language.</p>
       <div class="lxh-anim" data-d="360"><div class="lxh-install" data-copy="npm i -g @lumoscore/mcp"><span class="p">$</span><code>npm i -g @lumoscore/mcp</code><span class="ci"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg></span><span class="done">Copied!</span></div></div>
@@ -2979,19 +2979,19 @@ function type(el,txt,sp){return new Promise(function(res){var i=0;el.textContent
 var steps=[
  {t:'in',x:'lumoscore mcp start',d:400},
  {t:'tx',x:'→ Starting LumosCore MCP server…',c:'lxh-dim',d:520},
- {t:'tx',x:'✓ Connected to Aptos mainnet',c:'lxh-ok',d:460},
+ {t:'tx',x:'✓ Connected to XRP Ledger mainnet',c:'lxh-ok',d:460},
  {t:'tx',x:'→ Loaded 10 tools · key lx_live_••••',c:'lxh-dim',d:420},
  {t:'sp',d:160},
- {t:'tx',x:'🤖 Swap 500 APT for USDC',c:'lxh-sec',d:680},
+ {t:'tx',x:'🤖 Swap 500 XRP for RLUSD',c:'lxh-sec',d:680},
  {t:'sp',d:120},
- {t:'tx',x:'⚡ Calling swap_tool…',c:'lxh-em',d:460},
- {t:'tx',x:'   from: APT · amount: 500 · to: USDC',c:'lxh-dim',sm:1,d:300},
+ {t:'tx',x:'⚡ Calling swap…',c:'lxh-em',d:460},
+ {t:'tx',x:'   from: XRP · amount: 500 · to: RLUSD',c:'lxh-dim',sm:1,d:300},
  {t:'tx',x:'◉ Pending approval…',c:'lxh-warn',d:560,id:'lxhPend'},
  {t:'pg',d:1400},
  {t:'rep',id:'lxhPend',x:'✓ Approved · Executing…',c:'lxh-ok',d:420},
  {t:'sp',d:100},
- {t:'ok',x:'500 APT → 1,247.82 USDC',d:560},
- {t:'ln',x:'View on AptosScan',d:420}
+ {t:'ok',x:'500 XRP → 744.10 RLUSD',d:560},
+ {t:'ln',x:'View on Bithomp',d:420}
 ];
 function run(){
  var i=0;
