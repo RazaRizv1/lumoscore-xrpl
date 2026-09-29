@@ -611,8 +611,13 @@
     for (var i = 0; i < Math.min(rows.length, 10); i++) host.appendChild(poolItem(rows[i]));
   }
 
+  // RETURNS ITS PROMISE so load() can wait for it. Without that the pool count and the token payload
+  // were two races with one finish line: whichever settled last owned the final paint, and the
+  // Pools stat card and the "View all N pools" link were left on the design's mock. Measured on the
+  // live page: card "—", link "View all 14 pools", with the endpoint answering total 22 the whole
+  // time -- and __lxxLTokenReload() fixing both, which is what named it as ordering rather than data.
   function loadPools() {
-    fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(ISS))
+    return fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(ISS))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || !d.ok || d.total == null) return;
@@ -805,8 +810,11 @@
     if (!$('.hero-price-block') && !$('.lh-stats')) return;      // not this page
     paintIssuer();
     loadHolders();
-    loadPools();
-    fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(ISS + '-' + CUR))
+    // BOTH, THEN ONE FINAL PAINT. Each still paints as soon as it lands, so nothing waits on the
+    // slower of the two to show something -- but the last word belongs to a paint that has seen both,
+    // which is the only way the count and the price cannot overwrite each other.
+    var pools = loadPools();
+    var token = fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(ISS + '-' + CUR))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var ok = d && d.ok ? d : null;
@@ -814,6 +822,10 @@
         paint(ok);
       })
       .catch(function () { paint(null); });
+    Promise.all([
+      pools && pools.catch ? pools.catch(function () { return null; }) : null,
+      token.catch(function () { return null; }),
+    ]).then(function () { paint(window.__lxxLumos || null); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);

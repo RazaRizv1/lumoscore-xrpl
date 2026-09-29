@@ -247,7 +247,27 @@
   // unreachable. `+ 0.5` matches the issuer funding in buildLaunchPlan — if one changes, so must
   // the other, or the quote stops matching the transaction.
   var ledger = { base: 1, owner: 0.2 };
-  function ledgerXrp() { return (ledger.base + 0.5) + ledger.owner; }
+  // WHAT THE LEDGER ITSELF TAKES, counted the way browser/mint.js actually spends it.
+  //
+  // This was `(base + 0.5) + owner` = 1.70 XRP, which is not any figure the launch uses. The plan
+  // funds TWO throwaway accounts, and both are funded to the drop because a pool account a fraction
+  // under its own reserve dies on the last step:
+  //
+  //   issuer   base + 0.02          mint.js:196 — measured, three live issuers each took 1.02
+  //   pool     base + 0.85          mint.js:233 — base 1.00 + two trust lines 0.40 + AMMCreate 0.20
+  //                                 + 0.25 margin; the lpXrp on top of it is the liquidity row, so
+  //                                 it is NOT counted here or it would be charged twice
+  //   + owner                       the launcher's own trust line for the new token
+  //   + 0.01                        transaction fees
+  //
+  // = 2 x base + 0.88 + owner, which is 3.08 against today's reserve schedule.
+  //
+  // THE QUOTE WAS UNDER-REPORTING BY 45%. The panel said "Total Cost 3.04 XRP" and the pre-flight
+  // check in mint.js — which sums the REAL plan — refused the same launch saying it needs 4.42.
+  // Someone reading the page would fund 3.5 XRP and be turned away by the product's own arithmetic.
+  // Both numbers are now computed from the same constants, so they can only disagree if one of these
+  // files changes without the other.
+  function ledgerXrp() { return (2 * ledger.base) + 0.88 + ledger.owner; }
 
   // The design's recalcCost() lives inside an IIFE, so it cannot be called or replaced -- and it
   // repaints these same elements whenever the liquidity or share inputs change. Duplicate listeners
