@@ -2725,9 +2725,8 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
 <p>Work out which step it is on:</p>
 
 <ul>
-  <li><strong>Burned, not yet attested.</strong> Transfers are not enabled from this page yet, so there is nothing in progress to wait for.</li>
-  <li><strong>Attested, not claimed.</strong> The claim is a transaction on the destination chain and
-    you need that chain's gas token to pay for it.</li>
+  <li><strong>Signed, not yet delivered.</strong> The route is carrying it. Each one publishes its own estimate and the review showed it before you signed; NEAR Intents and THORChain are usually well under a minute, Axelar a few minutes.</li>
+  <li><strong>Delivered, but not where you expected.</strong> Check the receiving address you entered against the destination network. Nothing here is claimed, so an address is the only thing you supply that a route cannot check for you.</li>
   <li><strong>Tab closed part way.</strong> The funds are not lost. Reopen
     <a href="/bridge">Cross-chain</a> with the same wallet connected and the pending transfer is
     listed so you can finish the claim.</li>

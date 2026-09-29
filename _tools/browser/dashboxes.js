@@ -48,21 +48,15 @@
   function rate(d) { var r = d && +d.usd; return (isFinite(r) && r > 0) ? r : 0; }
 
   // ---- Cross-chain -------------------------------------------------------------------------------
-  // THESE WERE COPIED FROM STELLAR AND WERE WRONG. The card read "10 networks · USDC · via Circle
-  // CCTP", carried over on the assumption that the bridge ports. It does not: XRPL bridges through
-  // Wanchain and Axelar (RAZA, 2026-09-06, recorded in XRPL_FACTS.md), which are different contracts
-  // with a different claim model. So the product card on an XRP Ledger dashboard was naming a bridge
-  // this chain does not use, in the confident tone of a fact.
+  // THIS CARD HAS BEEN WRONG THREE TIMES, each time by naming a bridge from the outside rather than
+  // asking the page it links to. It arrived from Stellar as "10 networks · USDC · via Circle CCTP";
+  // it became "14 · — · Axelar"; then "59 networks · XRP · via Axelar · Wanchain", beside a bridge
+  // page offering 39 through NEAR Intents, Axelar and THORChain -- and Wanchain was never built at
+  // all, only investigated and dropped.
   //
-  // The destination count comes from the SAME endpoint the bridge page itself lists, so the card and
-  // the page cannot disagree about how many chains are reachable — and it cannot go stale, because
-  // Axelar's own list is what answers. 58 at the time of writing; it is not written down here.
-  //
-  // BOTH BRIDGES, AND THE SAME COUNT THE BRIDGE PAGE LISTS (RAZA 2026-09-15: "For Cross-chain, im sure its
-  // incorrect"). The card read "14 · — · Axelar" beside a bridge page offering 59 destinations through Axelar and
-  // Wanchain. The count is now built exactly as that page builds its list: every chain in Axelar's XRP Ledger
-  // registry, plus Wanchain, the XRP Ledger itself excluded. The asset is XRP, which is what both bridges carry
-  // out of this ledger.
+  // The lesson each time was the same and is now built in rather than written down: the card asks
+  // THE SAME THREE REGISTRIES THE BRIDGE ASKS, and the chain names it needs to dedupe them are
+  // stamped in from browser/nibridge.js at build time. There is no list here to go stale.
   // EACH CARD OPENS ITS OWN PAGE (RAZA 2026-09-16: "when im tapping on Cross-chain Explore bridge, it takes me to pools main page").
   // The cards are anchors with the right href, but an inherited row-click layer answered first and sent the tap elsewhere
   // (measured: /trade/xrpl from the bridge card). Taken at window capture, so the card's own href is the one followed.

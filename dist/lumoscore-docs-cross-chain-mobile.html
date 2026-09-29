@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
 <title>Cross-chain | LumosCore Docs</title>
-  <meta name="description" content="Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled from this page yet.">
+  <meta name="description" content="How LumosCore moves assets off the XRP Ledger through NEAR Intents, Axelar and THORChain — what each route carries, and what it costs.">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 
 
@@ -2682,73 +2682,110 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
     </button>
 </header>
 
-  <main class="page"><div class="lxdc"><details class="dc-navbox" open><summary class="dc-navsum"><span class="dc-navsum-k">Documentation</span><span class="dc-navsum-t">Cross-chain</span></summary><nav class="dc-nav"><input class="dc-filter" id="dcFilter" type="search" autocomplete="off" placeholder="Filter pages" aria-label="Filter documentation pages"><p class="dc-nomatch" id="dcNoMatch" hidden>No pages match.</p><div class="dc-nav-group"><p class="dc-nav-label">Start here</p><a href="https://lumoscore.com/docs/introduction">Introduction</a><a href="https://lumoscore.com/docs/connect-a-wallet">Connect a wallet</a><a href="https://lumoscore.com/docs/fees">Fees</a></div><div class="dc-nav-group"><p class="dc-nav-label">Using LumosCore</p><a href="https://lumoscore.com/docs/swaps">Swaps</a><a href="https://lumoscore.com/docs/limit-orders">Limit orders</a><a href="https://lumoscore.com/docs/liquidity-pools">Liquidity pools</a><a href="https://lumoscore.com/docs/cross-chain" class="dc-on">Cross-chain</a><a href="https://lumoscore.com/docs/wallet">Wallet</a><a href="https://lumoscore.com/docs/trustlines">Trustlines</a><a href="https://lumoscore.com/docs/rewards">Rewards</a></div><div class="dc-nav-group"><p class="dc-nav-label">For issuers</p><a href="https://lumoscore.com/docs/launch-a-token">Launch a token</a><a href="https://lumoscore.com/docs/asset-metadata">Asset metadata</a><a href="https://lumoscore.com/docs/verification">Asset verification</a><a href="https://lumoscore.com/docs/curated-listing">Curated listing</a></div><div class="dc-nav-group"><p class="dc-nav-label">Reference</p><a href="https://lumoscore.com/docs/security">Security</a><a href="https://lumoscore.com/docs/troubleshooting">Troubleshooting</a><a href="https://lumoscore.com/docs/faq">FAQ</a></div></nav></details><div class="dc-main"><div class="dc-head"><p class="dc-crumb">Using LumosCore</p><h1>Cross-chain</h1><p class="dc-sub">Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled yet.</p></div><p>Cross-chain transfers move <strong>USDC</strong> between the XRP Ledger and other networks. This is not enabled yet — the page currently lists the destinations Axelar can reach and does not move anything.
-  LumosCore does not run a bridge and never holds your funds in transit — the transfer is carried by
-  Circle's Cross-Chain Transfer Protocol (the bridge), which burns USDC on the source chain and mints
-  native USDC on the destination.</p>
+  <main class="page"><div class="lxdc"><details class="dc-navbox" open><summary class="dc-navsum"><span class="dc-navsum-k">Documentation</span><span class="dc-navsum-t">Cross-chain</span></summary><nav class="dc-nav"><input class="dc-filter" id="dcFilter" type="search" autocomplete="off" placeholder="Filter pages" aria-label="Filter documentation pages"><p class="dc-nomatch" id="dcNoMatch" hidden>No pages match.</p><div class="dc-nav-group"><p class="dc-nav-label">Start here</p><a href="https://lumoscore.com/docs/introduction">Introduction</a><a href="https://lumoscore.com/docs/connect-a-wallet">Connect a wallet</a><a href="https://lumoscore.com/docs/fees">Fees</a></div><div class="dc-nav-group"><p class="dc-nav-label">Using LumosCore</p><a href="https://lumoscore.com/docs/swaps">Swaps</a><a href="https://lumoscore.com/docs/limit-orders">Limit orders</a><a href="https://lumoscore.com/docs/liquidity-pools">Liquidity pools</a><a href="https://lumoscore.com/docs/cross-chain" class="dc-on">Cross-chain</a><a href="https://lumoscore.com/docs/wallet">Wallet</a><a href="https://lumoscore.com/docs/trustlines">Trustlines</a><a href="https://lumoscore.com/docs/rewards">Rewards</a></div><div class="dc-nav-group"><p class="dc-nav-label">For issuers</p><a href="https://lumoscore.com/docs/launch-a-token">Launch a token</a><a href="https://lumoscore.com/docs/asset-metadata">Asset metadata</a><a href="https://lumoscore.com/docs/verification">Asset verification</a><a href="https://lumoscore.com/docs/curated-listing">Curated listing</a></div><div class="dc-nav-group"><p class="dc-nav-label">Reference</p><a href="https://lumoscore.com/docs/security">Security</a><a href="https://lumoscore.com/docs/troubleshooting">Troubleshooting</a><a href="https://lumoscore.com/docs/faq">FAQ</a></div></nav></details><div class="dc-main"><div class="dc-head"><p class="dc-crumb">Using LumosCore</p><h1>Cross-chain</h1><p class="dc-sub">How LumosCore moves assets off the XRP Ledger, which route carries what, and what each one costs.</p></div><p>Cross-chain transfers move assets <strong>off the XRP Ledger</strong> to another network. You
+  sign one XRP Ledger payment and the route delivers to the address you gave — there is no second
+  transaction, nothing to claim, and no gas needed on the destination.</p>
 
-<h2 id="supported-networks"><a class="dc-anchor" href="#supported-networks" aria-label="Link to this section">#</a>Supported networks</h2>
+<p>LumosCore does not run a bridge and never holds your funds in transit. The transfer is carried by
+  one of three independent networks, and which one is decided for you by what you are sending and
+  where it is going.</p>
+
+<h2 id="the-three-routes"><a class="dc-anchor" href="#the-three-routes" aria-label="Link to this section">#</a>The three routes</h2>
 
 <div class="dc-tw">
   <table>
-    <thead><tr><th>From</th><th>To</th></tr></thead>
+    <thead><tr><th>Route</th><th>Carries</th><th>Reaches</th></tr></thead>
     <tbody>
       <tr>
-        <td>the XRP Ledger</td>
-        <td>Ethereum, Base, Arbitrum, Optimism, Polygon, Avalanche, Linea, World Chain — and back
-          again in either direction.</td>
+        <td>NEAR Intents</td>
+        <td>XRP only</td>
+        <td>Thirty-five networks, including Bitcoin, Ethereum, Solana, Cardano, TON, Tron and
+          Stellar. Delivers the chain’s own token rather than a wrapped copy.</td>
+      </tr>
+      <tr>
+        <td>Axelar</td>
+        <td>The interchain tokens registered on the XRP Ledger — WETH, WBTC, USDC, SHX and others</td>
+        <td>Its own registry, and it is the only route to the XRPL EVM sidechain and to Hedera.</td>
+      </tr>
+      <tr>
+        <td>THORChain</td>
+        <td>XRP only</td>
+        <td>Overlaps NEAR Intents on ten chains and adds Cosmos Hub. Swaps into the destination
+          chain’s native coin.</td>
       </tr>
     </tbody>
   </table>
 </div>
 
-<p>No asset can be bridged from this page yet. That is a real limit and we would rather state it than work
-  around it: moving one asset in a way that cannot be drained is worth more than moving every asset
-  through something that repeatedly has been.</p>
+<p>Thirty-nine destinations in total. Each route publishes its own list and LumosCore reads all three
+  live, so the picker cannot offer a route that has since been withdrawn.</p>
+
+<h2 id="how-a-route-is-chosen"><a class="dc-anchor" href="#how-a-route-is-chosen" aria-label="Link to this section">#</a>How a route is chosen</h2>
+
+<p>Where more than one route can carry a transfer, <strong>all of them are asked for a live quote and
+  the one that delivers more is used</strong>. Neither is reliably better — on the first pairs measured,
+  THORChain beat NEAR Intents to Bitcoin and lost to it on Ether and Dogecoin — so preferring one by
+  rule would mean choosing the worse answer about half the time.</p>
+
+<p>The comparison only runs when the two would deliver the <em>same thing</em>. NEAR Intents can be
+  asked for any token on a chain and THORChain quotes that chain’s native coin, and comparing
+  30 USDC against 0.0027 ETH is not a comparison.</p>
+
+<p>An asset only Axelar carries goes by Axelar, and the destination list narrows to Axelar’s the
+  moment you select one. The route that will carry your transfer is named on the review before you
+  sign, and you can choose a different one from the Route panel if you would rather.</p>
 
 <h2 id="making-a-transfer"><a class="dc-anchor" href="#making-a-transfer" aria-label="Link to this section">#</a>Making a transfer</h2>
 
 <ol class="dc-steps">
-  <li>Open <a href="/bridge">Cross-chain</a>, choose the source and destination networks, and enter
-    an amount of USDC.</li>
-  <li>Nothing is signed. Choosing a route does not build a transaction, and the page will not ask you to approve one.</li>
-  <li>There is nothing to wait for, because nothing has been submitted.</li>
-  <li>There is nothing to claim. When transfers are enabled this page will describe the real steps.</li>
+  <li>Open <a href="/bridge">Cross-chain</a> and choose the destination network.</li>
+  <li>Pick the asset and amount, and enter the receiving address on that network.</li>
+  <li>Check the Route panel: it names the route, what will arrive, the fee and the estimated time.</li>
+  <li>Review and sign one XRP Ledger payment. That signature is the whole transfer.</li>
 </ol>
 
 <div class="dc-note">
-  <p class="dc-note-h">You claim it yourself</p>
-  <p>The final mint is a transaction on the destination chain and you pay its gas. On Ethereum
-    mainnet at a busy moment that can cost more than the transfer fee — check gas before you start,
-    and consider a cheaper destination such as Base or Arbitrum if you have the choice.</p>
+  <p class="dc-note-h">There is nothing to claim</p>
+  <p>All three routes deliver to the address you gave. You do not need the destination chain’s gas
+    token, and there is no second signature. If you have used a burn-and-mint bridge before, this
+    is not one.</p>
 </div>
 
-<h2 id="if-you-close-the-tab-before-claiming"><a class="dc-anchor" href="#if-you-close-the-tab-before-claiming" aria-label="Link to this section">#</a>If you close the tab before claiming</h2>
+<h2 id="if-you-close-the-tab"><a class="dc-anchor" href="#if-you-close-the-tab" aria-label="Link to this section">#</a>If you close the tab</h2>
 
-<p>Nothing is in flight, so nothing can be lost. Reopen
-  <a href="/bridge">Cross-chain</a> with the same wallet connected and the pending transfer is listed
-  so you can complete the claim. Looking up routes is read-only.</p>
+<p>Once the payment is signed and submitted, the route carries it whether or not the page is open —
+  it is the XRP Ledger transaction that commits you, not the tab. Close it before signing and
+  nothing has happened and nothing is owed.</p>
 
-<p>There is no transaction to keep a record of yet.</p>
+<p>If a transfer cannot be completed, NEAR Intents refunds to the same wallet that paid.</p>
 
 <h2 id="what-it-costs"><a class="dc-anchor" href="#what-it-costs" aria-label="Link to this section">#</a>What it costs</h2>
 
 <ul>
-  <li><strong>LumosCore:</strong> <span class="dc-num">0.2%</span> of the amount transferred, or
-    <span class="dc-num">0.1%</span> on the LUMOS tier.</li>
-  <li><strong>Circle:</strong> nothing today, because no transfer takes place.</li>
-  <li><strong>The networks:</strong> the source chain's fee to burn, and the destination chain's gas
-    to claim. Both paid to those networks in their own gas token.</li>
+  <li><strong>LumosCore:</strong> <span class="dc-num">0.2%</span> of the amount, or
+    <span class="dc-num">0.1%</span> if you hold 250,000 LUMOS or more. Not charged on the Axelar
+    route, where the fee collector cannot hold the asset being sent.</li>
+  <li><strong>The route:</strong> NEAR Intents takes a solver fee, Axelar charges destination gas
+    quoted in XRP, and THORChain prices its swap into the amount you are quoted. All three are
+    shown before you sign.</li>
+  <li><strong>The XRP Ledger:</strong> a fraction of a drop, paid to the ledger, never to us.</li>
 </ul>
+
+<p>The figure on the review is what arrives, after all of it.</p>
 
 <h2 id="what-can-still-go-wrong"><a class="dc-anchor" href="#what-can-still-go-wrong" aria-label="Link to this section">#</a>What can still go wrong</h2>
 
-<p>When transfers are enabled, delegating the transport will not remove transport risk, and this page will say what that risk is for the route being used.<a href="https://lumoscore.com/docs/security">Security</a>.</p>
+<p>Delegating the transport does not remove transport risk. Each of these networks is independent
+  infrastructure with its own operators and its own failure modes, and a route can refuse or halt —
+  THORChain stops trading on a chain from time to time, and the page says so rather than queueing
+  behind it. See <a href="https://lumoscore.com/docs/security">Security</a>.</p>
 
 <div class="dc-note dc-warn">
   <p class="dc-note-h">Check the destination address</p>
-  <p>Sending to an address you do not control, or to a contract that cannot receive USDC, is not
-    reversible by anyone. Confirm the destination before approving the burn.</p>
+  <p>The address must be on the network you selected, and in that network’s own format — an
+    Ethereum address is not a Cosmos Hub address, and the XRPL EVM sidechain takes a
+    <span class="dc-num">0x</span> address rather than an <span class="dc-num">r</span> one.
+    Sending to an address you do not control is not reversible by anyone.</p>
 </div><div class="dc-pager"><a class="dc-page" href="https://lumoscore.com/docs/liquidity-pools"><span class="dc-page-k">Previous</span><span class="dc-page-t">Liquidity pools</span></a><a class="dc-page dc-next" href="https://lumoscore.com/docs/wallet"><span class="dc-page-k">Next</span><span class="dc-page-t">Wallet</span></a></div><p class="dc-updated">Last updated 29 August 2026</p></div><div class="dc-toc"><p class="dc-toc-h">On this page</p><a href="#supported-networks">Supported networks</a><a href="#making-a-transfer">Making a transfer</a><a href="#if-you-close-the-tab-before-claiming">If you close the tab before claiming</a><a href="#what-it-costs">What it costs</a><a href="#what-can-still-go-wrong">What can still go wrong</a></div></div><script id="lx-docs-js">(function(){var d=document;var links=[].slice.call(d.querySelectorAll(".dc-toc a"));if(links.length){var pairs=[];links.forEach(function(a){var h=d.getElementById(a.getAttribute("href").slice(1));if(h)pairs.push([h,a]);});var cur=null,tick=0;var spy=function(){tick=0;var line=Math.max(90,innerHeight*0.22),best=pairs.length?pairs[0][1]:null;for(var i=0;i<pairs.length;i++){if(pairs[i][0].getBoundingClientRect().top<=line)best=pairs[i][1];else break;}if(innerHeight+scrollY>=d.documentElement.scrollHeight-4&&pairs.length)best=pairs[pairs.length-1][1];if(best!==cur){if(cur)cur.classList.remove("dc-tocon");if(best)best.classList.add("dc-tocon");cur=best;}};var onScroll=function(){if(!tick)tick=requestAnimationFrame(spy);};addEventListener("scroll",onScroll,{passive:true});addEventListener("resize",onScroll,{passive:true});spy();}var box=d.querySelector(".dc-navbox");if(box){var narrow=function(){return matchMedia("(max-width:880px)").matches;};if(narrow())box.removeAttribute("open");box.addEventListener("click",function(e){if(narrow()&&e.target&&e.target.closest&&e.target.closest(".dc-nav a"))box.removeAttribute("open");});addEventListener("resize",function(){if(!narrow())box.setAttribute("open","");},{passive:true});}var f=d.getElementById("dcFilter"),none=d.getElementById("dcNoMatch");if(f){f.addEventListener("input",function(){var q=f.value.trim().toLowerCase(),hits=0;[].forEach.call(d.querySelectorAll(".dc-nav-group"),function(g){var shown=0;[].forEach.call(g.querySelectorAll("a"),function(a){var ok=!q||a.textContent.toLowerCase().indexOf(q)>=0;a.hidden=!ok;if(ok)shown++;});g.hidden=shown===0;hits+=shown;});if(none)none.hidden=hits>0;});}})();</script></main>
 
   <!-- Footer -->

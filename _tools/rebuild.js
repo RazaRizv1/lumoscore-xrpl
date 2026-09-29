@@ -46,7 +46,11 @@ const CHAIN = [
   '_xrpldexasset', '_xrplpools', '_xrplpoolsmock', '_xrplcreatepool', '_xrplqorders', '_xrplpooldetail', '_xrplaccount', '_xrplwallet', '_xrpltrustbtn', '_xrplrewards',
   '_xrplltoken', '_xrplnearintents', '_xrplbridgepolish', '_xrplsearch', '_xrplcopy', '_xrplreveal', '_xrplseo',
   '_xrplnetpicker', '_xrplchoosenet', '_xrpldashboxes', '_xrpllisting', '_xrplroutes', '_nofollow',
-  '_xrplorphan', '_xrplbridgecopy', '_xrplbridgehiw', '_xrpldocs', '_xrplcopy2', '_xrplstripstellar',
+  '_xrplorphan', '_xrplbridgecopy', '_xrplbridgehiw', '_xrpldocs', '_xrplcopy2',
+  // AFTER _xrpldocs AND _xrplcopy2, both of which swap Stellar's words for this ledger's. The bridge
+  // docs name Stellar on purpose -- it is one of the thirty-nine destinations -- so a generic pass
+  // running afterwards would "correct" a chain name into nonsense.
+  '_xrplbridgedocs', '_xrplstripstellar',
   // LAST, and that position is load-bearing: it mirrors each page's visible FAQ into its schema.org
   // block, so it must run after every pass that can change that copy. Moved earlier, it would
   // faithfully republish the exact sentences the later passes are about to correct.

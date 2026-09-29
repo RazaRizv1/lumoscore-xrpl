@@ -115,7 +115,7 @@ const SEO = {
   ],
   'lumoscore-docs-cross-chain': [
     'Cross-chain | LumosCore Docs',
-    'Which networks the XRP Ledger can reach through Axelar. Transfers are not enabled from this page yet.',
+    'How LumosCore moves assets off the XRP Ledger through NEAR Intents, Axelar and THORChain — what each route carries, and what it costs.',
   ],
   'lumoscore-docs-launch-a-token': [
     'Launch a token | LumosCore Docs',
