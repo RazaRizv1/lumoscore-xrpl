@@ -7454,7 +7454,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // Cosmos Hub, THORChain -- are reached by Axelar or THORChain and have no NI id at all, so a map
   // keyed on that id could never give them a logo however complete it was.
   var ICONV = 'd186f1cd';        // stamped by _xrplnearintents.js from the logo bytes
-  var NI_TOKEN = {"AAVE":1,"ADA":1,"ADI":1,"ARB":1,"ASTER":1,"ATOM":1,"AURORA":1,"AVAX":1,"BCH":1,"BERA":1,"BLACKDRAGON":1,"BNB":1,"BOME":1,"BRETT":1,"BTC":1,"CASHCAT":1,"cbBTC":1,"CFI":1,"COCA":1,"COW":1,"DAI":1,"DASH":1,"DOGE":1,"ETH":1,"EURe":1,"EVAA":1,"FOGO":1,"FRAX":1,"GBPe":1,"GMX":1,"GNO":1,"GRAM":1,"HAPI":1,"hemiBTC":1,"INX":1,"JAMBO":1,"KAITO":1,"KNC":1,"LINK":1,"LOUD":1,"LTC":1,"MELANIA":1,"MOG":1,"MON":1,"MOVE":1,"mpDAO":1,"NEAR":1,"NearKat":1,"NPRO":1,"nrUsdt":1,"OKB":1,"OP":1,"PENGU":1,"PEPE":1,"POL":1,"PONS":1,"PUBLIC":1,"PURGE":1,"RHEA":1,"RUNE":1,"SAFE":1,"SHIB":1,"SHITZU":1,"SOL":1,"SPX":1,"stNEAR":1,"STRK":1,"SUI":1,"sUSDC":1,"SWEAT":1,"TITN":1,"TRUMP":1,"TRX":1,"TURBO":1,"UNI":1,"USD1":1,"USDC":1,"USDCx":1,"USDe":1,"USDf":1,"USDG":1,"USDT":1,"USDT0":1,"VVV":1,"WBTC":1,"WETH":1,"wNEAR":1,"wNEARKAT":1,"XAUT":1,"xBTC":1,"xDAI":1,"XLM":1,"XPL":1,"XRP":1,"ZEC":1};   // which assets/tokens/ni/*.png actually shipped, read at build
+  var NI_TOKEN = {"AAVE":1,"ADA":1,"ADI":1,"ARB":1,"ASTER":1,"ATOM":1,"AURORA":1,"AVAX":1,"BCH":1,"BERA":1,"BLACKDRAGON":1,"BNB":1,"BOME":1,"BRETT":1,"BTC":1,"CASHCAT":1,"cbBTC":1,"CFI":1,"COCA":1,"COW":1,"DAI":1,"DASH":1,"DOGE":1,"ETH":1,"EURe":1,"EVAA":1,"FOGO":1,"FRAX":1,"GBPe":1,"GMX":1,"GNO":1,"GRAM":1,"HAPI":1,"hemiBTC":1,"INX":1,"JAMBO":1,"KAITO":1,"KNC":1,"LINK":1,"LOUD":1,"LTC":1,"LUMOS":1,"MELANIA":1,"MOG":1,"MON":1,"MOVE":1,"mpDAO":1,"NEAR":1,"NearKat":1,"NPRO":1,"nrUsdt":1,"OKB":1,"OP":1,"PENGU":1,"PEPE":1,"POL":1,"PONS":1,"PUBLIC":1,"PURGE":1,"RHEA":1,"RUNE":1,"SAFE":1,"SHIB":1,"SHITZU":1,"SOL":1,"SPX":1,"stNEAR":1,"STRK":1,"SUI":1,"sUSDC":1,"SWEAT":1,"TITN":1,"TRUMP":1,"TRX":1,"TURBO":1,"UNI":1,"USD1":1,"USDC":1,"USDCx":1,"USDe":1,"USDf":1,"USDG":1,"USDT":1,"USDT0":1,"VVV":1,"WBTC":1,"WETH":1,"wNEAR":1,"wNEARKAT":1,"XAUT":1,"xBTC":1,"xDAI":1,"XLM":1,"XPL":1,"XRP":1,"ZEC":1};   // which assets/tokens/ni/*.png actually shipped, read at build
   // WHICH NETWORK FILES ACTUALLY SHIPPED, also read at build. NET_FILE below names the slug a chain
   // WOULD use; this says whether that file is there. The two are separate because five of the thirty-
   // nine destinations have no artwork yet, and naming a file that does not exist is not harmless: an
@@ -7697,7 +7697,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // XRP first, then every registered asset the wallet holds.
-  function sourceAssets() {
+  // What a route can be handed AS IT STANDS: XRP, and the interchain assets the wallet holds.
+  function directAssets() {
     var out = [];
     var xrp = AX && AX_BY_SYM.XRP;
     out.push({ symbol: 'XRP', native: true, decimals: 6, currency: 'XRP', issuer: null,
@@ -7713,6 +7714,109 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return out;
   }
 
+  // Everything the picker offers: the above, plus every other funded trust line, which reaches a
+  // route by being swapped into XRP first. Those route exactly as XRP does, because by the time any
+  // route sees the transfer that is what the wallet will be holding.
+  function sourceAssets() {
+    var out = directAssets();
+    otherHoldings().forEach(function (o) {
+      if (o.lp) return;                                  // a pool share is not a sendable asset
+      out.push({ symbol: o.symbol, native: false, viaSwap: true, decimals: 15,
+        currency: o.currency, issuer: o.issuer, balance: o.balance, ax: null });
+    });
+    return out;
+  }
+
+  // ---- the swap-first leg ---------------------------------------------------------------------------
+  //
+  // Only XRP and Axelar's interchain registry can leave this ledger. Everything else a wallet holds --
+  // LUMOS, RLUSD, any issued token -- has to become XRP first, and the XRP Ledger does that with a
+  // CROSS-CURRENCY PAYMENT TO YOURSELF: SendMax in what you hold, Amount in what you want, routed
+  // through the order books and AMMs the ledger finds. The Stellar build does the same thing with a
+  // path payment into USDC before handing anything to a route.
+  //
+  // THIS IS browser/dxaswap.js's SWAP, not a second one. Same ripple_path_find call, same
+  // tfPartialPayment + DeliverMin floor, same simulate dry run. That file earned each of those the
+  // hard way -- tecPATH_PARTIAL on thin books, a MAX sell leaving dust behind, a public node that
+  // accepts a request and never answers -- and a fresh implementation here would relearn all of it.
+  //
+  // THE PLATFORM FEE IS CHARGED ONCE, on the bridge leg, where it already is. The swap is plumbing to
+  // get to a bridgeable asset, not a trade the user asked for, and charging both legs would take
+  // 0.4% while the page says 0.2%.
+  var SWAP_SLIP = 0.005;
+  var SWAPQ = null;                 // {from, amt, out, paths} — the live IOU -> XRP quote
+
+  function xrpAmountObj(v) { return window.lxx.toDrops(v); }
+  function iouAmountObj(a, v) {
+    var s = window.lxx.iouValue(v);
+    return s ? { currency: a.currency, issuer: a.issuer, value: s } : null;
+  }
+
+  // A deadline on every read. A public node can accept a request and never answer, and fetch has no
+  // timeout of its own -- that is what froze dxaswap on "Finding the best route…" with a complete
+  // quote already on screen.
+  function rpcT(method, params, ms) {
+    var ctl = null;
+    try { ctl = new AbortController(); } catch (e) {}
+    var limit = ms || (method === 'ripple_path_find' ? 12000 : 20000);
+    var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, limit);
+    return fetch(RPC, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: method, params: [params || {}] }),
+      signal: ctl ? ctl.signal : undefined,
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      clearTimeout(timer);
+      var res = j && j.result;
+      if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
+      return res;
+    }, function (e) {
+      clearTimeout(timer);
+      throw new Error((e && e.name === 'AbortError') ? (method + ' timed out') : ((e && e.message) || 'ledger unavailable'));
+    });
+  }
+
+  // How much XRP `amt` of this asset buys, right now. `destination_amount: '-1'` is the ledger's way
+  // of asking "as much as you can" for a given send_max.
+  function quoteSwap(a, amt) {
+    var me = addr();
+    var pay = iouAmountObj(a, amt);
+    if (!me || !pay || !(amt > 0)) return Promise.resolve(null);
+    return rpcT('ripple_path_find', {
+      source_account: me, destination_account: me,
+      destination_amount: '-1', send_max: pay, ledger_index: 'validated',
+    }).then(function (r) {
+      var alt = (r.alternatives || [])[0];
+      if (!alt) return null;
+      var out = Number(alt.destination_amount) / 1e6;     // XRP destination comes back as drops
+      if (!(out > 0)) return null;
+      return { from: a, amt: amt, out: out,
+        paths: (alt.paths_computed && alt.paths_computed.length) ? alt.paths_computed : null };
+    }).catch(function () { return null; });
+  }
+
+  // The transaction, built exactly as dxaswap builds it.
+  //
+  // tfPartialPayment WITH A DeliverMin FLOOR, which is not the same as an unprotected partial payment.
+  // An exact-delivery Payment has to land its Amount to the last drop through whatever book the path
+  // runs over, and on a thin one that fails as tecPATH_PARTIAL even when the quote was honest.
+  // Partial delivers what SendMax buys; DeliverMin refuses anything under the quote less 0.5%. It pays
+  // the user themselves, so "partial" can only ever mean fewer of their own tokens spent.
+  function swapTx(q) {
+    var me = addr();
+    var amount = xrpAmountObj(q.out);
+    var floor = xrpAmountObj(window.lxx.minAfterSlippage(q.out, SWAP_SLIP));
+    var sendMax = iouAmountObj(q.from, q.amt);
+    if (!amount || !floor || !sendMax) return null;
+    var tx = {
+      TransactionType: 'Payment', Account: me, Destination: me,
+      Amount: amount, DeliverMin: floor, SendMax: sendMax,
+      Flags: 131072,                                       // tfPartialPayment
+      Memos: [{ Memo: { MemoData: hex('LumosCore: swap to XRP before bridging') } }],
+    };
+    if (q.paths) tx.Paths = q.paths;
+    return tx;
+  }
+
   // EVERYTHING ELSE THE WALLET HOLDS, named rather than hidden.
   //
   // Only XRP and the assets on Axelar's interchain registry can leave this ledger -- NEAR Intents and
@@ -7726,7 +7830,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // into USDC before handing it to a route -- but it replaces a silent limit with a stated one.
   function otherHoldings() {
     var known = {};
-    sourceAssets().forEach(function (a) { known[holdKey(a.currency, a.issuer)] = 1; });
+    // directAssets, NOT sourceAssets -- sourceAssets now calls THIS, and the pair would recurse.
+    directAssets().forEach(function (a) { known[holdKey(a.currency, a.issuer)] = 1; });
     // decodeCurrency returns { code, display, kind } -- NOT a string. Using its return value directly
     // rendered "[object Object]" as the ticker and, via the letter fallback, a disc reading "OBJ" on
     // every row. `kind` also answers the LP question without a second call: 'lp' is a pool share.
@@ -7737,9 +7842,28 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         try { d = dec ? dec(l.currency) : null; } catch (e) { d = null; }
         var lp = !!(d && d.kind === 'lp');
         var sym = (d && d.display) || String(l.currency).slice(0, 6);
-        return { symbol: lp ? 'Pool share' : sym, balance: l.balance, lp: lp };
+        return { symbol: lp ? 'Pool share' : sym, balance: l.balance, lp: lp,
+          currency: l.currency, issuer: l.issuer };
       })
       .sort(function (a, b) { return b.balance - a.balance; });
+  }
+
+  // A TICKER IS NOT AN IDENTITY ON THIS LEDGER. Anyone can issue a token called LUMOS, and the test
+  // wallet holds two: 320,804,914 from rsPqeam… (the real issuer) and 10,000,000,000 from rQGwqyp…,
+  // which has no market at all. In a picker that shows only the symbol those are the same row twice,
+  // and the larger — the impostor — sorts to the top.
+  //
+  // So a symbol held from more than one issuer carries its issuer. Nothing is judged here: the page
+  // does not decide which LUMOS is "real", it just stops pretending there is only one.
+  function labelHoldings(list) {
+    var seen = {};
+    list.forEach(function (o) { seen[o.symbol] = (seen[o.symbol] || 0) + 1; });
+    return list.map(function (o) {
+      if (seen[o.symbol] < 2 || !o.issuer) return o;
+      return { symbol: o.symbol, balance: o.balance, lp: o.lp,
+        currency: o.currency, issuer: o.issuer,
+        label: o.symbol + ' · ' + String(o.issuer).slice(0, 5) + '…' + String(o.issuer).slice(-4) };
+    });
   }
 
   // A DESTINATION IS A PLACE; THE ROUTE IS HOW YOU GET THERE. The two registries use different ids for
@@ -7793,6 +7917,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var p = PLACES[key], out = [];
     if (!src || !p) return out;
     var axOk = p.ax && src.ax && src.ax.chains.indexOf(p.ax) >= 0;
+    // A SWAPPED SOURCE ROUTES AS XRP, because that is what the wallet holds by the time any route is
+    // handed anything. Axelar is excluded on purpose: it carries the asset it is given, and after the
+    // swap that is plain XRP -- so the only Axelar pairs it could serve are the ones XRP already
+    // reaches, and routing an LUMOS transfer "via Axelar" would name a route that never saw LUMOS.
+    if (src.viaSwap) {
+      if (p.ni && BY_CHAIN[p.ni]) out.push('ni');
+      if (p.th && TH && TH.xrpTradeable) out.push('th');
+      if (p.ax && AX_BY_SYM.XRP && AX_BY_SYM.XRP.chains.indexOf(p.ax) >= 0) out.push('ax');
+      return out;
+    }
     if (!src.native) return axOk ? ['ax'] : [];
     if (p.ni && BY_CHAIN[p.ni]) out.push('ni');
     if (p.th && TH && TH.xrpTradeable) out.push('th');
@@ -8124,13 +8258,24 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var side = s2 && s2.querySelectorAll('.br-side')[0];
     var as = side && side.querySelector('.br-asset');
     if (!as) return;
-    // REBOUND TO THE FRESH ENTRY EVERY TIME, keeping the user's CHOICE (which is the symbol) but never
-    // their stale COPY of it. The first version kept the existing object whenever its symbol was still
-    // in the list -- and SRC is first set by the early paint, before the Axelar registry has arrived,
-    // so it held `ax: null` forever. Every Axelar destination then evaluated as unreachable and the
-    // route was invisible while both registries reported loaded.
+    // REBOUND TO THE FRESH ENTRY EVERY TIME, keeping the user's CHOICE but never their stale COPY of
+    // it. The first version kept the existing object whenever its symbol was still in the list -- and
+    // SRC is first set by the early paint, before the Axelar registry has arrived, so it held
+    // `ax: null` forever. Every Axelar destination then evaluated as unreachable and the route was
+    // invisible while both registries reported loaded.
+    //
+    // MATCHED ON IDENTITY, NOT SYMBOL, and on this ledger that distinction is not academic. The test
+    // wallet holds two tokens called LUMOS from two different issuers -- one real, one with no market
+    // at all -- and a symbol match rebound every pick to whichever came first in the list. Choosing
+    // the real one silently selected the impostor, whose swap then found no path: a correct refusal
+    // about an asset the user had not chosen.
     var list = sourceAssets();
-    var keep = SRC && list.filter(function (a) { return a.symbol === SRC.symbol; })[0];
+    var same = function (a, b) {
+      return a.symbol === b.symbol
+        && String(a.currency || '') === String(b.currency || '')
+        && String(a.issuer || '') === String(b.issuer || '');
+    };
+    var keep = SRC && list.filter(function (a) { return same(a, SRC); })[0];
     SRC = keep || list[0];
     var nm = as.querySelector('.nm');
     if (nm && nm.textContent !== SRC.symbol) {
@@ -8156,8 +8301,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function toggleSrcMenu(as) {
     var old = document.querySelector('.lx-srcmenu');
     if (old) { old.parentNode.removeChild(old); return; }
-    var list = sourceAssets();
-    var other = otherHoldings();
+    // directAssets, not sourceAssets: sourceAssets now CONTAINS the swap entries, and the swap
+    // section below adds them again -- which listed every token twice, once under each heading.
+    var list = directAssets();
+    var other = labelHoldings(otherHoldings());
     if (list.length < 2 && !other.length) return;
     var wrap = document.createElement('div');
     wrap.className = 'brd open lx-srcmenu';
@@ -8189,28 +8336,33 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       menu.appendChild(b);
     });
 
-    // WHAT THIS WALLET HOLDS THAT NO ROUTE CARRIES, under a heading that says so. Disabled, because
-    // they cannot be bridged -- but present, because a balance the page can see and will not name is
-    // indistinguishable from a page that failed to load it.
+    // EVERYTHING ELSE THE WALLET HOLDS, under a heading that says how it gets out. These are chosen
+    // the same way as any other source; the difference is that picking one adds a swap to XRP in
+    // front of the transfer, and the heading is where that is first said.
+    //
+    // A POOL SHARE IS STILL DISABLED. It is not a transferable asset and there is nothing to swap it
+    // into -- listing it as choosable would be offering a trade that cannot exist.
     if (other.length) {
       var hd = document.createElement('div');
       hd.setAttribute('data-logoed', '1');
       hd.style.cssText = 'padding:10px 12px 6px;font:700 10.5px/1 "Hanken Grotesk",system-ui,sans-serif;'
         + 'letter-spacing:.08em;text-transform:uppercase;color:var(--text-soft);'
         + 'border-top:1px solid var(--border);margin-top:6px';
-      hd.textContent = 'No route carries these';
+      hd.textContent = 'Swapped to XRP first';
       menu.appendChild(hd);
       other.forEach(function (o) {
         var b2 = document.createElement('button');
         b2.type = 'button';
         b2.className = 'brd-opt lx-srcopt';
-        b2.disabled = true;
         b2.style.setProperty('display', 'flex', 'important');
-        b2.style.opacity = '.5';
-        b2.style.cursor = 'default';
-        b2.title = o.lp
-          ? 'A pool share, not a transferable asset'
-          : o.symbol + ' is not on Axelar’s interchain registry, and NEAR Intents and THORChain carry XRP only';
+        if (o.lp) {
+          b2.disabled = true;
+          b2.style.opacity = '.5';
+          b2.style.cursor = 'default';
+          b2.title = 'A pool share, not a transferable asset';
+        } else {
+          b2.title = o.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
+        }
         var ic2 = document.createElement('span');
         ic2.className = 'brd-ic';
         setIcon(ic2, symLogo(o.symbol), o.symbol);
@@ -8218,8 +8370,20 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         nm2.className = 'brd-nm';
         nm2.setAttribute('data-logo', '');
         nm2.setAttribute('data-logoed', '1');
-        nm2.textContent = o.symbol + '  ' + fmt(o.balance, 6);
+        nm2.textContent = (o.label || o.symbol) + '  ' + fmt(o.balance, 6);
         b2.appendChild(ic2); b2.appendChild(nm2);
+        if (!o.lp) {
+          b2.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            SRC = sourceAssets().filter(function (x) {
+              return x.viaSwap && x.currency === o.currency && x.issuer === o.issuer;
+            })[0] || SRC;
+            QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
+            if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+            refreshDestinations();
+            paintSteps(); requote();
+          });
+        }
         menu.appendChild(b2);
       });
     }
@@ -8433,12 +8597,52 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return { gross: gross, fee: fee, net: gross - fee };
   }
 
+  // THE XRP A ROUTE WILL ACTUALLY BE HANDED.
+  //
+  // For a direct source that is what was typed. For a swapped one the typed figure is in the SOURCE
+  // asset -- 1,000 LUMOS -- and what reaches the route is whatever the ledger pays for it, so every
+  // downstream quote has to read this rather than the input. Zero until the swap has been priced,
+  // which is correct: there is nothing to quote a bridge on until then.
+  function bridgeXrp() {
+    if (SRC && SRC.viaSwap) return (SWAPQ && SWAPQ.out > 0) ? SWAPQ.out : 0;
+    return amountXrp();
+  }
+
   var qSeq = 0, qTimer = null;
   function requote() {
     clearTimeout(qTimer);
     qTimer = setTimeout(doQuote, 350);
   }
+  // THE SWAP IS PRICED BEFORE ANY ROUTE IS ASKED, because until it is there is no XRP figure to ask
+  // a route about. One extra ripple_path_find, and only for a swapped source.
   function doQuote() {
+    if (SRC && SRC.viaSwap) {
+      var typed = amountXrp();
+      if (!(typed > 0)) { SWAPQ = null; return runQuote(); }
+      // BY IDENTITY, NOT BY OBJECT. paintSourceAsset rebuilds SRC into a NEW object on every repaint,
+      // so `SWAPQ.from === SRC` was never true after the first paint -- the swap was re-priced on
+      // every keystroke and, worse, SWAPQ went null for the round trip. Arriving at the review, which
+      // re-quotes, that made it read "0 LUMOS" and "for about 0 XRP" until the path-find came back.
+      var sameSrc = SWAPQ && SWAPQ.from
+        && String(SWAPQ.from.currency) === String(SRC.currency)
+        && String(SWAPQ.from.issuer) === String(SRC.issuer);
+      if (sameSrc && SWAPQ.amt === typed) return runQuote();
+      SWAPQ = null;
+      QUOTING = true;
+      paintQuote(null, 'Pricing the swap to XRP…');
+      var mySeq = ++qSeq;
+      return quoteSwap(SRC, typed).then(function (q) {
+        if (mySeq !== qSeq) return;                      // a newer keystroke won
+        SWAPQ = q;
+        if (!q) { QUOTING = false; paintQuote(null, 'No route from ' + SRC.symbol + ' to XRP for that amount.'); return; }
+        runQuote();
+      });
+    }
+    SWAPQ = null;
+    return runQuote();
+  }
+
+  function runQuote() {
     var key = destChain();
     var routes = routesFor(SRC, key);
     QUOTE = null; THQ = null; AXQ = null; BEST = ''; QUOTING = false;
@@ -8489,7 +8693,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // Axelar prices the RELAY, not the trade: there is no exchange here, the same asset comes out the
   // other side. So the only unknown is the gas, and what arrives is simply the amount minus it.
   function quoteAx(key) {
-    var amt = amountXrp();
+    var amt = bridgeXrp();
     QUOTE = null; AXQ = null;
     // EVERY WAY OUT OF THIS FUNCTION CLEARS `QUOTING`. It has seven of them, and a route left marked
     // as still quoting shows "Quoting…" on its card forever -- which looks like a hung request rather
@@ -8535,7 +8739,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // one. The inbound address rotates as vaults churn, which is why it is taken from the quote every
   // time and never remembered.
   function quoteTh(key, seq) {
-    var amt = amountXrp(), to = recipient();
+    var amt = bridgeXrp(), to = recipient();
     var p = PLACES[key];
     var asset = p && p.th && TH_NATIVE[p.th];
     if (!amt || !asset || !to) return Promise.resolve();
@@ -8555,7 +8759,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   function quoteNi(chain, seq) {
-    var amt = amountXrp(), me = addr();
+    var amt = bridgeXrp(), me = addr();
     if (!amt || !DEST || !chain) return Promise.resolve();
     var n = netDrops(amt);
     if (n.net < MIN_DROPS) { NOTE.ni = LAST_NOTE = 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP'; return Promise.resolve(); }
@@ -8610,7 +8814,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   function paintReview(q, note) {
-    var amt = amountXrp(), n = netDrops(amt);
+    var amt = bridgeXrp(), n = netDrops(amt);
     var sym = SRC ? SRC.symbol : 'XRP';
     var set = function (sel, txt) { var e = $(sel); if (e && e.textContent !== txt) e.textContent = txt; };
     // A FIGURE IS NOT ERASED WHILE ITS REPLACEMENT IS BEING FETCHED.
@@ -8666,6 +8870,35 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // making a choice, and a reader is entitled to know which.
     keep('[data-rv="route"]', AXQ ? 'Axelar' : BEST === 'th' ? 'THORChain'
       : BEST === 'ni' ? 'NEAR Intents' : '—');
+    // A SWAPPED SOURCE SENDS TWO SIGNATURES, and the review is where that is said -- with what the
+    // swap is expected to fetch, and what happens if the second half does not go through. Someone
+    // who signs once and stops should not be surprised by what they are holding.
+    if (SRC && SRC.viaSwap) {
+      // The typed figure, unconditionally. `amt` is the XRP the swap will fetch, and gating on it
+      // printed "0 LUMOS" for the second the review spends re-pricing.
+      var typedSrc = amountXrp();
+      set('[data-rv="send"]', (typedSrc > 0 ? fmt(typedSrc, 6) : '0') + ' ' + SRC.symbol);
+      var host = $('[data-rv="route"]');
+      host = host && host.closest('.br-rv-row, .br-rv-leg, div');
+      var note = $('.lx-swapnote');
+      if (!note && host && host.parentNode) {
+        note = document.createElement('div');
+        note.className = 'lx-swapnote';
+        note.style.cssText = 'margin-top:12px;padding:11px 13px;border-radius:11px;'
+          + 'border:1px solid var(--border);background:var(--surface-2);'
+          + 'font:400 12.5px/1.45 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-soft)';
+        host.parentNode.appendChild(note);
+      }
+      if (note) {
+        var got = SWAPQ && SWAPQ.out > 0 ? (fmt(SWAPQ.out, 6) + ' XRP') : 'the XRP it fetches';
+        note.textContent = 'Two signatures: first ' + fmt(typedSrc, 6) + ' ' + SRC.symbol
+          + ' is swapped on the XRP Ledger for about ' + got
+          + ', then that is bridged. If the second one does not go through you keep the XRP.';
+      }
+    } else {
+      var old = $('.lx-swapnote');
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+    }
     paintReviewLegs();
   }
 
@@ -9156,8 +9389,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (!routes.length) return (SRC ? SRC.symbol : 'This asset') + ' cannot reach ' + placeLabel(chain);
     var route = routes[0];
     if (routes.indexOf('ni') >= 0 && !DEST && routes.length === 1) return 'Choose a destination asset';
-    var amt = amountXrp();
-    if (!amt) return 'Enter an amount';
+    var amt = bridgeXrp();
+    // A SWAPPED SOURCE HAS TWO AMOUNTS and they fail differently. bridgeXrp() is 0 both when nothing
+    // has been typed AND while the swap is still being priced -- and "Enter an amount" is only true
+    // of the first. Saying it of the second tells someone to do a thing they have already done.
+    if (SRC && SRC.viaSwap) {
+      if (!amountXrp()) return 'Enter an amount';
+      if (!amt) return 'Pricing the swap…';
+    } else if (!amt) return 'Enter an amount';
     // The 2 XRP floor is 1Click's, so it applies only when NEAR Intents is the ONLY route. THORChain
     // has its own dust threshold and reports it in words, and Axelar's floor is simply covering the
     // relay fee -- so a pair another route could carry must not be blocked by a minimum that is not
@@ -9165,7 +9404,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (routes.length === 1 && route === 'ni' && netDrops(amt).net < MIN_DROPS) {
       return 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP';
     }
-    if (SRC && SRC.balance != null && amt > SRC.balance) return 'More than your ' + SRC.symbol + ' balance';
+    // AGAINST THE ASSET THE BALANCE IS IN. For a swapped source `amt` is the XRP the swap will fetch
+    // and SRC.balance is the token being spent, so comparing them is comparing two different assets
+    // -- it would pass 1,000,000 LUMOS worth 12 XRP and refuse 20 LUMOS worth 0.2.
+    var spend = (SRC && SRC.viaSwap) ? amountXrp() : amt;
+    if (SRC && SRC.balance != null && spend > SRC.balance) return 'More than your ' + SRC.symbol + ' balance';
     if (!recipient()) return 'Enter a destination address';
     // THE REAL REASON, not a generic wait. A recipient the destination chain would reject is refused
     // by the proxy with "recipient does not look like a base address" -- and the first version threw
@@ -9178,7 +9421,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
-    b.textContent = why || ('Bridge ' + fmt(amountXrp(), 6) + ' XRP');
+    // The button names what LEAVES the wallet, which for a swapped source is the asset the user
+    // typed, not the XRP it becomes on the way.
+    b.textContent = why || ('Bridge ' + fmt(amountXrp(), 6) + ' ' + ((SRC && SRC.symbol) || 'XRP'));
     if (why) {
       b.setAttribute('disabled', 'disabled');
       b.setAttribute('aria-disabled', 'true');
@@ -9273,7 +9518,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // never from anything remembered -- THORChain rotates vaults, and sending to yesterday's is sending
   // to nobody.
   function sendTh() {
-    var me = addr(), amt = amountXrp(), n = netDrops(amt);
+    var me = addr(), amt = bridgeXrp(), n = netDrops(amt);
     if (!THQ || !THQ.inbound || !THQ.memo) { busy = false; setCta(); return; }
     say('Confirm the transfer in your wallet…');
     window.lxc.submit({
@@ -9306,6 +9551,102 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
   }
 
+  // ---- swap, then bridge ----------------------------------------------------------------------------
+  //
+  // Two signatures, in an order that cannot be reversed: the asset has to BE XRP before a route will
+  // take it. What that costs the user if the second half fails is stated on the review and again
+  // here -- they end up holding XRP rather than the token they started with. That is a real outcome
+  // and the page says so rather than discovering it for them.
+  //
+  // THE SECOND LEG IS QUOTED AGAINST WHAT ACTUALLY ARRIVED, never against the swap's estimate. A
+  // partial payment delivers what SendMax buys, so the XRP in hand can be anything from the 0.5%
+  // floor upwards, and bridging the estimate would either leave dust behind or ask for XRP that is
+  // not there. `delivered_amount` in the swap's own metadata is the exact figure.
+  function swapThenBridge() {
+    var q = SWAPQ;
+    if (!q || !(q.out > 0)) { busy = false; say('The swap is not priced yet'); setCta(); return; }
+    var tx = swapTx(q);
+    if (!tx) { busy = false; say('That amount is too small for the ledger'); setCta(); return; }
+
+    say('Step 1 of 2 — approve the swap to XRP…');
+    // A DRY RUN BEFORE THE WALLET IS ASKED. On a thin book the price can move past the 0.5% floor in
+    // the seconds between quote and signature, and the ledger will say so without a fee or a
+    // signature. dxaswap added this after two live tecPATH_PARTIAL failures.
+    rpcT('simulate', { tx_json: tx }).then(function (r) { return r && r.engine_result; }, function () { return null; })
+      .then(function (er) {
+        if (er === 'tecPATH_PARTIAL' || er === 'tecPATH_DRY') {
+          throw new Error('The price moved while this was being prepared. Nothing was signed — check the new quote and try again.');
+        }
+        return window.lxc.submit(tx);
+      })
+      .then(function (hash) {
+        say('Swapping to XRP…');
+        return waitSwap(hash);
+      })
+      .then(function (got) {
+        if (!(got > 0)) throw new Error('The swap did not complete. Nothing was bridged.');
+        // The swap has landed. From here the wallet holds XRP and the transfer is an ordinary one.
+        SRC = directAssets()[0];                          // XRP, with its own balance
+        SWAPQ = null;
+        say('Swapped — pricing the transfer…');
+        return refreshAfterSwap(got);
+      })
+      .then(function () {
+        busy = false;
+        send();                                           // now a plain XRP bridge, fully re-quoted
+      })
+      .catch(function (e) {
+        busy = false;
+        say(String((e && e.message) || 'The swap could not be completed.'));
+        setTimeout(function () { busy = false; setCta(); }, 5000);
+      });
+  }
+
+  // What the swap actually delivered, from its own metadata. delivered_amount is the authoritative
+  // figure for a partial payment; `Amount` is only what was asked for.
+  function waitSwap(hash) {
+    var n = 40;
+    function look() {
+      return rpcT('tx', { transaction: hash, binary: false }, 8000).then(function (r) {
+        if (!(r && r.validated)) return again();
+        var m = r.meta || {};
+        if (m.TransactionResult !== 'tesSUCCESS') {
+          throw new Error('The swap failed on the ledger (' + m.TransactionResult + '). Nothing was bridged.');
+        }
+        var d = m.delivered_amount;
+        return (typeof d === 'string') ? Number(d) / 1e6 : 0;
+      }, again);
+    }
+    function again() {
+      if (--n <= 0) throw new Error('The swap is taking longer than expected. Check your wallet before trying again.');
+      return new Promise(function (res) { setTimeout(res, 1500); }).then(look);
+    }
+    return look();
+  }
+
+  // Put the freshly received XRP into the amount field and re-price everything against it, so the
+  // second signature is for a transfer the user can see in full before approving it.
+  function refreshAfterSwap(got) {
+    return loadSpendable().then(function () {
+      var inp = amtInput();
+      // A drop of headroom for the ledger's own transaction cost on the bridge payment.
+      var usable = Math.max(0, Math.min(got, XRP_SPEND == null ? got : XRP_SPEND) - 0.001);
+      if (inp) { inp.value = String(Math.floor(usable * 1e6) / 1e6); }
+      paintSteps();
+      return new Promise(function (res) {
+        doQuote();
+        // doQuote debounces through requote() elsewhere; here it runs immediately and we wait for a
+        // settled answer rather than racing the button back on.
+        var tries = 0;
+        (function wait() {
+          if (!QUOTING && (QUOTE || THQ || AXQ)) return res();
+          if (++tries > 40) return res();
+          setTimeout(wait, 300);
+        })();
+      });
+    });
+  }
+
   function send() {
     if (busy) return;
     var why = blockReason();
@@ -9313,11 +9654,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     busy = true;
     var b0 = ctaButton();
     if (b0) { b0.style.pointerEvents = 'none'; b0.style.opacity = '.7'; }
+    // THE SWAP COMES FIRST AND IS ITS OWN SIGNATURE. Nothing below this line can run on a source no
+    // route carries, so it is checked before the route dispatch rather than inside it.
+    if (SRC && SRC.viaSwap) return swapThenBridge();
     // Whichever route the page SHOWED is the one it sends by. Re-deriving it here could send by a
     // route the user was never quoted.
     if (AXQ) return sendAx();
     if (BEST === 'th') return sendTh();
-    var amt = amountXrp(), n = netDrops(amt), me = addr();
+    var amt = bridgeXrp(), n = netDrops(amt), me = addr();
     var b = ctaButton();
     if (b) { b.style.pointerEvents = 'none'; b.style.opacity = '.7'; }
     say('Getting a firm quote…');
