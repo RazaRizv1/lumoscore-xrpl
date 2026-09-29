@@ -2682,7 +2682,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
     </button>
 </header>
 
-  <main class="page"><div class="container"><div class="lx-bp-head"><h1>Blog</h1></div><p class="lx-bp-lede">Guides and explainers on trading, pools, bridging and issuing assets on Stellar.</p><div class="lx-bp-grid"></div></div></main>
+  <main class="page"><div class="container"><div class="lx-bp-head"><h1>Blog</h1></div><p class="lx-bp-lede">Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.</p><div class="lx-bp-grid"></div></div></main>
 
   <!-- Footer -->
   <footer class="site-footer">
@@ -4251,7 +4251,7 @@ function fillIndex(posts){
     grid.outerHTML="<div class='lx-bd-empty'><div class='t'>No posts yet</div>"
       +"<div class='s'>The first ones are being written. Check back shortly.</div></div>";
     var lede=q(".lx-bp-lede");
-    if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on Stellar.";
+    if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.";
     return;
   }
   grid.innerHTML=posts.map(function(p){
@@ -4267,7 +4267,7 @@ function fillIndex(posts){
   }).join("");
   posts.forEach(function(p){ coverInto(q(".lx-bp-cover[data-cov='"+p.slug+"']"),p); });
   var lede=q(".lx-bp-lede");
-  if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on Stellar.";
+  if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.";
 }
 
 function fillPost(post){

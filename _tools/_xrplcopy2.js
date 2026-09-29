@@ -32,6 +32,24 @@ const B = String.fromCharCode(92);
 
 // from -> to. Longest first so a phrase is never half-rewritten by a shorter one.
 const PHRASES = [
+  // THE ABOUT PAGE'S "WHAT WE RUN" LIST describes what is in production, and on this build every
+  // card in it should describe what THIS site runs. Its Cross-chain card is corrected below; its
+  // Trading card still named the other chain's venue -- "against Stellar's own order book and
+  // pools" -- beside a Cross-chain card about XRP, which is a list arguing with itself.
+  //
+  // NOT TOUCHED, deliberately: "live on Stellar mainnet since 1 August 2026", which appears twice on
+  // this page. That is a true statement about the company and rewriting it to say the XRP Ledger
+  // would be false until launch day. It is RAZA's line to change when XRPL goes live, not a bug.
+  ["Swaps and limit orders against Stellar's own order book and pools.",
+    'Swaps and limit orders against the XRP Ledger’s own order book and AMM pools.'],
+
+  // THE BLOG STANDFIRST AGAIN, this time as MARKUP. The same sentence exists twice in this build:
+  // as a script literal on the blog-POST key (handled in SCRIPT_LITERALS) and as a plain
+  // <p class="lx-bp-lede"> on the blog INDEX key. Fixing only the script left the index page --
+  // the one a reader actually lands on -- still saying Stellar.
+  ['Guides and explainers on trading, pools, bridging and issuing assets on Stellar.',
+    'Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.'],
+
   // THE /mcp HERO EYEBROW, sitting directly above a paragraph that reads "Connect your AI agent to
   // LumosCore on the XRP Ledger". The page named a different chain than its own first sentence, in
   // the largest small-caps line on the screen.
@@ -190,6 +208,25 @@ const PHRASES = [
   ["USDC between Stellar and eight networks over Circle's CCTP.",
     'USDC between the XRP Ledger and 14 networks through Axelar.'],
 
+  // AND NOW THE SAME LINES AGAIN, because the three above were written when this build's bridge was
+  // Axelar route-discovery and nothing else. It is three routes to thirty-nine destinations now, and
+  // it carries XRP and the interchain tokens -- not USDC, which was Circle's asset on Stellar's CCTP
+  // and never what Axelar moves off this ledger. So "USDC ... through Axelar" was a sentence with the
+  // wrong asset, the wrong count and only a third of the right provider.
+  //
+  // The ABOUT page is where this hurt most: its "What we run" list is a statement of what is in
+  // production, and it described a product that had been replaced.
+  //
+  // LONGEST FIRST, as the note at the top of this list says -- "USDC between the XRP Ledger and 14
+  // networks through Axelar." is a SUFFIX of the "Move ..." line, and putting the short one first
+  // would leave a stranded "Move " in front of the rewritten sentence.
+  ['bridge USDC to and from 14 other networks',
+    'bridge XRP to and from 39 other networks'],
+  ['Move USDC between the XRP Ledger and 14 networks through Axelar.',
+    'Move XRP to 39 networks through NEAR Intents, Axelar or THORChain.'],
+  ['USDC between the XRP Ledger and 14 networks through Axelar.',
+    'XRP to 39 networks through NEAR Intents, Axelar or THORChain.'],
+
   // ---- AND THE PAGE CONTRADICTED ITSELF ABOUT WHETHER THE BRIDGE WORKS ---------------------------
   //
   // Fixing the NUMBER above left the bigger problem: the general FAQ said you can bridge, in the
@@ -320,6 +357,15 @@ const SCRIPT_LITERALS = [
   ["'   from: APT · amount: 500 · to: USDC'", "'   from: XRP · amount: 500 · to: RLUSD'"],
   ["'500 APT → 1,247.82 USDC'", "'500 XRP → 744.10 RLUSD'"],
   ["'View on AptosScan'", "'View on Bithomp'"],
+
+  // THE BLOG'S OWN STANDFIRST, set by script in two places on each of the two blog page keys --
+  // once on the empty-state path and once after the grid renders. It is the only sentence on that
+  // page that says anything about a chain, and it said Stellar.
+  //
+  // A SCRIPT LITERAL, not prose: `lede.textContent = "…"`. The markup pass cannot see it, which is
+  // why it survived every sweep that fixed the pages around it.
+  ['"Guides and explainers on trading, pools, bridging and issuing assets on Stellar."',
+    '"Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger."'],
 ];
 
 // [regex with a leading capture group, replacement]. The capture is whatever preceded the match and

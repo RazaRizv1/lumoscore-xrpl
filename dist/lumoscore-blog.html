@@ -2939,7 +2939,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
       
     </header>
 
-    <main class="page"><div class="container"><div class="lx-bp-head"><h1>Blog</h1></div><p class="lx-bp-lede">Guides and explainers on trading, pools, bridging and issuing assets on Stellar.</p><div class="lx-bp-grid"></div></div></main><footer>
+    <main class="page"><div class="container"><div class="lx-bp-head"><h1>Blog</h1></div><p class="lx-bp-lede">Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.</p><div class="lx-bp-grid"></div></div></main><footer>
       <div class="ft-grid"><div class="ft-col ft-brand"><div class="ft-mark"><span class="ft-logo"></span><span class="ft-name">LUMOSCORE</span></div><p>Multichain infrastructure for issuing and trading assets on multiple networks.</p><div class="lx-xrplto"><a rel="nofollow noopener" target="_blank" href="https://xrpl.to">Data by xrpl.to</a></div><div class="socials">
           <a href="https://x.com/LumosCore" target="_blank" rel="noopener nofollow" aria-label="X"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
           <a href="http://t.me/lumoscore" target="_blank" rel="noopener nofollow" aria-label="Telegram"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M22.05 1.577c-.393-.016-.784.08-1.117.235-.484.186-21.087 8.502-21.087 8.502s5.523 1.86 5.523 1.86 2.61 8.155 2.708 8.479c.108.357.42.768.793 1.052.473.288 1.214.336 1.86-.016.7-.382 2.166-1.255 2.166-1.255l4.13 3.046s.572.345 1.218.396c.323.025 1.082-.27 1.082-.27.371-.255.62-.7.74-1.211l3.32-16.65c.085-.382-.094-.59-.166-.66-.43-.404-1.038-.524-1.295-.522l-.012-.06z"/></svg></a>
@@ -8060,7 +8060,7 @@ function fillIndex(posts){
     grid.outerHTML="<div class='lx-bd-empty'><div class='t'>No posts yet</div>"
       +"<div class='s'>The first ones are being written. Check back shortly.</div></div>";
     var lede=q(".lx-bp-lede");
-    if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on Stellar.";
+    if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.";
     return;
   }
   grid.innerHTML=posts.map(function(p){
@@ -8076,7 +8076,7 @@ function fillIndex(posts){
   }).join("");
   posts.forEach(function(p){ coverInto(q(".lx-bp-cover[data-cov='"+p.slug+"']"),p); });
   var lede=q(".lx-bp-lede");
-  if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on Stellar.";
+  if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.";
 }
 
 function fillPost(post){

@@ -4251,7 +4251,7 @@ function fillIndex(posts){
     grid.outerHTML="<div class='lx-bd-empty'><div class='t'>No posts yet</div>"
       +"<div class='s'>The first ones are being written. Check back shortly.</div></div>";
     var lede=q(".lx-bp-lede");
-    if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on Stellar.";
+    if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.";
     return;
   }
   grid.innerHTML=posts.map(function(p){
@@ -4267,7 +4267,7 @@ function fillIndex(posts){
   }).join("");
   posts.forEach(function(p){ coverInto(q(".lx-bp-cover[data-cov='"+p.slug+"']"),p); });
   var lede=q(".lx-bp-lede");
-  if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on Stellar.";
+  if(lede)lede.textContent="Guides and explainers on trading, pools, bridging and issuing assets on the XRP Ledger.";
 }
 
 function fillPost(post){
