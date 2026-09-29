@@ -319,12 +319,79 @@
     sel.addEventListener('change', function () { setTimeout(report, 0); });
   }
 
+  // ---- what each programme has actually paid out -----------------------------------------------------
+  //
+  // THE PAGE WAS CONTRADICTING ITS OWN FAQ. All three "Distributed" bars read 23M, and the hero read
+  // 69,000,000 — which is 3 x 23M. Those are the design's placeholder figures, inherited in the
+  // markup and never reconciled with anything. Three programmes that STARTED FOUR MONTHS APART
+  // cannot have paid out identical amounts, and the page says so itself a few hundred pixels lower:
+  // "Ecosystem LP began on 15 April 2026, making 1 October 2026 its twelfth and final round" — that
+  // is eleven rounds paid, not twenty-three.
+  //
+  // So the figures are COUNTED from the schedule the page already publishes rather than written down
+  // a second time: rounds close on the 1st and the 15th, each programme pays 1,000,000 LUMOS a round,
+  // and each began on its own stated date. The count is the only input, so the bars and the FAQ
+  // cannot drift apart again.
+  //
+  // Start dates are the ones in the FAQ above, which is the authored source for this schedule.
+  var PROGRAMMES = [
+    { key: 'native', start: [2025, 11, 15], perRound: 1e6, cap: 240e6 },   // 15 Dec 2025
+    { key: 'eco', start: [2026, 3, 15], perRound: 1e6, cap: 240e6 },       // 15 Apr 2026
+    { key: 'whale', start: [2026, 3, 1], perRound: 1e6, cap: 50e6 },       //  1 Apr 2026
+  ];
+  // Rounds CLOSE on the 1st and the 15th. A round dated today has not paid yet, so the count is of
+  // closes strictly before now -- the same boundary the countdown above uses for "next distribution".
+  function roundsPaid(start, now) {
+    var d = new Date(start[0], start[1], start[2]);
+    var n = 0;
+    while (d < now) {
+      n++;
+      d = d.getDate() === 1 ? new Date(d.getFullYear(), d.getMonth(), 15)
+        : new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+    return n;
+  }
+  function shortM(v) {
+    var m = v / 1e6;
+    return (Math.abs(m - Math.round(m)) < 0.05 ? String(Math.round(m)) : m.toFixed(1)) + 'M';
+  }
+  function paintDistributed() {
+    var rows = [].slice.call(document.querySelectorAll('.palloc .pa-row')).filter(function (r) {
+      var l = r.querySelector('.l');
+      return l && /distributed/i.test(l.textContent || '');
+    });
+    if (!rows.length) return;
+    var now = new Date(), total = 0;
+    // The bars are in the order the programmes are laid out, which is the order of PROGRAMMES.
+    PROGRAMMES.forEach(function (p, i) {
+      var paid = Math.min(p.cap, roundsPaid(p.start, now) * p.perRound);
+      total += paid;
+      var r = rows[i];
+      if (!r) return;
+      var b = r.querySelector('.r b');
+      if (b && b.textContent !== shortM(paid)) b.textContent = shortM(paid);
+    });
+    // "Distributed so far" is the sum of the three, not a fourth number to keep in step.
+    [].forEach.call(document.querySelectorAll('.hstats .hstat'), function (h) {
+      if (!/distributed so far/i.test(h.textContent || '')) return;
+      var v = h.querySelector('.v');
+      var want = total.toLocaleString('en-US');
+      if (v) {
+        // The unit sits in its own node beside the figure; only the figure is rewritten.
+        var t = v.firstChild;
+        if (t && t.nodeType === 3) { if (t.nodeValue !== want) t.nodeValue = want; }
+        else if (v.textContent.indexOf(want) < 0) v.textContent = want;
+      }
+    });
+  }
+
   function load() {
     if (!$('#eligBox') && !$('#repRows')) return;             // not the Rewards page
     setTimeout(fixRounds, 0);
     setTimeout(fixRounds, 1500);
     paintChainCopy();
     fixProgramCopy();
+    paintDistributed();
     eligibility();
     report();
     // Connect finishes after this on a cold load, and the address can arrive from another tab.

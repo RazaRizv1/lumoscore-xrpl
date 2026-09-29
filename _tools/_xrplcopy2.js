@@ -32,6 +32,28 @@ const B = String.fromCharCode(92);
 
 // from -> to. Longest first so a phrase is never half-rewritten by a shorter one.
 const PHRASES = [
+  // A FAQ ANSWER POINTING AT A CONTROL THAT DOES NOT EXIST. "In Wallet, use Add asset with the code
+  // and issuer" — there is no Add asset on the Wallet page, and no trust-line control anywhere: the
+  // button was removed on 2026-09-15 and the answer was not. Measured on the live page, every
+  // visible control is Send / Receive / Swap / Trade / Cancel all.
+  //
+  // It matters more here than a wrong label usually would. You cannot receive an issued token on
+  // this ledger without a trust line, so "how do I add one" is a question people genuinely arrive
+  // with — and the answer sent them hunting for a button that is not there. It is also on the
+  // LANDING page, which is the most public page on the site and the one search engines weight most.
+  //
+  // What actually happens: browser/dxaswap.js signs a TrustSet as step 1 of 3 when you swap into a
+  // token you do not yet hold, and browser/wallet.js offers removal on an asset row once its balance
+  // is zero. Both are real, both are described here, and neither needed building.
+  ['In Wallet, use Add asset with the code and issuer, or add it from search. To remove one its balance must be zero, so send or swap the remainder first, and that releases the 0.2 XRP it was holding.',
+    'You do not add one by hand. Buying an asset through Trade or Swap opens its trust line for you — it is the first of the signatures that swap asks for, and it reserves 0.2 XRP. To remove one its balance must be zero, so send or swap the remainder first; a Trustline button then appears on that row, and using it releases the 0.2 XRP.'],
+  // NAMED AFTER THE BUTTON ON SCREEN. The first version of this fix said "the row then offers
+  // Remove" — which is what the control DOES, not what it SAYS. browser/wallet.js labels it
+  // "Trustline" with a trash glyph (the title attribute carries the verb). Replacing one wrong
+  // instruction with a less wrong one is not the point of this entry.
+  ['so send or swap the remainder first; the row then offers Remove, and that releases the 0.2 XRP it was holding.',
+    'so send or swap the remainder first; a Trustline button then appears on that row, and using it releases the 0.2 XRP.'],
+
   ['Only send APT and Aptos-based assets to this address',
     'Only send XRP and XRP Ledger assets to this address'],
   ['Trustlines let you hold non-native assets on Aptos',
