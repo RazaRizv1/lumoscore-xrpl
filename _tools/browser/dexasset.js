@@ -477,12 +477,58 @@
       .catch(function () {});
   }
 
+  // WHY THE FIGURES ARE MISSING, said once, instead of six dashes and an empty chart.
+  //
+  // RAZA on 2026-09-29: "Why's BCHAMP token not showing details". Because /lxapi/xrpltoken answers
+  // {"ok":false,"error":"upstream 404"} for it — xrpl.to has no record of that token, which is what
+  // happens to an asset with no market on the DEX. The page was right to show nothing, and wrong to
+  // show nothing WITHOUT SAYING SO: four dashes, a blank chart and a dead swap panel are what a
+  // broken page looks like, so a reader cannot tell a thin token from an outage.
+  //
+  // The description and issuer above still render, because those come from XRPLMeta rather than
+  // xrpl.to — which is exactly why the page looked half-loaded rather than empty.
+  // TWO DIFFERENT SILENCES, and they must not be told apart by guesswork.
+  //
+  // A token the feed has never heard of (upstream 404) has no market — that is a fact about the
+  // token, and it is permanent until someone makes a market. A feed that refused THIS request is an
+  // outage, and the same token will price fine on a reload. Both render as six dashes, which is why
+  // RAZA asked "Why's BCHAMP token not showing details" — and BCHAMP turned out to have a perfectly
+  // good market (0.00601582 XRP, $20,430 of 24h volume) that had simply failed to load that once.
+  //
+  // So the note says which one happened. Telling someone their token has no market when the feed
+  // merely rate-limited us would be a confident falsehood about their asset, and xrpl.to's cap is
+  // 333 requests a day per IP -- being refused is ordinary.
+  function noMarketNote(kind) {
+    var host = document.querySelector('.dxa-stats') || document.querySelector('[class*="dxa-stat"]');
+    host = host && host.parentElement;
+    var note = document.querySelector('.lx-nomarket');
+    if (!kind) { if (note && note.parentNode) note.parentNode.removeChild(note); return; }
+    if (!host) return;
+    if (!note) {
+      note = document.createElement('div');
+      note.className = 'lx-nomarket';
+      note.setAttribute('data-logoed', '1');
+      note.style.cssText = 'margin:12px 0 0;padding:11px 14px;border-radius:12px;'
+        + 'border:1px solid var(--border);background:var(--surface-2);'
+        + 'font:400 12.5px/1.5 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-soft)';
+      host.appendChild(note);
+    }
+    note.textContent = kind === 'none'
+      ? 'No market data for this token. It exists on the ledger, but no price feed tracks it — which '
+        + 'usually means it has no order book or pool with meaningful depth. Its description and '
+        + 'issuer above are read straight from the ledger.'
+      : 'Market data could not be loaded just now — the price feed did not answer. The token and its '
+        + 'issuer above are read from the ledger and are unaffected. Reloading usually fixes it.';
+  }
+
   function paintStats(d) {
     if (!d) {
       ['price', '24h change', '24h volume', 'market cap', 'liquidity', 'supply']
         .forEach(function (n) { setCell(n, null, '', ''); });
+      noMarketNote(window.__lxxAssetMiss === 'none' ? 'none' : 'down');
       return;
     }
+    noMarketNote(null);
     var usd = (d.price && d.usd) ? (d.usd / d.price) : null;   // USD per XRP, from this token's pair
 
     setCell('price', d.price == null ? null : xrp(d.price, 6) + ' ', 'XRP',
@@ -2819,6 +2865,12 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         window.__lxxAssetData = (d && d.ok) ? d : null;
+        // WHY it is missing, recorded alongside the fact that it is. The endpoint says "upstream 404"
+        // only when the feed has genuinely never heard of the token; anything else — a refusal, a
+        // rate limit, a dropped connection — is an outage and must not be reported as the token
+        // having no market. See noMarketNote.
+        window.__lxxAssetMiss = (d && d.ok) ? null
+          : (/404/.test(String((d && d.error) || '')) ? 'none' : 'down');
         try { window.dispatchEvent(new CustomEvent('lxx:assetdata')); } catch (e) {}
         paintHeader(asset, window.__lxxAssetData);
         paintStats(window.__lxxAssetData);

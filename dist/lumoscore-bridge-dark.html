@@ -6591,7 +6591,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function loadHoldings() {
     var me = addr();
     HOLD = {};
-    if (!me || !AX) return Promise.resolve();
+    LINES = [];
+    // NOT GATED ON THE AXELAR REGISTRY ANY MORE. This read serves two things: HOLD, which matches
+    // balances against Axelar's interchain assets, and LINES, which is every funded trust line and
+    // is what the swap-first source list is built from. Only the first needs Axelar -- but the whole
+    // function returned early without it, so an Axelar outage silently removed every swappable asset
+    // from the picker and left a wallet holding tokens looking like a wallet holding only XRP.
+    if (!me) return Promise.resolve();
     return rpcB('account_lines', { account: me, ledger_index: 'validated', limit: 400 })
       .then(function (d) {
         var lines = (d && d.result && d.result.lines) || [];
@@ -7057,6 +7063,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return as;
   }
 
+  // A CARET IS A PROMISE THAT THERE IS SOMETHING TO PICK. The design ships `.cv` -- the little ▾ --
+  // inside every asset row and nothing ever removed it, so a destination that carries exactly one
+  // asset still advertised a menu. Dogecoin, Litecoin, Zcash, Dash and the rest of the single-asset
+  // chains all showed one, and clicking did nothing at all: the row's own handler bails when there
+  // are fewer than two options. Setting the cursor was never enough on its own.
+  function setPickable(as, on) {
+    if (!as) return;
+    as.style.cursor = on ? 'pointer' : '';
+    var cv = as.querySelector('.cv');
+    if (cv) cv.style.display = on ? '' : 'none';
+  }
+
   function paintDestAsset(dst) {
     var key = destChain(), as = ensureDestRow(dst);
     if (!as || !key) return;
@@ -7083,7 +7101,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // which covers the natives THORChain swaps into, and letters remain the fallback.
       setIcon(as.querySelector('.br-ic'),
         symLogo(label) || ((!thSym && SRC && SRC.native) ? XRP_LOGO : ''), label);
-      as.style.cursor = '';
+      setPickable(as, false);
       DEST = null;
       return;
     }
@@ -7102,7 +7120,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // CoinGecko id that 404s from the edge left the slot completely empty -- not a grey disc, not a
     // broken image, just a hole beside the ticker. XLM was exactly that case.
     setIcon(as.querySelector('.br-ic'), tokenLogo(DEST.token), DEST.token.symbol);
-    as.style.cursor = opts.length > 1 ? 'pointer' : '';
+    setPickable(as, opts.length > 1);
     if (!as.__lxxMenu) {
       as.__lxxMenu = 1;
       as.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); toggleDestMenu(as); });
@@ -7198,7 +7216,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // wallet holding LUMOS and RLUSD has one bridgeable asset and two that need explaining, and
     // gating the caret on `list.length > 1` is what made that limit invisible.
     var more = list.length > 1 || otherHoldings().length > 0;
-    as.style.cursor = more ? 'pointer' : '';
+    setPickable(as, more);
     if (!as.__lxxSrcMenu) {
       as.__lxxSrcMenu = 1;
       as.addEventListener('click', function (e) {
@@ -7960,7 +7978,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // instead, so the page always says what it intends to use -- and because this is display only,
     // it cannot make the page send by a route that was never priced.
     var usable = rows.filter(function (x) { return x.state !== 'none'; });
-    var shown = BEST || (usable[0] && usable[0].route) || '';
+    // A HAND-PICKED ROUTE OUTRANKS THE DEFAULT, and it has to be checked BEFORE `BEST`. With no
+    // amount typed nothing has been quoted, so BEST is empty and settle() -- which is where PICKED is
+    // normally honoured -- never runs. The fallback then handed the card back to the first route in
+    // the list: clicking THORChain visibly reverted to NEAR Intents, which is the page overruling a
+    // choice the reader just made.
+    var picked = (PICKED && PICKED_FOR === destChain()
+      && usable.some(function (x) { return x.route === PICKED; })) ? PICKED : '';
+    var shown = picked || BEST || (usable[0] && usable[0].route) || '';
 
     var h = '';
     rows.forEach(function (o) {

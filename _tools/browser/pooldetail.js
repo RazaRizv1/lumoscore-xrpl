@@ -1604,6 +1604,29 @@
     });
   }
 
+  // THE LOADING STATE SHOWS DASHES, NOT ANOTHER CHAIN'S NUMBERS.
+  //
+  // releaseGates() is called FIRST in load(), deliberately — a page that waits behind its own
+  // fade-in gate reads as broken, and that was fixed once already. But lifting the gate before the
+  // ledger answers reveals whatever the design shipped underneath, and what it ships is Aptos sample
+  // data: "0.000713 APT" as the price, "3,420,180 APT" liquidity, "8,420 APT" volume, "42.10 APT"
+  // fees. RAZA on 2026-09-29: "There's a flash bug on XRPL - pools page, when refreshed it shows APT".
+  //
+  // So the trade was a blank page for a page confidently showing the wrong chain's figures, which is
+  // worse. The stats are blanked at the same moment the name becomes "Reading the XRP Ledger…", so
+  // the two agree: the page says it is reading, and shows nothing it has not read.
+  function clearMockStats() {
+    var pv = $('.ph-price .v');
+    if (pv) pv.textContent = '—';
+    var ps = $('.ph-price .s');
+    if (ps) ps.textContent = '';
+    setStat('liquidity', '—', '');
+    setStat('vol', '—', '');
+    setStat('fees', '—', '');
+    setStat('participant', '—', '');
+    clearChart();
+  }
+
   function fail(msg) {
     // THE MESSAGE HAS TO BE VISIBLE (RAZA 2026-09-16: "[still happening. What the hell. FIX IT ALREADY] Sometimes Pools-pool
     // page is taking forever to load. But when i refresh, it loads up"). THIS IS THE CAUSE: liftPage() — which lifts the
@@ -1658,6 +1681,11 @@
     // taking forever to load. But when i refresh, it loads up"). Ten seconds of waiting was not always enough, and giving up
     // left the page blank behind its own fade-in gate with nothing to lift it. The gates are now released FIRST — so whatever
     // the design has built is visible while this waits — and the wait continues, more slowly, for a minute and a half.
+    // CLEARED BEFORE THE GATES COME OFF, not after. On the success path the two are consecutive
+    // synchronous statements, so no paint can land between them — but the RETRY path below returns
+    // early with the gates already released, and then waits 250ms before trying again. That window
+    // is a visible page showing "3,420,180 APT", and it is the one a slow first load hits.
+    clearMockStats();
     releaseGates();
     if (!$('.pool-header')) {
       var n = (load.tries = (load.tries || 0) + 1);
@@ -1670,6 +1698,7 @@
 
     var name = $('.ph-name');
     if (name) name.textContent = 'Reading the XRP Ledger…';
+    clearMockStats();
     wireDw();
 
     // BEFORE the amm_info call, not inside paint(). paint() is the success path, so leaving the
