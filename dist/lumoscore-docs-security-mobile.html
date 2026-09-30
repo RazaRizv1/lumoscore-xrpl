@@ -5005,6 +5005,88 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
   }
 
+  // ---- Xaman SIGNING ---------------------------------------------------------------------------
+  // Until this existed, connecting on a PHONE bought a read-only site. Both other transports are
+  // desktop browser extensions, so `lxc.submit` refused every Xaman session by name and no send, swap,
+  // trade, liquidity move or token launch could be signed from a phone at all.
+  //
+  // NO API SECRET IS INVOLVED, and none may be. xamanConnect already opens an OAuth2 PKCE session, and
+  // what x.state() hands back is an authorised XummSdkJwt bound to that session's 24h JWT -- it is in
+  // the vendored bundle already (XummSdkJwt and createAndSubscribe are both present in
+  // xumm-oauth2-pkce-2.8.7.min.js). Xaman's own documentation: "Never use an API Secret obtained from
+  // the Developer Dashboard in a frontend environment!" The api key above is a public app identifier
+  // and nothing more, which is why it can sit in this file.
+  function xamanSdk() {
+    return xumm().then(function (x) {
+      return x.state().then(function (st) {
+        if (st && st.sdk) return st.sdk;
+        // The 24h JWT has expired, or this tab never had one. Re-authorising re-opens Xaman, which is
+        // the honest move: firing a sign request at a dead token fails with nothing on screen to say
+        // why, and the user is left watching a button that never resolves.
+        return x.authorize().then(function (s) {
+          if (!s || !s.sdk) throw new Error('Sign in with Xaman again to approve this.');
+          return s.sdk;
+        });
+      });
+    });
+  }
+
+  // Resolves with the transaction HASH, the same contract gemSubmit satisfies, so every caller in
+  // write.js / pooldetail.js / mint.js works unchanged.
+  function xamanSubmit(tx) {
+    return xamanSdk().then(function (sdk) {
+      return sdk.payload.createAndSubscribe({
+        txjson: tx,
+        // submit:true lets Xaman relay it to the ledger, which is what the extensions do too, so the
+        // hash coming back means submitted and not merely signed. Five minutes is long enough to pick
+        // the phone up and short enough that an abandoned request does not linger as a live signable.
+        options: { submit: true, expire: 5 }
+      }, function (ev) {
+        // The socket narrates the payload's whole life -- opened, expired, signed. Returning undefined
+        // keeps the subscription open; returning a value is what resolves it, so only a verdict does.
+        if (ev && ev.data && typeof ev.data.signed !== 'undefined') return ev.data;
+      }).then(function (sub) {
+        var created = sub && sub.created;
+        var link = created && created.next && created.next.always;
+        var png = created && created.refs && created.refs.qr_png;
+        var cancelled = false;
+        var close = ui.signing(link, isHandheld() ? '' : png, function () { cancelled = true; });
+
+        // BEST EFFORT, not the mechanism. On a phone this usually walks straight into Xaman; on iOS the
+        // activation that started the transaction is already spent by the time the payload exists, so
+        // the hand-off can be dropped silently. That is survivable here in a way it was not for LOBSTR:
+        // the user is signed in, so Xaman PUSHES the request to their device regardless, and the dialog
+        // behind this carries an Open button that is a fresh tap.
+        if (isHandheld() && link) { try { window.location.href = link; } catch (e) {} }
+
+        return sub.resolved.then(function (d) {
+          close();
+          if (cancelled) throw new Error('Cancelled.');
+          if (!d || !d.signed) throw new Error('Rejected in Xaman.');
+          return xamanHash(sdk, d);
+        }, function (e) { close(); throw e; });
+      });
+    });
+  }
+
+  // The socket's verdict does not always carry the hash; the payload always does.
+  function xamanHash(sdk, d) {
+    if (d && d.txid) return String(d.txid);
+    var uuid = d && (d.payload_uuidv4 || d.uuid);
+    if (!uuid) throw new Error('Xaman signed the request but did not return a transaction hash.');
+    return sdk.payload.get(uuid).then(function (p) {
+      var h = p && p.response && p.response.txid;
+      if (!h) throw new Error('Xaman signed the request but did not return a transaction hash.');
+      return String(h);
+    });
+  }
+
+  function isHandheld() {
+    try { if (window.matchMedia('(pointer:coarse)').matches) return true; } catch (e) {}
+    try { if ((navigator.maxTouchPoints || 0) > 0) return true; } catch (e) {}
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  }
+
   // ---- Crossmark -------------------------------------------------------------------------------
   // RAZA 2026-09-16: "On landing page → XRPL → Wallet connection popup, also add: Cross mark, Joey, Wallet connect".
   //
@@ -5287,6 +5369,65 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       open();
     }
 
+    // The sign request, waiting on the user's phone.
+    //
+    // Xaman is a PHONE app with no browser extension, so a desktop signer has to be handed the request
+    // to scan -- there is nothing on their machine to prompt them. The QR is the PNG Xaman hosts on the
+    // created payload, deliberately not drawn locally: window.qrcode is the design's own generator and
+    // is NOT loaded on Trade or Pools, where signing also happens, so a locally drawn QR would be blank
+    // on exactly the pages that need it most.
+    //
+    // Returns its own closer so the caller can take the dialog down the moment the socket reports a
+    // verdict, whichever way it went.
+    function signing(link, png, onCancel) {
+      build();
+      body.innerHTML = '';
+      body.appendChild(head('Approve in Xaman', ''));
+      var s = document.createElement('div');
+      s.className = 'lxx-state';
+
+      if (png) {
+        var img = document.createElement('img');
+        img.src = png;
+        img.alt = 'Scan this with Xaman';
+        // White plate behind it: a QR rendered onto this dark modal with no backing is unreadable to
+        // every scanner, the same trap makeQR() carries a comment about in write.js.
+        img.style.cssText = 'width:212px;height:212px;border-radius:14px;background:#fff;padding:8px;box-sizing:border-box';
+        s.appendChild(img);
+      } else {
+        var sp2 = document.createElement('div'); sp2.className = 'lxx-spin';
+        s.appendChild(sp2);
+      }
+
+      var h4b = document.createElement('h4');
+      h4b.textContent = 'Waiting for your approval';
+      var p2 = document.createElement('p');
+      p2.textContent = png
+        ? 'Scan this with the Xaman app to review and sign. Xaman has also pushed it to your device.'
+        : 'Approve the request in Xaman, then come back here.';
+      s.appendChild(h4b); s.appendChild(p2);
+
+      if (link) {
+        var go = document.createElement('button');
+        go.className = 'lxx-btn'; go.type = 'button'; go.textContent = 'Open in Xaman';
+        // A FRESH TAP, and that is the whole point of this button. The payload must be created before
+        // there is anything to open, which is a network round trip, so the tap that started the
+        // transaction is already spent -- and iOS hands a link to an app only while the activation that
+        // caused it is still live. The automatic hand-off below is therefore best-effort; this is not.
+        go.addEventListener('click', function () { try { window.location.href = link; } catch (e) {} });
+        s.appendChild(go);
+      }
+
+      var c2 = document.createElement('button');
+      c2.className = 'lxx-btn ghost'; c2.type = 'button'; c2.textContent = 'Cancel';
+      c2.addEventListener('click', function () { close(); if (onCancel) onCancel(); });
+      s.appendChild(c2);
+
+      body.appendChild(s);
+      open();
+      return close;
+    }
+
     function fail(w, msg) {
       build();
       body.innerHTML = '';
@@ -5364,7 +5505,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       open();
     }
 
-    return { pick: pick, waiting: waiting, fail: fail, done: done, close: close, open: open };
+    return { pick: pick, waiting: waiting, signing: signing, fail: fail, done: done, close: close, open: open };
   })();
 
   function run(w) {
@@ -5465,14 +5606,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       if (!get(K.addr)) return Promise.reject(new Error('Connect a wallet first.'));
       if (t === 'gem') return gemSubmit(tx);
       if (t === 'cross') return crossSubmit(tx);
-      if (t === 'xaman') {
-        return Promise.reject(new Error(
-          'Signing with Xaman is not built yet — reconnect with GemWallet on desktop.'));
-      }
+      if (t === 'xaman') return xamanSubmit(tx);
       return Promise.reject(new Error(
         'This wallet connection cannot sign. Disconnect and connect again.'));
     },
-    canSign: function () { var t = get(K.transport); return t === 'gem' || t === 'cross'; },
+    canSign: function () { var t = get(K.transport); return t === 'gem' || t === 'cross' || t === 'xaman'; },
 
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     wallets: WALLETS.map(function (w) { return w.name; }),

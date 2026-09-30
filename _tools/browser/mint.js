@@ -19,8 +19,9 @@
 //
 // TWO HONEST LIMITS, both deliberate:
 //
-//   * Xaman cannot sign yet, so a mobile connection is refused by name rather than left to fail at
-//     the first prompt.
+//   * Xaman CAN sign everywhere else on the site now, but is refused HERE by name. This is eight
+//     transactions in a fixed order whose last two are irreversible, and each Xaman approval leaves
+//     the page — a reload on the way back would land mid-sequence with real XRP already spent.
 //   * NONE OF THE GEMWALLET PATH HAS ROUND-TRIPPED AGAINST THE EXTENSION. It is written from the
 //     documented protocol and there is no extension in the browser it was built in. What IS tested
 //     is the ordering and the failure handling, by running this same orchestrator against a fake
@@ -535,10 +536,21 @@
 
       var lxc = window.lxc;
       if (!lxc || !lxc.address()) { status(el, 'Connect a wallet first.'); return; }
+      // XAMAN CAN SIGN NOW, AND STILL MAY NOT LAUNCH A TOKEN. Every other write path is ONE
+      // transaction: leaving for the wallet and coming back is safe, because the worst case is a
+      // transaction that did not happen. This is eight in a fixed order, four of them signed by the
+      // user's wallet, and the last two are irreversible. Each Xaman approval leaves the browser, and
+      // a phone is free to reload this page rather than restore it on the way back -- which would land
+      // mid-sequence, with an issuer part-configured and real XRP already spent. Until the sequence
+      // can survive a reload, this stays on the transports that prompt without leaving the page.
+      if (lxc.transport && lxc.transport() === 'xaman') {
+        status(el, esc('Launching a token needs a desktop wallet — GemWallet or Crossmark. The launch '
+          + 'is eight approvals in a fixed order and must not be interrupted, and approving each one in '
+          + 'Xaman means leaving this page eight times. Everything else on LumosCore signs fine in Xaman.'));
+        return;
+      }
       if (!lxc.canSign || !lxc.canSign()) {
-        status(el, esc(lxc.transport() === 'xaman'
-          ? 'Signing with Xaman is not built yet — reconnect with GemWallet on desktop.'
-          : 'This wallet connection cannot sign. Disconnect and connect again.'));
+        status(el, esc('This wallet connection cannot sign. Disconnect and connect again.'));
         return;
       }
 
