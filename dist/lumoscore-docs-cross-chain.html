@@ -8849,6 +8849,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // of the two is wrong -- so the address is named here rather than left for someone to guess.
   function xamanAuthError(e) {
     var m = String((e && (e.message || e.error || e.reason)) || e || '');
+    // The window went away without an answer. Almost always the gateway refusal below, because that
+    // page is a dead end the user has to close by hand -- but it is also what cancelling looks like,
+    // so the wording has to carry both without asserting either.
+    if (/popup-closed/.test(m)) {
+      return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
+        + 'client/redirect URL", then ' + window.location.origin + ' is not a registered redirect '
+        + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
+    }
     if (/invalid client|redirect|access_denied/i.test(m)) {
       return new Error('Xaman would not accept a sign-in from ' + window.location.origin
         + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
@@ -8864,11 +8872,25 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
       var p = x.authorize();
       if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+
+      // WATCH THE WINDOW, because the SDK's events do not cover this. It settles only when the popup
+      // POSTS a message back -- 'xumm_sign_request_rejected' or 'xumm_sign_request_popup_closed' --
+      // and Xaman's own gateway error page ("Invalid client/redirect URL") posts nothing at all. It
+      // just renders. So authorize() stays pending, 'error' never fires, and even closing the window
+      // by hand leaves this dialog spinning; RAZA hit that twice on 2026-10-01. The SDK does keep the
+      // handle on x.popup, so the window going away is a signal we can read ourselves.
+      // Null on mobile, where the flow is a full-page redirect rather than a popup — the timer simply
+      // never fires there, which is correct.
+      var watch = setInterval(function () {
+        var w = x && x.popup;
+        if (w && w.closed) { clearInterval(watch); failXaman(new Error('popup-closed')); }
+      }, 800);
+
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { xamanPending = null; return v; },
-        function (e) { xamanPending = null; throw e; });
+        function (v) { clearInterval(watch); xamanPending = null; return v; },
+        function (e) { clearInterval(watch); xamanPending = null; throw e; });
     }).then(function (state) {
       xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
