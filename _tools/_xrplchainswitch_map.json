@@ -1,0 +1,12 @@
+{
+  "trade": "/trade/stellar",
+  "pools": "/pools/stellar",
+  "bridge": "/bridge/stellar",
+  "rewards": "/rewards/stellar",
+  "lumos": "/lumos/stellar",
+  "launchpad": "/launchpad/stellar",
+  "dashboard": "/dashboard",
+  "wallet": "/wallet",
+  "mcp": "/mcp",
+  "list-your-token": "/list-your-token"
+}

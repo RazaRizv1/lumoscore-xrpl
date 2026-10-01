@@ -55,6 +55,17 @@ const CHAIN = [
   // block, so it must run after every pass that can change that copy. Moved earlier, it would
   // faithfully republish the exact sentences the later passes are about to correct.
   '_xrplfaqld',
+  // AFTER _xrplroutes, AND THAT IS NOT A PREFERENCE. The chain switcher is the one layer here whose
+  // whole job is to point AWAY from this build, so it is the one layer whose urls _xrplroutes must not
+  // touch — and it would touch six of the ten: MAP turns "/trade/stellar" into "/trade/xrpl" and BARE
+  // turns "/dashboard" into "/dashboard/xrpl". Injected any earlier, the control would navigate from
+  // each page to itself: a switcher that looks live, reports no error, and does nothing.
+  //
+  // Last rather than merely after _xrplroutes, so the copy passes cannot reach it either. Its menu row
+  // reads "Stellar" on purpose. _xrplcopy2 works from an explicit list and preserves that word as a
+  // network name, and _xrplstripstellar removes by script id — neither is a hazard today, but the one
+  // string this layer cannot afford to have "corrected" is the name of the chain it exists to reach.
+  '_xrplchainswitch',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {
