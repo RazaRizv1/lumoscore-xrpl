@@ -6638,7 +6638,15 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     Aleo: 'aleo', 'Cosmos Hub': 'cosmoshub', THORChain: 'thorchain',
     // The EVM sidechain carries the XRP Ledger's own mark, which is whose chain it is. There is no
     // separate brand for it and inventing one would be worse than sharing the real one.
-    'XRPL EVM': 'xrpl', 'XRP Ledger': 'xrpl'
+    'XRPL EVM': 'xrpl', 'XRP Ledger': 'xrpl',
+    // THE ARTWORK WAS ALREADY SHIPPED FOR THESE; only the mapping was missing, so they fell through
+    // to letter discs in the list AND on the chip. (RAZA 2026-10-01: "some logos on cross chain step 1
+    // are still breaking like Linea and world chain".) Checked against the live dropdown rather than
+    // guessed: of the 28 destinations offered, exactly these had no network image resolving, and a
+    // file for each was already sitting in assets/networks.
+    // zkSync Era is the one genuine gap — there is no zksync file shipped, so it keeps its letters
+    // until artwork exists. Mapping it to a name with no file would emit a rule pointing at a 404.
+    Linea: 'linea', Mantle: 'mantle', Sei: 'sei', 'World Chain': 'worldchain'
   };
   function netFile(label) {
     var f = NET_FILE[label];
@@ -6684,6 +6692,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         css += '[data-destnet="' + n + '"] .br-wallet.brw-in .br-ic{background:url(' + u + ') center/cover no-repeat !important;'
           + 'color:transparent !important}'
           + '[data-destnet="' + n + '"] .br-wallet.brw-in .br-ic>*{display:none !important}';
+        // AND THE "To" PILL, which is a different node again — I fixed the receiving-address row first
+        // and RAZA came straight back with "TO Network logo is still missing on Cross-chain step 2. in
+        // this case, BASE logo", because the pill beside the word To is .lx-s2pill > .lx-s2ic and had
+        // been left empty. The FROM pill shares the class, so the button is the discriminator: the
+        // destination pill is a <button> (it opens the chooser), the source one is a plain <span>.
+        css += '[data-destnet="' + n + '"] button.lx-s2pill .lx-s2ic{background:url(' + u + ') center/cover no-repeat !important}'
+          + '[data-destnet="' + n + '"] button.lx-s2pill .lx-s2ic>*{display:none !important}';
       });
       if (NET_HAVE.xrpl) {
         css += '.br-netbox .br-net[data-lxsrc] .br-ic,.br-step[data-step="1"] .br-side:first-child .br-ic'
@@ -8598,7 +8613,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           if (mx) {
             mx.removeAttribute('data-logo'); mx.removeAttribute('style');
             mx.setAttribute('data-logoed', '1');
-            if (mx.textContent !== 'MAX') mx.textContent = 'MAX';
+            // THE PILL IS A CLASS THIS BUILD NEVER ADDED. The inherited sheet styles
+            //   .br-side .lx-balrow .max.lx-maxbtn
+            // — accent-pale fill, rounded, 11px bold — and supplies the word itself through an
+            // ::after{content:"MAX"}. Our span carried only .max, so NOTHING matched it: checked on
+            // the live page, the only rules reaching it were the universal * resets, which is why it
+            // rendered as plain text next to Stellar's orange pill (RAZA 2026-10-01, "Max button on
+            // crosschian step 2").
+            // The label therefore comes from the stylesheet, and leaving our own "MAX" in the node
+            // would print it twice.
+            mx.classList.add('lx-maxbtn');
+            if (mx.textContent) mx.textContent = '';
           }
         }
         paintSourceAsset();

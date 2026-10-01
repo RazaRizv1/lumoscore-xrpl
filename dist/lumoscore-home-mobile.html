@@ -6003,6 +6003,82 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // Ripple epoch is 2000-01-01, not 1970. Getting this wrong dates every event to 1970 or 2030,
   // which on a feed labelled "live" reads as broken rather than as an offset.
   var RIPPLE_EPOCH = 946684800;
+
+  // ---- the feed row's leading mark ---------------------------------------------------------------
+  // One glyph per kind of action, keyed on the same class the verb chip already uses. Stroke-only and
+  // currentColor so the single colour rule below tints the mark and its disc together.
+  var KIND_SVG = (function () {
+    function s(p) {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+        + 'stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>';
+    }
+    return {
+      swap: s('<path d="M4.8 9.2h13.6M15.4 6.2l3 3-3 3"/><path d="M19.2 14.8H5.6M8.6 11.8l-3 3 3 3"/>'),
+      transfer: s('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+      lp: s('<path d="M12 3.4l4.2 5a5.5 5.5 0 1 1-8.4 0z"/>'),
+      order: s('<path d="M4 7h16M4 12h10M4 17h7"/>'),
+      _: s('<circle cx="12" cy="12" r="7"/>')
+    };
+  })();
+
+  // Ported from Stellar's _realdata.js, which is where this mark is defined — the fork copied the
+  // containers BEFORE it existed, so the inherited sheet hides .act-ic without supplying the .lx-fg
+  // that replaced it. Only the rules this feed actually uses are brought over; the asset-pair variants
+  // are deliberately left out, because this row leads with the type rather than the assets.
+  // "N in 24h" beside the heading, as Stellar has it. The .lx-act24 rule came across with the fork —
+  // only the element creating it was missing — so this needs no CSS of its own.
+  // Counted off the rows actually on screen, each of which carries its ledger time in data-t, so the
+  // figure can never disagree with the list under it. data-t is a RIPPLE timestamp (seconds since
+  // 2000-01-01), not unix — reading it as unix would put every row in 1970 and the count at zero.
+  function paint24(host) {
+    try {
+      var card = host && host.closest('.activity-card');
+      var head = card && (card.querySelector('.market-head') || card.querySelector('h3'));
+      if (!head) return;
+      var cut = Date.now() / 1000 - 86400, n = 0;
+      [].slice.call(host.querySelectorAll('.activity-feed-row[data-t]')).forEach(function (r) {
+        var t = +r.getAttribute('data-t');
+        if (isFinite(t) && t > 0 && (t + RIPPLE_EPOCH) >= cut) n++;
+      });
+      var el = head.querySelector('.lx-act24');
+      if (!n) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+      if (!el) {
+        el = document.createElement('span');
+        el.className = 'lx-act24';
+        el.setAttribute('data-lx-noswap', '1');
+        el.setAttribute('data-logoed', '1');   // short text in a pill is exactly what the healer grabs
+        head.appendChild(el);
+      }
+      el.textContent = n + ' in 24h';
+      el.title = (n === 1 ? '1 transaction' : n + ' transactions') + ' through LumosCore in the last 24 hours';
+    } catch (e) {}
+  }
+
+  var feedCssDone = false;
+  function injectFeedCss() {
+    if (feedCssDone) return;
+    feedCssDone = true;
+    try {
+      if (document.getElementById('lx-xrplfeed-css')) return;
+      var st = document.createElement('style');
+      st.id = 'lx-xrplfeed-css';
+      st.textContent =
+        '.activity-feed-row .lx-fg{position:relative;flex:0 0 42px;width:42px;height:42px;display:block}'
+        + '.activity-feed-row .lx-fgt{display:flex!important;align-items:center;justify-content:center;'
+        + 'border-radius:50%;color:#94a3b8;background:color-mix(in srgb,currentColor 15%,transparent)}'
+        + '.activity-feed-row .lx-fgt svg{width:19px;height:19px;display:block}'
+        + '.activity-feed-row .lx-fgt.swap{color:#8b7bff}'
+        + '.activity-feed-row .lx-fgt.transfer{color:#22c55e}'
+        + '.activity-feed-row .lx-fgt.lp{color:#2dd4bf}'
+        + '.activity-feed-row .lx-fgt.order{color:#f472b6}'
+        // color-mix is not everywhere yet, and without a disc the glyph floats against the row.
+        + '@supports not (background:color-mix(in srgb,red 15%,transparent)){'
+        + '.activity-feed-row .lx-fgt{background:rgba(127,127,140,.14)}}'
+        + '@media(max-width:760px){.activity-feed-row .lx-fg{flex:0 0 34px;width:34px;height:34px}'
+        + '.activity-feed-row .lx-fgt svg{width:16px;height:16px}}';
+      document.head.appendChild(st);
+    } catch (e) {}
+  }
   function ago(rippleSeconds) {
     if (!isFinite(rippleSeconds)) return '';
     var s = Math.max(0, Math.floor(Date.now() / 1000 - (rippleSeconds + RIPPLE_EPOCH)));
@@ -6276,17 +6352,25 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     row.className = 'activity-feed-row';
     row.setAttribute('data-t', String(date || 0));
 
-    var ic = document.createElement('div');
-    ic.className = 'act-ic ' + d.cls;
-    // The healer skips anything containing an svg; a dot is also all this slot ever showed.
-    var NS = 'http://www.w3.org/2000/svg';
-    var svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('width', '15'); svg.setAttribute('height', '15');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    var c = document.createElementNS(NS, 'circle');
-    c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '5');
-    c.setAttribute('fill', 'currentColor');
-    svg.appendChild(c); ic.appendChild(svg);
+    // .lx-fg, NOT .act-ic. The row used to lead with an .act-ic holding a plain dot — and the
+    // stylesheet that came across with the fork carries
+    //     .activity-feed-row .act-ic{display:none!important}
+    // so that dot has never been visible here. Stellar hides the same slot and leads with .lx-fg
+    // instead, which is why its rows open with a coloured mark and these opened straight into text.
+    // (RAZA 2026-10-01: "Platform activity on Dashboard on XRPL is not like Stellar.")
+    //
+    // The TYPE variant is used rather than Stellar's asset-logo pair: the amounts on the line beside
+    // it already carry their own asset chips, so a second copy of the same logo would add nothing,
+    // while the KIND of action is not otherwise visible until the verb chip underneath. d.cls is
+    // already one of swap / transfer / lp / order — exactly the palette Stellar colours this mark by,
+    // so the two feeds read the same without a mapping between them.
+    injectFeedCss();
+    var ic = document.createElement('span');
+    ic.className = 'lx-fg lx-fgt ' + (d.cls || '');
+    ic.setAttribute('aria-hidden', 'true');
+    // Drawn rather than lettered: the logo healer repaints short text as a ticker mark and skips
+    // anything containing an svg — the same reason the dot this replaces was one.
+    ic.innerHTML = KIND_SVG[d.cls] || KIND_SVG._;
     row.appendChild(ic);
 
     // STELLAR'S ROW SHAPE (RAZA 2026-09-17: "compare it with Stellar dashboard → Platform activity. XRP is designed
@@ -6499,6 +6583,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         }
         host.appendChild(el);
       });
+      paint24(host);
     }).catch(function () {
       note('Could not read the XRP Ledger.');
     });
