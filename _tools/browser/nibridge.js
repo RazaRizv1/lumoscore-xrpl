@@ -957,7 +957,8 @@
     if (opts.length < 2) return;
     var wrap = document.createElement('div');
     wrap.className = 'brd open lx-destmenu';
-    wrap.style.cssText = 'position:absolute;z-index:60;right:0;top:calc(100% + 6px);min-width:240px';
+    // Anchored below, once the host is the offsetParent — same reason as the source menu.
+    wrap.style.cssText = 'position:absolute;z-index:60;right:0;min-width:240px';
     var menu = document.createElement('div');
     menu.className = 'brd-menu';
     menu.style.cssText = 'display:block;position:static;max-height:300px;overflow:auto';
@@ -989,6 +990,9 @@
     var host = as.parentNode;
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     host.appendChild(wrap);
+    // Anchor the menu under the CHIP now that offsets resolve against the host. Read after append so
+    // these are the offsets the browser actually computed, not ones predicted before layout.
+    wrap.style.top = ((as.offsetTop || 0) + (as.offsetHeight || 0) + 6) + 'px';
     setTimeout(function () {
       document.addEventListener('click', function away() {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -1056,7 +1060,15 @@
     if (list.length < 2 && !other.length) return;
     var wrap = document.createElement('div');
     wrap.className = 'brd open lx-srcmenu';
-    wrap.style.cssText = 'position:absolute;z-index:60;left:0;top:calc(100% + 6px);min-width:250px';
+    // ANCHORED TO THE CHIP, NOT TO THE ROW. This was top:calc(100% + 6px), which is 100% of the
+    // HOST's height — fine only while the host is exactly as tall as the chip. It is a flex row that
+    // also carries the amount field, so whenever it grows the menu is pushed down by however much,
+    // and RAZA saw it open far below everything else ("the dropdown isn't opening properly, its
+    // opening at the bottom", 2026-10-01). The chip's own offset within the host is what the menu
+    // actually wants, and it does not care what else the row contains or how tall it gets.
+    // Placed at the append site below, once the host is position:relative — offsetTop is measured
+    // against the offsetParent, and that is not settled until then.
+    wrap.style.cssText = 'position:absolute;z-index:60;min-width:250px';
     var menu = document.createElement('div');
     menu.className = 'brd-menu';
     menu.style.cssText = 'display:block;position:static;max-height:300px;overflow:auto';
@@ -1140,6 +1152,10 @@
     var host = as.parentNode;
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     host.appendChild(wrap);
+    // Anchor the menu under the CHIP now that offsets resolve against the host. Read after append so
+    // these are the offsets the browser actually computed, not ones predicted before layout.
+    wrap.style.top = ((as.offsetTop || 0) + (as.offsetHeight || 0) + 6) + 'px';
+    wrap.style.left = (as.offsetLeft || 0) + 'px';   // the dest menu keeps right:0 instead
     setTimeout(function () {
       document.addEventListener('click', function away() {
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
