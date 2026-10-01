@@ -140,9 +140,12 @@ const SCRIPT = '<script id="lx-xrplchainswitch">(function(){'
   + 'function stellarHref(){'
   + 'var p=(location.pathname||"/").replace(/' + B + '/+$/,"");'
   + 'var m=p.match(/^' + B + '/([a-z-]+)/);'
-  // Anything with no Stellar counterpart lands on its dashboard, which always exists, rather than on a
-  // 404 that would read as the switch being broken. Written slash-less for the same reason as the map.
-  + 'return "/"+((m&&SMAP[m[1]])||"dashboard");'
+  // Anything with no Stellar counterpart lands on its TRADE page — public, so it cannot bounce. The
+  // dashboard would be the obvious choice and is the wrong one: it carries lx-authgate, which sends a
+  // visitor with no wallet straight back to "/", so the switch would look dead to exactly the people
+  // most likely to use it. Stellar's chainHref had the same fallback and the same defect.
+  // Written slash-less for the same reason as the map.
+  + 'return "/"+((m&&SMAP[m[1]])||"trade/stellar");'
   + '}'
   + 'function go(){'
   // Written BEFORE leaving, so the Stellar page that loads already knows which chain it is on instead
