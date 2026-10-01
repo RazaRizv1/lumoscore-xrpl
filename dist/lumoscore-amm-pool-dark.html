@@ -5192,10 +5192,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         if (ev && ev.data && typeof ev.data.signed !== 'undefined') return ev.data;
       }).then(function (sub) {
         var created = sub && sub.created;
+        // create() answers with the uuid at the top level; a FETCHED payload nests it under meta, and
+        // the websocket url inside the SDK is built from the latter. Taking either means a shape change
+        // cannot quietly turn the recovery poll into a no-op.
+        var uuid = created && (created.uuid || (created.meta && created.meta.uuid));
         var link = created && created.next && created.next.always;
         var png = created && created.refs && created.refs.qr_png;
-        var cancelled = false;
-        var close = ui.signing(link, isHandheld() ? '' : png, function () { cancelled = true; });
+        var abort = null;
+        var close = ui.signing(link, isHandheld() ? '' : png, function () {
+          if (abort) abort(new Error('Cancelled.'));
+        });
 
         // BEST EFFORT, not the mechanism. On a phone this usually walks straight into Xaman; on iOS the
         // activation that started the transaction is already spent by the time the payload exists, so
@@ -5204,20 +5210,72 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         // behind this carries an Open button that is a fresh tap.
         if (isHandheld() && link) { try { window.location.href = link; } catch (e) {} }
 
-        return sub.resolved.then(function (d) {
+        var v = xamanVerdict(sdk, sub, uuid);
+        abort = v.abort;
+        return v.promise.then(function (d) {
           close();
-          if (cancelled) throw new Error('Cancelled.');
           if (!d || !d.signed) throw new Error('Rejected in Xaman.');
-          return xamanHash(sdk, d);
+          return d.txid ? String(d.txid) : xamanHash(sdk, uuid);
         }, function (e) { close(); throw e; });
       });
     });
   }
 
+  // TWO WAYS TO LEARN THE ANSWER, because on a phone the first one dies.
+  //
+  // Signing leaves the browser. The OS suspends this tab and the subscription socket goes with it, so
+  // the user approves in Xaman, comes back, and the socket that was meant to report it is gone --
+  // leaving a transaction that really was signed and submitted, and a page waiting for it forever.
+  // That is the Stellar WalletConnect "mobile resume" bug in a different coat, and it was in the first
+  // cut of this signing path.
+  //
+  // So the socket is the FAST path, not the only one. The payload is ALSO polled: immediately on every
+  // return to this page, and slowly in the background as a backstop. Whichever learns the verdict
+  // first wins, and a failed poll is not an answer -- only meta.resolved is.
+  function xamanVerdict(sdk, sub, uuid) {
+    var done = false, timer = null, offs = [];
+    var resolveIt, rejectIt;
+    var promise = new Promise(function (res, rej) { resolveIt = res; rejectIt = rej; });
+
+    function stop() {
+      done = true;
+      if (timer) clearInterval(timer);
+      offs.forEach(function (f) { try { f(); } catch (e) {} });
+      offs = [];
+    }
+    function win(v) { if (!done) { stop(); resolveIt(v); } }
+    function lose(e) { if (!done) { stop(); rejectIt(e); } }
+
+    function poll() {
+      if (done || !uuid) return;
+      sdk.payload.get(uuid).then(function (p) {
+        var m = p && p.meta;
+        if (!m || !m.resolved) return;                       // the user has not answered yet
+        if (m.expired && !m.signed) return lose(new Error('The request expired before it was approved in Xaman.'));
+        win({ signed: !!m.signed, txid: p.response && p.response.txid });
+      }, function () {});                                     // a failed poll is not a verdict
+    }
+
+    timer = setInterval(poll, 4000);
+    ['visibilitychange', 'pageshow', 'focus'].forEach(function (name) {
+      var target = name === 'visibilitychange' ? document : window;
+      var fn = function () {
+        if (name === 'visibilitychange' && document.visibilityState !== 'visible') return;
+        poll();
+      };
+      target.addEventListener(name, fn);
+      offs.push(function () { target.removeEventListener(name, fn); });
+    });
+
+    sub.resolved.then(function (d) {
+      if (d && typeof d.signed !== 'undefined') win({ signed: !!d.signed, txid: d.txid });
+    }, function () { /* the socket gave up; the poll is still running */ });
+
+    return { promise: promise, abort: lose };
+  }
+
   // The socket's verdict does not always carry the hash; the payload always does.
-  function xamanHash(sdk, d) {
-    if (d && d.txid) return String(d.txid);
-    var uuid = d && (d.payload_uuidv4 || d.uuid);
+  function xamanHash(sdk, uuid) {
     if (!uuid) throw new Error('Xaman signed the request but did not return a transaction hash.');
     return sdk.payload.get(uuid).then(function (p) {
       var h = p && p.response && p.response.txid;
