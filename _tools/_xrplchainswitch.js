@@ -240,7 +240,38 @@ const SCRIPT = '<script id="lx-xrplchainswitch">(function(){'
   + 'mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}'
   + 'setTimeout(stop,15000);'
   + '}'
-  + 'if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();'
+  // ARRIVING FROM THE OTHER CHAIN'S NETWORK CHOOSER.
+  //
+  // "Choose a network" on the Stellar landing page says "Connect on XRP Ledger", so the reader asked to
+  // connect, not merely to travel. That build cannot honour it — it has no XRPL connect layer at all
+  // (window.lxc undefined, no lx-xrplconnect script), and the wallet list it used to flash was
+  // decorative. It now records the intent and hands off; this is the half that honours it.
+  //
+  // The marker is consumed BEFORE anything can fail, so a connect layer that never loads costs the
+  // reader one missed dialog rather than a modal that reopens on every page they visit afterwards.
+  //
+  // lxc arrives with its own script, which may not have run yet, so this polls briefly rather than
+  // assuming. It gives up silently: the page is perfectly usable with the Connect button sitting there.
+  + 'function connectOnArrive(){'
+  + 'var want=null;'
+  + 'try{want=sessionStorage.getItem("lumos.connectOnArrive");'
+  + 'if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}'
+  + 'if(want!=="xrpl")return;'
+  + 'var n=0,t=setInterval(function(){'
+  + 'n++;'
+  + 'var lxc=window.lxc;'
+  + 'if(lxc&&lxc.open){'
+  + 'clearInterval(t);'
+  // Already connected -> they asked to connect and they are; opening the picker would be noise.
+  + 'var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}'
+  + 'if(!addr){try{lxc.open();}catch(_){}}'
+  + 'return;'
+  + '}'
+  + 'if(n>50)clearInterval(t);'
+  + '},120);'
+  + '}'
+  + 'if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});'
+  + 'else {start();connectOnArrive();}'
   + '})();</' + 'script>';
 
 // Only the app surfaces. The marketing and docs pages have no top bar and no wallet chip, so there is
