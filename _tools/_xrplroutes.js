@@ -57,6 +57,13 @@ const MAP = [
   ['/pools/stellar', '/pools/xrpl'],
   ['/account/stellar', '/account/xrpl'],
 
+  // The two launchpad sub-pages, which must be consumed BEFORE the bare "/launchpad" in BARE below —
+  // longest-first, the rule this table already states. Safe in MAP rather than BARE because neither
+  // search string survives inside its own replacement: "/launchpad/review" is not a substring of
+  // "/launchpad/xrpl/review", so a second build finds nothing left to rewrite.
+  ['/launchpad/review', '/launchpad/xrpl/review'],
+  ['/launchpad/confirm', '/launchpad/xrpl/confirm'],
+
   // THE PREVIOUS SCHEME, /xrpl/<section>, which this table itself used to write. The containers are
   // gitignored and persist between builds, so what is on disk today is that shape, not Stellar's --
   // without these the move would be a no-op on every page. None of the targets contains its source,
@@ -95,6 +102,29 @@ const MAP = [
   // MCP is served by this build now (2026-09-15), so its links stay local — including the absolute ones
   // an earlier version of this table wrote into the persisted containers.
   ['https://lumoscore.com/mcp', '/mcp'],
+];
+
+// The bare routes this build used to share with Stellar, now chain-qualified. Applied separately from
+// MAP with a lookahead that rejects "/" — see the loop below for why that is not optional.
+//
+// "/lumos" was already handled this way and simply joins the list. The other seven are the surfaces
+// that collided with Stellar's: measured before any change, 20 of this build's 27 routes did.
+//
+// ORDER IS IRRELEVANT HERE, unlike MAP: each is anchored by a quote before and a non-slash after, so
+// no entry can match inside another. "/list-your-token" cannot be read as "/list" plus a path, and
+// "/launchpad" cannot swallow "/launchpad/review" — the "/" after it is rejected.
+//
+// NOT HERE: /trade, /pools and /account. MAP already turns Stellar's chain-suffixed forms into XRPL's,
+// and the design never writes those bare.
+const BARE = [
+  '/lumos',
+  '/dashboard',
+  '/wallet',
+  '/bridge',
+  '/rewards',
+  '/mcp',
+  '/list-your-token',
+  '/launchpad',
 ];
 
 function esc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }
@@ -168,13 +198,33 @@ for (const dev of ['desktop', 'mobile']) {
       h = h.replace(re, function (_, q) { n++; return q + to; });
       if (n) { per[from] = (per[from] || 0) + n; total += n; }
     }
-    // BARE "/lumos" becomes "/lumos/xrpl". Its own rule because the lookahead must NOT accept "/": the
-    // table's rules do, and that would read an already-written "/lumos/xrpl" as "/lumos" plus a path and
-    // append the chain a second time on every build.
-    h = h.replace(/(["'`])\/lumos(?=["'`?#])/g, function (_, q) {
-      per['/lumos'] = (per['/lumos'] || 0) + 1; total++;
-      return q + '/lumos/xrpl';
-    });
+    // BARE ROUTES BECOME CHAIN-QUALIFIED. "/lumos" was the first of these and is now one of eight.
+    //
+    // THE LOOKAHEAD MUST NOT ACCEPT "/", and that exclusion is the entire reason these are separate
+    // from MAP. The table's rules do accept it, which is right when a replacement cannot contain the
+    // thing it matched. Every rule here writes its search string back ("/wallet" -> "/wallet/xrpl"),
+    // so under MAP's lookahead a second build would read the already-written "/wallet/xrpl" as
+    // "/wallet" followed by a path and append the chain again: "/wallet/xrpl/xrpl". The containers are
+    // gitignored and persist between builds, so every transform here runs over its own previous
+    // output — a rule that is not idempotent does not fail once, it drifts further on every build.
+    //
+    // WHY THE SEVEN NEW ONES. This file's header still says these routes "are the same paths on both
+    // builds and are left exactly as the design wrote them". That was true while this was a site of
+    // its own, and it is exactly what breaks on lumoscore.com: Stellar owns /dashboard, /wallet,
+    // /bridge, /launchpad and /rewards there, so an XRPL page linking to a bare route does not so much
+    // collide as silently lose — the reader lands on Stellar's page with no sign anything went wrong.
+    //
+    // /launchpad/review and /launchpad/confirm live in MAP instead, and must: they have to be consumed
+    // before the bare "/launchpad" is considered. They are naturally idempotent, because
+    // "/launchpad/review" is not a substring of "/launchpad/xrpl/review" — and the no-slash lookahead
+    // here means this loop cannot touch them either way.
+    for (const bare of BARE) {
+      const bre = new RegExp('(["\'`])' + esc(bare) + '(?=["\'`?#])', 'g');
+      h = h.replace(bre, function (_, q) {
+        per[bare] = (per[bare] || 0) + 1; total++;
+        return q + bare + '/xrpl';
+      });
+    }
     h = h.replace(SHARED_FILE, function (_, q, name) {
       files_rewritten++;
       return q + sharedFileUrl(name) + q;

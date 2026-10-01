@@ -7,16 +7,16 @@
 /pools/xrpl/id/:pool                      /lumoscore-amm-pool  200
 /pools/xrpl/:a/:b                         /lumoscore-amm-pool  200
 /pools/xrpl                               /lumoscore-amm  200
-/launchpad/review                         /lumoscore-launch-review  200
-/launchpad/confirm                        /lumoscore-launch-confirm  200
-/launchpad                                /lumoscore-launch-token  200
-/dashboard                                /lumoscore-home  200
-/bridge                                   /lumoscore-bridge  200
-/wallet                                   /lumoscore-wallet  200
-/rewards                                  /lumoscore-rewards-dark  200
+/launchpad/xrpl/review                    /lumoscore-launch-review  200
+/launchpad/xrpl/confirm                   /lumoscore-launch-confirm  200
+/launchpad/xrpl                           /lumoscore-launch-token  200
+/dashboard/xrpl                           /lumoscore-home  200
+/bridge/xrpl                              /lumoscore-bridge  200
+/wallet/xrpl                              /lumoscore-wallet  200
+/rewards/xrpl                             /lumoscore-rewards-dark  200
 /lumos/xrpl                               /lumoscore-lumos-token  200
-/mcp                                      /lumoscore-mcp  200
-/list-your-token                          /lumoscore-list-token  200
+/mcp/xrpl                                 /lumoscore-mcp  200
+/list-your-token/xrpl                     /lumoscore-list-token  200
 
 # forgive capitalised entry points
 /blogs/*                                  /blog/:splat  301

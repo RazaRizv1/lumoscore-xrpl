@@ -103,7 +103,13 @@ const CROSS = [
   h2('making-a-transfer', 'Making a transfer'),
   '',
   '<ol class="dc-steps">',
-  '  <li>Open <a href="/bridge">Cross-chain</a> and choose the destination network.</li>',
+  // CHAIN-QUALIFIED AT THE SOURCE, because _xrplroutes cannot reach it. That transform runs early in
+  // the chain and this one runs near the end, so a bare route written here is injected after the
+  // rewrite has already passed — it survived into the built pages as the only two bare /bridge links
+  // left, each of which would land the reader on Stellar's bridge once both builds share a host.
+  // Fixed here rather than by moving _xrplroutes later: the chain's order is load-bearing in three
+  // places it documents, and reordering it to catch one link is the larger risk.
+  '  <li>Open <a href="/bridge/xrpl">Cross-chain</a> and choose the destination network.</li>',
   '  <li>Pick the asset and amount, and enter the receiving address on that network.</li>',
   '  <li>Check the Route panel: it names the route, what will arrive, the fee and the estimated time.</li>',
   '  <li>Review and sign one XRP Ledger payment. That signature is the whole transfer.</li>',

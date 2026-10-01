@@ -409,6 +409,21 @@ function headersFile(isAdmin){
 // Ordering matters: Pages applies the FIRST matching rule, so more specific paths must come first.
 // Placeholders (:name) match a single segment. Theme never appears in a URL — light and dark are the
 // same page — and device is resolved server-side, not by a separate URL.
+// WHERE THE PAGE FILES LIVE, as a url prefix.
+//
+// Empty for a --root build, which is what the standalone lumoscore-xrpl.pages.dev site has always
+// been: 97 pages at the top of dist/, every route rewriting to /lumoscore-<page>.
+//
+// For the COMBINED deployment on lumoscore.com it becomes "/xrpl", because Stellar's build emits the
+// very same 97 filenames — both call their trade page lumoscore-dex — so at the top of one directory
+// /trade/xrpl and /trade/stellar would rewrite to the SAME file and show the same network. Dropping
+// this build into dist/xrpl/ separates them without renaming a single page, which is why the pages
+// themselves need no change: every link in them is a clean route (/trade/xrpl), never a filename.
+//
+// Set from the build arguments below; redirectsFile(), the middleware routes and the mobile lookup all
+// read it, and they must agree or a route resolves to a file that is not there.
+let PAGE_BASE = '';
+
 const ROUTES = [
   // THE SAME URL SCHEME AS lumoscore.com, chain and all. RAZA 2026-09-15: "The structure on XRPL is
   // incorrect" -- this build used to namespace every page under /xrpl/<section>, where Stellar puts
@@ -427,20 +442,34 @@ const ROUTES = [
   ['/pools/xrpl/id/:pool',       'lumoscore-amm-pool.html'],   // fallback: id-only links
   ['/pools/xrpl/:a/:b',          'lumoscore-amm-pool.html'],
   ['/pools/xrpl',                'lumoscore-amm.html'],
-  ['/launchpad/review',          'lumoscore-launch-review.html'],   // review must precede /launchpad
-  ['/launchpad/confirm',         'lumoscore-launch-confirm.html'],
-  ['/launchpad',                 'lumoscore-launch-token.html'],
-  ['/dashboard',                 'lumoscore-home.html'],
-  ['/bridge',                    'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
-  ['/wallet',                    'lumoscore-wallet.html'],
-  ['/rewards',                   'lumoscore-rewards-dark.html'],
+  // CHAIN-QUALIFIED, ALL OF THEM. These were bare, and the note below still records why — it was right
+  // while this was a site of its own. On lumoscore.com it is fatal: Stellar already owns /dashboard,
+  // /wallet, /bridge, /launchpad and /rewards, so a bare route here does not so much collide as
+  // silently lose, and every one of these XRPL pages would answer with Stellar's. Measured before
+  // changing anything: 20 of this build's 27 routes collided with Stellar's.
+  //
+  // Stellar's own routes are NOT altered to make room. It already serves /bridge/stellar,
+  // /launchpad/stellar and /rewards/stellar alongside the bare ones, so this is the scheme it was
+  // already using — extended to the three surfaces (dashboard, wallet, mcp) neither build had
+  // qualified. Stellar's bare routes keep working untouched, which is the whole point.
+  ['/launchpad/xrpl/review',     'lumoscore-launch-review.html'],   // review must precede /launchpad
+  ['/launchpad/xrpl/confirm',    'lumoscore-launch-confirm.html'],
+  ['/launchpad/xrpl',            'lumoscore-launch-token.html'],
+  ['/dashboard/xrpl',            'lumoscore-home.html'],
+  ['/bridge/xrpl',               'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
+  ['/wallet/xrpl',               'lumoscore-wallet.html'],
+  ['/rewards/xrpl',              'lumoscore-rewards-dark.html'],
   // THE LUMOS PAGE IS /lumos/xrpl, as Stellar's is /lumos/stellar (RAZA 2026-09-15). Bare /lumos 301s
   // here — see "1a2" in the middleware.
   ['/lumos/xrpl',                'lumoscore-lumos-token.html'],
   // MCP IS SERVED BY THIS BUILD (RAZA 2026-09-15: "MCP page links to the main website instead of XRPL for
   // staging"). The page is the design's own; its copy describes the Stellar MCP server.
-  ['/mcp',                       'lumoscore-mcp.html'],
-  ['/list-your-token',           'lumoscore-list-token.html'],
+  // Qualified for the same reason as the block above, not dropped. Stellar serves the company's own
+  // /mcp and /list-your-token and keeps those urls; these are this build's copies of the same pages,
+  // reachable where they cannot take a url that is not theirs. If they should simply defer to the
+  // originals on lumoscore.com, deleting these two lines is the whole change.
+  ['/mcp/xrpl',                  'lumoscore-mcp.html'],
+  ['/list-your-token/xrpl',      'lumoscore-list-token.html'],
 ];
 
 // Case: fixed segments are lowercase, but an asset segment must keep its case — yUSDC and YUSDC are
@@ -471,7 +500,7 @@ function redirectsFile(){
   // Target the EXTENSIONLESS path. Pages 308-redirects /foo.html -> /foo automatically, so rewriting
   // to "/x.html" makes it answer with that 308 instead of the page — every clean url returned 308
   // until this was changed.
-  for(const [from, to] of ROUTES) L.push(pad(from) + '/' + to.replace(/\.html$/, '') + '  200');
+  for(const [from, to] of ROUTES) L.push(pad(from) + PAGE_BASE + '/' + to.replace(/\.html$/, '') + '  200');
   L.push('');
   L.push('# forgive capitalised entry points');
   for(const [from, to] of ALIASES) L.push(pad(from) + to + '  301');
@@ -1413,6 +1442,10 @@ function build(chain, srcDir, outRoot, atRoot, adminOnly){
   // --root: single-version build lands directly in dist/ (no per-chain subfolder), so the
   // landing page sits at the site root. Assets are left in place (extract only writes html).
   const outDir = adminOnly ? ADMIN_OUT : (atRoot ? outRoot : path.join(outRoot, chain));
+  // Set from the SAME decision that places the files, so the routes can never point somewhere the
+  // pages are not. See PAGE_BASE's own note: empty at root, "/xrpl" in the subfolder layout that lets
+  // this build sit beside Stellar's identically-named 97 pages.
+  PAGE_BASE = (adminOnly || atRoot) ? '' : '/' + chain;
   fs.mkdirSync(outDir, { recursive: true });
 
   let written = 0;
@@ -1465,10 +1498,12 @@ function build(chain, srcDir, outRoot, atRoot, adminOnly){
     // device resolution at the edge. "/" is the landing page, which _redirects never covers because
     // index.html answers it directly — so it is added here explicitly.
     const routePairs = [['/', 'index', 'lumoscore-landing-mobile']]
-      .concat(ROUTES.map(([u, f]) => [u, f.replace(/\.html$/, ''), null]));
+      .concat(ROUTES.map(([u, f]) => [u, PAGE_BASE + '/' + f.replace(/\.html$/, ''), null]));
     const mobileFiles = files
       .filter(n => /-mobile\.html$/.test(n))
-      .map(n => n.replace(/\.html$/, ''));
+      // Prefixed to agree with the route pairs above — the middleware looks a route's desktop name up
+      // in this set to decide whether a mobile variant exists, so the two must be in the same shape.
+      .map(n => PAGE_BASE + '/' + n.replace(/\.html$/, ''));
 
     fs.writeFileSync(path.join(outDir, '_routes.json'), routesJson(), 'utf8');
     const fnDir = path.join(__dirname, '..', 'functions');

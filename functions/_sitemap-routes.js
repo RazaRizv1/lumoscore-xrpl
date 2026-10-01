@@ -17,27 +17,37 @@ export const SITEMAP_ROUTES = [
     "daily"
   ],
   [
-    "/launchpad",
-    "0.8",
-    "weekly"
-  ],
-  [
-    "/dashboard",
+    "/launchpad/xrpl/review",
     "0.6",
     "weekly"
   ],
   [
-    "/bridge",
-    "0.8",
-    "weekly"
-  ],
-  [
-    "/wallet",
+    "/launchpad/xrpl/confirm",
     "0.6",
     "weekly"
   ],
   [
-    "/rewards",
+    "/launchpad/xrpl",
+    "0.6",
+    "weekly"
+  ],
+  [
+    "/dashboard/xrpl",
+    "0.6",
+    "weekly"
+  ],
+  [
+    "/bridge/xrpl",
+    "0.6",
+    "weekly"
+  ],
+  [
+    "/wallet/xrpl",
+    "0.6",
+    "weekly"
+  ],
+  [
+    "/rewards/xrpl",
     "0.6",
     "weekly"
   ],
@@ -47,13 +57,13 @@ export const SITEMAP_ROUTES = [
     "weekly"
   ],
   [
-    "/mcp",
+    "/mcp/xrpl",
     "0.6",
     "weekly"
   ],
   [
-    "/list-your-token",
-    "0.7",
-    "monthly"
+    "/list-your-token/xrpl",
+    "0.6",
+    "weekly"
   ]
 ];
