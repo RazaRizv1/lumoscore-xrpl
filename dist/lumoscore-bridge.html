@@ -7557,6 +7557,41 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     }
   }
 
+  // THE CURATED ROSTER — the major XRP Ledger tokens, whether or not this wallet holds them.
+  //
+  // FETCHED, NOT HARDCODED, and that is the whole point. A ticker is not an identity on this ledger:
+  // anyone can issue a token called LUMOS, and an issuer address typed into this file by hand is a
+  // different asset wearing the same name. /lxapi/xrpltokens is the live roster this site already
+  // serves, so every issuer here is sourced rather than asserted — and it stays right when a token
+  // migrates issuers, which a baked list would not.
+  //
+  // Checked against it before relying on it: of the tokens RAZA named, USDC, RLUSD, ARMY, FUZZY,
+  // PHNIX, 666 and SHX are all in the top 40 with their real issuers. ATOM and LUMOS are not, and
+  // both are already in his holdings, so they arrive through the section above.
+  var CURATED = null;
+  function curatedTokens() {
+    if (CURATED) return Promise.resolve(CURATED);
+    return fetch('/lxapi/xrpltokens?n=40')
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var rows = (d && (d.rows || d.tokens || d.list)) || [];
+        CURATED = rows
+          .filter(function (t) { return t && t.n && t.i && t.c; })
+          .map(function (t) {
+            // balance 0, not null: these are real tokens this wallet does not hold, and 0 is what it
+            // holds. null would print an empty space where a number belongs.
+            return {
+              symbol: String(t.n), balance: 0, lp: false, viaSwap: true, decimals: 15,
+              currency: t.c, issuer: t.i, issuerName: t.u || '', ax: null
+            };
+          });
+        return CURATED;
+      })
+      // The roster is a nicety; the wallet's own holdings are the thing that must work. An empty list
+      // is cached so a dead endpoint is asked once per page rather than on every open.
+      .catch(function () { CURATED = []; return CURATED; });
+  }
+
   function toggleSrcMenu(as) {
     var old = document.querySelector('.lx-srcmenu');
     if (old) { old.parentNode.removeChild(old); return; }
@@ -7579,81 +7614,186 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var menu = document.createElement('div');
     menu.className = 'brd-menu';
     menu.style.cssText = 'display:block;position:static;max-height:300px;overflow:auto';
-    list.forEach(function (a) {
+    // ONE BUILDER FOR EVERY SECTION. The held rows and the curated rows were always going to drift
+    // apart if written twice, and the picker's whole problem was that it did not look like one list.
+    //
+    // Two lines per row, as Stellar's has: the ticker with its balance on the right, the issuer under
+    // it. A TICKER IS NOT AN IDENTITY ON THIS LEDGER — anyone can issue a token called LUMOS — so the
+    // issuer is shown on every row rather than only on the ones that collide.
+    function srcOptRow(a, onPick) {
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'brd-opt lx-srcopt';
       b.style.setProperty('display', 'flex', 'important');
+
       var ic = document.createElement('span');
       ic.className = 'brd-ic';
       setIcon(ic, symLogo(a.symbol) || (a.native ? XRP_LOGO : ''), a.symbol);
+
       var nmx = document.createElement('span');
       nmx.className = 'brd-nm';
       nmx.setAttribute('data-logo', '');
       nmx.setAttribute('data-logoed', '1');
-      nmx.textContent = a.symbol + (a.balance != null ? ('  ' + fmt(a.balance, 6)) : '');
+      nmx.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:0;flex:1';
+
+      var top = document.createElement('span');
+      top.style.cssText = 'display:flex;align-items:baseline;gap:10px;justify-content:space-between';
+      var tk = document.createElement('b');
+      // The healer repaints short text as a ticker mark, and a ticker is exactly short text — the same
+      // opt-out the line below it carries.
+      tk.setAttribute('data-logo', ''); tk.setAttribute('data-logoed', '1');
+      tk.style.cssText = 'font-weight:700;white-space:nowrap';
+      tk.textContent = a.symbol;
+      var bal = document.createElement('span');
+      bal.setAttribute('data-logoed', '1');
+      bal.style.cssText = 'font-size:12px;color:var(--text-muted,#9b9ba4);font-variant-numeric:tabular-nums;white-space:nowrap';
+      bal.textContent = a.balance != null ? fmt(a.balance, 6) : '';
+      top.appendChild(tk); top.appendChild(bal);
+
+      var sub = document.createElement('span');
+      sub.setAttribute('data-logoed', '1');
+      sub.style.cssText = 'font-size:11.5px;color:var(--text-soft,#8a8fa3);white-space:nowrap;'
+        + 'overflow:hidden;text-overflow:ellipsis';
+      sub.textContent = a.native ? 'Native asset'
+        : (a.issuerName || (a.issuer ? (String(a.issuer).slice(0, 5) + '\u2026' + String(a.issuer).slice(-4)) : ''));
+
+      nmx.appendChild(top);
+      if (sub.textContent) nmx.appendChild(sub);
       b.appendChild(ic); b.appendChild(nmx);
+
+      if (a.lp) {
+        b.disabled = true;
+        b.style.opacity = '.5';
+        b.style.cursor = 'default';
+        b.title = 'A pool share, not a transferable asset';
+        return b;
+      }
       b.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
-        SRC = a; QUOTE = null; AXQ = null;
+        onPick(a);
         if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
         refreshDestinations();
         paintSteps(); requote();
       });
-      menu.appendChild(b);
-    });
+      return b;
+    }
 
-    // EVERYTHING ELSE THE WALLET HOLDS, under a heading that says how it gets out. These are chosen
-    // the same way as any other source; the difference is that picking one adds a swap to XRP in
-    // front of the transfer, and the heading is where that is first said.
-    //
-    // A POOL SHARE IS STILL DISABLED. It is not a transferable asset and there is nothing to swap it
-    // into -- listing it as choosable would be offering a trade that cannot exist.
-    if (other.length) {
+    function heading(text) {
       var hd = document.createElement('div');
       hd.setAttribute('data-logoed', '1');
       hd.style.cssText = 'padding:10px 12px 6px;font:700 10.5px/1 "Hanken Grotesk",system-ui,sans-serif;'
         + 'letter-spacing:.08em;text-transform:uppercase;color:var(--text-soft);'
         + 'border-top:1px solid var(--border);margin-top:6px';
-      hd.textContent = 'Swapped to XRP first';
-      menu.appendChild(hd);
-      other.forEach(function (o) {
-        var b2 = document.createElement('button');
-        b2.type = 'button';
-        b2.className = 'brd-opt lx-srcopt';
-        b2.style.setProperty('display', 'flex', 'important');
-        if (o.lp) {
-          b2.disabled = true;
-          b2.style.opacity = '.5';
-          b2.style.cursor = 'default';
-          b2.title = 'A pool share, not a transferable asset';
-        } else {
-          b2.title = o.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
-        }
-        var ic2 = document.createElement('span');
-        ic2.className = 'brd-ic';
-        setIcon(ic2, symLogo(o.symbol), o.symbol);
-        var nm2 = document.createElement('span');
-        nm2.className = 'brd-nm';
-        nm2.setAttribute('data-logo', '');
-        nm2.setAttribute('data-logoed', '1');
-        nm2.textContent = (o.label || o.symbol) + '  ' + fmt(o.balance, 6);
-        b2.appendChild(ic2); b2.appendChild(nm2);
-        if (!o.lp) {
-          b2.addEventListener('click', function (e) {
-            e.preventDefault(); e.stopPropagation();
+      hd.textContent = text;
+      return hd;
+    }
+
+    // Stellar's picker has a search field and this had none, which is most of why the two did not look
+    // like the same control (RAZA 2026-10-01). It also stops being a wall once the curated roster is
+    // added below. Clicks are swallowed so typing does not close the menu that owns it.
+    var search = document.createElement('input');
+    search.type = 'text';
+    search.className = 'lx-srcsearch';
+    search.placeholder = 'Search asset or issuer';
+    search.setAttribute('data-logoed', '1');
+    search.style.cssText = 'width:100%;box-sizing:border-box;margin:0 0 4px;padding:9px 11px;'
+      + 'border-radius:9px;border:1px solid var(--border,rgba(255,255,255,.14));'
+      + 'background:var(--surface-2,rgba(255,255,255,.05));color:inherit;font-family:inherit;'
+      + 'font-size:13px;outline:none';
+    search.addEventListener('click', function (e) { e.stopPropagation(); });
+    search.addEventListener('input', function () { render(search.value); });
+    menu.appendChild(search);
+
+    var rowsHost = document.createElement('div');
+    menu.appendChild(rowsHost);
+
+    function matches(a, q) {
+      if (!q) return true;
+      q = q.toLowerCase();
+      return String(a.symbol || '').toLowerCase().indexOf(q) >= 0
+        || String(a.issuerName || '').toLowerCase().indexOf(q) >= 0
+        || String(a.issuer || '').toLowerCase().indexOf(q) >= 0;
+    }
+
+    function render(q) {
+      rowsHost.innerHTML = '';
+      var shown = 0;
+
+      list.filter(function (a) { return matches(a, q); }).forEach(function (a) {
+        shown++;
+        rowsHost.appendChild(srcOptRow(a, function (picked) {
+          SRC = picked; QUOTE = null; AXQ = null;
+        }));
+      });
+
+      // EVERYTHING ELSE THE WALLET HOLDS, under a heading that says how it gets out. These are chosen
+      // the same way as any other source; the difference is that picking one adds a swap to XRP in
+      // front of the transfer, and the heading is where that is first said.
+      var otherF = other.filter(function (o) { return matches(o, q); });
+      if (otherF.length) {
+        shown += otherF.length;
+        rowsHost.appendChild(heading('Swapped to XRP first'));
+        otherF.forEach(function (o) {
+          var row = srcOptRow(o, function () {
             SRC = sourceAssets().filter(function (x) {
               return x.viaSwap && x.currency === o.currency && x.issuer === o.issuer;
             })[0] || SRC;
             QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
-            if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
-            refreshDestinations();
-            paintSteps(); requote();
           });
-        }
-        menu.appendChild(b2);
+          if (!o.lp) row.title = o.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
+          rowsHost.appendChild(row);
+        });
+      }
+
+      // THE MAJOR TOKENS, HELD OR NOT (RAZA 2026-10-01: "its not showing the assets (10 assets) that I
+      // asked for"). The balance reads 0 on these and that is the honest number — picking one is
+      // allowed, and the Review gate refuses to go anywhere without an amount, so nothing can be sent
+      // that is not there. Anything the wallet actually holds is already above and is filtered out
+      // here, so a token never appears twice with two different balances.
+      var held = {};
+      list.concat(other).forEach(function (a) { held[String(a.currency) + '|' + String(a.issuer)] = 1; });
+      var cur = (CURATED || []).filter(function (t) {
+        return !held[String(t.currency) + '|' + String(t.issuer)] && matches(t, q);
       });
+      if (cur.length) {
+        shown += cur.length;
+        rowsHost.appendChild(heading('Major XRP Ledger assets'));
+        cur.forEach(function (t) {
+          var row = srcOptRow(t, function (picked) {
+            SRC = picked; QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
+          });
+          row.title = t.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
+          rowsHost.appendChild(row);
+        });
+      }
+
+      if (!shown) {
+        var none = document.createElement('div');
+        none.setAttribute('data-logoed', '1');
+        none.style.cssText = 'padding:14px 12px;font-size:13px;color:var(--text-soft)';
+        none.textContent = 'No asset matches that.';
+        rowsHost.appendChild(none);
+      }
     }
+
+    render('');
+    // The roster is a network read, so the menu opens on what is already known and fills in when it
+    // lands. Re-rendered through the current filter so a search typed in the meantime is not undone.
+    curatedTokens().then(function () {
+      if (!wrap.parentNode) return;              // the menu was closed while it was in flight
+      // NAME THE ISSUERS THE WALLET ALREADY HOLDS. otherHoldings() reads trust lines, which carry an
+      // address and nothing else, so a held USDC had no "Circle" on it and the field's own promise —
+      // "Search asset or issuer" — was only half true: typing an issuer found the curated rows and
+      // silently missed every row above them. The roster knows the names, so they are borrowed here.
+      var byKey = {};
+      (CURATED || []).forEach(function (t) { byKey[String(t.currency) + '|' + String(t.issuer)] = t.issuerName; });
+      list.concat(other).forEach(function (a) {
+        if (a.issuerName) return;
+        var n = byKey[String(a.currency) + '|' + String(a.issuer)];
+        if (n) a.issuerName = n;
+      });
+      render(search.value || '');
+    });
 
     wrap.appendChild(menu);
     var host = as.parentNode;
