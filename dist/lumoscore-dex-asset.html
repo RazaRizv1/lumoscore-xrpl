@@ -8254,6 +8254,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // being signed out.
       x.on('retrieved', function () { adoptXumm(x); });
       x.on('success', function () { adoptXumm(x); });
+
+      // A REFUSAL FROM XAMAN'S GATEWAY NEVER REACHED authorize(). The popup renders their error page
+      // and simply never posts a result back, so the promise stays pending and the dialog behind it
+      // spins on "Waiting for Xaman" with nothing but a Cancel button -- which is what RAZA hit on
+      // 2026-10-01: "Error: access_denied / Invalid client/redirect URL" in the popup, and a spinner
+      // underneath it that would have spun all day. The SDK does emit 'error'; nothing was listening.
+      x.on('error', function (e) { failXaman(e); });
       return x;
     });
     return xummReady;
@@ -8279,11 +8286,41 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return !t || /main/i.test(String(t));
   }
 
+  // Set while an authorize() is in flight, so the SDK's 'error' event can settle it.
+  var xamanPending = null;
+  function failXaman(e) {
+    var r = xamanPending; xamanPending = null;
+    if (r) r(xamanAuthError(e));
+  }
+
+  // Xaman's gateway refuses BEFORE the user is ever shown a prompt when the address this page was
+  // served from is not on the application's redirect list. The trap is that every Cloudflare Pages
+  // deployment has its OWN origin -- a preview hash fails while the alias works, with no hint which
+  // of the two is wrong -- so the address is named here rather than left for someone to guess.
+  function xamanAuthError(e) {
+    var m = String((e && (e.message || e.error || e.reason)) || e || '');
+    if (/invalid client|redirect|access_denied/i.test(m)) {
+      return new Error('Xaman would not accept a sign-in from ' + window.location.origin
+        + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
+        + 'redirect URL at apps.xaman.dev; otherwise open LumosCore from its main address.');
+    }
+    return new Error(m || 'Xaman sign-in failed.');
+  }
+
   function xamanConnect() {
     return xumm().then(function (x) {
+      // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
+      // on the event -- authorize() itself stays pending forever.
+      var refused = new Promise(function (_res, rej) { xamanPending = rej; });
       var p = x.authorize();
-      return p && p.then ? p : Promise.reject(new Error('Xaman sign-in could not start.'));
+      if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+      // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
+      // fire it at a sign-in that already finished.
+      return Promise.race([p, refused]).then(
+        function (v) { xamanPending = null; return v; },
+        function (e) { xamanPending = null; throw e; });
     }).then(function (state) {
+      xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
       if (!netOk(state.me)) {
         throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
