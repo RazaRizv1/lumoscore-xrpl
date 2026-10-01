@@ -54,8 +54,53 @@ const STYLE = `<style id="lx-xrpldashtop-css">
    because the containers will not gain it on their own.
    Same values as Stellar's _dashtop.js, so the two dashboards stay one design. */
 .lx-xt-r{display:flex;flex-direction:column;align-items:flex-end;gap:10px;align-self:center;min-width:0}
-.lx-xt-r .lx-xt-tfs{margin-top:0;align-self:flex-end}
-@media (max-width:760px){.lx-xt-r{align-self:stretch;width:100%}}
+/* padding and gap at Stellar's 3px, not the inherited 3.3px. Those 0.3s made the control 35px tall
+   against Stellar's 33, which set the RIGHT column to 149 against 147 -- and since the grid row takes
+   the taller of the two, that alone was the last 2px of the card's height. */
+.lx-xt-r .lx-xt-tfs{margin-top:0;align-self:flex-end;gap:3px;padding:3px}
+/* and the buttons inside it: 5/11 as Stellar has them, not the inherited 5.5/12.1. */
+.lx-xt-r .lx-xt-tfs>button{padding:5px 11px}
+/* 860px, matching Stellar's own breakpoint for this panel. It said 760 and nothing else here does. */
+@media (max-width:860px){.lx-xt-r{align-self:stretch;width:100%}}
+
+/* ---- THE REST OF THE CARD, brought back level with Stellar's (RAZA 2026-10-01: "its still not the
+   same") ----------------------------------------------------------------------------------------
+   Measured side by side at 1440x900 before changing anything. The inherited sheet is a SNAPSHOT of
+   how Stellar's panel looked when this fork copied its built containers, with the 1.1 typescale
+   already baked in -- its price is 30*1.1=33px and its small variant 25*1.1=27.5px, against the 42px
+   and 32px Stellar serves today. The containers will never gain the newer values on their own, so
+   they are restated here, two classes to one, exactly as .lx-xt-r above already is.
+
+   Each line is a measured difference, not a tidy-up:
+     justify-content  the inherited rule has NONE, so the column sticks to the top of a 271px card and
+                      leaves the empty band under the price that prompted this.
+     gap 2.2 -> 14    logo, title, price and pill were packed together.
+     align-items      baseline sat the pill low against a big number; Stellar centres it.
+     font-size 17     the title was 18.7px -- LARGER than Stellar's while the price was smaller, which
+                      inverts the hierarchy between a label and the number it labels.
+     tabular-nums     absent here. On a price that ticks, proportional digits change width and the
+                      whole line shifts; this is the one difference a screenshot will not show.
+
+   font-variant-numeric comes AFTER the shorthand on purpose: the font shorthand resets it. */
+.lx-xlmpanel .lx-xt-l{gap:14px;justify-content:center}
+.lx-xlmpanel .lx-xt-row{align-items:center;gap:14px}
+.lx-xlmpanel .lx-xt-lbl{font-size:17px}
+.lx-xlmpanel .lx-xt-price{font:800 42px/1 'JetBrains Mono',monospace;letter-spacing:-1.5px;
+  font-variant-numeric:tabular-nums}
+.lx-xlmpanel .lx-xt-chg{font:800 14px/1 'JetBrains Mono',monospace;padding:7px 12px}
+@media(max-width:860px){.lx-xlmpanel .lx-xt-price{font-size:32px}}
+
+/* THE PANEL'S OWN BOX, which is the last thing still 1.1x Stellar's and is why the card measured 280px
+   against 271px with every line sitting 2-3px low. Measured: padding 17.6/19.8 against 16/18, gap 19.8
+   against 18, and the Network Stats strip 77px tall against 74px -- every one of them exactly 1.1x.
+   The class is repeated to beat the inherited one-class rule on specificity rather than on which
+   stylesheet happens to land later in <head>, which is not a tiebreaker worth relying on. */
+.lx-xlmpanel.lx-xlmpanel{padding:16px 18px 0;gap:18px}
+.lx-xlmpanel.lx-xlmpanel>.status-row{padding:13px 18px 14px}
+@media(max-width:860px){
+  .lx-xlmpanel.lx-xlmpanel{padding:14px 14px 0;gap:12px}
+  .lx-xlmpanel.lx-xlmpanel>.status-row{margin:12px -14px 0}
+}
 </style>`;
 
 // No `${` anywhere below this line: it is a template literal and an interpolation here would be
