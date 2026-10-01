@@ -979,13 +979,17 @@
   // Its handler is bound on `document` in the capture phase, and it is earlier in the page than this
   // file, so it registers first and wins. Capture runs window -> document, so listening on `window`
   // is what puts this ahead of it -- registration order only decides ties on the SAME target.
-  window.addEventListener('click', function (e) {
-    var t = isConnectTrigger(e.target);
-    if (!t) return;
-    e.preventDefault();
-    e.stopPropagation();
-    openPicker();
-  }, true);
+  // Both takeovers below are grouped so dormant mode can skip them together. On an XRPL page claiming
+  // every connect control is exactly right; on a Stellar page it is exactly wrong, because there the
+  // design's own flow is the real one and this would answer for it. See __lxcNoBoot at the end.
+  function takeOverConnectUi() {
+    window.addEventListener('click', function (e) {
+      var t = isConnectTrigger(e.target);
+      if (!t) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openPicker();
+    }, true);
 
   // The backstop for every other way in. A header network-chooser also calls this directly, so
   // intercepting clicks alone would still leave routes that open the Aptos list. Overriding it
@@ -995,12 +999,13 @@
   // design's own modal shell, and calling the replacement instead is infinite recursion:
   // lxwOpenWallet -> openPicker -> ui.done -> designConnected -> lxwOpenWallet. (Measured: a real
   // "Maximum call stack size exceeded" on the live page.)
-  try {
-    if (!window.__lxwDesignOpen && typeof window.lxwOpenWallet === 'function') {
-      window.__lxwDesignOpen = window.lxwOpenWallet;
-    }
-    window.lxwOpenWallet = function () { openPicker(); };
-  } catch (e) {}
+    try {
+      if (!window.__lxwDesignOpen && typeof window.lxwOpenWallet === 'function') {
+        window.__lxwDesignOpen = window.lxwOpenWallet;
+      }
+      window.lxwOpenWallet = function () { openPicker(); };
+    } catch (e) {}
+  }
 
   // A Xaman sign-in on a phone returns here as a brand-new page load. If a session is remembered,
   // the SDK has to be constructed for 'retrieved' to fire at all -- nothing resumes on its own.
@@ -1048,6 +1053,29 @@
 
   function boot() { resume(); watchWalletChip(); }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  // DORMANT MODE, for pages that are not XRPL pages.
+  //
+  // The combined site serves Stellar's landing page, and that page offers "Choose a network" with an
+  // XRP Ledger row. Picking it has to open THIS picker in place, which means this module has to be
+  // present there -- but it must not come alive on its own, because on a Stellar page the two builds
+  // collide on the same storage: lumos.address / lumos.wallet are shared keys (the header of this file
+  // makes the same point in the other direction). resume() would read a Stellar G-address out of
+  // lumos.address and adopt it as an XRPL session, and watchWalletChip() would fight Stellar's own
+  // connect layer over the top-bar chip.
+  //
+  // It must also not CLAIM THE PAGE'S CONNECT UI, and that half was missed first time round. Two
+  // takeovers run at module level on an XRPL page: a window capture listener that answers every connect
+  // button, and an outright replacement of window.lxwOpenWallet. Both are correct where this module is
+  // the only connect flow. On Stellar's landing page they hijack the real one — measured, the override
+  // alone meant "Choose a network" built no modal at all and picking Stellar would have opened the XRPL
+  // picker. They are now in takeOverConnectUi() and skipped with the rest.
+  //
+  // So when the host page sets window.__lxcNoBoot before this script runs, window.lxc is defined and
+  // nothing else happens: no resume, no chip watcher, no takeover. lxc.open() still works, which is all
+  // the chooser needs. XRPL's own pages never set the flag, so their behaviour is unchanged.
+  if (!window.__lxcNoBoot) {
+    takeOverConnectUi();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  }
 })();

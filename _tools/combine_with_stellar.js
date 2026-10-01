@@ -11,10 +11,16 @@
 // C:/LumosCore IS READ-ONLY HERE. That repo is git-connected to production — a write there is a
 // deploy. Everything is copied out of it and nothing is copied into it.
 //
-// STELLAR IS NOT MODIFIED, in the only sense that matters: every Stellar file lands byte-identical,
-// every Stellar route keeps its target, and the landing page is carried over untouched. The combined
-// tree only ADDS: the /xrpl page folder, XRPL's 16 page routes, three Functions that exist nowhere in
-// Stellar, and XRPL's route pairs appended to the middleware.
+// STELLAR IS ALL BUT UNMODIFIED. Every Stellar route keeps its target, every Stellar asset is left as
+// it is, and the landing page's content and layout are untouched. The combined tree ADDS: the /xrpl
+// page folder, XRPL's 16 page routes, three Functions that exist nowhere in Stellar, XRPL's route pairs
+// appended to the middleware, and the twelve assets only XRPL uses.
+//
+// ONE EXCEPTION, and it is deliberate: a single <script defer> tag is appended to the Stellar pages
+// that carry "Choose a network", loading XRPL's connect layer in dormant mode. That is what lets the
+// chooser connect XRP Ledger in place rather than navigating away first. Nothing is removed, nothing
+// else is rewritten, and C:/LumosCore's own build is not touched at all — the tag exists only in this
+// combined output, because only here is there another chain to choose.
 const fs = require('fs');
 const path = require('path');
 
@@ -121,6 +127,57 @@ if (WRITE) {
 console.log('    xrpl assets   : ' + (WRITE ? ('+' + aAdded + ' added, ' + aSame + ' already identical'
   + (aClash.length ? ', ' + aClash.length + ' SAME NAME DIFFERENT BYTES (kept Stellar\'s): '
     + aClash.join(', ') : '')) : 'n/a (dry run)'));
+
+// ---- XRPL's connect layer, on Stellar's pages -----------------------------------------------------
+// So that "Choose a network" can connect XRP Ledger IN PLACE, the way it already connects Stellar in
+// place, instead of navigating to an XRPL page first and opening the picker there.
+//
+// This is the one thing in this script that edits a Stellar file, and it only makes sense here: the
+// standalone Stellar site has no XRPL to offer, so the module would be dead weight in that repo. Doing
+// it at the seam keeps C:/LumosCore's own build exactly as it was.
+//
+// INJECTED DORMANT. window.__lxcNoBoot is set before the module, so it defines window.lxc and stops.
+// Without that it would run resume() and watchWalletChip() on load, and the two builds share their
+// storage keys -- lumos.address / lumos.wallet -- so it would read a Stellar G-address as an XRPL
+// session and fight Stellar's own connect layer over the top-bar chip.
+//
+// One hashed file for all of them rather than inline per page: Stellar's pages are externalised, so the
+// browser fetches this once and reuses it across the site.
+let xcFile = null, xcPages = 0;
+if (WRITE) {
+  const core = fs.readFileSync(XRPL + '/_tools/xrpl-core.js', 'utf8');
+  const page = fs.readFileSync(XRPL + '/_tools/browser/connect.js', 'utf8');
+  // Without the guard this module boots on every Stellar page. Checked rather than assumed, because
+  // the failure is silent and looks like Stellar's own wallet state going strange.
+  if (page.indexOf('__lxcNoBoot') < 0) {
+    die('_tools/browser/connect.js has no __lxcNoBoot guard — injecting it would boot XRPL\'s connect '
+      + 'layer on Stellar pages and let it adopt a Stellar address');
+  }
+  for (const s of [core, page]) {
+    if (s.indexOf('</' + 'script') >= 0) die('the XRPL connect source contains a closing script tag');
+  }
+  const bundle = '/* XRPL connect, dormant — woken only by the network chooser. */\n'
+    + 'window.__lxcNoBoot=1;\n' + core + '\n' + page + '\n';
+  const hash = require('crypto').createHash('sha256').update(bundle).digest('hex').slice(0, 12);
+  xcFile = 'lx-xrplconnect-' + hash + '.js';
+  fs.mkdirSync(OUT + '/assets/js', { recursive: true });
+  fs.writeFileSync(OUT + '/assets/js/' + xcFile, bundle);
+
+  // Only Stellar's own pages, and only the ones that actually offer the chooser. readdirSync(OUT) lists
+  // the top level, so /xrpl's pages are never touched — they carry their own copy already.
+  const tag = '<script src="/assets/js/' + xcFile + '" defer></' + 'script>';
+  for (const f of fs.readdirSync(OUT)) {
+    if (!f.endsWith('.html')) continue;
+    const p = OUT + '/' + f;
+    let h = fs.readFileSync(p, 'utf8');
+    if (h.indexOf('lxChooseNetwork') < 0 || h.indexOf(xcFile) >= 0) continue;
+    const bi = h.lastIndexOf('</body>');
+    fs.writeFileSync(p, bi >= 0 ? h.slice(0, bi) + tag + h.slice(bi) : h + tag);
+    xcPages++;
+  }
+}
+console.log('    xrpl connect  : ' + (WRITE ? (xcFile + ' on ' + xcPages + ' stellar page(s), dormant')
+  : 'n/a (dry run)'));
 
 // ---- routes ---------------------------------------------------------------------------------------
 // Only XRPL's PAGE routes are taken. Its ALIASES and CASE_FIXES (/blogs, /Dashboard -> /dashboard,
