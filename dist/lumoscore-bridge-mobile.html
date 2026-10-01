@@ -6539,6 +6539,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // never passed through it and never got stamped. Bound on window in the CAPTURE phase so the
       // stamp lands before the design's own handler rebuilds the chip, and left deliberately dumb: it
       // sets an attribute and nothing else, so it cannot interfere with whatever handles the click.
+      // Typing the address has to re-open the gate. paintSteps() runs on the things this layer drives
+      // — asset, amount, destination — but the address field is the design's own input and nothing
+      // here was listening to it, so the button would have stayed dead after the last box was filled.
+      if (!window.__lxxAddrWatch) {
+        window.__lxxAddrWatch = 1;
+        ['input', 'change', 'paste'].forEach(function (ev) {
+          document.addEventListener(ev, function (e) {
+            var t = e.target;
+            if (!t || !t.classList || !t.classList.contains('br-addr-in')) return;
+            // paste fires BEFORE the value lands, so re-read on the next turn rather than this one.
+            setTimeout(function () { try { gateReview(); } catch (_) {} }, 0);
+          }, true);
+        });
+      }
+
       if (!window.__lxxNetStamp) {
         window.__lxxNetStamp = 1;
         window.addEventListener('click', function (e) {
@@ -8464,6 +8479,36 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     ensureReviewRows();
     paintReview(QUOTE, '');
     setCta();
+    gateReview();
+  }
+
+  // "Review transfer" must not look ready while the form is not. Stellar disables the same control —
+  // disabled + .lx-disabled + aria-disabled — and the rule for it came across with the fork
+  // (.br-actions .br-next.lx-disabled{opacity:.45;cursor:not-allowed;pointer-events:none}), so only the
+  // toggling was ever missing here. (RAZA 2026-10-01: "Review transfer button should be inactive until
+  // the details are fill.")
+  //
+  // ctaButton() could never have done this: it finds its target by TEXT, matching confirm/bridge/swap,
+  // and this button says "Review transfer" — so step 2's control sat outside every gate in this file
+  // while step 3's sat inside them.
+  function gateReview() {
+    var s2 = $('.br-step[data-step="2"]');
+    var b = s2 && s2.querySelector('.br-next');
+    if (!b) return;
+    var why = '';
+    try { why = blockReason() || ''; } catch (e) {}
+    var a = s2.querySelector('.br-addr-in');
+    var typed = a ? String(a.value || '').trim() : '';
+    // PRESENCE, NOT FORMAT. There are 28 destinations here with different address shapes, and a format
+    // check that is wrong about one of them blocks a transfer that would have worked. "Filled in" is
+    // what this button reports; whether the address is right for that chain is the preflight's job,
+    // where being wrong is recoverable.
+    if (!why && !typed) why = 'Enter the receiving address';
+    var ok = !why;
+    b.disabled = !ok;
+    b.classList.toggle('lx-disabled', !ok);
+    b.setAttribute('aria-disabled', ok ? 'false' : 'true');
+    if (ok) b.removeAttribute('title'); else b.title = why;
   }
 
   // ---- the terminal action -------------------------------------------------------------------------
