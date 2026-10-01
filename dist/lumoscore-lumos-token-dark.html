@@ -7505,12 +7505,15 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         // so when that lookup fails there is nothing to look pools up BY — and this used to carry on and report "No pools
         // match that search", which is a claim about the ledger rather than about the request. (RAZA 2026-09-17, searching
         // "lumos" against pools that do exist.)
-        if (!s || !s.ok) {
-          noteHost(h, 'Pool search is unavailable right now.');
-          var pg0 = $('#paginationAll');
-          if (pg0) pg0.style.display = 'none';
-          return;
-        }
+        // RATE LIMITED IS NOT UNAVAILABLE. This lookup resolves the typed word to ISSUERS, and it is
+        // the first thing to go: xrpl.to's anonymous tier is 333 requests a day, and every DISTINCT
+        // query is its own URL, so unlike the pool list — one URL, edge-cached, measured as a HIT —
+        // searching cannot be amortised and a day of testing exhausts it. (RAZA 2026-10-01, searching
+        // "lumen" against pools that plainly exist.)
+        //
+        // Losing it costs reach, not the feature: pools outside the loaded page become unreachable,
+        // but the ones already in hand are still searchable, and a partial answer beats a dead end.
+        if (!s || !s.ok) return localPools(h, ql, all, my);
         var seen = {}, issuers = [];
         ((s && s.rows) || []).forEach(function (t) {
           var code = nameOf({ c: t.c, i: t.i }).toLowerCase(), nm = String(t.n || '').toLowerCase();
@@ -7542,7 +7545,29 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           renderPage(h, { ok: true, rows: rows, total: rows.length }, 1);
         });
       })
-      .catch(function () { if (my === poolQ) noteHost(h, 'Pool search is unavailable right now.'); });
+      .catch(function () { localPools(h, ql, all, my); });
+  }
+
+  // What can still be answered without the issuer lookup: the pools already loaded on this page.
+  // Narrower than a ledger-wide search and said so rather than dressed up as one.
+  function localPools(h, ql, all, my) {
+    if (my !== poolQ) return;
+    var rows = [];
+    ((all && all.rows) || []).forEach(function (r) {
+      if (!r || !r.acct) return;
+      if (nameOf(r.a1).toLowerCase().indexOf(ql) < 0 && nameOf(r.a2).toLowerCase().indexOf(ql) < 0) return;
+      rows.push(r);
+    });
+    var pg = $('#paginationAll');
+    if (!rows.length) {
+      noteHost(h, 'No match in the pools loaded here. The ledger-wide asset search is rate limited '
+        + 'right now — try again in a minute.');
+      if (pg) pg.style.display = 'none';
+      return;
+    }
+    rows.sort(function (x, y) { return (+y.liq || 0) - (+x.liq || 0); });
+    if (pg) pg.style.display = 'none';
+    renderPage(h, { ok: true, rows: rows, total: rows.length }, 1);
   }
 
   function load() {

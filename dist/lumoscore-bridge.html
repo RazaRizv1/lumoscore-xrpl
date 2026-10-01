@@ -6666,12 +6666,39 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         if (!u) return;                            // no file shipped -- leave the letters alone
         css += '.brd-opt[data-net="' + n + '"] .brd-ic{background:url(' + u + ') center/cover no-repeat !important;'
           + 'color:transparent !important}';
+        // AND THE CLOSED CHIP, by the same rule. Painting the option was never the hard half: the
+        // artwork lives in THIS stylesheet, so the moment a network is chosen, every path that builds
+        // the chip by copying the option's inline style or its <img> finds nothing and falls through
+        // to a letter disc -- the design's own dropdown handler rebuilds the chip that way, and it
+        // runs whether or not selectChain does. RAZA 2026-10-01: "logos is breaking after selecting,
+        // appears fine in the dropdown."
+        // Keyed on an attribute and marked !important so it survives the innerHTML being rebuilt by
+        // code this layer does not own; the child rule blanks whatever letter mark was put inside.
+        css += '.brd-trigger[data-net="' + n + '"] .br-ic{background:url(' + u + ') center/cover no-repeat !important;'
+          + 'color:transparent !important}'
+          + '.brd-trigger[data-net="' + n + '"] .br-ic>*{display:none !important}';
       });
       if (NET_HAVE.xrpl) {
         css += '.br-netbox .br-net[data-lxsrc] .br-ic,.br-step[data-step="1"] .br-side:first-child .br-ic'
           + '{background:url(/assets/networks/xrpl.png?v=' + ICONV + ') center/cover no-repeat !important;'
           + 'color:transparent !important}';
       }
+      // EVERY option, not just the ones this layer added. selectChain() is reached only from the
+      // handler for added options, so the design's own eighteen -- Base and Avalanche among them --
+      // never passed through it and never got stamped. Bound on window in the CAPTURE phase so the
+      // stamp lands before the design's own handler rebuilds the chip, and left deliberately dumb: it
+      // sets an attribute and nothing else, so it cannot interfere with whatever handles the click.
+      if (!window.__lxxNetStamp) {
+        window.__lxxNetStamp = 1;
+        window.addEventListener('click', function (e) {
+          var o = e.target && e.target.closest ? e.target.closest('.brd-opt') : null;
+          if (!o) return;
+          var n = o.getAttribute('data-net');
+          var trg = document.querySelector('.brd-trigger');
+          if (n && trg) trg.setAttribute('data-net', n);
+        }, true);
+      }
+
       var st = document.createElement('style');
       st.id = 'lx-xnetbg';
       st.textContent = css;
@@ -6754,6 +6781,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var nm = trg.querySelector('.nm');
     if (nm) nm.textContent = name;
     trg.classList.remove('is-empty');
+    // What the stylesheet above keys the chip's artwork on. Set on the trigger itself rather than on
+    // anything inside it, so a rebuild of the chip's contents cannot take it away.
+    trg.setAttribute('data-net', name);
     var ic = trg.querySelector('.br-ic');
     if (ic) {
       // THE SHIPPED FILE IS ASKED FOR FIRST, and that is the fix for "no logos shown after the
@@ -7191,7 +7221,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (cur && !reach[cur]) {
       var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
       if (nm) nm.textContent = 'Select Network';
-      if (trg) trg.classList.add('is-empty');
+      if (trg) { trg.classList.add('is-empty'); trg.removeAttribute('data-net'); }
       DEST = null; QUOTE = null; AXQ = null;
     }
     return shown.length;
