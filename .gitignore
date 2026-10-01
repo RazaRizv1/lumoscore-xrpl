@@ -21,3 +21,6 @@ _containers_backup/
 # container snapshots (huge, and regenerable by re-running the transforms)
 _containers_broken_20260908/
 dist/xrpl/
+dist-combined/
+functions-combined/
+.deploy/

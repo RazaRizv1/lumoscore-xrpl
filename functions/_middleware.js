@@ -10,86 +10,86 @@ const ROUTES = [
   ],
   [
     "/trade/xrpl/:asset",
-    "/lumoscore-dex-asset",
+    "/xrpl/lumoscore-dex-asset",
     null
   ],
   [
     "/trade/xrpl",
-    "/lumoscore-dex",
+    "/xrpl/lumoscore-dex",
     null
   ],
   [
     "/account/xrpl/:address",
-    "/lumoscore-account",
+    "/xrpl/lumoscore-account",
     null
   ],
   [
     "/pools/xrpl/id/:pool",
-    "/lumoscore-amm-pool",
+    "/xrpl/lumoscore-amm-pool",
     null
   ],
   [
     "/pools/xrpl/:a/:b",
-    "/lumoscore-amm-pool",
+    "/xrpl/lumoscore-amm-pool",
     null
   ],
   [
     "/pools/xrpl",
-    "/lumoscore-amm",
+    "/xrpl/lumoscore-amm",
     null
   ],
   [
     "/launchpad/xrpl/review",
-    "/lumoscore-launch-review",
+    "/xrpl/lumoscore-launch-review",
     null
   ],
   [
     "/launchpad/xrpl/confirm",
-    "/lumoscore-launch-confirm",
+    "/xrpl/lumoscore-launch-confirm",
     null
   ],
   [
     "/launchpad/xrpl",
-    "/lumoscore-launch-token",
+    "/xrpl/lumoscore-launch-token",
     null
   ],
   [
     "/dashboard/xrpl",
-    "/lumoscore-home",
+    "/xrpl/lumoscore-home",
     null
   ],
   [
     "/bridge/xrpl",
-    "/lumoscore-bridge",
+    "/xrpl/lumoscore-bridge",
     null
   ],
   [
     "/wallet/xrpl",
-    "/lumoscore-wallet",
+    "/xrpl/lumoscore-wallet",
     null
   ],
   [
     "/rewards/xrpl",
-    "/lumoscore-rewards-dark",
+    "/xrpl/lumoscore-rewards-dark",
     null
   ],
   [
     "/lumos/xrpl",
-    "/lumoscore-lumos-token",
+    "/xrpl/lumoscore-lumos-token",
     null
   ],
   [
     "/mcp/xrpl",
-    "/lumoscore-mcp",
+    "/xrpl/lumoscore-mcp",
     null
   ],
   [
     "/list-your-token/xrpl",
-    "/lumoscore-list-token",
+    "/xrpl/lumoscore-list-token",
     null
   ]
 ];
-const HAS_MOBILE = new Set(["/lumoscore-home-mobile","/lumoscore-landing-mobile","/lumoscore-launch-confirm-mobile","/lumoscore-launch-review-mobile","/lumoscore-launch-token-mobile","/lumoscore-wallet-mobile","/lumoscore-amm-mobile","/lumoscore-amm-pool-mobile","/lumoscore-lumos-token-mobile","/lumoscore-dex-mobile","/lumoscore-dex-asset-mobile","/lumoscore-bridge-mobile","/lumoscore-signin-mobile","/lumoscore-rewards-mobile","/lumoscore-mcp-mobile","/lumoscore-account-mobile","/lumoscore-blog-mobile","/lumoscore-blog-post-mobile","/lumoscore-privacy-mobile","/lumoscore-terms-mobile","/lumoscore-support-mobile","/lumoscore-whitepaper-mobile","/lumoscore-docs-introduction-mobile","/lumoscore-docs-connect-a-wallet-mobile","/lumoscore-docs-fees-mobile","/lumoscore-docs-swaps-mobile","/lumoscore-docs-limit-orders-mobile","/lumoscore-docs-liquidity-pools-mobile","/lumoscore-docs-cross-chain-mobile","/lumoscore-docs-wallet-mobile","/lumoscore-docs-trustlines-mobile","/lumoscore-docs-rewards-mobile","/lumoscore-docs-launch-a-token-mobile","/lumoscore-docs-asset-metadata-mobile","/lumoscore-docs-verification-mobile","/lumoscore-docs-curated-listing-mobile","/lumoscore-docs-security-mobile","/lumoscore-docs-troubleshooting-mobile","/lumoscore-docs-faq-mobile","/lumoscore-about-mobile","/lumoscore-list-token-mobile"]);
+const HAS_MOBILE = new Set(["/xrpl/lumoscore-home-mobile","/xrpl/lumoscore-landing-mobile","/xrpl/lumoscore-launch-confirm-mobile","/xrpl/lumoscore-launch-review-mobile","/xrpl/lumoscore-launch-token-mobile","/xrpl/lumoscore-wallet-mobile","/xrpl/lumoscore-amm-mobile","/xrpl/lumoscore-amm-pool-mobile","/xrpl/lumoscore-lumos-token-mobile","/xrpl/lumoscore-dex-mobile","/xrpl/lumoscore-dex-asset-mobile","/xrpl/lumoscore-bridge-mobile","/xrpl/lumoscore-signin-mobile","/xrpl/lumoscore-rewards-mobile","/xrpl/lumoscore-mcp-mobile","/xrpl/lumoscore-account-mobile","/xrpl/lumoscore-blog-mobile","/xrpl/lumoscore-blog-post-mobile","/xrpl/lumoscore-privacy-mobile","/xrpl/lumoscore-terms-mobile","/xrpl/lumoscore-support-mobile","/xrpl/lumoscore-whitepaper-mobile","/xrpl/lumoscore-docs-introduction-mobile","/xrpl/lumoscore-docs-connect-a-wallet-mobile","/xrpl/lumoscore-docs-fees-mobile","/xrpl/lumoscore-docs-swaps-mobile","/xrpl/lumoscore-docs-limit-orders-mobile","/xrpl/lumoscore-docs-liquidity-pools-mobile","/xrpl/lumoscore-docs-cross-chain-mobile","/xrpl/lumoscore-docs-wallet-mobile","/xrpl/lumoscore-docs-trustlines-mobile","/xrpl/lumoscore-docs-rewards-mobile","/xrpl/lumoscore-docs-launch-a-token-mobile","/xrpl/lumoscore-docs-asset-metadata-mobile","/xrpl/lumoscore-docs-verification-mobile","/xrpl/lumoscore-docs-curated-listing-mobile","/xrpl/lumoscore-docs-security-mobile","/xrpl/lumoscore-docs-troubleshooting-mobile","/xrpl/lumoscore-docs-faq-mobile","/xrpl/lumoscore-about-mobile","/xrpl/lumoscore-list-token-mobile"]);
 
 function match(pathname){
   const segs = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
