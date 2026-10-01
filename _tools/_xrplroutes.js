@@ -57,12 +57,21 @@ const MAP = [
   ['/pools/stellar', '/pools/xrpl'],
   ['/account/stellar', '/account/xrpl'],
 
-  // The two launchpad sub-pages, which must be consumed BEFORE the bare "/launchpad" in BARE below —
-  // longest-first, the rule this table already states. Safe in MAP rather than BARE because neither
-  // search string survives inside its own replacement: "/launchpad/review" is not a substring of
-  // "/launchpad/xrpl/review", so a second build finds nothing left to rewrite.
-  ['/launchpad/review', '/launchpad/xrpl/review'],
-  ['/launchpad/confirm', '/launchpad/xrpl/confirm'],
+  // THE LAUNCHPAD SUB-PAGES ARE NO LONGER SUFFIXED, and nor are /dashboard, /wallet and /launchpad in
+  // BARE below. Those five are authgated, so they are never indexed and never shared — which is exactly
+  // RAZA's point: a per-chain url for them would only ever be a second private link to the same screen.
+  // On the combined deployment they are ONE url each, and the middleware serves whichever chain's build
+  // the reader is connected to, read from the lx_chain cookie.
+  //
+  // The entries below undo the suffix this table used to add. They have to stay: the containers are
+  // gitignored and persist, so what is on disk is the already-suffixed form, and without these a
+  // rebuild would leave it exactly as it is. Neither target contains its own search string, so a second
+  // run finds nothing to do.
+  ['/launchpad/xrpl/review', '/launchpad/review'],
+  ['/launchpad/xrpl/confirm', '/launchpad/confirm'],
+  ['/dashboard/xrpl', '/dashboard'],
+  ['/wallet/xrpl', '/wallet'],
+  ['/launchpad/xrpl', '/launchpad'],
 
   // THE PREVIOUS SCHEME, /xrpl/<section>, which this table itself used to write. The containers are
   // gitignored and persist between builds, so what is on disk today is that shape, not Stellar's --
@@ -116,15 +125,16 @@ const MAP = [
 //
 // NOT HERE: /trade, /pools and /account. MAP already turns Stellar's chain-suffixed forms into XRPL's,
 // and the design never writes those bare.
+// NOT /dashboard, /wallet OR /launchpad any more. Those three are authgated, so they are one shared url
+// on the combined deployment and the middleware picks the build from the lx_chain cookie — see the
+// MAP entries above that now strip the suffix rather than add it. Suffixing them here would point this
+// build's own links back at urls the combined site no longer serves.
 const BARE = [
   '/lumos',
-  '/dashboard',
-  '/wallet',
   '/bridge',
   '/rewards',
   '/mcp',
   '/list-your-token',
-  '/launchpad',
 ];
 
 function esc(s) { return s.replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&'); }

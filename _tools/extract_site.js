@@ -452,12 +452,17 @@ const ROUTES = [
   // /launchpad/stellar and /rewards/stellar alongside the bare ones, so this is the scheme it was
   // already using — extended to the three surfaces (dashboard, wallet, mcp) neither build had
   // qualified. Stellar's bare routes keep working untouched, which is the whole point.
-  ['/launchpad/xrpl/review',     'lumoscore-launch-review.html'],   // review must precede /launchpad
-  ['/launchpad/xrpl/confirm',    'lumoscore-launch-confirm.html'],
-  ['/launchpad/xrpl',            'lumoscore-launch-token.html'],
-  ['/dashboard/xrpl',            'lumoscore-home.html'],
+  // THE AUTHGATED FIVE ARE BARE, not /xrpl-suffixed, and that is deliberate (RAZA 2026-10-01: "neither
+  // its indexable. so why create dashboard/xrpl"). The gate bounces anyone without a wallet, so these
+  // are never indexed and never shared; a per-chain url for them would be a second private link to the
+  // same screen. On the combined deployment they are ONE url each and the middleware serves this
+  // build's file when the lx_chain cookie says xrpl. Standalone, they are simply this build's pages.
+  ['/launchpad/review',          'lumoscore-launch-review.html'],   // review must precede /launchpad
+  ['/launchpad/confirm',         'lumoscore-launch-confirm.html'],
+  ['/launchpad',                 'lumoscore-launch-token.html'],
+  ['/dashboard',                 'lumoscore-home.html'],
+  ['/wallet',                    'lumoscore-wallet.html'],
   ['/bridge/xrpl',               'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
-  ['/wallet/xrpl',               'lumoscore-wallet.html'],
   ['/rewards/xrpl',              'lumoscore-rewards-dark.html'],
   // THE LUMOS PAGE IS /lumos/xrpl, as Stellar's is /lumos/stellar (RAZA 2026-09-15). Bare /lumos 301s
   // here — see "1a2" in the middleware.

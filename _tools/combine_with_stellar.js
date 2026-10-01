@@ -183,17 +183,35 @@ console.log('    xrpl connect  : ' + (WRITE ? (xcFile + ' on ' + xcPages + ' ste
 // Only XRPL's PAGE routes are taken. Its ALIASES and CASE_FIXES (/blogs, /Dashboard -> /dashboard,
 // /lumoscore-landing -> /) are the same rules Stellar already publishes, and a second copy of a 301
 // is at best noise and at worst an ordering surprise.
-const xRoutes = xRed.split('\n')
+let xRoutes = xRed.split('\n')
   .filter((l) => /^\/\S+\s+\/xrpl\/\S+\s+200\s*$/.test(l.trim()));
 if (!xRoutes.length) die('found no /xrpl page routes to merge');
 
 const sRed = fs.readFileSync(STELLAR + '/dist/_redirects', 'utf8');
 
-// A Stellar route must never be shadowed. Pages applies the FIRST match, and the XRPL block is
-// appended after Stellar's, so this can only bite if a path is identical — check rather than trust.
 const sPaths = new Set(sRed.split('\n').map((l) => l.trim().split(/\s+/)[0]).filter((p) => p && p.startsWith('/')));
-const shadowed = xRoutes.map((l) => l.trim().split(/\s+/)[0]).filter((p) => sPaths.has(p));
-if (shadowed.length) die('these XRPL routes collide with Stellar: ' + shadowed.join(', '));
+
+// A PATH BOTH BUILDS CLAIM IS A SHARED PAGE, not a collision.
+//
+// The authgated surfaces — /dashboard, /wallet, /launchpad and the two launchpad steps — are one url
+// each, because the gate bounces anyone without a wallet: they are never indexed and never shared, so a
+// per-chain url would only ever be a second private link to the same screen. Stellar's route stays and
+// serves the url; the middleware swaps in this build's file when the lx_chain cookie says xrpl. So the
+// XRPL line is dropped rather than appended, and the pair is recorded in CHAIN_ALT below.
+//
+// Anything else both builds claim IS a collision and still aborts: Pages applies the first match, so a
+// genuine duplicate would silently serve Stellar's page under an XRPL url forever.
+const sharedPaths = xRoutes.map((l) => l.trim().split(/\s+/)[0]).filter((p) => sPaths.has(p));
+const GATED = new Set(['/dashboard', '/wallet', '/launchpad', '/launchpad/review', '/launchpad/confirm']);
+const badShadow = sharedPaths.filter((p) => !GATED.has(p));
+if (badShadow.length) die('these XRPL routes collide with Stellar: ' + badShadow.join(', '));
+// Every gated path must actually be claimed by both, or one chain has silently lost its page.
+const missingShared = [...GATED].filter((p) => !sharedPaths.includes(p));
+if (missingShared.length) {
+  die('these shared gated paths are not served by the XRPL build: ' + missingShared.join(', ')
+    + ' — check ROUTES in the XRPL extract_site.js');
+}
+xRoutes = xRoutes.filter((l) => !GATED.has(l.trim().split(/\s+/)[0]));
 
 // THE SWITCHER'S TARGETS MUST BE REAL ROUTES, in both directions. Each build ships a control pointing
 // into the other build's url scheme — _xrplchainswitch.js here, chainHref in Stellar's _mc_engine.js —
@@ -315,7 +333,10 @@ if (WRITE) {
   const sMw = fs.readFileSync(STELLAR + '/functions/_middleware.js', 'utf8');
   const xMw = fs.readFileSync(XRPL + '/functions/_middleware.js', 'utf8');
   const sRoutes = tableOf(sMw, 'ROUTES');
-  const xMwRoutes = tableOf(xMw, 'ROUTES').filter((r) => r[0] !== '/')
+  // The shared gated paths are dropped here too. Stellar's entry already matches the url — match()
+  // returns the first hit — so an XRPL duplicate could only ever be dead weight, and a dead duplicate
+  // in a route table is the kind of thing someone later reads as the one in use.
+  const xMwRoutes = tableOf(xMw, 'ROUTES').filter((r) => r[0] !== '/' && !GATED.has(r[0]))
     // r[0] is the URL and keeps its slash; r[1] and r[2] are page targets and must lose theirs.
     .map((r) => [r[0], stripLead(r[1]), stripLead(r[2]), ...r.slice(3)]);
   const merged = sRoutes.concat(xMwRoutes);
@@ -336,7 +357,35 @@ if (WRITE) {
   const missing = mergedMobile.filter((m) => !fs.existsSync(OUT + '/' + m + '.html'));
   if (missing.length) die('HAS_MOBILE names files that are not in the combined tree: ' + missing.join(', '));
 
+  // CHAIN_ALT: for each shared gated page, this build's file keyed by the Stellar file the route
+  // resolves to. Derived by pairing the two route tables on the url rather than hardcoding filenames,
+  // so renaming a page on either side cannot leave a stale mapping behind.
+  const xByPath = new Map(tableOf(xMw, 'ROUTES').map((r) => [r[0], r]));
+  const chainAlt = {};
+  for (const sr of sRoutes) {
+    if (!GATED.has(sr[0])) continue;
+    const xr = xByPath.get(sr[0]);
+    if (!xr) die('no XRPL route for the shared gated path ' + sr[0]);
+    const pair = (sFile, xFile) => {
+      if (!sFile || !xFile) return;
+      const x = stripLead(xFile);
+      if (!fs.existsSync(OUT + '/' + x + '.html')) {
+        die('CHAIN_ALT would point ' + sr[0] + ' at ' + x + '.html, which is not in the combined tree');
+      }
+      chainAlt['xrpl ' + sFile] = x;
+    };
+    const sMob = sr[2] || (sr[1].replace(/-(dark|light)$/, '') + '-mobile');
+    const xMob = xr[2] || (stripLead(xr[1]).replace(/-(dark|light)$/, '') + '-mobile');
+    pair(sr[1], xr[1]);
+    pair(sMob, xMob);
+  }
+  const altCount = Object.keys(chainAlt).length;
+  if (!altCount) die('CHAIN_ALT came out empty — the gated pages would all serve Stellar');
+
   const out = sMw
+    .replace(/const CHAIN_ALT = \{[^}]*\};/,
+      '// Filled in by _tools/combine_with_stellar.js. Key is "<chain> <stellar file>".\n'
+      + 'const CHAIN_ALT = ' + JSON.stringify(chainAlt, null, 2) + ';')
     .replace(/const ROUTES = \[[\s\S]*?\n\];/,
       '// Stellar\'s routes, then XRPL\'s appended by _tools/combine_with_stellar.js. First match wins,\n'
       + '// so Stellar\'s are reached first and none of them changes.\n'
@@ -346,6 +395,8 @@ if (WRITE) {
   fs.writeFileSync(FN_OUT + '/_middleware.js', out);
   console.log('    middleware    : ' + sRoutes.length + ' stellar + ' + xMwRoutes.length + ' xrpl routes'
     + ' (xrpl "/" dropped — the landing page stays Stellar\'s)');
+  console.log('    shared pages  : ' + GATED.size + ' authgated url(s) serve either chain via the '
+    + 'lx_chain cookie (' + altCount + ' file mappings)');
 }
 
 if (WRITE) {

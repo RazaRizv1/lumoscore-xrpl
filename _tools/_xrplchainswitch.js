@@ -123,6 +123,11 @@ const SCRIPT = '<script id="lx-xrplchainswitch">(function(){'
   //
   // account has no row because Stellar serves only /account/stellar/:address — there is no chain-level
   // account page to land on without an address, and an XRPL address is not one. It falls through.
+  //
+  // dashboard, wallet and launchpad have no row either, for a different reason: they are ONE url for
+  // both chains now, so there is no other path to send anyone to. They show the connected wallet's own
+  // data, and nobody is on the other chain's dashboard without a wallet there — so they fall through to
+  // Stellar's trade page, which is public and is where connecting actually happens.
   // THE LEADING SLASH IS ADDED AT RUNTIME, and that is not a style choice. _xrplroutes rewrites any
   // route that sits immediately after a quote — "/dashboard" becomes "/dashboard/xrpl", "/trade/stellar"
   // becomes "/trade/xrpl" — and it runs earlier in the chain than this transform. The containers persist

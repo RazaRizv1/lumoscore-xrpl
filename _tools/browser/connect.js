@@ -104,9 +104,21 @@
     for (var i = 0; i < listeners.length; i++) { try { listeners[i](a); } catch (e) {} }
   }
 
+  // The chain, in a form the SERVER can read. On the combined deployment the authgated pages --
+  // dashboard, wallet, launchpad -- are one url each and the middleware picks this chain's build from
+  // this cookie. localStorage never leaves the browser, so it cannot answer that question.
+  // Harmless on the standalone XRPL site, where nothing reads it.
+  function cookieChain(v) {
+    try {
+      document.cookie = 'lx_chain=' + (v || '') + '; path=/; max-age=' + (v ? 31536000 : 0)
+        + '; SameSite=Lax';
+    } catch (e) {}
+  }
+
   function store(addr, walletName, transport) {
     set(K.addr, addr); set(K.wallet, walletName); set(K.transport, transport);
     set(K.chain, 'xrpl'); set(K.network, 'mainnet');
+    cookieChain('xrpl');
     // Recorded as the wallet ID, not the display name, because that is what the picker compares
     // against — taking both from the same place is what stops them drifting apart.
     try {
@@ -121,6 +133,7 @@
 
   function forget() {
     del(K.addr); del(K.wallet); del(K.transport); del(K.chain); del(K.network);
+    cookieChain('');
     emit();
   }
 
