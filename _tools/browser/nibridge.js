@@ -181,7 +181,14 @@
     // file for each was already sitting in assets/networks.
     // zkSync Era is the one genuine gap — there is no zksync file shipped, so it keeps its letters
     // until artwork exists. Mapping it to a name with no file would emit a rule pointing at a 404.
-    Linea: 'linea', Mantle: 'mantle', Sei: 'sei', 'World Chain': 'worldchain'
+    Linea: 'linea', Mantle: 'mantle', Sei: 'sei', 'World Chain': 'worldchain',
+    // The one network that had no artwork in the build at all. Fetched from CoinGecko's own record for
+    // ZKsync (coins/zksync -> ZKTokenBlack.png, 250x246) and placed in BOTH assets/networks and
+    // dist/assets/networks — the build does not copy new files into dist, so one placed only in the
+    // source tree passes build and predeploy and still 404s on the page.
+    // It is a filled black disc with white arrows, not a transparent black glyph, so it reads on the
+    // dark surface the same way the XRP Ledger's own near-black mark already does.
+    'zkSync Era': 'zksync'
   };
   function netFile(label) {
     var f = NET_FILE[label];
