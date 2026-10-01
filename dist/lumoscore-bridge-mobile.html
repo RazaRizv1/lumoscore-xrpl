@@ -6505,6 +6505,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         css += '.brd-trigger[data-net="' + n + '"] .br-ic{background:url(' + u + ') center/cover no-repeat !important;'
           + 'color:transparent !important}'
           + '.brd-trigger[data-net="' + n + '"] .br-ic>*{display:none !important}';
+        // AND THE RECEIVING ADDRESS ROW on step 2. That row is the design's own markup and this layer
+        // never builds it, so it keeps the hardcoded XRP mark it shipped with — the SOURCE network's
+        // logo sitting beside the DESTINATION address. (RAZA 2026-10-01: "network logo in TO is
+        // missing".) Keyed on the root element so it holds regardless of when that row is rendered or
+        // rebuilt, and the child rule blanks the inline SVG underneath.
+        css += '[data-destnet="' + n + '"] .br-wallet.brw-in .br-ic{background:url(' + u + ') center/cover no-repeat !important;'
+          + 'color:transparent !important}'
+          + '[data-destnet="' + n + '"] .br-wallet.brw-in .br-ic>*{display:none !important}';
       });
       if (NET_HAVE.xrpl) {
         css += '.br-netbox .br-net[data-lxsrc] .br-ic,.br-step[data-step="1"] .br-side:first-child .br-ic'
@@ -6524,6 +6532,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           var n = o.getAttribute('data-net');
           var trg = document.querySelector('.brd-trigger');
           if (n && trg) trg.setAttribute('data-net', n);
+          if (n) document.documentElement.setAttribute('data-destnet', n);
         }, true);
       }
 
@@ -6612,6 +6621,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // What the stylesheet above keys the chip's artwork on. Set on the trigger itself rather than on
     // anything inside it, so a rebuild of the chip's contents cannot take it away.
     trg.setAttribute('data-net', name);
+    document.documentElement.setAttribute('data-destnet', name);
     var ic = trg.querySelector('.br-ic');
     if (ic) {
       // THE SHIPPED FILE IS ASKED FOR FIRST, and that is the fix for "no logos shown after the
@@ -7050,6 +7060,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
       if (nm) nm.textContent = 'Select Network';
       if (trg) { trg.classList.add('is-empty'); trg.removeAttribute('data-net'); }
+      document.documentElement.removeAttribute('data-destnet');
       DEST = null; QUOTE = null; AXQ = null;
     }
     return shown.length;
@@ -8405,7 +8416,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           var sb = SRC ? SRC.balance : XRP_SPEND;
           var ssym = SRC ? SRC.symbol : 'XRP';
           var have = sb != null && sb >= 0;
-          var txt = 'Balance: ' + (have ? fmt(sb, 6) + ' ' + ssym : '—') + ' ';
+          // NO "Balance:" PREFIX. The row already carries its own label — _xrplbridgepolish.js sets
+          // .lx-balrow::before to "Available to send", exactly as the Stellar build does — so writing
+          // "Balance:" in here as well printed the figure under a heading that already named it, and
+          // read nothing like Stellar's. (RAZA 2026-10-01: "Balance is written incorrectly, please
+          // check how it looks on Stellar.") The value alone is what the CSS expects in .bal.
+          var txt = (have ? fmt(sb, 6) + ' ' + ssym : '—') + ' ';
           [].slice.call(bal.childNodes).forEach(function (nd) { if (nd.nodeType === 3) bal.removeChild(nd); });
           bal.insertBefore(document.createTextNode(txt), bal.firstChild);
           if (mx) {
