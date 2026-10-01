@@ -47,6 +47,15 @@ const STYLE = `<style id="lx-xrpldashtop-css">
    its one, so this wins on specificity and does not depend on which stylesheet came last. */
 .lx-xlmpanel .lx-xt-mark{
   background:url('/lxapi/xrplthumb?id=${XRP_MD5}&w=64') center/cover no-repeat,var(--surface-2)}
+/* THE RANGE BELONGS TO THE CHART. Stellar moved these controls on 2026-09-19 -- RAZA then: "place
+   24H 7D 1M 1Y above the chart on right. this looks misplaced" -- and this fork copied Stellar's
+   BUILT containers before that, so the inherited sheet still carries .lx-xt-tfs and has never heard
+   of .lx-xt-r. Reported again here on 2026-10-01. Defined in this file rather than waited for,
+   because the containers will not gain it on their own.
+   Same values as Stellar's _dashtop.js, so the two dashboards stay one design. */
+.lx-xt-r{display:flex;flex-direction:column;align-items:flex-end;gap:10px;align-self:center;min-width:0}
+.lx-xt-r .lx-xt-tfs{margin-top:0;align-self:flex-end}
+@media (max-width:760px){.lx-xt-r{align-self:stretch;width:100%}}
 </style>`;
 
 // No `${` anywhere below this line: it is a template literal and an interpolation here would be
@@ -86,13 +95,19 @@ const SCRIPT = `<script id="lx-xrpldashtop">(function(){
       +'<span class="lx-xt-lbl">XRP Ledger (XRP)</span>'
       +'</span>'
       +'<div class="lx-xt-row"><span class="lx-xt-price">\\u2014</span><span class="lx-xt-chg"></span></div>'
+      +'</div>'
+      // Under the price these read as a setting for the PRICE; they set the chart's window, so they
+      // sit on top of the chart and right-aligned to it, exactly as Stellar's _dashtop.js has it.
+      // Both are still found by class inside the panel, so the wiring below is unchanged.
+      +'<div class="lx-xt-r">'
       +'<div class="lx-xt-tfs">'
         +'<button type="button" data-lxnonav="1" data-tf="24H" class="active">24H</button>'
         +'<button type="button" data-lxnonav="1" data-tf="7D">7D</button>'
         +'<button type="button" data-lxnonav="1" data-tf="1M">1M</button>'
         +'<button type="button" data-lxnonav="1" data-tf="1Y">1Y</button>'
-      +'</div></div>'
-      +'<div class="lx-xt-chart lx-empty"></div>';
+      +'</div>'
+      +'<div class="lx-xt-chart lx-empty"></div>'
+      +'</div>';
     host.insertBefore(p,row);
     p.appendChild(row);                       // the stats strip lives inside the card — see place()
     // The design maps clicked label text to a destination, so a control inside it needs the opt-out
