@@ -70,7 +70,9 @@
   //
   // The image goes through /lxapi/xrplthumb, never xrpl.to directly: that endpoint needs the API
   // key and the key must not reach the browser.
-  function logoEl(name, md5, size) {
+  // iss/cur are optional and only matter when md5 is missing: the endpoint derives the id itself from
+  // an issuer and a currency, which is how the wallet draws logos for holdings no ranking covers.
+  function logoEl(name, md5, size, iss, cur) {
     var s = size || 32;
     var NS = 'http://www.w3.org/2000/svg';
     var e = document.createElement('span');
@@ -96,9 +98,21 @@
       e.appendChild(svg);
     }
 
-    if (/^[0-9a-f]{32}$/i.test(md5 || '')) {
+    // THE ID IS NOT THE ONLY WAY IN. An md5 when we have one; otherwise ask the endpoint to derive it
+    // from the issuer and currency, which it already does for the wallet's holdings.
+    //
+    // This is what the Recent list needs. Entries are stored as data, and the ones written before `m`
+    // was among the kept fields have an issuer and a currency but no id — so every one of them drew
+    // initials forever, while the same token searched live drew its logo. RAZA saw it as "LUMOS logo is
+    // not showing on XRPL search"; reproduced by writing a pre-fix entry by hand and getting "LUM".
+    // Deriving here fixes those entries in place, with no migration and nothing to clear.
+    var q = '';
+    if (/^[0-9a-f]{32}$/i.test(md5 || '')) q = 'id=' + md5;
+    else if (iss && cur) q = 'iss=' + encodeURIComponent(iss) + '&cur=' + encodeURIComponent(cur);
+
+    if (q) {
       var img = document.createElement('img');
-      img.src = '/lxapi/xrplthumb?id=' + md5 + '&w=' + (s > 48 ? 64 : 48);
+      img.src = '/lxapi/xrplthumb?' + q + '&w=' + (s > 48 ? 64 : 48);
       img.alt = ''; img.loading = 'lazy'; img.width = s; img.height = s;
       img.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
       // A token with no logo upstream 404s. Fall back rather than leave a broken image.
@@ -119,7 +133,7 @@
 
     // 36px and the design's own icon classes, which is what Stellar's rows use — ours were 30px
     // with a class of our own, so the icon column did not line up with the design's spacing.
-    var ic = logoEl(t.n, t.m, 36);
+    var ic = logoEl(t.n, t.m, 36, t.i, t.c);
     ic.className = 'sp-ico lx-spico-on';
     a.appendChild(ic);
 
