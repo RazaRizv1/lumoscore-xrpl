@@ -91,8 +91,8 @@
     var seen = {};
     var add = function (label) { var k = norm(label); if (k && k !== 'xrpledger' && k !== 'xrp') seen[k] = 1; };
     Promise.all([
-      j('/lxapi/oneclick?op=tokens').catch(function () { return null; }),
-      j('/lxapi/axelar?op=assets').catch(function () { return null; }),
+      j('/lxapi/xrploneclick?op=tokens').catch(function () { return null; }),
+      j('/lxapi/xrplaxelar?op=assets').catch(function () { return null; }),
       j('/lxapi/thorchain?op=pools').catch(function () { return null; }),
     ]).then(function (r) {
       var ni = r[0], ax = r[1], th = r[2];

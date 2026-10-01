@@ -31,8 +31,8 @@
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
   function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 
-  var API = '/lxapi/oneclick';
-  var API_AX = '/lxapi/axelar';
+  var API = '/lxapi/xrploneclick';
+  var API_AX = '/lxapi/xrplaxelar';
   var API_TH = '/lxapi/thorchain';
   var COLLECTOR = '__LX_XRPL_COLLECTOR__';
   // THE SHIPPED FILE, NOT THE THUMBNAIL PROXY. This was
@@ -51,7 +51,7 @@
   // Mantle, Sei, World Chain and zkSync Era — are NOT reachable through this route and are hidden. A
   // bridge naming a route it does not have is the worst kind of wrong on this page.
   //
-  // MUST MATCH the CHAINS map in functions/lxapi/oneclick.js. _xrplnearintents.js fails the build when
+  // MUST MATCH the CHAINS map in functions/lxapi/xrploneclick.js. _xrplnearintents.js fails the build when
   // the two disagree, because on the Stellar build the same two lists drifting apart did not raise an
   // error — the picker just showed "0 ASSETS" for the missing chains and every quote to them failed.
   var NI_CHAIN = {
@@ -140,7 +140,7 @@
   //
   // SHIPPED FILES FIRST, THE PROXY ONLY AS A FALLBACK, and that order is the whole point.
   //
-  // This resolved every mark at runtime through `/lxapi/oneclick?op=logo` -> CoinGecko, which is the
+  // This resolved every mark at runtime through `/lxapi/xrploneclick?op=logo` -> CoinGecko, which is the
   // EXACT fallback the Stellar build already measured as 404ing from Cloudflare's edge (CoinGecko
   // refuses those requests; _nilogos.js exists because of it). The result here was five chains with
   // artwork and thirty-four grey letter discs -- reported by RAZA 2026-09-29, "many network logos

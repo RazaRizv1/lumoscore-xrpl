@@ -36,7 +36,7 @@ for (const src of [core, page]) {
 // symptom is NOT an error -- on the Stellar build the picker simply showed "0 ASSETS" for the missing
 // chains and every quote to them failed as 'unsupported destination asset', which looked like an outage
 // rather than a typo. So the build refuses rather than leaving a comment asking someone to remember.
-const fn = fs.readFileSync(__dirname + '/../functions/lxapi/oneclick.js', 'utf8');
+const fn = fs.readFileSync(__dirname + '/../functions/lxapi/xrploneclick.js', 'utf8');
 const fnBlock = fn.match(/const CHAINS = \{([\s\S]*?)\n\};/);
 const pgBlock = page.match(/var NI_CHAIN = \{([\s\S]*?)\n  \};/);
 if (!fnBlock || !pgBlock) {
