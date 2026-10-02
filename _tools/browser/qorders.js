@@ -496,8 +496,24 @@
   function defaults() {
     if (!sw.from || (addr() && !heldOf(sw.from))) sw.from = heldOf(XRP) || XRP;
     if (!sw.to) {
-      var t = H.lines.filter(function (a) { return !a.frozen && !same(a, sw.from); })[0];
-      sw.to = t || null;
+      // RLUSD, NOT WHATEVER HAPPENS TO BE FIRST (RAZA 2026-10-02: "Why's it selecting Phnix token by
+      // default. Make it XRP (you pay) and RLUSD (you receive) as default").
+      //
+      // This took the first unfrozen holding, so the pair the dialog opened on was an accident of trust
+      // line order — PHNIX on his account, something else on the next. XRP → RLUSD is the pair most
+      // people actually want, and it is the one this build curates.
+      //
+      // The held copy is preferred when there is one, so the balance line has something to show;
+      // otherwise the curated entry, which is a valid destination whether or not a trust line exists yet.
+      var rl = curated().filter(function (c) { return c.code === 'RLUSD'; })[0];
+      var heldRl = rl ? heldOf(rl) : null;
+      sw.to = heldRl || rl
+        || H.lines.filter(function (a) { return !a.frozen && !same(a, sw.from); })[0]
+        || null;
+      // Never the same asset on both sides: if RLUSD is somehow what is being paid, fall back.
+      if (sw.to && sw.from && same(sw.to, sw.from)) {
+        sw.to = H.lines.filter(function (a) { return !a.frozen && !same(a, sw.from); })[0] || null;
+      }
     }
     paintSwap();
   }
@@ -591,7 +607,7 @@
     if (q.alt.paths_computed && q.alt.paths_computed.length) tx.Paths = q.alt.paths_computed;
 
     sw.busy = true;
-    setGo(false, 'Approve in wallet…');
+    setGo(false, 'Confirm in wallet…');
 
     // THE TRUST LINE THIS PATH NEVER HAD. Trade-Asset and the wallet dialog both add one automatically when the account
     // cannot yet receive the token being bought; this one did not, so a Custom Swap into anything new failed at the ledger

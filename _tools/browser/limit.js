@@ -515,7 +515,7 @@
       var tx = { TransactionType: 'OfferCreate', Account: who, TakerGets: built.TakerGets, TakerPays: built.TakerPays };
       if (built.Flags) tx.Flags = built.Flags;
 
-      b.textContent = 'Approve in wallet…';
+      b.textContent = 'Confirm in wallet…';
       return window.lxc.submit(tx).then(function (hash) {
         b.textContent = 'Confirming…';
         return waitValidated(hash);

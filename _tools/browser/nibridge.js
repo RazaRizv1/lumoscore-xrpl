@@ -255,6 +255,48 @@
       // Typing the address has to re-open the gate. paintSteps() runs on the things this layer drives
       // — asset, amount, destination — but the address field is the design's own input and nothing
       // here was listening to it, so the button would have stayed dead after the last box was filled.
+      // THE PASTE BUTTON IS THE DESIGN'S, AND NOTHING IS BEHIND IT (RAZA 2026-10-02: "Not being able to
+      // paste in the address. Neither manually nor through the paste button.")
+      //
+      // Measured on the deployed page: .br-paste exists, clicking it throws nothing, shows nothing and
+      // leaves the field empty, and no layer in this repo binds it — the only clipboard code here is the
+      // wallet's Send row in browser/write.js. It is the design's own control with a mock behind it,
+      // like the rest of this page's furniture.
+      //
+      // Wired the same way Send already is, including the fallback line: readText() is permissioned, and
+      // a browser that refuses must say so rather than leave a button that looks broken. Bound on window
+      // in the capture phase for the reason every control on these pages is — the inherited layer claims
+      // clicks first otherwise.
+      if (!window.__lxxBrPaste) {
+        window.__lxxBrPaste = 1;
+        window.addEventListener('click', function (e) {
+          var t = e.target;
+          var b = t && t.closest ? t.closest('.br-paste') : null;
+          if (!b) return;
+          e.preventDefault();
+          e.stopPropagation();
+          var inp = document.querySelector('.br-addr-in');
+          if (!inp) return;
+          function put(v) {
+            v = String(v || '').trim();
+            if (!v) return;
+            inp.value = v;
+            // The gate watches input events, not the value, so this has to announce itself or the
+            // Review button stays dead after a successful paste.
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          if (!navigator.clipboard || !navigator.clipboard.readText) {
+            inp.focus();
+            return;
+          }
+          navigator.clipboard.readText().then(put).catch(function () {
+            // Denied or empty: focus the field so Ctrl+V still gets them there in one step.
+            inp.focus();
+          });
+        }, true);
+      }
+
       if (!window.__lxxAddrWatch) {
         window.__lxxAddrWatch = 1;
         ['input', 'change', 'paste'].forEach(function (ev) {
@@ -279,10 +321,42 @@
         }, true);
       }
 
+      // NOTHING IS OFFERED UNTIL IT HAS BEEN CHECKED FOR A ROUTE.
+      //
+      // The design ships its own eighteen destination options and shows eight of them immediately. The
+      // real list — which chains this source can actually reach — only replaces it once the token list
+      // has loaded, and that measured at ~3.0s on staging. For those three seconds the picker offered
+      // the design's placeholders, LINEA AMONG THEM, and Linea has no route from the XRP Ledger at all.
+      //
+      // RAZA picked one inside that window and got "Linea / LTC": no place mapping, so the asset slot
+      // kept the design's own default, which is Litecoin. The destination filter was never broken —
+      // measured after load it hides Linea correctly and shows 39 of 44 — it just had not run yet.
+      //
+      // So the options stay hidden until refreshDestinations() has completed once and set the flag. A
+      // picker that is briefly empty is honest; one that briefly lists routes we do not have is not,
+      // and this page's own comments already say that is the worst kind of wrong here.
+      css += 'html:not([data-lxbrdready]) .brd-opt{display:none !important}'
+        + 'html:not([data-lxbrdready]) .brd-menu .lxx-brdwait{display:block}'
+        + '.lxx-brdwait{display:none;padding:14px 16px;color:var(--text-soft);'
+        + 'font:600 13px/1.4 "Hanken Grotesk",system-ui,sans-serif}';
+
       var st = document.createElement('style');
       st.id = 'lx-xnetbg';
       st.textContent = css;
       (document.head || document.documentElement).appendChild(st);
+
+      // The waiting line goes in NOW, while the gate is still shut — putting it in alongside the flag
+      // would mean it only ever existed after it had stopped being needed. The menu is the design's own
+      // and is already in the markup, so this does not wait for anything of ours to build it.
+      try {
+        var mn0 = document.querySelector('.brd-menu');
+        if (mn0 && !mn0.querySelector('.lxx-brdwait')) {
+          var w0 = document.createElement('div');
+          w0.className = 'lxx-brdwait';
+          w0.textContent = 'Loading networks…';
+          mn0.insertBefore(w0, mn0.firstChild);
+        }
+      } catch (_) {}
     } catch (_) {}
   }
   // `label` is what the page CALLS the place. The NI chain id is still accepted, because two callers
@@ -796,6 +870,12 @@
       }
     });
     window.__lxxBridgeNets = shown;
+    // The gate lifts here and only here: from this point the list is the one this source can actually
+    // reach. Not lifted on an empty result, because "nothing reachable" is also what a half-loaded page
+    // looks like, and revealing an empty picker then would be the same mistake in the other direction.
+    try {
+      if (shown.length) document.documentElement.setAttribute('data-lxbrdready', '1');
+    } catch (_) {}
     // A destination already chosen that the new source cannot reach is CLEARED rather than left
     // standing: leaving it would show a pair that no route serves while the trigger insists it is set.
     var cur = destChain();
@@ -1151,10 +1231,24 @@
     // actually wants, and it does not care what else the row contains or how tall it gets.
     // Placed at the append site below, once the host is position:relative — offsetTop is measured
     // against the offsetParent, and that is not settled until then.
-    wrap.style.cssText = 'position:absolute;z-index:60;min-width:250px';
+    // WIDTH IS SET, NOT LEFT TO min-width (RAZA 2026-10-02: "the menu is breaking on XRPL ... I need it
+    // to be identical" to Stellar's).
+    //
+    // This reuses the DESTINATION dropdown's classes to inherit its surface and border, and those carry
+    // `.brd{width:100%}` with `.brd-menu{left:0;right:0}`. The inline style overrode `position` but not
+    // `width`, so the wrapper took the full width of the card and the menu stretched edge to edge —
+    // which is also why the balance ended up marooned at the far right instead of sitting beside the
+    // name. min-width could never fix that: it sets a floor, and the problem was the ceiling.
+    //
+    // 300px is Stellar's shape: wide enough for a ticker, a balance and an issuer line, narrow enough to
+    // read as a dropdown hanging off the chip. The vw cap is for a phone, where 300px can be most of the
+    // screen.
+    wrap.style.cssText = 'position:absolute;z-index:60;width:300px;max-width:92vw';
     var menu = document.createElement('div');
     menu.className = 'brd-menu';
-    menu.style.cssText = 'display:block;position:static;max-height:300px;overflow:auto';
+    // left/right come from .brd-menu and would stretch this back out even inside a sized wrapper.
+    menu.style.cssText = 'display:block;position:static;left:auto;right:auto;width:100%;'
+      + 'max-height:300px;overflow:auto';
     // ONE BUILDER FOR EVERY SECTION. The held rows and the curated rows were always going to drift
     // apart if written twice, and the picker's whole problem was that it did not look like one list.
     //

@@ -224,6 +224,15 @@ const CSS = '<style id="' + ID + '">'
   + DST + '.br-asset.lx-s2pick{cursor:pointer}'
   + DST + '.br-asset.lx-s2pick > .nm::after{content:"";display:inline-block;width:14px;height:14px;margin-left:6px;vertical-align:-1px;'
   + 'background:currentColor;opacity:.6;-webkit-mask:' + I.caret + ' center/contain no-repeat;mask:' + I.caret + ' center/contain no-repeat}'
+  // AND THE DESIGN'S OWN CARET GOES, or the pill wears two (RAZA 2026-10-02: "In destination side why
+  // are there 2 arrows for assets dropdown"). The row is cloned from the source, which brings `.cv`
+  // with it — hidden over there, visible here — and the masked caret above is then a second one beside
+  // it. Measured: `.nm::after` 14x14 and `.cv` 17px wide, both drawn, side by side.
+  //
+  // Scoped to `.lx-s2pick` on purpose, the same selector that adds the replacement: a destination row
+  // without that class is not a control, gets no `::after`, and must keep `.cv` rather than end up with
+  // no caret at all.
+  + DST + '.br-asset.lx-s2pick > .cv{display:none !important}'
   // the full list: a search field pinned on top, the rows scrolling beneath it
   // ---- receiving address: a labelled input, with the hint beneath ------------------------------------------
   + '.lx-s2albl{grid-column:1 / -1;font:600 15px/1 "Hanken Grotesk",system-ui,sans-serif;color:var(--text);margin-top:4px}'

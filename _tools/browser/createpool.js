@@ -82,6 +82,42 @@
     var t = m ? m[0] : '';
     return (t === '' || t === '.') ? NaN : Number(t);
   }
+
+  // The bottom-centre confirmation, the same one the rest of this build uses. window.lxToast when the
+  // page provides it; otherwise the .lx-ctoast stack, whose stylesheet is shared by id with the other
+  // layers that draw it — so if one of them is already on the page this adds no second copy.
+  function poolToast(msg) {
+    if (typeof window.lxToast === 'function') { try { window.lxToast(msg, false); return; } catch (e) {} }
+    try {
+      if (!document.getElementById('lx-copytoast-css')) {
+        var st = document.createElement('style');
+        st.id = 'lx-copytoast-css';
+        st.textContent = '.lx-ctoast-stack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);'
+          + 'z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}'
+          + '.lx-ctoast{background:var(--text,#16171b);color:var(--bg,#fff);padding:11px 18px 11px 14px;'
+          + 'border-radius:10px;font-family:"Hanken Grotesk",system-ui,sans-serif;font-size:16px;'
+          + 'font-weight:600;display:inline-flex;align-items:center;gap:9px;white-space:nowrap;'
+          + 'box-shadow:0 12px 32px rgba(0,0,0,.28),0 2px 8px rgba(0,0,0,.16)}'
+          + '.lx-ctoast .ci{width:18px;height:18px;border-radius:50%;background:var(--green,#35c07f);'
+          + 'color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;'
+          + 'font-size:12px}';
+        (document.head || document.documentElement).appendChild(st);
+      }
+      var stack = document.querySelector('.lx-ctoast-stack');
+      if (!stack) {
+        stack = document.createElement('div');
+        stack.className = 'lx-ctoast-stack';
+        document.body.appendChild(stack);
+      }
+      var t = document.createElement('div');
+      t.className = 'lx-ctoast';
+      // data-logoed so the logo healer leaves the tick alone — it repaints short-text elements.
+      t.innerHTML = '<span class="ci" data-logoed="1">✓</span>';
+      t.appendChild(document.createTextNode(msg));
+      stack.appendChild(t);
+      setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 4000);
+    } catch (e) {}
+  }
   function floorTo(n, dp) { var k = Math.pow(10, dp); return Math.floor(n * k) / k; }
   function plainNum(n) {
     if (!(n > 0)) return '';
@@ -163,7 +199,10 @@
     }
     var b = balEl(f);
     if (b) {
-      var txt = a ? (fmt(a.spendable, 6) + ' ' + a.code) : '—';
+      // NO TICKER AFTER THE FIGURE (RAZA 2026-10-02: "It shows the asset code again along with the
+      // balance. Its unnecessary"). The code is already on the picker directly above this line, so
+      // repeating it says the same thing twice — Stellar's reads "Balance: 51,572" and stops there.
+      var txt = a ? fmt(a.spendable, 6) : '—';
       if (b.tagName === 'STRONG') b.textContent = txt;
       else b.textContent = 'Balance: ' + txt;
     }
@@ -387,8 +426,23 @@
     if (px) {
       var pv = px.querySelector('strong');
       var am = amounts(), a = S.pick[0], b = S.pick[1];
-      if (pv) pv.textContent = (a && b && am[0] > 0 && am[1] > 0)
-        ? ('1 ' + a.code + ' = ' + fmt(am[1] / am[0], 8) + ' ' + b.code) : '—';
+      // STELLAR'S SHAPE, AND STELLAR'S PRECISION (RAZA 2026-10-02: "Initial pool price and network fee
+      // section isn't the same as on Stellar. Also, lets keep the decimal places to 2 places").
+      //
+      // It read "1 ATOM = 108,523,501.69230771 PHNIX" — a sentence, at eight decimals, wrapping onto a
+      // second line. Stellar states the same fact as a rate: "0.002081 HOLA/CANNACOIN".
+      //
+      // Two decimals, EXCEPT where two decimals would destroy the number. A pool of a cheap token
+      // against an expensive one has a ratio well under 0.01, and rounding that to "0.00" would print a
+      // price of zero for a pool that has one — the figure people are told to match against the market
+      // rate. Below that threshold it keeps enough places to stay a number.
+      if (pv) {
+        if (!(a && b && am[0] > 0 && am[1] > 0)) pv.textContent = '—';
+        else {
+          var rate = am[1] / am[0];
+          pv.textContent = fmt(rate, rate < 0.01 ? 6 : 2) + ' ' + b.code + '/' + a.code;
+        }
+      }
     }
     var go = primary();
     if (go) {
@@ -493,7 +547,7 @@
           Flags: 0x00100000                                    // tfTwoAsset
         };
         say('This pair already has a pool, so your liquidity goes into it.');
-        if (go) setLabel(go, 'Approve in wallet…');
+        if (go) setLabel(go, 'Confirm in wallet…');
         return window.lxc.submit(tx).then(function (hash) {
           if (go) setLabel(go, 'Confirming…');
           return waitValidated(hash);
@@ -541,7 +595,7 @@
           // The special cost, set rather than left to autofill: under-paying it is a rejection.
           Fee: lxx().toDrops(inc)
         };
-        if (go) setLabel(go, 'Approve in wallet…');
+        if (go) setLabel(go, 'Confirm in wallet…');
         return window.lxc.submit(tx).then(function (hash) {
           if (go) setLabel(go, 'Confirming…');
           return waitValidated(hash);
@@ -552,6 +606,11 @@
               : (CODES[res.code] || ('The ledger did not create the pool (' + res.code + ').')), 'bad');
           }
           stop('Pool created ✓ Opening it…', 'good');
+          // AND THE TOAST (RAZA 2026-10-02: "It didn't show pool creation message at the bottom-center
+          // like it does on Stellar"). The button label alone is easy to miss — it is the thing the
+          // reader has just stopped looking at, and a second later the page navigates to the new pool.
+          // Stellar ends this the same way, with the same words.
+          poolToast('Pool created & liquidity added');
           return rpc('amm_info', { asset: specOf(a), asset2: specOf(b), ledger_index: 'validated' }).then(function (r2) {
             var acct = r2 && r2.amm && r2.amm.account;
             setTimeout(function () { window.location.href = acct ? ('/pools/xrpl/id/' + acct) : '/pools/xrpl'; }, 1200);

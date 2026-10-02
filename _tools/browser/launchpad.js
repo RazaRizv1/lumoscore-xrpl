@@ -362,6 +362,9 @@
   // `.empty` IS THE DESIGN'S OWN CLASS and carries the light tile the placeholder sits on. Removing
   // it unconditionally -- which the first version did -- left the placeholder on the filled-state
   // background, which is not what the tile looks like before an upload.
+  // Byte-for-byte the placeholder lumoscore.com uses, lifted from its _launchpad.js.
+  var PREVIEW_PLACEHOLDER = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDk2IDk2Ij48cmVjdCB3aWR0aD0iOTYiIGhlaWdodD0iOTYiIHJ4PSIyMiIgZmlsbD0iI2VjZWVmMyIvPjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2FhYjFiZCIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjI3IiB5PSIzMSIgd2lkdGg9IjQyIiBoZWlnaHQ9IjM0IiByeD0iNSIvPjxjaXJjbGUgY3g9IjM5IiBjeT0iNDMiIHI9IjQiLz48cGF0aCBkPSJNMzAgNTlsMTEtMTEgOSA4IDctNiA5IDkiLz48L2c+PC9zdmc+";
+
   function paintIcon(host, dataUrl, _fallbackText, px) {
     if (!host) return;
     host.innerHTML = '';
@@ -377,15 +380,24 @@
       host.appendChild(img);
     } else {
       host.classList.add('empty');
-      // The empty tile is LIGHT on the Stellar site even in dark mode, and this build's
-      // `.preview-icon.empty` follows the theme instead -- so in dark mode it rendered a grey glyph
-      // on a near-black tile. Set explicitly so the placeholder reads the same either way.
-      host.style.background = 'linear-gradient(135deg,#fafbfc,#ffffff)';
-      // Sized from the TILE, not from a constant. The glyph was being drawn at half of a hardcoded
-      // 44px while the tile is 88px, so it sat at about a quarter of the tile instead of the ~45%
-      // the design draws — the placeholder read as too small rather than as the same component.
-      var tile = Math.round(host.getBoundingClientRect().width) || (px || 40) * 2;
-      host.appendChild(placeholderSvg(Math.round(tile * 0.9)));
+      // STELLAR'S OWN PLACEHOLDER FILE, not a redraw of it (RAZA 2026-10-02: "the logo preview icon is
+      // not the same as on Stellar. It needs to carry the same icon").
+      //
+      // The previous version drew the glyph here and tuned its size and tile colour by eye against
+      // screenshots. That is why it kept not matching: the proportions, the corner radius, the two
+      // greys and the stroke weight all had to be guessed, and each pass got one of them closer and
+      // another one wrong.
+      //
+      // lumoscore.com ships this as a single 96x96 SVG data URI — rounded rect #eceef3 with an #aab1bd
+      // picture glyph — so using that exact string makes the question of whether it matches not a
+      // judgement. object-fit lets the one asset serve whatever size the tile happens to be.
+      host.style.background = '';
+      var ph = document.createElement('img');
+      ph.src = PREVIEW_PLACEHOLDER;
+      ph.alt = '';
+      ph.setAttribute('data-lxlp', '1');
+      ph.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+      host.appendChild(ph);
     }
   }
 
@@ -782,8 +794,28 @@
       .catch(function () { /* defaults stand */ });
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
-  else load();
+  // THE SHARE SLIDER IS NEVER INITIALISED (RAZA 2026-10-02: "the arrow is a bit ahead of 10%, it needs
+  // to be place at exact 10%").
+  //
+  // The design's setShare() is bound to input, drag and click and is never called on load, so the first
+  // paint uses the thumb's CSS default — measured at 35.0% of the track against the 33.33% that value 10
+  // means, about 10px to the right of the "10%" label. Touch the slider once and it corrects itself,
+  // which is why it looks like a rounding problem rather than an uninitialised one.
+  //
+  // Nothing here recomputes the position: dispatching `input` on the number box runs the design's own
+  // handler with its own maths, so there is one implementation and it cannot drift from the drag path.
+  // Verified afterwards: 0, 10, 15 and 30 land on 0, 0.3333, 0.5 and 1.0 of the track exactly.
+  function initShareSlider() {
+    try {
+      var n = document.getElementById('shareNum');
+      if (!n || !document.getElementById('sliderThumb')) return;
+      n.dispatchEvent(new Event('input', { bubbles: true }));
+    } catch (e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { load(); initShareSlider(); });
+  } else { load(); initShareSlider(); }
 
   // Exposed for the console and for the tests: the currency rule is the piece most worth checking
   // from outside, because getting it wrong mints a different asset than the one requested.

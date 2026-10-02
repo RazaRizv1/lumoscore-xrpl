@@ -60,12 +60,20 @@
     if (!src.querySelector('.lx-s2net')) {
       // The source is always the XRP Ledger -- this page bridges OUT of the connected wallet -- so its
       // pill is a label, not a control, and carries no caret that would promise a choice not on offer.
-      // Its mark is the shipped file rather than one scraped off the wallet chip: that chip shows the
-      // connected ACCOUNT, and on this build it had no artwork at all until the logos were shipped.
+      //
+      // THE MARK IS THE ONE THE REST OF THE SITE USES (RAZA 2026-10-02: "XRP logo is incorrect"). This
+      // said /assets/networks/xrpl.png, which is a different rendition from the canonical XRP badge --
+      // softer strokes inside a ringed circle, against the crisp rounded square the dashboard, trade
+      // rows, wallet, account and create-pool all draw. Four other layers in this repo already name the
+      // same id for it; this pill was simply the one that did not.
+      //
+      // Not a local file, because there isn't a correct one: /assets/networks/xrpl.png is the odd
+      // rendition and /assets/tokens/ni/XRP.png is a dark glyph on transparency, which on this page's
+      // dark surface is very nearly invisible.
       var row = el('div', 'lx-s2net',
         '<span class="lx-s2lbl">From</span>'
         + '<span class="lx-s2pill"><span class="lx-s2ic" data-logo="" data-logoed="1">'
-        + '<img src="/assets/networks/xrpl.png" alt=""></span>'
+        + '<img src="/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48" alt=""></span>'
         + '<span class="lx-s2nm" data-logoed="1">XRP Ledger</span></span>');
       src.insertBefore(row, src.firstChild);
     }

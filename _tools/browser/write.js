@@ -990,7 +990,7 @@
           return;
         }
         var s = seqs[i++];
-        fresh.textContent = seqs.length > 1 ? ('Approve ' + i + ' of ' + seqs.length + '…') : 'Approve in wallet…';
+        fresh.textContent = seqs.length > 1 ? ('Confirm ' + i + ' of ' + seqs.length + '…') : 'Confirm in wallet…';
         cancelOne(s).then(function () { done++; next(); })
           .catch(function (err) {
             fresh.disabled = false;

@@ -61,19 +61,9 @@ if (fs.existsSync(SREDIR)) {
 }
 
 const CSS = '<style id="lxmc-css">'
-  + '.lxmc{position:relative;flex-shrink:0}'
-  + '.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}'
-  + '.lxmc-trig:hover{border-color:var(--border-strong)}'
-  + '.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}'
-  + '.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}'
-  + '.lxmc-name{white-space:nowrap}'
-  + '.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}'
-  + '.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}'
-  + '.lxmc-menu[hidden]{display:none}'
-  + '.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}'
-  + '.lxmc-opt:hover{background:var(--surface-2)}'
-  + '.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}'
-  + '@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}'
+  // The desktop chip's rules are gone with the chip itself — .lxmc, .lxmc-trig, .lxmc-logo, .lxmc-name,
+  // .lxmc-menu, .lxmc-opt and .lxmc-ol styled a control nothing builds any more, and a stylesheet that
+  // still describes a removed element is how the next person concludes it should be there.
   // THE MOBILE ROW, which is a different control and not the chip at a smaller size. The phone build has
   // no .lx-topwallet to sit beside — nor does Stellar's, which is why neither had a switcher on mobile —
   // and the appbar it does have holds a logo, a wallet pill, a search field and a hamburger in about
@@ -198,42 +188,15 @@ const SCRIPT = '<script id="lx-xrplchainswitch">(function(){'
   + '},true);}'
   + 'return true;'
   + '}'
-  + 'function build(){'
-  + 'if(buildRow())return true;'
-  // #lxmc is lx-mc's own id. Present only if that engine came back; then it owns the chip and this
-  // layer stands down rather than shipping a second one beside it.
-  + 'if(document.getElementById("lxmc"))return true;'
-  // Beside the wallet chip, which is where Stellar puts its switcher — so the control sits in the same
-  // place before and after the trip. Pages with no top bar get nothing, which is right: they are not
-  // app pages, and the footer on them already links across.
-  + 'var host=document.querySelector(".lx-topwallet");'
-  + 'var bar=host?host.parentNode:(document.querySelector(".topbar-right")||document.querySelector(".ah-right"));'
-  + 'if(!bar)return false;'
-  + 'var sw=document.createElement("div");sw.id="lxmc";sw.className="lxmc";'
-  // data-lx-noswap and data-logoed: the first keeps lx-mc's walkSwap off it if that engine ever
-  // returns, the second keeps the logo healer from repainting "XRP" as a ticker badge.
-  + 'sw.setAttribute("data-lx-noswap","");sw.setAttribute("data-logoed","1");'
-  + 'sw.innerHTML=\'<button class="lxmc-trig" type="button" aria-haspopup="true" aria-expanded="false">\''
-  + '+\'<span class="lxmc-logo"><img src="\'+XL+\'" alt=""></span>\''
-  + '+\'<span class="lxmc-name">\'+XN+\'</span>\'+CHEV+\'</button>\''
-  + '+\'<div class="lxmc-menu" hidden>\''
-  + '+\'<button class="lxmc-opt active" type="button" data-net="xrpl"><span class="lxmc-ol"><img src="\'+XL+\'" alt=""></span>\'+XN+\'</button>\''
-  + '+\'<button class="lxmc-opt" type="button" data-net="stellar"><span class="lxmc-ol"><img src="\'+SL+\'" alt=""></span>\'+SN+\'</button>\''
-  + '+\'</div>\';'
-  + 'if(host)bar.insertBefore(sw,host);else bar.appendChild(sw);'
-  + 'var trig=sw.querySelector(".lxmc-trig"),menu=sw.querySelector(".lxmc-menu");'
-  + 'trig.addEventListener("click",function(e){e.stopPropagation();'
-  + 'var open=menu.hasAttribute("hidden");menu.toggleAttribute("hidden");'
-  + 'trig.setAttribute("aria-expanded",open?"true":"false");});'
-  + 'sw.querySelectorAll(".lxmc-opt").forEach(function(o){o.addEventListener("click",function(e){'
-  + 'e.stopPropagation();menu.setAttribute("hidden","");trig.setAttribute("aria-expanded","false");'
-  // Picking XRP Ledger is picking the page already open. Closing the menu IS the whole response — a
-  // reload here would look like a failed switch.
-  + 'if(o.getAttribute("data-net")==="stellar")go();});});'
-  + 'document.addEventListener("click",function(){if(menu){menu.setAttribute("hidden","");'
-  + 'trig.setAttribute("aria-expanded","false");}});'
-  + 'return true;'
-  + '}'
+  // THE DESKTOP CHIP IS GONE (RAZA 2026-10-02: "On XRPL, why are we showing this. On Stellar we're not
+  // showing any such thing"). Stellar's header carries no chain switcher — its buildSwitcher() exists but
+  // boot() never calls it, disabled back when XRPL was not a live build — so a chip here and nothing
+  // there is the two headers disagreeing, which is what he saw.
+  //
+  // The way back survives on the phone, where the menu row lives: that row has no Stellar counterpart to
+  // disagree with, and on desktop the /trade and /pools hubs still carry both chains. So build() is now
+  // just the mobile row.
+  + 'function build(){return buildRow();}'
   // The top bar is script-built on most of these pages, so one pass at DOMContentLoaded finds no host.
   // Observed until it appears, then the observer is dropped; the timeout is the backstop for a page
   // that genuinely has no top bar, so nothing is left watching the document forever.

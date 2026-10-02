@@ -618,7 +618,7 @@
     var b = cta(p), label = b ? b.textContent : '';
     busy = true;
     function stop(text, tone) { busy = false; if (b) b.textContent = label; if (text != null) say(p, text, tone); }
-    if (b) b.textContent = 'Approve in wallet…';
+    if (b) b.textContent = 'Confirm in wallet…';
     say(p, '');
     // A DRY RUN BEFORE THE WALLET IS ASKED (RAZA 2026-09-15: "The trx failed when im trying to buy ATOM" — tecPATH_PARTIAL).
     // On a thin market the price can move past the 0.5% slippage in the seconds between quote and signature; the ledger's

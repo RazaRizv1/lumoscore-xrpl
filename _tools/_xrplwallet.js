@@ -35,7 +35,7 @@ for (const src of [core, xp, page, px, wr]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + xp + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
 
-let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0;
+let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -131,6 +131,42 @@ for (const dev of ['desktop', 'mobile']) {
       }
     }
 
+    // THE INSIGHT CARDS SHIP WITH APTOS NUMBERS IN THEM (RAZA 2026-10-02: "There's a flash bug on XRPL
+    // wallet page. This shows up for split seconds when Wallet page is refreshed").
+    //
+    // The design's three cards carry mock headlines in the MARKUP — "+12.42%", "3 Active" and
+    // "3,442 APT" — so the browser paints them the moment the HTML lands, and they stand until the data
+    // layer replaces them a second or two later. The middle one is merely wrong; the third names the
+    // wrong CHAIN on a wallet page, which is the kind of thing a reader screenshots.
+    //
+    // Blanked at BUILD time rather than hidden behind a CSS gate. A gate is a second thing that has to
+    // lift, and this project has shipped gates that never did — leaving the card permanently empty,
+    // which is worse than the flash. With no value in the markup there is nothing to flash and nothing
+    // to lift: the dash is what an unloaded figure looks like everywhere else on this page.
+    const CARD_MOCK = /(<div class="headline[^"]*">)([^<]{1,40})(<\/div>)/g;
+    let blanked = 0;
+    h = h.replace(CARD_MOCK, function (_, open, val, close) {
+      if (!/\d/.test(val)) return _;           // a headline with no digits is a label, not a figure
+      blanked++;
+      return open + '—' + close;
+    });
+    // "Across 2 pools" counts too: the number is as invented as the ones above it. The count sits in a
+    // nested span, so this cannot be a flat [^<]* match — that is why the first version silently did
+    // nothing here while the headlines changed.
+    h = h.replace(/(<div class="sub">\s*Across\s*<span class="nm">)[^<]*(<\/span>)/g,
+      function (_, open, close) { blanked++; return open + 'your pools' + close; });
+
+    // AND THE HEADLINE BALANCE, which is the biggest one on the page: "31,108.45 APT" over
+    // "≈ $12,847.62 USD". This file's own notes already call that figure mock — it was what the stripped
+    // Stellar layer used to win with — but the markup still carries it, so it is painted on every load
+    // until the data arrives. Matched on the ticker rather than the digits, so it cannot blank a real
+    // figure: by the time anything true is in there it is this build's own XRP, never APT.
+    h = h.replace(/(<div class="value">)[^<]*<span[^>]*>\s*APT\s*<\/span>(<\/div>)/g,
+      function (_, open, close) { blanked++; return open + '—' + close; });
+    h = h.replace(/(<div class="sub-value">)\s*≈[^<]*(<\/div>)/g,
+      function (_, open, close) { blanked++; return open + close; });
+    if (blanked) mockHeadlines += blanked;
+
     const re = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
     h = h.replace(re, '');
     const bi = h.lastIndexOf('</' + 'body>');
@@ -145,4 +181,5 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); disabled '+mockCharts
-  + ' random-walk chart(s); data layer on ' + pages + ' page key(s) across ' + files + ' container(s)');
+  + ' random-walk chart(s); blanked ' + mockHeadlines + ' mock insight figure(s); data layer on '
+  + pages + ' page key(s) across ' + files + ' container(s)');

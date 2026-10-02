@@ -39,33 +39,33 @@ const ROUTES = [
     null
   ],
   [
-    "/launchpad/xrpl/review",
+    "/launchpad/review",
     "/xrpl/lumoscore-launch-review",
     null
   ],
   [
-    "/launchpad/xrpl/confirm",
+    "/launchpad/confirm",
     "/xrpl/lumoscore-launch-confirm",
     null
   ],
   [
-    "/launchpad/xrpl",
+    "/launchpad",
     "/xrpl/lumoscore-launch-token",
     null
   ],
   [
-    "/dashboard/xrpl",
+    "/dashboard",
     "/xrpl/lumoscore-home",
+    null
+  ],
+  [
+    "/wallet",
+    "/xrpl/lumoscore-wallet",
     null
   ],
   [
     "/bridge/xrpl",
     "/xrpl/lumoscore-bridge",
-    null
-  ],
-  [
-    "/wallet/xrpl",
-    "/xrpl/lumoscore-wallet",
     null
   ],
   [

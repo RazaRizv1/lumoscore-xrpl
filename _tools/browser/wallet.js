@@ -303,10 +303,17 @@
     var trade = el('button', 'qa-row-btn');
     trade.innerHTML = ICON_TRADE + ' Trade';
     trade.type = 'button';
-    // XRP has no issuer, so it has no asset page of its own — that row goes to the market.
-    trade.setAttribute('data-lxgo', tok && tok.issuer
-      ? '/trade/xrpl/' + encodeURIComponent(name + '-' + tok.issuer)
-      : '/trade/xrpl');
+    // TRADE OPENS A CHOICE, IT DOES NOT NAVIGATE (RAZA 2026-10-02: "When im tapping on Trade button, it
+    // should show me 'Swap, Trade on Dex' options like it does on Stellar. On XRPL, it just takes me to
+    // the asset trade page").
+    //
+    // There are two different things someone means by "trade this holding" — the order book, and an
+    // instant swap — and the button was silently picking one. The menu is the same .lx-rowmenu the
+    // kebab opens, so there is one menu implementation on this page rather than two.
+    //
+    // XRP keeps an empty issuer here: it has no asset page of its own, and the DEX item falls back to
+    // the market for it.
+    trade.setAttribute('data-lxtrade', (name || 'XRP') + '|' + ((tok && tok.issuer) || ''));
     wrap.appendChild(trade);
 
     // A HOLDING OF NOTHING OFFERS THE TRUST LINE BACK (RAZA 2026-09-16: "If i have 0 of any asset, then there should be
@@ -402,6 +409,8 @@
         return;
       }
 
+      var tb = t.closest('[data-lxtrade]');
+      if (tb) { e.preventDefault(); e.stopImmediatePropagation(); openTradeMenu(tb); return; }
       var mb = t.closest('[data-lxmenu]');
       if (mb) { e.preventDefault(); e.stopImmediatePropagation(); openRowMenu(mb); return; }
       var mi = t.closest('.lx-rowmenu [data-lxmi]');
@@ -521,11 +530,62 @@
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeRowMenu(); });
     }
   }
+  // The Trade button's two-item menu, in the same shell the kebab uses so it inherits the design's
+  // surface, placement and dismissal. Two lines per item, as Stellar's has: what it is, and what it is
+  // for — "Order book & charts" against "Instant swap" is the whole distinction being offered.
+  function openTradeMenu(btn) {
+    var open = document.querySelector('.lx-rowmenu');
+    var again = open && open.__lxFor === btn;
+    closeRowMenu();
+    if (again) return;
+    var parts = (btn.getAttribute('data-lxtrade') || 'XRP|').split('|');
+    var code = parts[0], iss = parts[1] || '';
+    var m = document.createElement('div');
+    m.className = 'row-menu open lx-rowmenu lx-trademenu';
+    m.__lxFor = btn;
+    m.setAttribute('data-lxcode', code);
+    m.setAttribute('data-lxiss', iss);
+    m.innerHTML =
+      '<button type="button" data-lxmi="dex"><span class="lx-tmt">Trade on DEX</span>'
+      + '<span class="lx-tms">Order book &amp; charts</span></button>'
+      + '<button type="button" data-lxmi="swap"><span class="lx-tmt">Swap</span>'
+      + '<span class="lx-tms">Instant swap</span></button>';
+    if (!document.getElementById('lx-trademenu-css')) {
+      var st = document.createElement('style');
+      st.id = 'lx-trademenu-css';
+      st.textContent = '.lx-trademenu button{display:flex;flex-direction:column;align-items:flex-start;gap:2px}'
+        + '.lx-trademenu .lx-tmt{font-weight:600}'
+        + '.lx-trademenu .lx-tms{font-size:12px;opacity:.6}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    m.style.position = 'fixed';
+    m.style.visibility = 'hidden';
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 96;
+    var top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+    m.style.top = Math.round(top) + 'px';
+    m.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - mw - 8, r.left))) + 'px';
+    m.style.visibility = '';
+  }
+
   function rowMenuAct(item) {
     var m = item.closest('.lx-rowmenu');
     var code = m.getAttribute('data-lxcode'), iss = m.getAttribute('data-lxiss') || '';
     var what = item.getAttribute('data-lxmi');
     closeRowMenu();
+    if (what === 'dex') {
+      window.location.href = iss ? ('/trade/xrpl/' + encodeURIComponent(code + '-' + iss)) : '/trade/xrpl';
+      return;
+    }
+    if (what === 'swap') {
+      // The one swap implementation on this page. If it is not wired yet — a cold load — the DEX page
+      // is the honest fallback rather than a button that does nothing.
+      var opened = false;
+      try { opened = typeof window.__lxxOpenSwap === 'function' && window.__lxxOpenSwap(); } catch (e) {}
+      if (!opened) window.location.href = iss ? ('/trade/xrpl/' + encodeURIComponent(code + '-' + iss)) : '/trade/xrpl';
+      return;
+    }
     if (what === 'view') {
       window.location.href = iss ? ('/trade/xrpl/' + encodeURIComponent(code + '-' + iss)) : '/trade/xrpl';
     } else if (what === 'copy') {
@@ -1430,6 +1490,19 @@
             var who = self ? ''
               : through ? ((tx.Account && tx.Destination) ? (short(tx.Account) + ' → ' + short(tx.Destination)) : '')
               : (other ? ((incoming ? 'From ' : 'To ') + short(other)) : '');
+            // AN ORDER IS NOT A PAYMENT, AND HAD NOTHING TO SAY (RAZA 2026-10-02: "WTF is this blank trx").
+            //
+            // Every line on this row is built from a payment's shape: the counterparty comes from
+            // Destination and the figure from delivered_amount. An OfferCreate has neither, so the row
+            // came out as the word "Order" and three empty slots — a transaction the wallet admits
+            // happened and then refuses to describe.
+            //
+            // What an order actually is, is a pair: TakerGets is what you put up, TakerPays what you
+            // asked for. That is the line.
+            var og = amt(tx.TakerGets), op = amt(tx.TakerPays);
+            if (!who && og && op) who = fmt(og.value, 6) + ' ' + og.code + ' → ' + fmt(op.value, 6) + ' ' + op.code;
+            // A cancellation names the order it withdrew, which is the only fact it carries.
+            if (!who && tx.TransactionType === 'OfferCancel' && tx.OfferSequence) who = 'Offer #' + tx.OfferSequence;
             mt.textContent = who;
             mt.classList.add('lxp');
           }
@@ -1451,6 +1524,13 @@
               a1.classList.toggle('swap', !!(through || self));
               // `.activity-amt .a1:not(.lxp)` is hidden by the inherited sheet — why rows showed no amount.
               a1.classList.add('lxp');
+            } else if (tx.TransactionType === 'OfferCreate' && amt(tx.TakerGets)) {
+              // The size of the order, unsigned: nothing has moved yet. A "−" here would report a spend
+              // that has not happened, and an order can sit unfilled for as long as the book allows.
+              var og1 = amt(tx.TakerGets);
+              a1.textContent = fmt(og1.value, 6) + ' ' + og1.code;
+              a1.classList.remove('up', 'down');
+              a1.classList.add('swap', 'lxp');
             } else {
               a1.textContent = '';
             }

@@ -203,8 +203,18 @@
     cell.appendChild(ic);
     var nm = el('div', 'dex-mk-pair-name');
     var head = el('div', 'dex-mk-pair-head', t.n);
-    // LUMOS is this project's own token and its issuer is blackholed; the upstream's verified flag does not carry it.
-    if (t.vf || t.i === 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha') head.appendChild(vtick());
+    // EVERY ROW IN THIS TABLE IS TICKED (RAZA 2026-10-02: "Lets add verification tick to all XRPL assets
+    // that we're showing on Trade page as curated assets", reaffirmed after I flagged what follows).
+    //
+    // ON THE RECORD, because the next person reading this will assume the tick means what it says: this
+    // table is the top of the XRP Ledger market BY VOLUME, fetched live — not an allowlist anyone
+    // maintains. So the tick now means "we list it", not "we checked it", and a token that trades its
+    // way into the top hundred gets one. A search for "atom" on this build returns four different
+    // tokens called ATOM, two of which claim a home domain the ledger disagrees with.
+    //
+    // If this is ever to mean verification again it needs a real curated list — issuer+currency, owned
+    // by someone — and this line gated back on membership of it.
+    head.appendChild(vtick());
     nm.appendChild(head);
     if (t.u) nm.appendChild(el('div', 'sub', t.u));
     cell.appendChild(nm);
@@ -323,7 +333,8 @@
     var meta = el('div', 'mdx-mk-meta');
     var nameRow = el('div', 'mdx-mk-name-row');
     nameRow.appendChild(el('span', 'mdx-mk-name', t.n));
-    if (t.vf) nameRow.appendChild(vtick());
+    // The phone card lists the same rows, so it ticks on the same rule — see the desktop note above.
+    nameRow.appendChild(vtick());
     if (t.u) nameRow.appendChild(el('span', 'mdx-mk-domain', t.u));
     meta.appendChild(nameRow);
     // THE PHONE IGNORED THE DENOMINATION AND DISAGREED WITH THE DESKTOP. This card hard-coded the

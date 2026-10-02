@@ -17,32 +17,22 @@ export const SITEMAP_ROUTES = [
     "daily"
   ],
   [
-    "/launchpad/xrpl/review",
+    "/launchpad",
+    "0.8",
+    "weekly"
+  ],
+  [
+    "/dashboard",
     "0.6",
     "weekly"
   ],
   [
-    "/launchpad/xrpl/confirm",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/launchpad/xrpl",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/dashboard/xrpl",
+    "/wallet",
     "0.6",
     "weekly"
   ],
   [
     "/bridge/xrpl",
-    "0.6",
-    "weekly"
-  ],
-  [
-    "/wallet/xrpl",
     "0.6",
     "weekly"
   ],
