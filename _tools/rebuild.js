@@ -66,6 +66,13 @@ const CHAIN = [
   // network name, and _xrplstripstellar removes by script id — neither is a hazard today, but the one
   // string this layer cannot afford to have "corrected" is the name of the chain it exists to reach.
   '_xrplchainswitch',
+  // AND _nofollow AGAIN, because the pass above rebuilds 94 page keys and a rebuilt page comes back
+  // without the rel="nofollow" the earlier run wrote into it. Caught by the predeploy gate on three
+  // dex pages, which is the whole reason that gate exists; it is not caught by a successful build.
+  // Safe to repeat: it strips its own runtime guard by id before re-adding it, and it only touches
+  // <a> tags pointing off-site — the switcher's own targets are internal and script-built, so there
+  // is nothing here for it to reach.
+  '_nofollow',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {

@@ -939,7 +939,12 @@
   // sparklines, xrpl.to's own API returned this in its response body, verbatim:
   //
   //     Required: display a visible link to https://xrpl.to on any surface showing this data —
-  //     <a href="https://xrpl.to">Data by xrpl.to</a>. Terms: https://xrpl.to/docs
+  //     [an anchor to https://xrpl.to reading "Data by xrpl.to"]. Terms: https://xrpl.to/docs
+  //
+  // The anchor is DESCRIBED rather than quoted on purpose: written out as a real tag, this comment
+  // shipped inside the page's inline script and the predeploy gate counted it as an outgoing link
+  // with no rel="nofollow" — on three dex pages, blocking a deploy for a link that does not exist.
+  // The gate is right to scan the served HTML and was left strict; the comment is what moved.
   //
   // That is the provider stating the condition itself, and by then this page was showing MORE of
   // their data than when it came out — the whole 7d sparkline column arrives from them.
