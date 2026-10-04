@@ -2112,14 +2112,12 @@
           : '—';
         if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
       }
-      // THE REASON IS SHOWN WHERE THE FIGURE WOULD BE. The destination column hides .usd, because on a
-      // real quote it holds a dollar figure that column does not want -- so the note this code has
-      // always written was invisible, and a dash with no explanation is what reached the screen. The
-      // class is what lifts it, and it is added ONLY when there is no figure to show instead.
-      if (u) {
-        var showNote = !AXQ && !(BEST === 'th' && THQ) && !q && !!(u.textContent || '').trim();
-        u.classList.toggle('lx-amtnote', showNote);
-      }
+      // The note stays in the node for the route panel's sake and is NOT revealed here: the column is
+      // two lines on Stellar and has to be two lines here. See _xrplbridgepolish.js for the full
+      // reasoning -- the reason for a missing figure belongs on the route card, which already carries
+      // it, and lifting it here made the same information appear twice on one chain and once on the
+      // other. Cleared rather than left set, so a stale class cannot survive a rebuild of this node.
+      if (u) u.classList.remove('lx-amtnote');
     }
     paintReview(q, note);
     paintRoutePanel();
