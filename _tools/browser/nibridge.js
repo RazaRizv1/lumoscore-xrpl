@@ -2302,6 +2302,31 @@
   // What each candidate route currently has to say. Pending is its own state: before the quotes come
   // back every route would otherwise read "no quote for this amount", which is an answer none of them
   // has given yet and reads as a refusal.
+  // SPENDING MORE THAN THERE IS, as one answer both the button and the route cards can give.
+  //
+  // RAZA 2026-10-04: 123,194 XRP typed against a 0.4 XRP balance, and the page asked for a destination
+  // address. Two faults in one line.
+  //
+  // The guard read `SRC && SRC.balance != null && ...`, so it did NOTHING whenever either was falsy --
+  // and that is exactly when it matters. SRC holds a COPY of the balance from the last repaint, and
+  // XRP_SPEND is set to null by the catch on the account read, so one failed refresh leaves the figure
+  // unknown with no other symptom: "Available to send" goes on showing whatever it last painted while
+  // the only guard against overspending quietly switches itself off. A check that vanishes when its
+  // input is missing is worse than no check, because the screen still looks guarded. For a native
+  // source the live XRP_SPEND is the better number anyway -- it is what loadHoldings last read.
+  //
+  // And it lived only in blockReason(), so the route card went on showing the route's own note -- "Enter
+  // a destination address" -- while the button said something else. No route can fix a balance, so this
+  // outranks whatever a route has to say about the same amount, and both now say it.
+  function overBalance() {
+    var bal = (SRC && SRC.balance != null) ? SRC.balance
+      : ((!SRC || SRC.native) ? XRP_SPEND : null);
+    if (bal == null) return '';
+    var spend = (SRC && SRC.viaSwap) ? amountXrp() : bridgeXrp();
+    if (!(spend > bal)) return '';
+    return 'More than your ' + ((SRC && SRC.symbol) || 'XRP') + ' balance';
+  }
+
   function routeRows() {
     var key = destChain();
     if (!SRC || !key) return [];
@@ -2327,7 +2352,7 @@
       // said about its routes was that none of them worked, before being asked anything. Stellar
       // shows the route selected and waiting. `idle` is that state: enabled, chosen, no figures yet.
       if (o.state === 'none' && !amountXrp()) o.state = 'idle';
-      if (o.state === 'none') o.error = NOTE[r] || 'No quote for this amount.';
+      if (o.state === 'none') o.error = overBalance() || NOTE[r] || 'No quote for this amount.';
       return o;
     });
   }
@@ -2783,7 +2808,8 @@
     // and SRC.balance is the token being spent, so comparing them is comparing two different assets
     // -- it would pass 1,000,000 LUMOS worth 12 XRP and refuse 20 LUMOS worth 0.2.
     var spend = (SRC && SRC.viaSwap) ? amountXrp() : amt;
-    if (SRC && SRC.balance != null && spend > SRC.balance) return 'More than your ' + SRC.symbol + ' balance';
+    var over = overBalance();
+    if (over) return over;
     if (!recipient()) return 'Enter a destination address';
     // THE REAL REASON, not a generic wait. A recipient the destination chain would reject is refused
     // by the proxy with "recipient does not look like a base address" -- and the first version threw
