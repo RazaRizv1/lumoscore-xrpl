@@ -2550,13 +2550,28 @@
       // "Best price" only once it has actually beaten something; "In use" once a quote exists;
       // "Ready" before an amount is typed, because nothing is in use yet and saying so would be a
       // claim about a transfer that has not been priced.
-      if (sel && rows.length > 1 && rows.filter(function (x) { return x.state === 'ok'; }).length > 1) {
+      // "Best price" ONLY WHEN THE PAGE CHOSE IT. Picking THORChain by hand on a pair where NEAR
+      // Intents quoted better (0.02762472 ETH against 0.027665, measured) still badged it "BEST
+      // PRICE" -- the page congratulating a choice it had just been overruled on, and claiming
+      // something untrue about the number beside it. A hand-picked route is "In use": accurate, and it
+      // still says the choice was honoured.
+      if (sel && !(picked && picked === o.route)
+          && rows.length > 1 && rows.filter(function (x) { return x.state === 'ok'; }).length > 1) {
         h += '<span class="lx-brr-tag">Best price</span>';
       } else if (sel && o.state === 'idle') {
         h += '<span class="lx-brr-tag">Ready</span>';
-      } else if (sel) {
+      } else if (sel && o.state === 'ok') {
         h += '<span class="lx-brr-tag">In use</span>';
       }
+      // ...AND NO BADGE AT ALL ON A MARKED ROUTE THAT REFUSED (RAZA 2026-10-04: "Are you sure im
+      // reciving the same amount on destination from both bridges?").
+      //
+      // He is right to doubt it. At an amount neither route can price, the figure is this page's own
+      // estimate -- market rates, the fee taken off -- and it is the SAME number whichever card is
+      // marked, because no bridge produced it. "IN USE" beside it claimed the opposite: that the
+      // marked route had priced the transfer and this was its answer. A route that has just said
+      // "Minimum 2.004009 XRP" is not in use. The card keeps its border so the choice is still
+      // visible, keeps its reason, and no longer claims a quote it did not give.
       h += '</div>';
       if (o.state === 'none') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
       // NOTHING WHILE IT WAITS, because Stellar shows nothing (RAZA 2026-10-04: "this orange text on
@@ -3370,7 +3385,17 @@
         // options it shipped and a clone inherits none of it.
         var added = t.closest('.brd-opt[data-lxadded]');
         if (added) { e.preventDefault(); e.stopPropagation(); selectChain(added); return; }
-        if (t.closest('.brd-opt, .br-step, .brd, .br-back')) {
+        // NOT WHEN THE CLICK WAS A ROUTE CARD. This is a catch-all that re-quotes after anything that
+        // might have changed the form, and a route card is inside .br-step so it matched -- nulling
+        // QUOTE and starting a fresh round trip every time someone chose between two routes that had
+        // ALREADY answered. The figures vanished for the ten seconds that took, and both cards lost
+        // their badge, which is what made two routes look like they delivered the same amount: the
+        // number on screen in between is this page's own estimate, the same for either card because no
+        // bridge produced it. The pick handler does its own repaint; it does not need a new quote.
+        //
+        // It runs on WINDOW capture, before the pick handler on document, so the pick's
+        // stopPropagation() cannot prevent this -- it has to check for itself.
+        if (!t.closest('[data-lxroutepick]') && t.closest('.brd-opt, .br-step, .brd, .br-back')) {
           setTimeout(function () { QUOTE = null; paintSteps(); requote(); }, 30);
           setTimeout(paintSteps, 250);
         }
