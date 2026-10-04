@@ -128,6 +128,20 @@
   function addr() { try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; } }
   function short(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
   function feeRate() { return typeof window.__lxFeeRate === 'number' ? window.__lxFeeRate : 0.002; }
+  // THE FIGURE SOMEONE HAS TO TYPE, which is not the floor itself.
+  //
+  // 1Click's floor applies to what REACHES 1Click, and what reaches them is the amount minus
+  // LumosCore's fee -- netDrops() takes the cut first and the check is made on `net`. So "Minimum
+  // 2 XRP" was advice that does not work: enter exactly 2 and net is 1.996, which is refused, with the
+  // page still insisting 2 is the minimum. Verified against the upstream rather than reasoned about:
+  // a dry quote at 2,000,000 drops is accepted ("3.7339522 APT") and anything below is refused with
+  // "Amount is too low for bridge, try at least 2000000" -- their words and their number, so the floor
+  // is theirs and this is purely about stating it in the units the input is in.
+  function minSendXrp() {
+    var r = feeRate();
+    if (!(r >= 0 && r < 1)) r = 0;
+    return Math.ceil(MIN_DROPS / (1 - r)) / 1e6;
+  }
   function drops(xrp) { return String(Math.round(Number(xrp) * 1e6)); }
   function fromDrops(d) { return Number(d) / 1e6; }
   function fmt(n, dp) {
@@ -2012,7 +2026,7 @@
     var amt = bridgeXrp(), me = addr();
     if (!amt || !DEST || !chain) return Promise.resolve();
     var n = netDrops(amt);
-    if (n.net < MIN_DROPS) { NOTE.ni = LAST_NOTE = 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP'; return Promise.resolve(); }
+    if (n.net < MIN_DROPS) { NOTE.ni = LAST_NOTE = 'Minimum ' + fmt(minSendXrp(), 6) + ' XRP'; return Promise.resolve(); }
     var to = recipient();
     if (!to) { NOTE.ni = LAST_NOTE = 'Enter a destination address'; return Promise.resolve(); }
     return fetch(API + '?op=quote', {
@@ -2712,7 +2726,7 @@
     // relay fee -- so a pair another route could carry must not be blocked by a minimum that is not
     // its own.
     if (routes.length === 1 && route === 'ni' && netDrops(amt).net < MIN_DROPS) {
-      return 'Minimum ' + (MIN_DROPS / 1e6) + ' XRP';
+      return 'Minimum ' + fmt(minSendXrp(), 6) + ' XRP';
     }
     // AGAINST THE ASSET THE BALANCE IS IN. For a swapped source `amt` is the XRP the swap will fetch
     // and SRC.balance is the token being spent, so comparing them is comparing two different assets
