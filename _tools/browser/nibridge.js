@@ -2086,18 +2086,30 @@
       // On Axelar the same asset comes out the other side, so there is no USD line to show that the
       // quote did not give us -- and inventing one from a price feed is how a page ends up disagreeing
       // with itself. It states the relay fee instead, which is the number that actually changed.
+      // THE UNIT TRAVELS WITH THE FIGURE (RAZA 2026-10-04: "why's it showing the receiving amount like
+      // this instead of how its being shown on stellar").
+      //
+      // Stellar renders "~ 1.05 USDC" and gets the ticker from CSS -- `.br-amt .v::after{content:"
+      // USDC"}` -- which it can do because CCTP always delivers USDC, so the unit is a constant there.
+      // It is not a constant here: this bridge delivers APT, ETH, USDC, USDT, BTC, whatever the
+      // destination chain's own token is. Copying the CSS trick would have printed " USDC" after an
+      // APT figure, which is worse than no unit at all. So the ticker is written into the text, and the
+      // line reads the same as Stellar's by the time it reaches the screen.
+      var recvUnit = function (n, dp, sym) { return '~ ' + fmt(n, dp) + (sym ? ' ' + sym : ''); };
       if (AXQ) {
-        if (v) v.textContent = fmt(AXQ.delivered, 6);
+        if (v) v.textContent = recvUnit(AXQ.delivered, 6, SRC ? SRC.symbol : '');
         if (u) u.textContent = 'after ' + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee';
       } else if (BEST === 'th' && THQ) {
         // NAMED, because the page has just chosen on the reader's behalf. When both routes answered,
         // saying which one won and that it was the better price is the difference between a decision
         // and a black box.
-        if (v) v.textContent = fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8);
+        if (v) v.textContent = recvUnit(Number(THQ.expected) / (THQ.e8 || 1e8), 8, THQ.symbol);
         if (u) u.textContent = 'via THORChain' + (QUOTE ? ' — better price' : '')
           + (THQ.seconds != null ? (' · ~' + THQ.seconds + 's') : '');
       } else {
-        if (v) v.textContent = q ? fmt(q.amountOutFormatted, 6) : '—';
+        if (v) v.textContent = q
+          ? recvUnit(q.amountOutFormatted, 6, (DEST && DEST.token) ? DEST.token.symbol : '')
+          : '—';
         if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
       }
       // THE REASON IS SHOWN WHERE THE FIGURE WOULD BE. The destination column hides .usd, because on a
