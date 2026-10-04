@@ -877,6 +877,10 @@
       return String(a.getAttribute('data-net')).localeCompare(String(b.getAttribute('data-net')));
     }).forEach(function (o) { menu.appendChild(o); });
 
+    // Started here rather than at boot: the trigger exists from the first paint, but the options it
+    // has to be judged against do not, and a watcher armed before them would clear a perfectly good
+    // destination for the few hundred milliseconds in between.
+    watchDest();
     return refreshDestinations();
   }
 
@@ -926,17 +930,83 @@
     // Only when the reachable set is actually KNOWN. shown.length is 0 both when nothing is reachable
     // and when the token list has not landed yet, and clearing a good destination during the second
     // would be this same bug pointed the other way.
-    var trg0 = $('.brd-trigger'), tnm0 = trg0 && trg0.querySelector('.nm');
-    var named = !!(trg0 && !trg0.classList.contains('is-empty') && tnm0 && norm(tnm0.textContent));
-    var cur = destChain();
-    if (shown.length && named && (!cur || !reach[cur])) {
-      var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
-      if (nm) nm.textContent = 'Select Network';
-      if (trg) { trg.classList.add('is-empty'); trg.removeAttribute('data-net'); }
-      document.documentElement.removeAttribute('data-destnet');
-      DEST = null; QUOTE = null; AXQ = null;
-    }
+    if (shown.length) enforceDest(reach);
     return shown.length;
+  }
+
+  // THE TRIGGER IS WATCHED, NOT JUST CHECKED ONCE (RAZA 2026-10-04, third time on this: "Still not
+  // working. In linea, now its shows XRP").
+  //
+  // The previous attempt put this check inside refreshDestinations(), which runs when the SOURCE asset
+  // changes and at init -- and never again after a destination is picked. So a Linea already standing
+  // in the trigger was simply never looked at, and the step-2 pill beside the word "To" mirrors that
+  // trigger, which is why it kept saying Linea. Clearing DEST without clearing the trigger is also why
+  // the delivered asset fell back from ETH to XRP: half the state was reset and the visible half
+  // was not.
+  //
+  // So the rule is enforced wherever the name can arrive: on every refresh, whenever anything writes
+  // to the trigger (the design ships its own handler for its own eighteen options, and that writer is
+  // not ours to call), and when step 2 is opened. An unreachable destination cannot survive any of
+  // those, however it got in.
+  function enforceDest(reach) {
+    reach = reach || reachablePlaces();
+    var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
+    if (!trg || !nm) return;
+    var label = norm(nm.textContent || '');
+    // Nothing chosen: 'Select Network' is the placeholder, not a destination.
+    if (!label || trg.classList.contains('is-empty') || /select/i.test(nm.textContent || '')) return;
+    var cur = destChain();
+    if (cur && reach[cur]) return;                    // chosen, mapped, reachable — leave it alone
+    nm.textContent = 'Select Network';
+    trg.classList.add('is-empty');
+    trg.removeAttribute('data-net');
+    document.documentElement.removeAttribute('data-destnet');
+    DEST = null; QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
+    try { paintSteps(); } catch (_) {}
+  }
+
+  // AND THE SELECTION IS REFUSED AT THE SOURCE, not only repaired afterwards.
+  //
+  // The served page carries exactly one other writer of the trigger's label — `lx-bridge2js`, the
+  // inherited Stellar layer, which binds a click listener to EVERY .brd-opt present when it runs and
+  // writes `data-net` straight onto the trigger with no notion of whether a route exists. It also calls
+  // stopPropagation(), so a bubbling listener of ours never sees that click. A capture listener on
+  // window does, and runs first.
+  //
+  // Only once the reachable set is known (data-lxbrdready): before that NOTHING carries data-lxroute
+  // and this would swallow every click, including the good ones.
+  function blockUnreachableClicks() {
+    if (window.__lxxDestBlock) return;
+    window.__lxxDestBlock = 1;
+    window.addEventListener('click', function (e) {
+      if (!document.documentElement.getAttribute('data-lxbrdready')) return;
+      var t = e.target;
+      var opt = (t && t.closest) ? t.closest('.brd-opt') : null;
+      if (!opt) return;
+      if (opt.getAttribute('data-lxroute')) return;          // reachable: let it through untouched
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    }, true);
+  }
+
+  // One observer, on the trigger's own subtree. characterData because the design's handler writes the
+  // label as a text node rather than replacing the element.
+  function watchDest() {
+    blockUnreachableClicks();
+    if (window.__lxxDestWatch) return;
+    var trg = $('.brd-trigger');
+    if (!trg || typeof MutationObserver !== 'function') return;
+    window.__lxxDestWatch = 1;
+    var pending = 0;
+    var mo = new MutationObserver(function () {
+      // Deferred by a frame: the design's handler sets the name and the class in separate statements,
+      // and reading between the two sees a half-written state that looks unreachable when it is not.
+      if (pending) return;
+      pending = 1;
+      setTimeout(function () { pending = 0; try { enforceDest(); } catch (_) {} }, 0);
+    });
+    mo.observe(trg, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'data-net'] });
   }
 
   function extraOption(tpl, chain, name) {
