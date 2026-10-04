@@ -118,9 +118,15 @@
   // Anything a user CAN act on (a dust minimum, a bad address, a halted chain) is passed through
   // unchanged, because those are the messages worth having.
   function upstreamNote(msg) {
-    return /internal server error|bad gateway|service unavailable|gateway time|^\s*5\d\d\s*$/i.test(msg)
-      ? 'Not answering right now — another route may still carry this.'
-      : msg;
+    if (/internal server error|bad gateway|service unavailable|gateway time|^\s*5\d\d\s*$/i.test(msg)) {
+      return 'Not answering right now — another route may still carry this.';
+    }
+    // THORChain appends its API's own verdict to a refusal that already said everything: "amount less
+    // than dust threshold: invalid request". The first half is the reason and belongs on the card; the
+    // second is machine talk that reads as a fault in this page rather than a refusal from theirs.
+    // Only that exact tail is cut, and the sentence is left otherwise in their words.
+    var s = String(msg || '').replace(/\s*:\s*invalid request\s*$/i, '');
+    return s ? (s.charAt(0).toUpperCase() + s.slice(1)) : s;
   }
   var XRP_SPEND = null;
   var busy = false;
@@ -2481,8 +2487,21 @@
     // normally honoured -- never runs. The fallback then handed the card back to the first route in
     // the list: clicking THORChain visibly reverted to NEAR Intents, which is the page overruling a
     // choice the reader just made.
+    // A HAND-PICKED ROUTE STAYS MARKED EVEN WHEN IT CANNOT QUOTE THIS AMOUNT (RAZA 2026-10-04: "I
+    // selected thorchain but as soon as im entering any value ... it automatically selects near intents
+    // and i cant select thorchain").
+    //
+    // This required the pick to be in `usable`, which is the set of routes that answered. Type an
+    // amount THORChain calls dust and it drops out of that set, so the pick was discarded and the
+    // marker fell through to the first row -- NEAR Intents -- which then read "IN USE" on a route the
+    // reader had just moved away from. The page overruling a choice the reader made, which is the exact
+    // thing the comment on the old line said it existed to prevent, undone by the condition next to it.
+    //
+    // Display only, and the distinction matters here: BEST still governs what is actually sent and
+    // settle() still refuses to honour a pick that did not answer, so this cannot send by a route with
+    // no quote. What it fixes is the panel claiming the reader chose something they did not.
     var picked = (PICKED && PICKED_FOR === destChain()
-      && usable.some(function (x) { return x.route === PICKED; })) ? PICKED : '';
+      && rows.some(function (x) { return x.route === PICKED; })) ? PICKED : '';
     // ...AND IT STAYS MARKED EVEN WHEN IT CANNOT PRICE THIS AMOUNT (RAZA 2026-10-04, repeatedly: "when
     // i enter any amount in available to send, the bridge automatically gets deselected").
     //
