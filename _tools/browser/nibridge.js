@@ -1394,7 +1394,12 @@
       nm.setAttribute('data-logo', '');
       nm.setAttribute('data-logoed', '1');
     }
-    setIcon(as.querySelector('.br-ic'), SRC.native ? symLogo(SRC.symbol) || XRP_LOGO : symLogo(SRC.symbol), SRC.symbol);
+    // THE SAME LOGO THE PICKER DREW (RAZA 2026-10-04: "I selected PHNIX from the source dropdown and in
+    // that dropdown its logo was showing but after selction, its logo is not there"). The picker asks
+    // /lxapi/xrplthumb by issuer and currency; this asked symLogo(), which only knows NEAR Intents'
+    // bundled artwork, so every issued token lost its logo at the moment it was chosen. rowLogo() is
+    // the picker's own resolver, so the chip and the row cannot disagree again.
+    setIcon(as.querySelector('.br-ic'), rowLogo(SRC) || (SRC.native ? XRP_LOGO : ''), SRC.symbol, false);
     // OPENS WHENEVER THERE IS ANYTHING TO SAY, not only when there is a second thing to choose. A
     // wallet holding LUMOS and RLUSD has one bridgeable asset and two that need explaining, and
     // gating the caret on `list.length > 1` is what made that limit invisible.
@@ -2433,7 +2438,16 @@
       }
       h += '</div>';
       if (o.state === 'none') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
-      else if (o.state === 'wait') h += '<span class="lx-brr-soon">Quoting…</span>';
+      // NAMED FOR WHAT IT IS ACTUALLY WAITING ON (RAZA 2026-10-04: "why does it say Quoting. there's no
+      // such thing on Stellar"). Stellar never shows this because its sources do not need one: bridging
+      // an issued XRPL token asks the ledger for a path to XRP first, and ripple_path_find on a thin
+      // book takes seconds -- measured 6 to 14 of them on PHNIX. "Quoting…" for fourteen seconds with
+      // no idea what is being quoted reads as stuck, which is exactly how it was reported.
+      else if (o.state === 'wait') {
+        h += '<span class="lx-brr-soon">'
+          + ((SRC && SRC.viaSwap && !SWAPQ) ? 'Pricing ' + esc2(SRC.symbol) + ' into XRP…' : 'Quoting…')
+          + '</span>';
+      }
       else if (o.state === 'idle') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">Enter an amount to price this route.</div>';
       h += '<' + '/button>';
     });
@@ -3213,9 +3227,29 @@
         // balance leaves nothing to pay for the second one.
         if (t.closest('.max')) {
           e.preventDefault(); e.stopPropagation();
+          // MAX FILLS THE SELECTED ASSET'S BALANCE, not always XRP's (RAZA 2026-10-04: "I'm clicking
+          // MAX but its not updating the value to 72.56... PHNIX").
+          //
+          // It did update -- to 0.023194, the spendable XRP less the buffer -- which with PHNIX
+          // selected is both wrong and almost invisible, because it looks like nothing happened unless
+          // you read the figure. That is also where the 0.023194 in every screenshot since came from.
+          //
+          // The buffer is XRP-only and stays that way: it exists because this route signs TWO
+          // transactions and each burns a network fee, and that fee is paid in XRP whatever is being
+          // bridged. Taking it off a token balance would leave dust in the wallet for no reason.
           var inp = amtInput();
-          if (inp && XRP_SPEND != null) {
-            inp.value = String(Math.max(0, Math.floor((XRP_SPEND - 0.001) * 1e6) / 1e6));
+          var v = null;
+          if (!SRC || SRC.native) {
+            if (XRP_SPEND != null) v = Math.max(0, Math.floor((XRP_SPEND - 0.001) * 1e6) / 1e6);
+          } else if (SRC.balance != null) {
+            v = SRC.balance;
+          }
+          if (inp && v != null) {
+            // Plain decimal, never exponent notation: String(1e-7) is "1e-7", which this field's own
+            // cleaner strips to "17".
+            var s = String(v);
+            if (s.indexOf('e') >= 0 || s.indexOf('E') >= 0) s = Number(v).toFixed(6);
+            inp.value = s;
             QUOTE = null; paintSourceUsd(); paintReview(null, ''); setCta(); requote();
           }
           return;
