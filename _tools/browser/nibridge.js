@@ -335,7 +335,8 @@
       // So the options stay hidden until refreshDestinations() has completed once and set the flag. A
       // picker that is briefly empty is honest; one that briefly lists routes we do not have is not,
       // and this page's own comments already say that is the worst kind of wrong here.
-      css += 'html:not([data-lxbrdready]) .brd-opt{display:none !important}'
+      css += '.brd-opt[data-lxunreach]{display:none !important}'
+        + 'html:not([data-lxbrdready]) .brd-opt{display:none !important}'
         + 'html:not([data-lxbrdready]) .brd-menu .lxx-brdwait{display:block}'
         + '.lxx-brdwait{display:none;padding:14px 16px;color:var(--text-soft);'
         + 'font:600 13px/1.4 "Hanken Grotesk",system-ui,sans-serif}';
@@ -375,9 +376,20 @@
     var s = String(sym || '').replace(/[^A-Za-z0-9._-]/g, '');
     return s && NI_TOKEN[s] ? ('/assets/tokens/ni/' + s + '.png?v=' + ICONV) : '';
   }
-  function tokenLogo(t) {
+  // `placeKey` lets a NATIVE asset fall back to its own chain's mark (RAZA 2026-10-04: "for aptos, its
+  // asset logo on destination is missing"). APT has no file under /assets/tokens/ni and its CoinGecko
+  // fetch 404s from the edge, so the slot was simply empty — and a chain's native coin and the chain
+  // itself are the same thing to a reader, so the network mark is the right answer rather than a
+  // stand-in. Issued tokens are NOT given this fallback: USDC on Aptos is not Aptos.
+  function tokenLogo(t, placeKey) {
     if (!t) return '';
-    return symLogo(t.symbol) || (t.coingeckoId ? (API + '?op=logo&id=' + encodeURIComponent(t.coingeckoId)) : '');
+    var s = symLogo(t.symbol);
+    if (s) return s;
+    if (!t.contractAddress && placeKey) {
+      var cl = chainLogo(placeLabel(placeKey));
+      if (cl) return cl;
+    }
+    return t.coingeckoId ? (API + '?op=logo&id=' + encodeURIComponent(t.coingeckoId)) : '';
   }
 
   // A SOURCE ROW'S LOGO IS KEYED ON THE ISSUER, NEVER ON THE TICKER (RAZA 2026-10-04: "On XRPL asset
@@ -898,10 +910,21 @@
       if (c && reach[c]) {
         o.style.setProperty('display', 'flex', 'important');
         o.setAttribute('data-lxroute', reach[c]);
+        o.removeAttribute('data-lxunreach');
         shown.push(o.getAttribute('data-net'));
       } else {
         o.style.setProperty('display', 'none', 'important');
         o.removeAttribute('data-lxroute');
+        // THE ATTRIBUTE IS WHAT ACTUALLY HIDES IT; the inline rule above is now only a first coat.
+        //
+        // RAZA 2026-10-04 typed "li" into the network search and got Hyperliquid, LINEA, Litecoin. The
+        // design's own search filter walks the options and assigns `o.style.display = 'flex'` — a plain
+        // assignment, which REPLACES the whole inline declaration and takes our !important with it. So
+        // an option we had hidden came back the moment anyone typed, and only the capture-phase click
+        // blocker stopped it being chosen (which is exactly what "now nothing happens when I click"
+        // was). A rule in a stylesheet marked !important outranks the design's inline write, because
+        // inline only wins when it is not competing with an important author declaration.
+        o.setAttribute('data-lxunreach', '1');
       }
     });
     window.__lxxBridgeNets = shown;
@@ -1048,8 +1071,23 @@
   function placeLabel(key) { var p = PLACES[key]; return (p && p.label) || key; }
 
   // ---- the destination asset picker ----------------------------------------------------------------
+  // NATIVE, USDC AND USDT. NOTHING ELSE (RAZA 2026-10-04: "lets just keep it native or USDC and USDT
+  // on destination assets for all networks").
+  //
+  // 1Click lists everything it can deliver on a chain, which on Aptos meant APT beside BTC, ETH, ZEC,
+  // AAVE and SOL — all real entries, but all BRIDGED representations of coins that live somewhere else.
+  // Six rows of wrapped assets read as placeholder filler, and on a page bridging OUT of XRP a row
+  // saying "ETH" that is not Ethereum's ether is the kind of wrong this file keeps warning about.
+  //
+  // So: the chain's own coin, plus the two stablecoins anyone actually wants on the other side. A
+  // token with no contract address is the native one — that is how 1Click marks it, and it is the same
+  // test the sort below already used to put it first.
   function destTokens(chain) {
-    var list = (BY_CHAIN[chain] || []).slice();
+    var list = (BY_CHAIN[chain] || []).filter(function (t) {
+      if (!t || !t.contractAddress) return true;
+      var s = String(t.symbol || '').toUpperCase();
+      return s === 'USDC' || s === 'USDT';
+    });
     // Native first, then by descending USD price as a rough proxy for prominence, then alphabetical.
     list.sort(function (a, b) {
       var an = a.contractAddress ? 1 : 0, bn = b.contractAddress ? 1 : 0;
@@ -1187,7 +1225,7 @@
     // one argument it returns having drawn nothing at all, so an asset with no shipped logo and a
     // CoinGecko id that 404s from the edge left the slot completely empty -- not a grey disc, not a
     // broken image, just a hole beside the ticker. XLM was exactly that case.
-    setIcon(as.querySelector('.br-ic'), tokenLogo(DEST.token), DEST.token.symbol);
+    setIcon(as.querySelector('.br-ic'), tokenLogo(DEST.token, key), DEST.token.symbol);
     setPickable(as, opts.length > 1);
     if (!as.__lxxMenu) {
       as.__lxxMenu = 1;
@@ -1195,55 +1233,85 @@
     }
   }
 
+  // THE SAME CONTROL AS THE SOURCE PICKER (RAZA 2026-10-04: "Destination assets dropdown is still
+  // broken. Fix it like you fixed source assets dropdown").
+  //
+  // What was here was the thing the source picker used to be: the destination NETWORK dropdown's
+  // classes (.brd / .brd-menu / .brd-opt) wrapped in inline styles, anchored inside the step — which
+  // is why it rendered full-bleed across the card instead of hanging off the chip. It is now
+  // #lx-br-amenu, the control Stellar's own source picker is built from and the one the source side
+  // on this page already uses: same stylesheet, same 26px round icon, same ticker-over-subtitle row,
+  // appended to <body> and positioned from the chip's rect so the step's slide transform cannot trap
+  // it. One control, two uses, nothing left to drift apart.
   function toggleDestMenu(as) {
-    var old = document.querySelector('.lx-destmenu');
-    if (old) { old.parentNode.removeChild(old); return; }
+    if (document.getElementById('lx-br-amenu')) { closeSrcMenu(); return; }
     var key = destChain();
     var chain = key && routeFor(SRC, key) === 'ni' ? niId(key) : null;
     if (!chain) return;
     var opts = destTokens(chain);
     if (opts.length < 2) return;
-    var wrap = document.createElement('div');
-    wrap.className = 'brd open lx-destmenu';
-    // Anchored below, once the host is the offsetParent — same reason as the source menu.
-    wrap.style.cssText = 'position:absolute;z-index:60;right:0;min-width:240px';
-    var menu = document.createElement('div');
-    menu.className = 'brd-menu';
-    menu.style.cssText = 'display:block;position:static;max-height:300px;overflow:auto';
+
+    amenuCss();
+    var m = document.createElement('div');
+    m.id = 'lx-br-amenu';
+    m.className = 'lx-br-amenu';
+    m.style.cssText = 'position:absolute;z-index:99999;min-width:236px;display:block';
+    m.innerHTML = '<div class="lx-amlist"></div>';
+    document.body.appendChild(m);
+    var listHost = m.querySelector('.lx-amlist');
+
     opts.forEach(function (t) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'brd-opt lx-destopt';
-      b.style.setProperty('display', 'flex', 'important');
+      b.setAttribute('data-q', String(t.symbol || '').toLowerCase());
+
       var ic = document.createElement('span');
-      ic.className = 'brd-ic';
-      setIcon(ic, tokenLogo(t), t.symbol);       // letters, never an empty disc -- see paintDestAsset
-      var nmx = document.createElement('span');
-      nmx.className = 'brd-nm';
-      nmx.setAttribute('data-logoed', '1');
-      // The native asset is marked, because 1Click lists wrapped copies of coins next to the real
-      // thing and "XRP" on Starknet beside "XRP" is a trap on a page bridging OUT of XRP.
-      nmx.textContent = t.symbol + (t.contractAddress ? '' : '  · native');
-      b.appendChild(ic); b.appendChild(nmx);
+      ic.className = 'aic';
+      setIcon(ic, tokenLogo(t, key), t.symbol, true);
+
+      var tx = document.createElement('span');
+      tx.className = 'atx';
+      tx.setAttribute('data-logo', ''); tx.setAttribute('data-logoed', '1');
+
+      var nm = document.createElement('span');
+      nm.className = 'anm';
+      nm.setAttribute('data-logo', ''); nm.setAttribute('data-logoed', '1');
+      nm.textContent = t.symbol;
+
+      // The native asset is marked on its own line now rather than inside the ticker, because 1Click
+      // lists wrapped copies beside the real thing and "XRP" on Starknet beside "XRP" is a trap on a
+      // page bridging OUT of XRP. An issued token names its contract, the way the source side names
+      // its issuer: on this page, what a token IS is never the ticker alone.
+      var sub = document.createElement('span');
+      sub.className = 'aiss';
+      sub.setAttribute('data-logoed', '1');
+      sub.textContent = t.contractAddress
+        ? (String(t.contractAddress).length > 14
+            ? String(t.contractAddress).slice(0, 6) + '…' + String(t.contractAddress).slice(-4)
+            : String(t.contractAddress))
+        : 'Native';
+
+      tx.appendChild(nm); tx.appendChild(sub);
+      b.appendChild(ic); b.appendChild(tx);
       b.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
         DEST = { chain: chain, token: t };
-        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        closeSrcMenu();
         QUOTE = null;
         paintSteps(); requote();
       });
-      menu.appendChild(b);
+      listHost.appendChild(b);
     });
-    wrap.appendChild(menu);
-    var host = as.parentNode;
-    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-    host.appendChild(wrap);
-    // Anchor the menu under the CHIP now that offsets resolve against the host. Read after append so
-    // these are the offsets the browser actually computed, not ones predicted before layout.
-    wrap.style.top = ((as.offsetTop || 0) + (as.offsetHeight || 0) + 6) + 'px';
+
+    var r = as.getBoundingClientRect();
+    var maxL = window.scrollX + document.documentElement.clientWidth - m.offsetWidth - 8;
+    m.style.left = Math.max(window.scrollX + 8, Math.min(maxL, r.left + window.scrollX)) + 'px';
+    m.style.top = (r.bottom + window.scrollY + 6) + 'px';
+
     setTimeout(function () {
-      document.addEventListener('click', function away() {
-        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      document.addEventListener('click', function away(e) {
+        if (e.target && e.target.closest && e.target.closest('#lx-br-amenu')) return;
+        closeSrcMenu();
         document.removeEventListener('click', away, true);
       }, true);
     });
