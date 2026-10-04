@@ -379,6 +379,32 @@
     if (!t) return '';
     return symLogo(t.symbol) || (t.coingeckoId ? (API + '?op=logo&id=' + encodeURIComponent(t.coingeckoId)) : '');
   }
+
+  // A SOURCE ROW'S LOGO IS KEYED ON THE ISSUER, NEVER ON THE TICKER (RAZA 2026-10-04: "On XRPL asset
+  // logos are not showing up in the assets dropdown on Source side like it does on Stellar").
+  //
+  // They were not showing because symLogo() only knows NEAR Intents' bundled artwork -- a few dozen
+  // files under /assets/tokens/ni keyed by SYMBOL -- and an XRP Ledger wallet holds things like DOZZY,
+  // BCHAMP and Xmen, none of which are in it. Every one of those fell through to the letter disc.
+  //
+  // The rest of this build already solves it: /lxapi/xrplthumb derives xrpl.to's token id from
+  // issuer + currency on the edge, where the API key lives, and caches the image for a week.
+  //
+  // Resolved by LEDGER IDENTITY rather than by symbol, and that is the point rather than a detail.
+  // Anyone can issue a token called USDC on this ledger; looking a logo up by ticker would hand an
+  // impostor Circle's artwork on a screen that is about to move money. So the bundled art is used only
+  // for native XRP, which has no issuer and cannot be impersonated, and everything else is asked for by
+  // the pair that actually identifies it. A token the upstream does not know 404s and setIcon falls
+  // back to the letter disc -- the same initials as before, now only where there is genuinely no logo.
+  function rowLogo(a) {
+    if (!a) return '';
+    if (a.native) return symLogo('XRP') || XRP_LOGO;
+    if (a.issuer && a.currency) {
+      return '/lxapi/xrplthumb?iss=' + encodeURIComponent(a.issuer)
+        + '&cur=' + encodeURIComponent(a.currency) + '&w=48';
+    }
+    return '';
+  }
   XRP_LOGO = symLogo('XRP');
 
   // Letters in a disc, the way the design marks a network it has no artwork for. Needed as a real
@@ -397,7 +423,11 @@
     host.setAttribute('data-logoed', '1');
   }
 
-  function setIcon(host, src, fallbackName) {
+  // `lazy` is for lists, and it is set BEFORE the src or it does nothing: the fetch starts the moment
+  // src is assigned, so loading="lazy" applied afterwards is too late to hold anything back. The source
+  // picker is the caller that needs it -- eighty rows, each wanting a logo, is the exact fan-out
+  // /lxapi/xrplthumb's own notes call out as what used to get a key pulled.
+  function setIcon(host, src, fallbackName, lazy) {
     if (!host) return;
     host.setAttribute('data-logo', '');
     host.setAttribute('data-logoed', '1');
@@ -408,6 +438,7 @@
       img = document.createElement('img');
       img.className = 'lx-netimg';
       img.alt = '';
+      if (lazy) { img.loading = 'lazy'; img.decoding = 'async'; }
       img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover';
       img.onerror = function () {
         if (img.parentNode) img.parentNode.removeChild(img);
@@ -1308,7 +1339,7 @@
 
       var ic = document.createElement('span');
       ic.className = 'aic';
-      setIcon(ic, symLogo(a.symbol) || (a.native ? XRP_LOGO : ''), a.symbol);
+      setIcon(ic, rowLogo(a), a.symbol, true);
 
       var tx = document.createElement('span');
       tx.className = 'atx';
