@@ -185,7 +185,11 @@
       var f = a.querySelector('.lx-s2full');
       // The client's own name for the asset wins where it has one -- for an issued token that is the
       // only real source. FULL covers the natives, which have names nobody needs to look up.
-      var full = a.getAttribute('data-lxfull') || FULL[code] || '';
+      // PRESENT BEATS NON-EMPTY. `||` fell through to the ticker dictionary whenever the attribute was
+      // an empty string, which is precisely the case that means "this asset has no name we can stand
+      // behind" -- and the dictionary then supplied one belonging to a different chain's coin. If the
+      // writer set the attribute at all, its answer is the answer, blank included.
+      var full = a.hasAttribute('data-lxfull') ? (a.getAttribute('data-lxfull') || '') : (FULL[code] || '');
       if (f && f.textContent !== full) f.textContent = full;
     });
 

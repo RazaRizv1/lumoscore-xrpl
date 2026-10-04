@@ -1400,6 +1400,16 @@
     // bundled artwork, so every issued token lost its logo at the moment it was chosen. rowLogo() is
     // the picker's own resolver, so the chip and the row cannot disagree again.
     setIcon(as.querySelector('.br-ic'), rowLogo(SRC) || (SRC.native ? XRP_LOGO : ''), SRC.symbol, false);
+    // THE NAME UNDER THE TICKER IS THIS LEDGER'S, NOT A CROSS-CHAIN DICTIONARY'S (RAZA 2026-10-04:
+    // "ATOM is just an asset on XRPL, its not cosmos which is entirely different").
+    //
+    // brpolish fills that line from FULL[ticker] -- a map of well-known coin names -- so an issued XRPL
+    // token called ATOM was labelled "Cosmos Hub", a chain this bridge also lists as a DESTINATION.
+    // Anyone can issue a token called ATOM here; the ticker is not the identity, which is the same rule
+    // the logo and the picker's subtitle already follow. The attribute is always set on this chip, even
+    // when empty, so the dictionary is never consulted for a source asset: better to say nothing than
+    // to name the wrong asset.
+    as.setAttribute('data-lxfull', SRC.native ? 'XRP' : (SRC.issuerName || ''));
     // OPENS WHENEVER THERE IS ANYTHING TO SAY, not only when there is a second thing to choose. A
     // wallet holding LUMOS and RLUSD has one bridgeable asset and two that need explaining, and
     // gating the caret on `list.length > 1` is what made that limit invisible.
@@ -2469,16 +2479,17 @@
       }
       h += '</div>';
       if (o.state === 'none') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
-      // NAMED FOR WHAT IT IS ACTUALLY WAITING ON (RAZA 2026-10-04: "why does it say Quoting. there's no
-      // such thing on Stellar"). Stellar never shows this because its sources do not need one: bridging
-      // an issued XRPL token asks the ledger for a path to XRP first, and ripple_path_find on a thin
-      // book takes seconds -- measured 6 to 14 of them on PHNIX. "Quoting…" for fourteen seconds with
-      // no idea what is being quoted reads as stuck, which is exactly how it was reported.
-      else if (o.state === 'wait') {
-        h += '<span class="lx-brr-soon">'
-          + ((SRC && SRC.viaSwap && !SWAPQ) ? 'Pricing ' + esc2(SRC.symbol) + ' into XRP…' : 'Quoting…')
-          + '</span>';
-      }
+      // NOTHING WHILE IT WAITS, because Stellar shows nothing (RAZA 2026-10-04: "this orange text on
+      // the bridge side 'Pricing PHNIX INTO XRP' is not there on Stellar").
+      //
+      // This pill is `.lx-brr-soon`, and on Stellar it carries exactly one message -- "Not yet
+      // available" -- which is a PERMANENT fact about a route. This build borrowed it for a transient
+      // one. First as "Quoting…", which read as stuck because bridging an issued token waits on a
+      // ripple_path_find that takes 6 to 14 seconds; then I made it name the leg, which was a better
+      // sentence in a place Stellar has no sentence at all. The honest fix is the one he asked for
+      // twice: say nothing, as Stellar does, and let the dash in the receive line stand until there is
+      // a figure or a reason to put there.
+      else if (o.state === 'wait') { /* deliberately silent — see above */ }
       else if (o.state === 'idle') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">Enter an amount to price this route.</div>';
       h += '<' + '/button>';
     });
