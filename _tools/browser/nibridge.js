@@ -1213,212 +1213,209 @@
       .catch(function () { CURATED = []; return CURATED; });
   }
 
+  // THE SOURCE ASSET PICKER IS STELLAR'S CONTROL, NOT A LOOKALIKE OF IT.
+  //
+  // RAZA 2026-10-04: "the token dropdown list menu is not the same as stellar. I need it to be
+  // identical." Said once before, on 2026-10-02, and answered then by widening this menu — which was
+  // the wrong move in the wrong direction, because the two were never the same control to begin with.
+  //
+  // What was here reused the DESTINATION NETWORK dropdown's classes (.brd / .brd-menu / .brd-opt) and
+  // then fought them with inline styles: a fixed 300px wrapper, a balance column down the right, and
+  // two section headings. Stellar's picker is none of those things, so no amount of adjustment was
+  // going to converge — each pass moved one thing closer and another thing further away. The same trap
+  // as the launchpad placeholder, and the same fix: take the real thing rather than redraw it.
+  //
+  // Stellar's is `#lx-br-amenu`, built in C:\LumosCore\_tools\_cctp.js. Its markup, its class names and
+  // its stylesheet are reproduced below EXACTLY as that file writes them — min-width:236px and no fixed
+  // width, a 26px round icon, a 14px/600 ticker over an 11px monospace issuer line, rows that are flex
+  // buttons padded 8px/10px, a search field on top and a 264px scroll area. Anchored the same way too:
+  // appended to <body> and positioned from getBoundingClientRect, which is what keeps it clear of the
+  // transform each .br-step carries for its slide.
+  //
+  // THREE THINGS STELLAR'S MENU DOES NOT HAVE, now gone from this one:
+  //   * the per-row balance. The figure is still on the row above the menu ("Available to send"), which
+  //     is where Stellar shows it too, so nothing is lost by dropping the column.
+  //   * the "Swapped to XRP first" / "Major XRP Ledger assets" headings. The swap they announce is real,
+  //     but the menu is not the only place it is said: picking one of these assets puts an explicit note
+  //     in the Review step, before anything is signed, and every such row still carries the tooltip. A
+  //     heading that exists on one chain and not the other is exactly the difference being reported.
+  //   * pool shares. They were listed greyed-out and unpickable; an LP share cannot be the source of a
+  //     bridge, so it is not an option, and Stellar's list has no disabled rows in it.
+  var AMENU_CSS = '.lx-br-amenu{background:var(--surface-2,#fff);border:1px solid var(--border,#ececef);border-radius:14px;box-shadow:0 18px 44px rgba(0,0,0,.28);padding:6px;font:inherit;color:var(--text,#0e0e10)}'
+    + '.lx-amsearch{padding:4px 4px 6px}'
+    + '.lx-amq{width:100%;box-sizing:border-box;background:var(--surface,#f6f7f9);border:1px solid var(--border,#ececef);border-radius:9px;color:var(--text,#0e0e10);font:inherit;font-size:13px;padding:8px 10px;outline:none}'
+    + '.lx-amq::placeholder{color:var(--text-soft,#8a90a2)}'
+    + '.lx-amq:focus{border-color:rgba(234,106,44,.55);box-shadow:0 0 0 3px rgba(234,106,44,.1)}'
+    + '.lx-amlist{max-height:264px;overflow:auto}'
+    + '.lx-br-amenu button{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer;text-align:left}'
+    + '.lx-br-amenu button:hover{background:var(--surface,#f4f5f7)}'
+    + '.lx-br-amenu .aic{width:26px;height:26px;border-radius:50%;overflow:hidden;display:inline-flex;flex:0 0 26px;background:var(--surface,#f0f1f4)}'
+    + '.lx-br-amenu .aic img{width:100%;height:100%;object-fit:cover;display:block}'
+    + '.lx-br-amenu .atx{display:flex;flex-direction:column;line-height:1.25;min-width:0}'
+    + '.lx-br-amenu .anm{font-size:14px;font-weight:600}'
+    + '.lx-br-amenu .aiss{font-size:11px;color:var(--text-soft,#8a90a2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}';
+
+  function amenuCss() {
+    if (document.getElementById('lx-br-amenu-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-br-amenu-css';
+    st.textContent = AMENU_CSS;
+    document.head.appendChild(st);
+  }
+
+  function closeSrcMenu() {
+    var m = document.getElementById('lx-br-amenu');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
   function toggleSrcMenu(as) {
-    var old = document.querySelector('.lx-srcmenu');
-    if (old) { old.parentNode.removeChild(old); return; }
+    if (document.getElementById('lx-br-amenu')) { closeSrcMenu(); return; }
     // directAssets, not sourceAssets: sourceAssets now CONTAINS the swap entries, and the swap
-    // section below adds them again -- which listed every token twice, once under each heading.
-    var list = directAssets();
-    var other = labelHoldings(otherHoldings());
+    // section below adds them again -- which listed every token twice.
+    var list = directAssets().filter(function (a) { return !a.lp; });
+    var other = labelHoldings(otherHoldings()).filter(function (a) { return !a.lp; });
     if (list.length < 2 && !other.length) return;
-    var wrap = document.createElement('div');
-    wrap.className = 'brd open lx-srcmenu';
-    // ANCHORED TO THE CHIP, NOT TO THE ROW. This was top:calc(100% + 6px), which is 100% of the
-    // HOST's height — fine only while the host is exactly as tall as the chip. It is a flex row that
-    // also carries the amount field, so whenever it grows the menu is pushed down by however much,
-    // and RAZA saw it open far below everything else ("the dropdown isn't opening properly, its
-    // opening at the bottom", 2026-10-01). The chip's own offset within the host is what the menu
-    // actually wants, and it does not care what else the row contains or how tall it gets.
-    // Placed at the append site below, once the host is position:relative — offsetTop is measured
-    // against the offsetParent, and that is not settled until then.
-    // WIDTH IS SET, NOT LEFT TO min-width (RAZA 2026-10-02: "the menu is breaking on XRPL ... I need it
-    // to be identical" to Stellar's).
-    //
-    // This reuses the DESTINATION dropdown's classes to inherit its surface and border, and those carry
-    // `.brd{width:100%}` with `.brd-menu{left:0;right:0}`. The inline style overrode `position` but not
-    // `width`, so the wrapper took the full width of the card and the menu stretched edge to edge —
-    // which is also why the balance ended up marooned at the far right instead of sitting beside the
-    // name. min-width could never fix that: it sets a floor, and the problem was the ceiling.
-    //
-    // 300px is Stellar's shape: wide enough for a ticker, a balance and an issuer line, narrow enough to
-    // read as a dropdown hanging off the chip. The vw cap is for a phone, where 300px can be most of the
-    // screen.
-    wrap.style.cssText = 'position:absolute;z-index:60;width:300px;max-width:92vw';
-    var menu = document.createElement('div');
-    menu.className = 'brd-menu';
-    // left/right come from .brd-menu and would stretch this back out even inside a sized wrapper.
-    menu.style.cssText = 'display:block;position:static;left:auto;right:auto;width:100%;'
-      + 'max-height:300px;overflow:auto';
-    // ONE BUILDER FOR EVERY SECTION. The held rows and the curated rows were always going to drift
-    // apart if written twice, and the picker's whole problem was that it did not look like one list.
-    //
-    // Two lines per row, as Stellar's has: the ticker with its balance on the right, the issuer under
-    // it. A TICKER IS NOT AN IDENTITY ON THIS LEDGER — anyone can issue a token called LUMOS — so the
-    // issuer is shown on every row rather than only on the ones that collide.
-    function srcOptRow(a, onPick) {
+
+    amenuCss();
+    var m = document.createElement('div');
+    m.id = 'lx-br-amenu';
+    m.className = 'lx-br-amenu';
+    m.style.cssText = 'position:absolute;z-index:99999;min-width:236px;display:block';
+    m.innerHTML = '<div class="lx-amsearch"><input class="lx-amq" type="text" placeholder="Search asset or issuer" spellcheck="false" autocomplete="off" aria-label="Search assets"></div>'
+      + '<div class="lx-amlist"></div>';
+    document.body.appendChild(m);
+
+    var listHost = m.querySelector('.lx-amlist');
+    var q = m.querySelector('.lx-amq');
+
+    // The second line. Stellar's shows the issuer's address; this shows the issuer's NAME when the
+    // roster knows it and falls back to the same shortened address when it does not -- a ticker is not
+    // an identity on this ledger, and the name is the part that settles which LUMOS this is.
+    function subOf(a) {
+      if (a.native) return 'Native asset';
+      if (a.issuerName) return a.issuerName;
+      if (a.issuer) return String(a.issuer).slice(0, 6) + '\u2026' + String(a.issuer).slice(-4);
+      return '';
+    }
+
+    // ONE BUILDER FOR EVERY ROW, so the held assets and the curated roster cannot drift apart. The row
+    // is a <button>, which is also what keeps the logo healer off the ticker: it repaints short text
+    // wherever it finds it, and data-logoed alone does not stop its second pass.
+    function optRow(a, onPick) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'brd-opt lx-srcopt';
-      b.style.setProperty('display', 'flex', 'important');
+      b.setAttribute('data-q', (String(a.symbol || '') + ' ' + String(a.issuerName || '') + ' ' + String(a.issuer || '')).toLowerCase());
 
       var ic = document.createElement('span');
-      ic.className = 'brd-ic';
+      ic.className = 'aic';
       setIcon(ic, symLogo(a.symbol) || (a.native ? XRP_LOGO : ''), a.symbol);
 
-      var nmx = document.createElement('span');
-      nmx.className = 'brd-nm';
-      nmx.setAttribute('data-logo', '');
-      nmx.setAttribute('data-logoed', '1');
-      nmx.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:0;flex:1';
+      var tx = document.createElement('span');
+      tx.className = 'atx';
+      tx.setAttribute('data-logo', '');
+      tx.setAttribute('data-logoed', '1');
 
-      var top = document.createElement('span');
-      top.style.cssText = 'display:flex;align-items:baseline;gap:10px;justify-content:space-between';
-      var tk = document.createElement('b');
-      // The healer repaints short text as a ticker mark, and a ticker is exactly short text — the same
-      // opt-out the line below it carries.
-      tk.setAttribute('data-logo', ''); tk.setAttribute('data-logoed', '1');
-      tk.style.cssText = 'font-weight:700;white-space:nowrap';
-      tk.textContent = a.symbol;
-      var bal = document.createElement('span');
-      bal.setAttribute('data-logoed', '1');
-      bal.style.cssText = 'font-size:12px;color:var(--text-muted,#9b9ba4);font-variant-numeric:tabular-nums;white-space:nowrap';
-      bal.textContent = a.balance != null ? fmt(a.balance, 6) : '';
-      top.appendChild(tk); top.appendChild(bal);
+      var nm = document.createElement('span');
+      nm.className = 'anm';
+      nm.setAttribute('data-logo', ''); nm.setAttribute('data-logoed', '1');
+      nm.textContent = a.symbol;
 
-      var sub = document.createElement('span');
-      sub.setAttribute('data-logoed', '1');
-      sub.style.cssText = 'font-size:11.5px;color:var(--text-soft,#8a8fa3);white-space:nowrap;'
-        + 'overflow:hidden;text-overflow:ellipsis';
-      sub.textContent = a.native ? 'Native asset'
-        : (a.issuerName || (a.issuer ? (String(a.issuer).slice(0, 5) + '\u2026' + String(a.issuer).slice(-4)) : ''));
+      var iss = document.createElement('span');
+      iss.className = 'aiss';
+      iss.setAttribute('data-logoed', '1');
+      iss.textContent = subOf(a);
 
-      nmx.appendChild(top);
-      if (sub.textContent) nmx.appendChild(sub);
-      b.appendChild(ic); b.appendChild(nmx);
+      tx.appendChild(nm);
+      if (iss.textContent) tx.appendChild(iss);
+      b.appendChild(ic); b.appendChild(tx);
 
-      if (a.lp) {
-        b.disabled = true;
-        b.style.opacity = '.5';
-        b.style.cursor = 'default';
-        b.title = 'A pool share, not a transferable asset';
-        return b;
-      }
       b.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
         onPick(a);
-        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+        closeSrcMenu();
         refreshDestinations();
         paintSteps(); requote();
       });
       return b;
     }
 
-    function heading(text) {
-      var hd = document.createElement('div');
-      hd.setAttribute('data-logoed', '1');
-      hd.style.cssText = 'padding:10px 12px 6px;font:700 10.5px/1 "Hanken Grotesk",system-ui,sans-serif;'
-        + 'letter-spacing:.08em;text-transform:uppercase;color:var(--text-soft);'
-        + 'border-top:1px solid var(--border);margin-top:6px';
-      hd.textContent = text;
-      return hd;
-    }
-
-    // Stellar's picker has a search field and this had none, which is most of why the two did not look
-    // like the same control (RAZA 2026-10-01). It also stops being a wall once the curated roster is
-    // added below. Clicks are swallowed so typing does not close the menu that owns it.
-    var search = document.createElement('input');
-    search.type = 'text';
-    search.className = 'lx-srcsearch';
-    search.placeholder = 'Search asset or issuer';
-    search.setAttribute('data-logoed', '1');
-    search.style.cssText = 'width:100%;box-sizing:border-box;margin:0 0 4px;padding:9px 11px;'
-      + 'border-radius:9px;border:1px solid var(--border,rgba(255,255,255,.14));'
-      + 'background:var(--surface-2,rgba(255,255,255,.05));color:inherit;font-family:inherit;'
-      + 'font-size:13px;outline:none';
-    search.addEventListener('click', function (e) { e.stopPropagation(); });
-    search.addEventListener('input', function () { render(search.value); });
-    menu.appendChild(search);
-
-    var rowsHost = document.createElement('div');
-    menu.appendChild(rowsHost);
-
-    function matches(a, q) {
-      if (!q) return true;
-      q = q.toLowerCase();
-      return String(a.symbol || '').toLowerCase().indexOf(q) >= 0
-        || String(a.issuerName || '').toLowerCase().indexOf(q) >= 0
-        || String(a.issuer || '').toLowerCase().indexOf(q) >= 0;
-    }
-
-    function render(q) {
-      rowsHost.innerHTML = '';
+    function render() {
+      listHost.innerHTML = '';
       var shown = 0;
 
-      list.filter(function (a) { return matches(a, q); }).forEach(function (a) {
+      list.forEach(function (a) {
         shown++;
-        rowsHost.appendChild(srcOptRow(a, function (picked) {
+        listHost.appendChild(optRow(a, function (picked) {
           SRC = picked; QUOTE = null; AXQ = null;
         }));
       });
 
-      // EVERYTHING ELSE THE WALLET HOLDS, under a heading that says how it gets out. These are chosen
-      // the same way as any other source; the difference is that picking one adds a swap to XRP in
-      // front of the transfer, and the heading is where that is first said.
-      var otherF = other.filter(function (o) { return matches(o, q); });
-      if (otherF.length) {
-        shown += otherF.length;
-        rowsHost.appendChild(heading('Swapped to XRP first'));
-        otherF.forEach(function (o) {
-          var row = srcOptRow(o, function () {
-            SRC = sourceAssets().filter(function (x) {
-              return x.viaSwap && x.currency === o.currency && x.issuer === o.issuer;
-            })[0] || SRC;
-            QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
-          });
-          if (!o.lp) row.title = o.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
-          rowsHost.appendChild(row);
+      // Everything else the wallet holds. Picking one puts a swap to XRP in front of the transfer --
+      // said in the Review step and in this row's tooltip, no longer in a heading Stellar does not have.
+      other.forEach(function (o) {
+        shown++;
+        var row = optRow(o, function () {
+          SRC = sourceAssets().filter(function (x) {
+            return x.viaSwap && x.currency === o.currency && x.issuer === o.issuer;
+          })[0] || SRC;
+          QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
         });
-      }
+        row.title = o.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
+        listHost.appendChild(row);
+      });
 
       // THE MAJOR TOKENS, HELD OR NOT (RAZA 2026-10-01: "its not showing the assets (10 assets) that I
-      // asked for"). The balance reads 0 on these and that is the honest number — picking one is
-      // allowed, and the Review gate refuses to go anywhere without an amount, so nothing can be sent
-      // that is not there. Anything the wallet actually holds is already above and is filtered out
-      // here, so a token never appears twice with two different balances.
+      // asked for"). The balance on these is 0 and that is the honest number -- the Review gate refuses
+      // to go anywhere without an amount, so nothing can be sent that is not there. Anything the wallet
+      // actually holds is already above and is filtered out here, so no token appears twice.
       var held = {};
       list.concat(other).forEach(function (a) { held[String(a.currency) + '|' + String(a.issuer)] = 1; });
-      var cur = (CURATED || []).filter(function (t) {
-        return !held[String(t.currency) + '|' + String(t.issuer)] && matches(t, q);
-      });
-      if (cur.length) {
-        shown += cur.length;
-        rowsHost.appendChild(heading('Major XRP Ledger assets'));
-        cur.forEach(function (t) {
-          var row = srcOptRow(t, function (picked) {
-            SRC = picked; QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
-          });
-          row.title = t.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
-          rowsHost.appendChild(row);
+      (CURATED || []).forEach(function (t) {
+        if (held[String(t.currency) + '|' + String(t.issuer)]) return;
+        shown++;
+        var row = optRow(t, function (picked) {
+          SRC = picked; QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
         });
-      }
+        row.title = t.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
+        listHost.appendChild(row);
+      });
 
-      if (!shown) {
-        var none = document.createElement('div');
-        none.setAttribute('data-logoed', '1');
-        none.style.cssText = 'padding:14px 12px;font-size:13px;color:var(--text-soft)';
-        none.textContent = 'No asset matches that.';
-        rowsHost.appendChild(none);
-      }
+      var em = document.createElement('div');
+      em.className = 'lx-amempty';
+      em.setAttribute('data-logoed', '1');
+      em.hidden = true;
+      em.style.cssText = 'padding:14px 12px;font-size:13px;color:var(--text-soft)';
+      em.textContent = 'No asset matches that.';
+      listHost.appendChild(em);
+      if (!shown) em.hidden = false;
+      filter();
     }
 
-    render('');
+    // Show/hide rather than rebuild, the way Stellar's filters: the rows keep their listeners and the
+    // list does not flicker under the cursor.
+    function filter() {
+      var v = (q.value || '').trim().toLowerCase(), shown = 0;
+      [].slice.call(listHost.querySelectorAll('button[data-q]')).forEach(function (b) {
+        var ok = !v || (b.getAttribute('data-q') || '').indexOf(v) >= 0;
+        b.style.display = ok ? 'flex' : 'none';
+        if (ok) shown++;
+      });
+      var em = listHost.querySelector('.lx-amempty');
+      if (em) em.hidden = shown > 0;
+    }
+
+    q.addEventListener('input', filter);
+    q.addEventListener('click', function (e) { e.stopPropagation(); });
+    q.addEventListener('keydown', function (e) { e.stopPropagation(); });
+
+    render();
     // The roster is a network read, so the menu opens on what is already known and fills in when it
     // lands. Re-rendered through the current filter so a search typed in the meantime is not undone.
     curatedTokens().then(function () {
-      if (!wrap.parentNode) return;              // the menu was closed while it was in flight
+      if (!document.getElementById('lx-br-amenu')) return;   // closed while it was in flight
       // NAME THE ISSUERS THE WALLET ALREADY HOLDS. otherHoldings() reads trust lines, which carry an
-      // address and nothing else, so a held USDC had no "Circle" on it and the field's own promise —
-      // "Search asset or issuer" — was only half true: typing an issuer found the curated rows and
+      // address and nothing else, so a held USDC had no "Circle" on it and the field's own promise --
+      // "Search asset or issuer" -- was only half true: typing an issuer found the curated rows and
       // silently missed every row above them. The roster knows the names, so they are borrowed here.
       var byKey = {};
       (CURATED || []).forEach(function (t) { byKey[String(t.currency) + '|' + String(t.issuer)] = t.issuerName; });
@@ -1427,20 +1424,23 @@
         var n = byKey[String(a.currency) + '|' + String(a.issuer)];
         if (n) a.issuerName = n;
       });
-      render(search.value || '');
+      render();
     });
 
-    wrap.appendChild(menu);
-    var host = as.parentNode;
-    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-    host.appendChild(wrap);
-    // Anchor the menu under the CHIP now that offsets resolve against the host. Read after append so
-    // these are the offsets the browser actually computed, not ones predicted before layout.
-    wrap.style.top = ((as.offsetTop || 0) + (as.offsetHeight || 0) + 6) + 'px';
-    wrap.style.left = (as.offsetLeft || 0) + 'px';   // the dest menu keeps right:0 instead
+    // Positioned from the chip's rect against the document, the way Stellar's is. The menu lives in
+    // <body> rather than inside the step: each .br-step carries a transform for its slide, and a
+    // positioned child of a transformed element is trapped inside it.
+    var r = as.getBoundingClientRect();
+    var left = r.left + window.scrollX;
+    var maxL = window.scrollX + document.documentElement.clientWidth - m.offsetWidth - 8;
+    m.style.left = Math.max(window.scrollX + 8, Math.min(maxL, left)) + 'px';
+    m.style.top = (r.bottom + window.scrollY + 6) + 'px';
+    setTimeout(function () { try { q.focus(); } catch (_) {} }, 20);
+
     setTimeout(function () {
-      document.addEventListener('click', function away() {
-        if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      document.addEventListener('click', function away(e) {
+        if (e.target && e.target.closest && e.target.closest('#lx-br-amenu')) return;
+        closeSrcMenu();
         document.removeEventListener('click', away, true);
       }, true);
     });
