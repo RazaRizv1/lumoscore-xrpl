@@ -1968,16 +1968,27 @@
     QUOTING = false;
     var niOut = QUOTE ? Number(QUOTE.amountOutFormatted) : null;
     var thOut = THQ ? (Number(THQ.expected) / (THQ.e8 || 1e8)) : null;
-    var sameAsset = QUOTE && THQ && DEST && DEST.token && !DEST.token.contractAddress;
+    // THORCHAIN DELIVERS THE CHAIN'S NATIVE COIN AND NOTHING ELSE, so it cannot be the route for a
+    // destination asset that is not that coin (RAZA 2026-10-04: "Why cant i select thorchain", which
+    // led here). Measured on 7b9d85a0 before this: XRP -> Avalanche with USDC chosen, NEAR Intents
+    // refusing the pair and THORChain quoting, left the asset chip reading "USDC / USD Coin" above a
+    // figure of "~ 6.73031335 AVAX". The number was right and the label was a different asset -- which
+    // this file's own notes call the most dangerous way for a bridge to be wrong, about the Cosmos Hub
+    // case, in a guard that only covered chains where NEAR Intents is not offered at all.
+    var wantsNative = !DEST || !DEST.token || !DEST.token.contractAddress;
+    var thOk = THQ && wantsNative;
+    var sameAsset = QUOTE && thOk;
     if (sameAsset) BEST = (thOut > niOut) ? 'th' : 'ni';
     else if (QUOTE) BEST = 'ni';
-    else if (THQ) BEST = 'th';
+    else if (thOk) BEST = 'th';
     else BEST = '';
     // A HAND-PICKED ROUTE WINS, but only if it actually answered. Honouring a choice whose quote came
     // back empty would leave the page showing a route it cannot send by, with no figures and a live
     // Bridge button -- worse than quietly falling back to the one that did answer.
     if (PICKED && PICKED_FOR === destChain()) {
-      if ((PICKED === 'ni' && QUOTE) || (PICKED === 'th' && THQ) || (PICKED === 'ax' && AXQ)) BEST = PICKED;
+      // `thOk`, not THQ: a hand-picked THORChain must clear the same asset test, or choosing it by hand
+      // would walk straight back into delivering AVAX under a label reading USDC.
+      if ((PICKED === 'ni' && QUOTE) || (PICKED === 'th' && thOk) || (PICKED === 'ax' && AXQ)) BEST = PICKED;
     }
     // FROM THE ROUTES' OWN NOTES, NOT FROM LAST_NOTE (RAZA 2026-10-04: "nothing in You will receive",
     // and once the note was made visible it read "Comparing routes…" and stayed there).
@@ -2405,6 +2416,18 @@
           if (QUOTE.timeEstimate != null) o.eta = '~' + QUOTE.timeEstimate + 's';
         } else o.state = QUOTING ? 'wait' : 'none';
       } else if (r === 'th') {
+        // SAID ON THE CARD, so "why can't I select THORChain" has an answer on the card itself rather
+        // than only in what the page declines to do. It swaps into the destination chain's native coin,
+        // so a non-native destination asset puts it out of the running however good its quote is.
+        var thNat = (function () {
+          var p = PLACES[key];
+          return (p && p.th && TH_NATIVE[p.th]) ? (String(TH_NATIVE[p.th]).split('.')[1] || '') : '';
+        })();
+        if (DEST && DEST.token && DEST.token.contractAddress) {
+          o.state = 'none';
+          o.error = 'Delivers ' + (thNat || 'the native coin') + ', not ' + DEST.token.symbol + '.';
+          return o;
+        }
         if (THQ) {
           o.recv = fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8) + ' ' + THQ.symbol;
           if (THQ.seconds != null) o.eta = '~' + THQ.seconds + 's';
@@ -2893,6 +2916,15 @@
     // that away and left the button reading "Waiting for a quote", which describes a network delay
     // rather than something the user can act on.
     if (!(AXQ || QUOTE || THQ)) return LAST_NOTE || 'Waiting for a quote';
+    // A QUOTE IS NOT A ROUTE. This gate asked whether ANY quote object existed, which stopped being
+    // the same question the moment a quote could be disqualified: with USDC chosen on Avalanche,
+    // NEAR Intents refuses the pair and THORChain answers but can only deliver AVAX, so settle()
+    // correctly leaves BEST empty -- and the button still read "Bridge 50 XRP", enabled, with nothing
+    // behind it. Found while verifying the fix above, which is the only reason it was found at all.
+    if (!BEST) {
+      return 'No route can deliver ' + ((DEST && DEST.token) ? DEST.token.symbol : 'this asset')
+        + ' to ' + placeLabel(chain) + '.';
+    }
     return '';
   }
   function setCta() {
