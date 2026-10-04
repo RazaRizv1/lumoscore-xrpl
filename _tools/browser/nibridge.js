@@ -2590,14 +2590,39 @@
     });
     if (host.innerHTML !== h) host.innerHTML = h;
 
-    var cur = rows.filter(function (x) { return x.route === BEST; })[0];
+    // SHOWN FOR THE MARKED ROUTE, QUOTED OR NOT (RAZA 2026-10-04: "receive, bridge fee, Estimated time
+    // section is missing. Make sure its identical to that on Stellar").
+    //
+    // This was gated on `cur.state === 'ok'`, so the block existed only once a quote had landed -- and
+    // vanished for exactly the states he kept screenshotting. Stellar's does not: his own screenshot
+    // has NEAR Intents marked, reading "Quoting for this pair is not available", with Receive / Bridge
+    // fee / Estimated time printed underneath it anyway. Nothing in those three rows needs a quote.
+    // What is delivered and what the fee is are facts about the ROUTE; only the time comes from a
+    // quote, and a dash is what every other unknown figure on this page already looks like.
+    //
+    // Keyed on `shown` rather than BEST, so it follows the card that is actually marked -- including a
+    // hand-pick at an amount nothing can price, which is the case that had nothing underneath it.
+    var cur = rows.filter(function (x) { return x.route === shown; })[0];
     var sh = '';
-    if (cur && cur.state === 'ok') {
+    if (cur) {
       var row = function (ic, k, v) {
         return '<div class="lx-brs-row"><span class="lx-brs-ic">' + SICON[ic] + '</span>'
           + '<span class="lx-brs-k">' + k + '</span><span class="lx-brs-v">' + esc2(v) + '</span></div>';
       };
-      sh = row('recv', 'Receive', cur.recv || '—')
+      // The ASSET, as Stellar's row shows ("Receive  ETH"), not the amount -- the amount already has
+      // its own line on the left, under "You will receive".
+      var recvAsset = '—';
+      if (cur.route === 'ni') recvAsset = (DEST && DEST.token) ? DEST.token.symbol : '—';
+      else if (cur.route === 'th') {
+        // destChain(), NOT a bare `key`: routeRows() has one, this function does not, and the
+        // ReferenceError that followed was thrown inside paintQuote -- so settle() stopped before
+        // setCta(), leaving the button frozen on "Comparing routes…" with a perfectly good quote
+        // already painted beside it. Caught by re-running the same transfer against the previous
+        // deployment, which settled, and this one, which did not.
+        var p = PLACES[destChain()];
+        recvAsset = (p && p.th && TH_NATIVE[p.th]) ? (String(TH_NATIVE[p.th]).split('.')[1] || '—') : '—';
+      } else recvAsset = SRC ? SRC.symbol : '—';
+      sh = row('recv', 'Receive', recvAsset)
         + row('fee', 'Bridge fee', routeFee(cur.route))
         + row('time', 'Estimated time', cur.eta || '—')
         + '<div class="lx-brs-note">Delivered straight to the address you gave — there is nothing to '
@@ -2994,12 +3019,18 @@
     // extra line under "You will receive".
     var ob = overBalance();
     if (ob) { var sb = srcBalance(); step2Err('Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'); }
-    // AND NOTHING ELSE GOES IN THIS SLOT. It briefly carried "Enter the receiving address to price
-    // this transfer." -- written when the receive line could not show a figure without one. The line
-    // shows an estimate now, so that sentence was both redundant and an XRPL-only extra: Stellar's
-    // banner, in the screenshot being matched, carries the balance message and nothing else. The route
-    // card still says what it is waiting on, which is where Stellar says it too.
-    else step2Err('');
+    // AND THE ROUTE'S REFUSAL, WHICH IS STELLAR'S SECOND CASE FOR THIS SLOT (RAZA 2026-10-04: "since I
+    // dont have enough XRP to do Near Intents swap, please show an error in red below like you show for
+    // insufficient balance"). Stellar's own order is overBalance, then the route message, then a
+    // malformed address; this had only the first of the three.
+    //
+    // Only once the quoting has settled and only when NOTHING can carry the transfer: a route that
+    // declined while another is working is not an error, it is the page choosing, and printing it in
+    // red would make every successful two-route transfer look broken. Each route's own words, NEAR
+    // Intents first -- it is the one that answers with a number you can act on.
+    else if (!QUOTING && !BEST && bridgeXrp() > 0 && destChain()) {
+      step2Err(NOTE.ni || NOTE.th || NOTE.ax || '');
+    } else step2Err('');
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
