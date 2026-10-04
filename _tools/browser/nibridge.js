@@ -2881,7 +2881,22 @@
     // extra line under "You will receive".
     var ob = overBalance();
     if (ob) { var sb = srcBalance(); step2Err('Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'); }
-    else step2Err('');
+    // WHY THE FIGURE IS STILL A DASH (RAZA, eight times: "You will receive is not being calculated").
+    //
+    // The address field was empty in every screenshot, and it is the thing standing in the way: NEAR
+    // Intents, Axelar and THORChain are all SOLVER-priced, and their quote endpoints take a recipient --
+    // no address, no quote, so the receive line has nothing to show. Stellar looks different here for a
+    // structural reason rather than a better one: the figure he was comparing against comes from CCTP,
+    // which is a fixed-rate burn-and-mint and can be worked out locally as amount minus the fee, with
+    // nobody asked. Stellar's own NEAR Intents card, in the same screenshot, shows no figure either.
+    //
+    // So it is said in Stellar's own error slot, which already carries Stellar's address messages
+    // ("That doesn't look like a valid X address."). The route card has said this all along; the
+    // complaint was never that the page was silent, it was that the sentence was nowhere near the
+    // number it explains.
+    else if (!recipient() && bridgeXrp() > 0) {
+      step2Err('Enter the receiving address to price this transfer.');
+    } else step2Err('');
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
