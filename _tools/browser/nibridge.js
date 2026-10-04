@@ -1921,7 +1921,23 @@
     if (PICKED && PICKED_FOR === destChain()) {
       if ((PICKED === 'ni' && QUOTE) || (PICKED === 'th' && THQ) || (PICKED === 'ax' && AXQ)) BEST = PICKED;
     }
-    paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : (LAST_NOTE || 'No route for this amount'));
+    // FROM THE ROUTES' OWN NOTES, NOT FROM LAST_NOTE (RAZA 2026-10-04: "nothing in You will receive",
+    // and once the note was made visible it read "Comparing routes…" and stayed there).
+    //
+    // LAST_NOTE cannot be trusted here, because the placeholder overwrites it. quoteNi() checks the
+    // 2 XRP floor SYNCHRONOUSLY -- before its first await -- so by the time runQuote() reaches
+    // `paintQuote(null, 'Comparing routes…')` one line later, LAST_NOTE already held "Minimum 2 XRP"
+    // and the placeholder clobbered it. Nothing wrote it again, because that route never made a
+    // request, so settle() read the placeholder back and published it as the final answer. The page
+    // sat on "Comparing routes…" forever while the route panel beside it correctly said why.
+    //
+    // NOTE.* is per route and is only ever written by a route about itself. NEAR Intents first: when
+    // both decline it is the one carrying a number the reader can act on ("Minimum 2 XRP") while
+    // THORChain's is a flat refusal.
+    var reason = NOTE.ni || NOTE.th || NOTE.ax
+      || (LAST_NOTE && LAST_NOTE.indexOf('…') < 0 ? LAST_NOTE : '')
+      || 'No route for this amount';
+    paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : reason);
   }
 
   // Axelar prices the RELAY, not the trade: there is no exchange here, the same asset comes out the
@@ -2040,6 +2056,14 @@
       } else {
         if (v) v.textContent = q ? fmt(q.amountOutFormatted, 6) : '—';
         if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
+      }
+      // THE REASON IS SHOWN WHERE THE FIGURE WOULD BE. The destination column hides .usd, because on a
+      // real quote it holds a dollar figure that column does not want -- so the note this code has
+      // always written was invisible, and a dash with no explanation is what reached the screen. The
+      // class is what lifts it, and it is added ONLY when there is no figure to show instead.
+      if (u) {
+        var showNote = !AXQ && !(BEST === 'th' && THQ) && !q && !!(u.textContent || '').trim();
+        u.classList.toggle('lx-amtnote', showNote);
       }
     }
     paintReview(q, note);

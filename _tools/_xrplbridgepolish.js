@@ -219,6 +219,17 @@ const CSS = '<style id="' + ID + '">'
   + DST + '.br-amt::before{content:"You will receive";font:400 13px/1.2 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-soft);margin-bottom:4px}'
   + DST + '.br-amt .v{font:500 15px/1.2 "Hanken Grotesk",system-ui,sans-serif !important;color:var(--text)}'
   + DST + '.br-amt .usd{display:none !important}'
+  // ...EXCEPT WHEN IT IS CARRYING THE REASON THERE IS NO FIGURE (RAZA 2026-10-04, fourth time asking:
+  // "Also, nothing in You will receive").
+  //
+  // paintQuote() has always written the reason into this node -- "Minimum 2 XRP", "No quote for this
+  // amount", whatever the route said -- and this rule hid it, because on a normal quote the node holds
+  // a dollar figure the destination column does not want. So the one state where the node mattered was
+  // the one state it could not be seen in, and what reached the screen was a bare dash with the
+  // explanation sitting in the route panel on the other side of the card. nibridge.js adds .lx-amtnote
+  // only when there is no quote, and two classes outrank one at equal importance.
+  + DST + '.br-amt .usd.lx-amtnote{display:block !important;font:400 12px/1.35 "Hanken Grotesk",system-ui,sans-serif;'
+  + 'color:var(--text-soft);margin-top:3px;max-width:230px;white-space:normal;text-align:right}'
 
   // NEAR Intents: the delivered token is the user's pick -- a caret says the face is the control that changes it
   + DST + '.br-asset.lx-s2pick{cursor:pointer}'
