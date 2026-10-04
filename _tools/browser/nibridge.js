@@ -909,8 +909,27 @@
     } catch (_) {}
     // A destination already chosen that the new source cannot reach is CLEARED rather than left
     // standing: leaving it would show a pair that no route serves while the trigger insists it is set.
+    //
+    // KEYED ON THE TRIGGER, NOT ON destChain(), AND THAT IS THE WHOLE FIX (RAZA 2026-10-04: "why is
+    // linea on destination showing ETH as the asset", with the route card reading NEAR Intents and no
+    // quote ever arriving).
+    //
+    // destChain() resolves the trigger's label through the option's `data-lxplace`, and an option we
+    // cannot route to never gets one — so for Linea it returns NULL, not "unreachable". The old guard
+    // was `if (cur && !reach[cur])`, so the one case it had to catch was the one case it skipped: a
+    // mapped-but-unreachable destination was cleared, while a destination with no mapping at all sailed
+    // through and stayed selected. Every downstream reader then disagreed about what was going on —
+    // the trigger said Linea, the asset slot kept the design's default, the route card still named
+    // NEAR Intents, and blockReason() said "Choose a destination" about a destination plainly on
+    // screen. No quote is possible for any of it, which is the blank "You will receive".
+    //
+    // Only when the reachable set is actually KNOWN. shown.length is 0 both when nothing is reachable
+    // and when the token list has not landed yet, and clearing a good destination during the second
+    // would be this same bug pointed the other way.
+    var trg0 = $('.brd-trigger'), tnm0 = trg0 && trg0.querySelector('.nm');
+    var named = !!(trg0 && !trg0.classList.contains('is-empty') && tnm0 && norm(tnm0.textContent));
     var cur = destChain();
-    if (cur && !reach[cur]) {
+    if (shown.length && named && (!cur || !reach[cur])) {
       var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
       if (nm) nm.textContent = 'Select Network';
       if (trg) { trg.classList.add('is-empty'); trg.removeAttribute('data-net'); }
