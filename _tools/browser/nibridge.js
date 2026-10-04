@@ -2323,13 +2323,44 @@
   // And it lived only in blockReason(), so the route card went on showing the route's own note -- "Enter
   // a destination address" -- while the button said something else. No route can fix a balance, so this
   // outranks whatever a route has to say about the same amount, and both now say it.
+  function srcBalance() {
+    return {
+      bal: (SRC && SRC.balance != null) ? SRC.balance : ((!SRC || SRC.native) ? XRP_SPEND : null),
+      sym: (SRC && SRC.symbol) || 'XRP',
+    };
+  }
   function overBalance() {
-    var bal = (SRC && SRC.balance != null) ? SRC.balance
-      : ((!SRC || SRC.native) ? XRP_SPEND : null);
-    if (bal == null) return '';
+    var b = srcBalance();
+    if (b.bal == null) return '';
     var spend = (SRC && SRC.viaSwap) ? amountXrp() : bridgeXrp();
-    if (!(spend > bal)) return '';
-    return 'More than your ' + ((SRC && SRC.symbol) || 'XRP') + ' balance';
+    if (!(spend > b.bal)) return '';
+    return 'More than your ' + b.sym + ' balance';
+  }
+
+  // THE BANNER STELLAR SHOWS, in the slot this build already styles for it (RAZA 2026-10-04: "Still no
+  // error of insufficient amount. Please check how it works on Stellar" -- with a screenshot of
+  // Stellar's red bar reading "Amount exceeds your balance (1.0543 USDC).").
+  //
+  // `.br-errslot` is the design's own node and sits in both builds; _xrplbridgepolish already carries
+  // the same rules Stellar's does for it, down to the alert glyph and the width arithmetic that lines
+  // it up under the left card. The only thing missing on this chain was a writer: Stellar's engine
+  // calls lxBrStep2Err() and this one never wrote anything there at all, so the message existed only
+  // on the Review button -- which is below the fold at the moment someone is typing an amount.
+  //
+  // Same wording and the same rounding as Stellar's: floored, 4 decimals, 2 once the figure is in the
+  // thousands.
+  function balFigure(bal, sym) {
+    var dp = Number(bal) >= 1000 ? 2 : 4;
+    var p = Math.pow(10, dp);
+    return fmt(Math.floor(Number(bal) * p) / p, dp) + ' ' + sym;
+  }
+  function step2Err(msg) {
+    var s2 = $('.br-step[data-step="2"]');
+    var e = s2 && s2.querySelector('.br-errslot');
+    if (!e) return;
+    if ((e.textContent || '') === (msg || '')) return;      // never rewrite the node it is being read in
+    e.textContent = msg || '';
+    if (msg) e.setAttribute('data-err', msg); else e.removeAttribute('data-err');
   }
 
   function routeRows() {
@@ -2833,6 +2864,13 @@
     return '';
   }
   function setCta() {
+    // The banner is written here because this runs on every repaint and every quote, so it appears and
+    // clears with the state rather than on a timer. Only the balance goes in it: a route's own note
+    // already has a home on its card, and two places saying the same thing is the mistake that put an
+    // extra line under "You will receive".
+    var ob = overBalance();
+    if (ob) { var sb = srcBalance(); step2Err('Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'); }
+    else step2Err('');
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
