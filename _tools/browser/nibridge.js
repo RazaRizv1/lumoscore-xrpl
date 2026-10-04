@@ -2514,14 +2514,31 @@
     // Display only, exactly as the note above says: the button is still disabled, blockReason() still
     // refuses, and nothing here can make the page send by a route that was never priced. What it fixes
     // is the page appearing to forget which route it intends to use.
-    var shown = picked || BEST || (usable[0] && usable[0].route) || (rows[0] && rows[0].route) || '';
+    // BEST FIRST, AND THAT ORDER IS THE CORRECTION. Marking `picked` ahead of it meant a preference
+    // for a route that cannot carry this pair outranked the route actually carrying it: measured with
+    // XRP -> Avalanche at 50 XRP, NEAR Intents (which refuses that pair) sat marked "IN USE" above
+    // THORChain's figure, on a transfer THORChain was going to make. Naming one route and using
+    // another is the same fault as naming one asset and sending another, one level up.
+    //
+    // So the marker follows what will be used whenever something will be. The hand-pick only decides
+    // the display when NOTHING can quote -- which is the case this started from, and where it is the
+    // only answer the reader has given.
+    var shown = BEST || picked || (usable[0] && usable[0].route) || (rows[0] && rows[0].route) || '';
 
     var h = '';
     rows.forEach(function (o) {
       var sel = o.route === shown;
       var dis = o.state === 'none';
       h += '<button type="button" class="lx-brr" data-lxroutepick="' + o.route + '"'
-        + (dis ? ' disabled' : '') + ' aria-pressed="' + (sel ? 'true' : 'false') + '">'
+        // NOT `disabled` (RAZA 2026-10-04: "Now after selecting Thorchain, i cant switch to Near
+        // Intents"). A disabled button fires no click, so once an amount was unquotable BOTH cards
+        // went dead and whichever route was picked became the one you were stuck with -- the trap this
+        // page kept springing, first by discarding the choice and now by freezing it. A route that
+        // cannot price THIS amount is still a route the reader is allowed to choose; the page says why
+        // on the card and refuses to send, which it already did through BEST and blockReason().
+        // The attribute carries the same styling the disabled one did.
+        + (dis ? ' data-lxnoquote="1" aria-disabled="true"' : '')
+        + ' aria-pressed="' + (sel ? 'true' : 'false') + '">'
         + '<div class="lx-brr-top">'
         + '<span class="lx-brr-mark" data-logo="" data-logoed="1">'
         + '<img src="/assets/networks/' + o.meta.mark + '.png?v=' + ICONV + '" alt=""></span>'
@@ -2582,13 +2599,22 @@
   // is how a page ends up using a route the reader never chose for a pair they never saw.
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest && e.target.closest('[data-lxroutepick]');
-    if (!b || b.disabled) return;
+    if (!b) return;
     e.preventDefault(); e.stopPropagation();
     var r = b.getAttribute('data-lxroutepick');
     var key = destChain();
     if (!r || !key || routesFor(SRC, key).indexOf(r) < 0) return;
     PICKED_FOR = key; PICKED = r;
-    BEST = r;
+    // BEST ONLY WHEN THAT ROUTE ACTUALLY ANSWERED. The card can now be chosen while it is refusing
+    // this amount, and BEST is what the page sends by -- so setting it from a click alone would hand
+    // the Bridge button a route with no quote behind it. settle() applies the same rule; this is the
+    // same rule at the moment of the click.
+    // A pick that cannot answer is recorded as a PREFERENCE and changes nothing about what is sent:
+    // BEST is left exactly as it was, so choosing a route that is refusing this amount cannot take a
+    // working one away. It is remembered, so the moment the amount makes it quotable, settle() honours
+    // it.
+    var answered = (r === 'ni' && QUOTE) || (r === 'th' && THQ) || (r === 'ax' && AXQ);
+    if (answered) BEST = r;
     paintQuote(BEST === 'ni' ? QUOTE : null, '');
   }, true);
 

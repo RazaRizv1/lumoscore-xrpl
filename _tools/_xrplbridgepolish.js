@@ -93,12 +93,12 @@ const CSS = '<style id="' + ID + '">'
   + 'transition:border-color .14s ease,background .14s ease}'
   + '.lx-brr:hover{border-color:var(--border-strong,#34343c)}'
   + '.lx-brr[aria-pressed="true"]{border-color:var(--accent,#ea6a2c);background:var(--accent-pale,rgba(234,106,44,.10))}'
-  + '.lx-brr[disabled]{cursor:default;opacity:.55}'
+  + '.lx-brr[disabled],.lx-brr[data-lxnoquote]{cursor:pointer;opacity:.55}'
   // THE ROUTE IN USE STAYS LEGIBLE EVEN WHEN IT CANNOT PRICE THIS AMOUNT (RAZA 2026-10-04: "the bridge
   // looks unselected"). It IS selected -- orange border, "IN USE" -- but at 55% opacity that reads as
   // greyed out, which is the same complaint as the card unmarking itself, arriving by a different
   // route. Dim the ones that lost; never the one that is still the chosen route.
-  + '.lx-brr[disabled][aria-pressed="true"]{opacity:1}'
+  + '.lx-brr[disabled][aria-pressed="true"],.lx-brr[data-lxnoquote][aria-pressed="true"]{opacity:1}'
   + '.lx-brr[disabled]:hover{border-color:var(--border)}'
   + '.lx-brr-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}'
   // ON THE SITE'S OWN SCALE (RAZA 2026-09-17: "the next inside bridge route doesn't match our font and font size").
@@ -343,8 +343,8 @@ const CSS = '<style id="' + ID + '">'
   // shout louder than the transfer it belongs to.
   + '.lx-brr[aria-pressed="true"]{border-color:var(--accent,#ea6a2c) !important;'
   + 'background:var(--surface) !important;box-shadow:none !important}'
-  + '.lx-brr[disabled]{opacity:.55 !important}'
-  + '.lx-brr[disabled][aria-pressed="true"]{opacity:1 !important}'
+  + '.lx-brr[disabled],.lx-brr[data-lxnoquote]{opacity:.55 !important}'
+  + '.lx-brr[disabled][aria-pressed="true"],.lx-brr[data-lxnoquote][aria-pressed="true"]{opacity:1 !important}'
   + '.lx-brr .lx-brr-soon{margin:10px 0 0 51px !important}'
   + '.lx-brr-stats{margin-top:18px;display:flex;flex-direction:column;gap:15px;padding:4px 4px 0}'
   + '.lx-brr-stats[hidden]{display:none}'
