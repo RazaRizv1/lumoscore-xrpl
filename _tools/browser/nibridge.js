@@ -2111,6 +2111,26 @@
       // APT figure, which is worse than no unit at all. So the ticker is written into the text, and the
       // line reads the same as Stellar's by the time it reaches the screen.
       var recvUnit = function (n, dp, sym) { return '~ ' + fmt(n, dp) + (sym ? ' ' + sym : ''); };
+      // AN INDICATIVE FIGURE WHILE THERE IS NO QUOTE, because that is what Stellar shows and I was
+      // wrong about why (RAZA: "you're not showing You will receive like you do on Stellar").
+      //
+      // I had argued the two could not match because every route here is solver-priced and needs a
+      // recipient. Look at his screenshot again: Stellar prints "~ 11.03 USDC" with the address field
+      // EMPTY and an amount larger than the balance. It is not quoting either -- it is arithmetic,
+      // amount minus the 0.2% fee, which CCTP can do because it delivers the same asset it took.
+      //
+      // The same arithmetic works here, it just needs one more step, because the asset changes: the
+      // XRP that reaches the route, converted at the two prices 1Click already publishes in its token
+      // list. It is an estimate and it says so with the same tilde Stellar uses, and the moment a real
+      // quote lands it is replaced by the solver's own number.
+      var estimate = function () {
+        if (!DEST || !DEST.token) return null;
+        var px = ORIGIN && Number(ORIGIN.price), dpx = Number(DEST.token.price);
+        if (!(px > 0) || !(dpx > 0)) return null;
+        var xrp = bridgeXrp();
+        if (!(xrp > 0)) return null;
+        return { amt: (netDrops(xrp).net / 1e6) * px / dpx, sym: DEST.token.symbol };
+      };
       if (AXQ) {
         if (v) v.textContent = recvUnit(AXQ.delivered, 6, SRC ? SRC.symbol : '');
         if (u) u.textContent = 'after ' + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee';
@@ -2122,9 +2142,10 @@
         if (u) u.textContent = 'via THORChain' + (QUOTE ? ' — better price' : '')
           + (THQ.seconds != null ? (' · ~' + THQ.seconds + 's') : '');
       } else {
+        var est = q ? null : estimate();
         if (v) v.textContent = q
           ? recvUnit(q.amountOutFormatted, 6, (DEST && DEST.token) ? DEST.token.symbol : '')
-          : '—';
+          : (est ? recvUnit(est.amt, 6, est.sym) : '—');
         if (u) u.textContent = q ? ('~ $' + fmt(q.amountOutUsd, 2)) : (note || '');
       }
       // The note stays in the node for the route panel's sake and is NOT revealed here: the column is
@@ -2881,22 +2902,12 @@
     // extra line under "You will receive".
     var ob = overBalance();
     if (ob) { var sb = srcBalance(); step2Err('Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'); }
-    // WHY THE FIGURE IS STILL A DASH (RAZA, eight times: "You will receive is not being calculated").
-    //
-    // The address field was empty in every screenshot, and it is the thing standing in the way: NEAR
-    // Intents, Axelar and THORChain are all SOLVER-priced, and their quote endpoints take a recipient --
-    // no address, no quote, so the receive line has nothing to show. Stellar looks different here for a
-    // structural reason rather than a better one: the figure he was comparing against comes from CCTP,
-    // which is a fixed-rate burn-and-mint and can be worked out locally as amount minus the fee, with
-    // nobody asked. Stellar's own NEAR Intents card, in the same screenshot, shows no figure either.
-    //
-    // So it is said in Stellar's own error slot, which already carries Stellar's address messages
-    // ("That doesn't look like a valid X address."). The route card has said this all along; the
-    // complaint was never that the page was silent, it was that the sentence was nowhere near the
-    // number it explains.
-    else if (!recipient() && bridgeXrp() > 0) {
-      step2Err('Enter the receiving address to price this transfer.');
-    } else step2Err('');
+    // AND NOTHING ELSE GOES IN THIS SLOT. It briefly carried "Enter the receiving address to price
+    // this transfer." -- written when the receive line could not show a figure without one. The line
+    // shows an estimate now, so that sentence was both redundant and an XRPL-only extra: Stellar's
+    // banner, in the screenshot being matched, carries the balance message and nothing else. The route
+    // card still says what it is waiting on, which is where Stellar says it too.
+    else step2Err('');
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
