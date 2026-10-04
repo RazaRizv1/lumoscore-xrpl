@@ -2333,8 +2333,20 @@
   // choosing on the reader's behalf, and a chosen route that is never named is a black box asking to
   // be trusted with money. Every candidate is listed, each with its own answer, and the one being
   // used is marked -- so "THORChain, and it pays more" is visible rather than implied.
+  // 1Click's own cut, in basis points. Stellar's niFeeBps() returns 20 on its keyed path and 25
+  // unkeyed; this build sends ONECLICK_JWT, so 20 is the rate that applies and the figure Stellar
+  // prints beside the same route.
+  var NI_FEE_BPS = 20;
+  // Stellar's own ~30 seconds for this route, from _nearintents.js (`etaSeconds: 30, etaText:
+  // '~30 seconds'`). It is a property of the route rather than of a quote, which is why Stellar can
+  // print it before anything has been priced and this build was showing a dash.
+  var NI_ETA = '~30 seconds';
   var ROUTE_META = {
-    ni: { name: 'NEAR Intents', mark: 'nearintents',
+    // THE GREEN NEAR MARK, which is the one Stellar draws (RAZA 2026-10-04: "On Stellar the near
+    // intents logo color is green"). Stellar's LZ_MARK points at /assets/tokens/ni/NEAR.png -- NEAR's
+    // own icon -- while this used /assets/networks/nearintents.png, a different, light rendition. Both
+    // files ship in this build, so it was only ever naming the wrong one.
+    ni: { name: 'NEAR Intents', img: '/assets/tokens/ni/NEAR.png', mark: 'nearintents',
       sub: 'Delivers the destination chain’s own token, not a wrapped copy' },
     ax: { name: 'Axelar', mark: 'axelar',
       sub: 'Carries interchain tokens, and is the only way to XRPL EVM' },
@@ -2463,7 +2475,12 @@
       return AXQ ? (fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee') : 'destination gas';
     }
     if (r === 'th') return pct + ' + THORChain’s swap rate';
-    return pct + ' + solver fee';
+    // NAMED AND NUMBERED, as Stellar states it (RAZA 2026-10-04: "The bridge fees and estimated time
+    // also are not same"). Stellar composes this as `pct + " + " + (niFeeBps/100) + "% NEAR"`, which
+    // reads "0.2% + 0.2% NEAR"; this said "+ solver fee", which names no number at all on the one line
+    // a reader checks before signing. 20 bps is the keyed rate -- this build sends ONECLICK_JWT, the
+    // same as Stellar's keyed path, and Stellar's own niFeeBps() returns 20 for it.
+    return pct + ' + ' + (+(NI_FEE_BPS / 100).toFixed(2)) + '% NEAR';
   }
 
   function paintRoutePanel() {
@@ -2541,9 +2558,15 @@
         + ' aria-pressed="' + (sel ? 'true' : 'false') + '">'
         + '<div class="lx-brr-top">'
         + '<span class="lx-brr-mark" data-logo="" data-logoed="1">'
-        + '<img src="/assets/networks/' + o.meta.mark + '.png?v=' + ICONV + '" alt=""></span>'
+        + '<img src="' + (o.meta.img || ('/assets/networks/' + o.meta.mark + '.png?v=' + ICONV)) + '" alt=""></span>'
         + '<span class="lx-brr-hd"><span class="lx-brr-nm" data-logoed="1">' + esc2(o.meta.name) + '</span>'
-        + '<span class="lx-brr-sub">' + esc2(o.meta.sub) + '</span></span>';
+        // NAMES WHAT ARRIVES, as Stellar's does: "ETH delivered to your address" (its LZ_SUB entry for
+        // this route is literally "{ASSET} delivered to your address"). The generic sentence this had
+        // is true of the route in the abstract and says nothing about the transfer in front of you.
+        + '<span class="lx-brr-sub">' + esc2(
+            (o.route === 'ni' && DEST && DEST.token)
+              ? (DEST.token.symbol + ' delivered to your address')
+              : o.meta.sub) + '</span></span>';
       // The tag names WHY this one, and only where that is a fact rather than a slogan: it appears on
       // the chosen route when a rival actually answered too, so "BEST PRICE" always means it beat
       // something. A badge on a route that was the only option would be marketing.
@@ -2622,11 +2645,22 @@
         var p = PLACES[destChain()];
         recvAsset = (p && p.th && TH_NATIVE[p.th]) ? (String(TH_NATIVE[p.th]).split('.')[1] || '—') : '—';
       } else recvAsset = SRC ? SRC.symbol : '—';
+      // THE ROUTE'S OWN TIME when no quote has given one. Stellar prints "~30 seconds" for NEAR
+      // Intents before anything is priced, because that is a property of the route; this printed a
+      // dash. THORChain's figure comes from its quote and has no published default, so it keeps the
+      // dash until the quote arrives rather than being given an invented one.
+      var eta = cur.eta || (cur.route === 'ni' ? NI_ETA : '—');
+      // Stellar's wording, with the asset and the chain filled in: "Delivered as ETH to your address
+      // automatically — no claim, and no gas needed on Arbitrum."
+      var place = placeLabel(destChain());
+      var note = (cur.route === 'ni' && recvAsset !== '—')
+        ? ('Delivered as ' + recvAsset + ' to your address automatically — no claim, and no gas needed on '
+           + place + '.')
+        : 'Delivered straight to the address you gave — there is nothing to claim on the other side.';
       sh = row('recv', 'Receive', recvAsset)
         + row('fee', 'Bridge fee', routeFee(cur.route))
-        + row('time', 'Estimated time', cur.eta || '—')
-        + '<div class="lx-brs-note">Delivered straight to the address you gave — there is nothing to '
-        + 'claim on the other side.</div>';
+        + row('time', 'Estimated time', eta)
+        + '<div class="lx-brs-note">' + esc2(note) + '</div>';
     }
     if (stats.innerHTML !== sh) stats.innerHTML = sh;
     stats.hidden = !sh;
