@@ -1097,11 +1097,30 @@
   // token with no contract address is the native one — that is how 1Click marks it, and it is the same
   // test the sort below already used to put it first.
   function destTokens(chain) {
-    var list = (BY_CHAIN[chain] || []).filter(function (t) {
+    var all = (BY_CHAIN[chain] || []);
+    var list = all.filter(function (t) {
       if (!t || !t.contractAddress) return true;
       var s = String(t.symbol || '').toUpperCase();
       return s === 'USDC' || s === 'USDT';
     });
+    // A CHAIN WITH NO NATIVE ENTRY KEEPS ITS WRAPPED ONE. Checked across all 36 chains 1Click serves
+    // rather than assumed: every one lists its own coin with no contract address EXCEPT near, whose
+    // coin appears only as wNEAR at wrap.near. Filtering on "no contract" alone therefore left NEAR
+    // offering USDC and USDT and no way to receive NEAR at all. It keeps the name wNEAR rather than
+    // being relabelled, because a wrapped token is not the coin it is named after and this file has
+    // said so about every other chain. (hypercore also lists no native; 1Click has no HYPE entry at
+    // all, so there is nothing to recover there and it keeps its stablecoins.)
+    //
+    // NAMED, NOT PATTERN-MATCHED. The first version of this looked for any symbol shaped like a
+    // wrapped ticker and took the first one — which on hypercore picked up wNEAR, a wrapped NEAR
+    // sitting on Hyperliquid and emphatically not Hyperliquid's own coin. That is the precise mistake
+    // this file warns about everywhere else, committed by the code meant to prevent it. One chain
+    // needs this and it is named.
+    var W = { near: 'wNEAR' };
+    if (W[chain] && !list.some(function (t) { return !t.contractAddress; })) {
+      var w = all.filter(function (t) { return String(t.symbol || '') === W[chain]; })[0];
+      if (w) list.unshift(w);
+    }
     // Native first, then by descending USD price as a rough proxy for prominence, then alphabetical.
     list.sort(function (a, b) {
       var an = a.contractAddress ? 1 : 0, bn = b.contractAddress ? 1 : 0;
@@ -1109,6 +1128,16 @@
       var ap = Number(a.price) || 0, bp = Number(b.price) || 0;
       if (ap !== bp) return bp - ap;
       return String(a.symbol).localeCompare(String(b.symbol));
+    });
+    // ONE ROW PER TICKER, and only after the sort so the survivor is the higher-priced — the liquid
+    // one — rather than whichever came back first. hypercore lists USDC twice under two contracts,
+    // which rendered as two identical-looking rows with nothing to choose between them.
+    var seen = {};
+    list = list.filter(function (t) {
+      var k = String(t.symbol || '').toUpperCase();
+      if (seen[k]) return false;
+      seen[k] = 1;
+      return true;
     });
     return list;
   }
@@ -2329,7 +2358,19 @@
     // choice the reader just made.
     var picked = (PICKED && PICKED_FOR === destChain()
       && usable.some(function (x) { return x.route === PICKED; })) ? PICKED : '';
-    var shown = picked || BEST || (usable[0] && usable[0].route) || '';
+    // ...AND IT STAYS MARKED EVEN WHEN IT CANNOT PRICE THIS AMOUNT (RAZA 2026-10-04, repeatedly: "when
+    // i enter any amount in available to send, the bridge automatically gets deselected").
+    //
+    // The card was marked with no amount typed (state 'idle') and UNMARKED the moment one was, because
+    // a route that declines goes to state 'none' and drops out of `usable`. So typing a figure made the
+    // panel look like it had lost its route — when all that happened is the route said why it could not
+    // carry that amount, on the card, in its own words. Reading "deselected" from that is the only
+    // sensible reading, and it was the page's fault for saying it.
+    //
+    // Display only, exactly as the note above says: the button is still disabled, blockReason() still
+    // refuses, and nothing here can make the page send by a route that was never priced. What it fixes
+    // is the page appearing to forget which route it intends to use.
+    var shown = picked || BEST || (usable[0] && usable[0].route) || (rows[0] && rows[0].route) || '';
 
     var h = '';
     rows.forEach(function (o) {
