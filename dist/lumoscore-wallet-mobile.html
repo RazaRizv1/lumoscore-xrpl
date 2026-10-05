@@ -9192,16 +9192,25 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           clearTimeout(t);
           done1();
           if (status === 200) { setLogo(url); return; }
-          if (status === 400 || status === 404) { setLetter(); return; }
+          if (status === 400 || status === 404 || status === 415) { setLetter(); return; }
           if (status === 429 ? ++held > 6 : ++tries > 3) { setLetter(); return; }
           if (status === 429) backOff();
           setTimeout(go, status === 429 ? 1500 : 1200);
         }
         fetch(url).then(function (r) {
           var st = r.status;
+          var img = /^image\//.test(r.headers.get('content-type') || '');
           // Drain the body, so the bytes land in the browser's own cache and the url() that follows is
           // a hit. A failed read is still an answer about the status, so it settles either way.
-          return r.blob().then(function () { return st; }, function () { return st; });
+          return r.blob().then(function (b) {
+            // A 200 THAT IS NOT AN IMAGE IS NOT A LOGO (RAZA 2026-10-05: "lumos logo in Wallet --> My
+            // assets is not showing up at all"). The endpoint was handing back a Cloudflare Access login
+            // page under content-type image/png: the status said success, so this painted url(…) over a
+            // thing no browser can decode, and the row ended up with no mark AND no letter — the one
+            // outcome worse than either. Checked here as well as at the edge, because a blank disc gives
+            // the next person nothing to go on.
+            return (st === 200 && (!img || !b || b.size < 64)) ? 415 : st;
+          }, function () { return st; });
         }).then(settle, function () { settle(0); });
       });
       pump();
