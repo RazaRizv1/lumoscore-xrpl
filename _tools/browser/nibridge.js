@@ -1035,6 +1035,34 @@
 
   // One observer, on the trigger's own subtree. characterData because the design's handler writes the
   // label as a text node rather than replacing the element.
+  // A NEW DESTINATION IS A NEW TRANSFER (RAZA 2026-10-05: "If i select any network but then change to
+  // another network, the fields should be refreshed. It still shows 1000000 LUMOS").
+  //
+  // The address is the sharp end of this: it is chain-specific, and an Aptos address left sitting in a
+  // field relabelled "Enter Avalanche address" is a transfer to a string that means nothing on the
+  // chain it would be sent to. The amount goes with it because the two were entered together, and the
+  // quote figures go because they belonged to the old pair.
+  //
+  // Watched here rather than in selectChain(), because selectChain only runs for the chains this build
+  // APPENDS -- the design ships eighteen of its own with their own handler, and clearing in one place
+  // would have worked for some networks and not others.
+  var lastDest = null;
+  function destChanged() {
+    var trg = $('.brd-trigger'), nm = trg && trg.querySelector('.nm');
+    var now = (trg && !trg.classList.contains('is-empty') && nm) ? norm(nm.textContent) : '';
+    if (now === lastDest) return;
+    var had = lastDest;
+    lastDest = now;
+    if (!had || !now) return;                         // first pick, or a clear — nothing to carry over
+    var ai = amtInput(); if (ai && ai.value) { ai.value = ''; }
+    var ad = $('.br-addr-in'); if (ad && ad.value) { ad.value = ''; }
+    SWAPQ = null; SIMQ = null; QUOTE = null; THQ = null; AXQ = null; BEST = '';
+    NOTE = { ni: '', th: '', ax: '' };
+    try { paintSourceUsd(); } catch (_) {}
+    try { paintSteps(); setCta(); } catch (_) {}
+    requote();
+  }
+
   function watchDest() {
     blockUnreachableClicks();
     if (window.__lxxDestWatch) return;
@@ -1047,7 +1075,11 @@
       // and reading between the two sees a half-written state that looks unreachable when it is not.
       if (pending) return;
       pending = 1;
-      setTimeout(function () { pending = 0; try { enforceDest(); } catch (_) {} }, 0);
+      setTimeout(function () {
+        pending = 0;
+        try { enforceDest(); } catch (_) {}
+        try { destChanged(); } catch (_) {}
+      }, 0);
     });
     mo.observe(trg, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'data-net'] });
   }

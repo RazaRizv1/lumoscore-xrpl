@@ -190,7 +190,19 @@ const CSS = '<style id="' + ID + '">'
   // ---- the asset: logo, ticker, and what it actually is ----------------------------------------------------
   + S2 + '.br-asset{grid-column:1;display:grid !important;grid-template-columns:auto auto auto;'
   + 'grid-template-areas:"ic nm cv" "ic full full";column-gap:12px;row-gap:1px;align-items:center;justify-content:start}'
-  + S2 + '.br-asset > .br-ic{grid-area:ic;width:44px !important;height:44px !important;min-width:44px !important}'
+  // A DISC BEHIND THE MARK (RAZA 2026-10-05: "LUMOS logo is breaking in from section").
+  //
+  // Nothing was broken: measured on the live chip, the url is right, the image loads, 160x160, 34% of
+  // its pixels opaque. What it does not have is a background -- most token logos are a solid coloured
+  // circle, so they look like a disc whether or not anything is behind them, and LUMOS is a mark on
+  // TRANSPARENCY. With the host transparent too it read as a stray glyph floating on the card. The
+  // picker's rows already put the asset on `var(--surface)`; the chip simply never did.
+  + S2 + '.br-asset > .br-ic{grid-area:ic;width:44px !important;height:44px !important;min-width:44px !important;'
+  // !important, because the chip's icon also carries `.lx-assetic`, an inherited Stellar rule that
+  // sets `background:transparent !important` -- so the first version of this landed in the stylesheet
+  // and changed nothing on the page, which is the override trap this project keeps walking into.
+  // Measured before and after: computed background rgba(0,0,0,0) -> the surface colour.
+  + 'background:var(--surface,#15151a) !important;border-radius:50%;overflow:hidden}'
   + S2 + '.br-asset > .nm{grid-area:nm;font:700 18px/1.15 "Hanken Grotesk",system-ui,sans-serif;color:var(--text)}'
   + S2 + '.br-asset > .cv{grid-area:cv}'
   + '.lx-s2full{grid-area:full;font:400 13.5px/1.3 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-soft)}'
