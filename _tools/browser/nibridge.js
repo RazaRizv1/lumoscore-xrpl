@@ -1956,6 +1956,36 @@
   }
   // THE SWAP IS PRICED BEFORE ANY ROUTE IS ASKED, because until it is there is no XRP figure to ask
   // a route about. One extra ripple_path_find, and only for a swapped source.
+  // The pool's answer for a swapped source, kept apart from SWAPQ so it can never reach a transaction.
+  // Keyed by issuer/currency/amount, for the same reason SWAPQ is: SRC is a new object every repaint.
+  var SIMQ = null, simSeq = 0;
+  function simulateSwapLeg(src, amt) {
+    if (SIMQ && SIMQ.amt === amt
+      && String(SIMQ.currency) === String(src.currency) && String(SIMQ.issuer) === String(src.issuer)) return;
+    if (!window.lxx || !window.lxx.simulateSwap) { SIMQ = null; return; }
+    var my = ++simSeq;
+    SIMQ = null;
+    window.lxx.simulateSwap(rpcT, {
+      buying: false, amount: amt, token: { currency: src.currency, issuer: src.issuer },
+    }).then(function (r) {
+      if (my !== simSeq) return;                         // a newer amount won
+      SIMQ = (r && r.out > 0)
+        ? { currency: src.currency, issuer: src.issuer, amt: amt, out: r.out, impact: r.impact }
+        : null;
+      try { paintQuote(QUOTE, ''); } catch (_) {}
+    }, function () { if (my === simSeq) SIMQ = null; });
+  }
+  // The XRP a swapped source would fetch for display: the router's answer when it has one, the pool's
+  // when it does not. Never used to build a transaction -- see bridgeXrp(), which stays strict.
+  function displayXrp() {
+    var real = bridgeXrp();
+    if (real > 0) return real;
+    if (!SRC || !SRC.viaSwap || !SIMQ) return 0;
+    if (SIMQ.amt !== amountXrp()) return 0;
+    if (String(SIMQ.currency) !== String(SRC.currency) || String(SIMQ.issuer) !== String(SRC.issuer)) return 0;
+    return SIMQ.out;
+  }
+
   function doQuote() {
     if (SRC && SRC.viaSwap) {
       var typed = amountXrp();
@@ -1968,7 +1998,23 @@
         && String(SWAPQ.from.currency) === String(SRC.currency)
         && String(SWAPQ.from.issuer) === String(SRC.issuer);
       if (sameSrc && SWAPQ.amt === typed) return runQuote();
+      // MORE THAN THE WALLET HOLDS: ASK THE POOL, NOT THE ROUTER (RAZA 2026-10-05: "WHy its not
+      // calculating 'You will receive'", 0.25 ATOM against a 0.000154 balance).
+      //
+      // ripple_path_find caps at the holding, so it cannot answer this and the figure was blanked --
+      // honest, but it left the reader with nothing where the Trade page, on the same token, happily
+      // quotes 158.07 XRP for 0.5 ATOM. That page reads the pair's AMM pool and order book directly,
+      // which does not care what anyone holds, and that function now lives in xrpl-core.js so this can
+      // ask the same question and get the same number.
+      //
+      // DISPLAY ONLY, and the separation is deliberate: SIMQ never becomes SWAPQ, bridgeXrp() never
+      // reads it, and nothing signable is built from it. The transfer stays refused by the balance
+      // banner. It answers "what would this be worth", which is what someone typing an amount they do
+      // not yet hold is asking.
       SWAPQ = null;
+      var held = (SRC.balance != null) ? SRC.balance : null;
+      if (held != null && typed > held) { simulateSwapLeg(SRC, typed); return runQuote(); }
+      SIMQ = null;
       QUOTING = true;
       paintQuote(null, 'Pricing the swap to XRP…');
       var mySeq = ++qSeq;
@@ -2187,7 +2233,10 @@
         if (!DEST || !DEST.token) return null;
         var px = ORIGIN && Number(ORIGIN.price), dpx = Number(DEST.token.price);
         if (!(px > 0) || !(dpx > 0)) return null;
-        var xrp = bridgeXrp();
+        // displayXrp(), not bridgeXrp(): this line is an estimate and may use the pool's answer for an
+        // amount the wallet does not hold. What can be SENT is a different question and bridgeXrp()
+        // still answers it strictly.
+        var xrp = displayXrp();
         if (!(xrp > 0)) return null;
         return { amt: (netDrops(xrp).net / 1e6) * px / dpx, sym: DEST.token.symbol };
       };
@@ -3088,8 +3137,14 @@
     // of the first. Saying it of the second tells someone to do a thing they have already done.
     if (SRC && SRC.viaSwap) {
       if (!amountXrp()) return 'Enter an amount';
-      if (!amt) return 'Pricing the swap…';
     } else if (!amt) return 'Enter an amount';
+    // THE BALANCE OUTRANKS "Pricing the swap…", because over the balance there is nothing to price and
+    // the wait never ends. bridgeXrp() is 0 for an over-balance swapped source by design, so the branch
+    // below read that as "still working" and the button sat on "Pricing the swap…" for good while the
+    // banner underneath already said what was wrong. Measured on cad35bf8 before this.
+    var overEarly = overBalance();
+    if (overEarly) return overEarly;
+    if (SRC && SRC.viaSwap && !amt) return 'Pricing the swap…';
     // The 2 XRP floor is 1Click's, so it applies only when NEAR Intents is the ONLY route. THORChain
     // has its own dust threshold and reports it in words, and Axelar's floor is simply covering the
     // relay fee -- so a pair another route could carry must not be blocked by a minimum that is not
@@ -3101,8 +3156,7 @@
     // and SRC.balance is the token being spent, so comparing them is comparing two different assets
     // -- it would pass 1,000,000 LUMOS worth 12 XRP and refuse 20 LUMOS worth 0.2.
     var spend = (SRC && SRC.viaSwap) ? amountXrp() : amt;
-    var over = overBalance();
-    if (over) return over;
+    // (the balance was already checked above, before the swap-pricing wait)
     if (!recipient()) return 'Enter a destination address';
     // THE REAL REASON, not a generic wait. A recipient the destination chain would reject is refused
     // by the proxy with "recipient does not look like a base address" -- and the first version threw

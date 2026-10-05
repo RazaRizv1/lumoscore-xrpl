@@ -304,51 +304,16 @@
   // for an amount the account holds and a token it trusts, so an over-balance amount, a new token or a signed-out visitor
   // got "—". The pair's AMM pool (constant product, less its trading fee) and its order book are read directly and the
   // amount is filled in small steps from whichever pays more; impact is the fill against the best rate at the start.
+  // ONE IMPLEMENTATION, IN xrpl-core.js. This arithmetic -- the pair's AMM pool and order book, filled
+  // in small steps from whichever pays more -- is now window.lxx.simulateSwap, because the bridge needs
+  // the same answer for the same reason and this file's own note already says a second copy would just
+  // relearn everything. The behaviour here is unchanged; only its address is.
   function simulate(s, amt) {
     var buying = s.pay.currency === 'XRP';
     var t = buying ? s.get : s.pay;
-    var tok = { currency: t.currency, issuer: t.issuer };
-    var val = function (a) { return typeof a === 'string' ? Number(a) / 1e6 : Number(a && a.value); };
-    return Promise.all([
-      rpc('amm_info', { asset: { currency: 'XRP' }, asset2: tok, ledger_index: 'validated' }).catch(function () { return null; }),
-      rpc('book_offers', {
-        taker_gets: buying ? tok : { currency: 'XRP' }, taker_pays: buying ? { currency: 'XRP' } : tok,
-        limit: 200, ledger_index: 'validated'
-      }).catch(function () { return null; })
-    ]).then(function (r) {
-      var pool = null, amm = r[0] && r[0].amm;
-      if (amm) {
-        var xr = typeof amm.amount === 'string' ? val(amm.amount) : val(amm.amount2);
-        var tr = typeof amm.amount === 'string' ? val(amm.amount2) : val(amm.amount);
-        if (xr > 0 && tr > 0) pool = { x: buying ? xr : tr, y: buying ? tr : xr, f: (Number(amm.trading_fee) || 0) / 100000 };
-      }
-      var offers = ((r[1] && r[1].offers) || []).map(function (o) {
-        return {
-          give: val(o.taker_gets_funded != null ? o.taker_gets_funded : o.TakerGets),
-          want: val(o.taker_pays_funded != null ? o.taker_pays_funded : o.TakerPays)
-        };
-      }).filter(function (o) { return o.give > 0 && o.want > 0; });
-      if (!pool && !offers.length) return null;
-      var spot = 0;
-      if (pool) spot = pool.y / pool.x * (1 - pool.f);
-      if (offers.length) spot = Math.max(spot, offers[0].give / offers[0].want);
-      var steps = 80, dx = amt / steps, out = 0, oi = 0, left = offers.length ? offers[0].want : 0;
-      for (var k = 0; k < steps; k++) {
-        var ammOut = pool ? pool.y * (1 - pool.x / (pool.x + dx * (1 - pool.f))) : 0;
-        var need = dx, bookOut = 0, j = oi, l = left;
-        while (need > 1e-18 && j < offers.length) {
-          var take = Math.min(need, l);
-          bookOut += take * offers[j].give / offers[j].want;
-          need -= take; l -= take;
-          if (l <= 1e-18) { j++; l = j < offers.length ? offers[j].want : 0; }
-        }
-        if (need > dx * 1e-9) bookOut = 0;                   // the book ran out inside this step
-        if (!(ammOut > 0) && !(bookOut > 0)) break;
-        if (ammOut >= bookOut) { out += ammOut; pool.x += dx; pool.y -= ammOut; }
-        else { out += bookOut; oi = j; left = l; }
-      }
-      if (!(out > 0)) return null;
-      return { out: out, impact: spot > 0 ? (1 - (out / amt) / spot) * 100 : null };
+    if (!window.lxx || !window.lxx.simulateSwap) return Promise.resolve(null);
+    return window.lxx.simulateSwap(rpc, {
+      buying: buying, amount: amt, token: { currency: t.currency, issuer: t.issuer },
     });
   }
   function simQuote(p, s, amt, my) {
