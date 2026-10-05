@@ -2414,6 +2414,21 @@
     var p = Math.pow(10, dp);
     return fmt(Math.floor(Number(bal) * p) / p, dp) + ' ' + sym;
   }
+  // WHAT THE RED BANNER IS SAYING, as one function, because the route cards now have to know it in
+  // order not to repeat it. Stellar's order for this slot is the balance, then the route's message,
+  // then a malformed address.
+  //
+  // The route message only once quoting has settled and only when NOTHING can carry the transfer: a
+  // route that declined while another is working is the page choosing, not an error, and printing that
+  // in red would make every successful two-route transfer look broken. NEAR Intents first, because it
+  // is the one that answers with a number you can act on.
+  function formBanner() {
+    var ob = overBalance();
+    if (ob) { var sb = srcBalance(); return 'Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'; }
+    if (!QUOTING && !BEST && bridgeXrp() > 0 && destChain()) return NOTE.ni || NOTE.th || NOTE.ax || '';
+    return '';
+  }
+
   function step2Err(msg) {
     var s2 = $('.br-step[data-step="2"]');
     var e = s2 && s2.querySelector('.br-errslot');
@@ -2560,13 +2575,15 @@
         + '<span class="lx-brr-mark" data-logo="" data-logoed="1">'
         + '<img src="' + (o.meta.img || ('/assets/networks/' + o.meta.mark + '.png?v=' + ICONV)) + '" alt=""></span>'
         + '<span class="lx-brr-hd"><span class="lx-brr-nm" data-logoed="1">' + esc2(o.meta.name) + '</span>'
-        // NAMES WHAT ARRIVES, as Stellar's does: "ETH delivered to your address" (its LZ_SUB entry for
-        // this route is literally "{ASSET} delivered to your address"). The generic sentence this had
-        // is true of the route in the abstract and says nothing about the transfer in front of you.
-        + '<span class="lx-brr-sub">' + esc2(
-            (o.route === 'ni' && DEST && DEST.token)
-              ? (DEST.token.symbol + ' delivered to your address')
-              : o.meta.sub) + '</span></span>';
+        // NO SUBTITLE (RAZA 2026-10-05, marking it on the card: "Please remove this unnecessary text
+        // ... from all bridges").
+        //
+        // A DELIBERATE STEP AWAY FROM STELLAR, which does carry this line -- I added it one commit ago
+        // precisely because Stellar has it. On that card it is the only place the delivered asset is
+        // named; here the Receive row sits three lines below saying "xDAI", so the sentence repeated
+        // what the reader had already been told. Kept in ROUTE_META, because the review step and the
+        // route docs still use it.
+        + '</span>';
       // The tag names WHY this one, and only where that is a fact rather than a slogan: it appears on
       // the chosen route when a rival actually answered too, so "BEST PRICE" always means it beat
       // something. A badge on a route that was the only option would be marketing.
@@ -2596,7 +2613,17 @@
       // "Minimum 2.004009 XRP" is not in use. The card keeps its border so the choice is still
       // visible, keeps its reason, and no longer claims a quote it did not give.
       h += '</div>';
-      if (o.state === 'none') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
+      // NOT WHEN THE RED BANNER IS ALREADY SAYING IT. "Minimum 2.004009 XRP" sat on the card AND in
+      // the banner under the form -- the same sentence twice on one screen, which is the half of his
+      // mark that was a genuine duplication rather than a preference.
+      //
+      // Kept when the banner is NOT carrying it, because then this is the only place it is said: a
+      // route that refuses while another one works ("Delivers AVAX, not USDC", a dust threshold on one
+      // of two) never reaches the banner by design, and dropping it here would make that card go quiet
+      // about why it cannot be chosen.
+      if (o.state === 'none' && o.error && o.error !== formBanner()) {
+        h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">' + esc2(o.error) + '</div>';
+      }
       // NOTHING WHILE IT WAITS, because Stellar shows nothing (RAZA 2026-10-04: "this orange text on
       // the bridge side 'Pricing PHNIX INTO XRP' is not there on Stellar").
       //
@@ -2608,7 +2635,8 @@
       // twice: say nothing, as Stellar does, and let the dash in the receive line stand until there is
       // a figure or a reason to put there.
       else if (o.state === 'wait') { /* deliberately silent — see above */ }
-      else if (o.state === 'idle') h += '<div class="lx-brs-note" style="margin-top:0;padding-top:0">Enter an amount to price this route.</div>';
+      // "Enter an amount to price this route." goes with it: it occupies the same line he marked, and
+      // the amount field is the thing it points at, three inches to the left and already empty.
       h += '<' + '/button>';
     });
     if (host.innerHTML !== h) host.innerHTML = h;
@@ -3051,20 +3079,7 @@
     // clears with the state rather than on a timer. Only the balance goes in it: a route's own note
     // already has a home on its card, and two places saying the same thing is the mistake that put an
     // extra line under "You will receive".
-    var ob = overBalance();
-    if (ob) { var sb = srcBalance(); step2Err('Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'); }
-    // AND THE ROUTE'S REFUSAL, WHICH IS STELLAR'S SECOND CASE FOR THIS SLOT (RAZA 2026-10-04: "since I
-    // dont have enough XRP to do Near Intents swap, please show an error in red below like you show for
-    // insufficient balance"). Stellar's own order is overBalance, then the route message, then a
-    // malformed address; this had only the first of the three.
-    //
-    // Only once the quoting has settled and only when NOTHING can carry the transfer: a route that
-    // declined while another is working is not an error, it is the page choosing, and printing it in
-    // red would make every successful two-route transfer look broken. Each route's own words, NEAR
-    // Intents first -- it is the one that answers with a number you can act on.
-    else if (!QUOTING && !BEST && bridgeXrp() > 0 && destChain()) {
-      step2Err(NOTE.ni || NOTE.th || NOTE.ax || '');
-    } else step2Err('');
+    step2Err(formBanner());
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
