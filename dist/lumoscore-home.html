@@ -12456,9 +12456,49 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // templates and cloned, so every class, icon and layout stays the design's.
   var TYPES = {
     Payment: 'Payment', OfferCreate: 'Order', OfferCancel: 'Cancelled order',
-    TrustSet: 'Trustline', AMMDeposit: 'Pool deposit', AMMWithdraw: 'Pool withdrawal',
+    TrustSet: 'Trustline',
+    // AMMCreate and AMMDelete were missing entirely, so they fell through to the raw ledger name and a
+    // row read "AMMCreate" (RAZA 2026-10-06). Stellar calls both halves of this by what they did.
+    AMMDeposit: 'Added liquidity', AMMCreate: 'Added liquidity',
+    AMMWithdraw: 'Removed liquidity', AMMDelete: 'Removed liquidity',
     AccountSet: 'Account update', NFTokenMint: 'NFT mint'
   };
+
+  // ONE ICON PER KIND, WHICH IS WHAT MADE EVERY ROW LOOK THE SAME (RAZA 2026-10-06: "Swap icon is
+  // different").
+  //
+  // The icon was only ever given a CLASS — `received` / `sent` / `swap` — and the glyph inside it stayed
+  // whatever the cloned template held, a down arrow. So a Swap, an Order and an AMMCreate all showed the
+  // same arrow in the same red disc, and the class did nothing visible for the kinds the sheet has no
+  // colour for. Stellar swaps the SVG as well, and that is the difference you can actually see.
+  //
+  // These are lumoscore.com's own glyphs, read out of its live lx-56d7256e855a.js, so the two feeds draw
+  // the same mark for the same thing. The colours need nothing added: `.activity-icon.received/.sent/
+  // .swap/.order/.claim/.bridge/.contract` are all already in this build's inherited sheet, and `lp` has
+  // no rule on EITHER side — its droplet sits on the base disc, which is how Stellar draws it too.
+  var IC = {
+    received: '<path d="M12 5v14M19 12l-7 7-7-7"/>',
+    sent: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+    swap: '<path d="M7 10l-3 3 3 3M4 13h11M17 14l3-3-3-3M20 11H9"/>',
+    lp: '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>',
+    order: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    contract: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'
+  };
+  function actIcon(kind) {
+    return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+      + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (IC[kind] || IC.swap) + '</svg>';
+  }
+
+  // An Asset / Asset2 on an AMM transaction is a SPEC, not an amount: {currency, issuer} with no value,
+  // so amt() cannot read it. Same decoder as everywhere else, so a 40-char hex renders as its name.
+  function assetCode(spec) {
+    if (!spec) return null;
+    if (typeof spec === 'string' || spec.currency === 'XRP' || (!spec.currency && !spec.issuer)) {
+      return { code: 'XRP', currency: 'XRP' };
+    }
+    var d = window.lxx.decodeCurrency(spec.currency);
+    return { code: (d && d.display) || spec.currency, currency: spec.currency, issuer: spec.issuer };
+  }
 
   // WHAT A SWAP ACTUALLY COST: SendMax is only a ceiling, so the spend is read from the ledger's own balance changes — the account's XRP
   // (less the network fee) or its trust line for the token given.
@@ -12493,6 +12533,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return { value: +v.value, code: (d && d.display) || v.currency, currency: v.currency, issuer: v.issuer };
   }
 
+  // The design ships thirty invented rows in this block, so every exit from the activity path has to
+  // say something rather than leave them. One helper, so a new exit cannot forget the clearing half.
+  function activityNote(text) {
+    var b = $('.activity-block');
+    if (!b) return;
+    b.innerHTML = '';
+    var n = el('div', 'lxp');
+    n.style.cssText = 'padding:22px;text-align:center;color:var(--text-muted);font-size:13px';
+    n.textContent = text;
+    b.appendChild(n);
+  }
+
   function paintActivity(me) {
     var block = $('.activity-block');
     if (!block) return;
@@ -12505,7 +12557,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     rpc('account_tx', { account: me, limit: 25, ledger_index_min: -1, ledger_index_max: -1 })
       .then(function (r) {
         var txs = r.transactions || [];
-        if (!txs.length) return;
+        // AN EMPTY HISTORY IS A RESULT, NOT A REASON TO SHOW SOMEONE ELSE'S. `return` here left the
+        // design's thirty invented rows standing — "Received USDT from 0x0222…02b2", in APT, dated
+        // today, under this account's real balances — which is the exact thing this function's header
+        // calls the most dangerous content on the page. Measured: an account the ledger has no
+        // transactions for rendered a full page of fabricated history.
+        //
+        // This is the commoner path of the two, not the rare one: every new wallet starts here.
+        if (!txs.length) { activityNote('No activity on this account yet.'); return; }
         block.innerHTML = '';
         var lastDay = '';
 
@@ -12562,13 +12621,31 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           var through = isPayment && !self && !incoming && !outgoing;
           var other = incoming ? tx.Account : tx.Destination;
 
+          // The AMM pair, and which way it went. AMMCreate and AMMDelete are the first and last
+          // deposits into a pool, so they belong with their ordinary counterparts rather than under
+          // their own raw names.
+          var tt = tx.TransactionType;
+          var isLp = tt === 'AMMDeposit' || tt === 'AMMCreate' || tt === 'AMMWithdraw' || tt === 'AMMDelete';
+          var lpOut = tt === 'AMMWithdraw' || tt === 'AMMDelete';
+          var lpA = isLp ? assetCode(tx.Asset) : null;
+          var lpB = isLp ? assetCode(tx.Asset2) : null;
+
+          // The kind drives both the disc colour and the glyph, as it does on Stellar. A pass-through
+          // is neither sent nor received, so it takes the neutral swap colour rather than the green of
+          // money arriving or the red of money leaving.
+          // NOT `kind` — that name is already the row's LABEL, a few lines up, and reusing it here
+          // silently renamed every pool row "lp (failed)" instead of "Added liquidity". `var` is
+          // function-scoped, so the second declaration is the same binding, and nothing warns.
+          var icoKind = isLp ? 'lp'
+            : (tt === 'OfferCreate' || tt === 'OfferCancel') ? 'order'
+            : incoming ? 'received'
+            : (isPayment && !through && !self) ? 'sent'
+            : (isPayment || tt === 'TrustSet') ? 'swap'
+            : 'contract';
           var ico = row.querySelector('.activity-icon');
           if (ico) {
-            // A pass-through is neither, so it takes the design's neutral swap colour rather than
-            // the green of money arriving or the red of money leaving.
-            ico.classList.toggle('received', !!incoming);
-            ico.classList.toggle('sent', !incoming && !through && !self);
-            ico.classList.toggle('swap', !!(through || self));
+            ico.className = 'activity-icon ' + icoKind;
+            ico.innerHTML = actIcon(icoKind);
           }
 
           // Computed first now, because the label below names the assets.
@@ -12587,7 +12664,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
             ty.textContent = (isPayment
               ? (self ? 'Swap' : incoming ? 'Received' : through ? 'Routed through' : 'Sent')
               : kind) + (okTx ? '' : ' (failed)');
-            if (isPayment && self && give00 && got00 && give00.code !== got00.code) {
+            if (isLp && lpA && lpB) {
+              // Stellar's shape exactly: the verb, then both sides of the pool with their own marks —
+              // "Added liquidity ⊗ HOLA + ⊗ CANNACOIN". The row used to be the verb and nothing else.
+              ty.appendChild(actLogo(lpA));
+              ty.appendChild(document.createTextNode(lpA.code + ' +'));
+              ty.appendChild(actLogo(lpB));
+              ty.appendChild(document.createTextNode(lpB.code));
+            } else if (isPayment && self && give00 && got00 && give00.code !== got00.code) {
               ty.appendChild(actLogo(give00));
               ty.appendChild(document.createTextNode(give00.code + ' →'));
               ty.appendChild(actLogo(got00));
@@ -12613,7 +12697,36 @@ if (typeof window !== 'undefined') window.lxx = LXX;
             // The counterparty, as Stellar's row has it; a swap's two assets are already in the label.
             var who = self ? ''
               : through ? ((tx.Account && tx.Destination) ? (short(tx.Account) + ' → ' + short(tx.Destination)) : '')
-              : (other ? ((incoming ? 'From ' : 'To ') + short(other)) : '');
+              : '';
+            // THE COUNTERPARTY IS A LINK, AND THAT IS WHAT MAKES IT BOLD AND ORANGE (RAZA 2026-10-06:
+            // "In sent transactions, To address is supposed to be bold and orange color").
+            //
+            // Stellar writes `metaPre + <a class="lx-addr-link">short</a>`, and this build's inherited
+            // sheet ALREADY carries the rule — `.lx-addr-link{color:var(--accent,#ea6a2c);font-weight:600}`
+            // — so nothing had to be styled here. The address was simply being written as plain text
+            // into `.meta`, which is why it rendered grey beside Stellar's accent.
+            //
+            // Built as nodes rather than innerHTML: `other` is an address off a public ledger, and this
+            // file's rule is that ledger-supplied values go in through textContent.
+            var addrEl = null;
+            if (!self && !through && other) {
+              mt.textContent = incoming ? 'From ' : 'To ';
+              addrEl = document.createElement('a');
+              addrEl.className = 'lx-addr-link';
+              addrEl.href = 'https://bithomp.com/explorer/' + encodeURIComponent(other);
+              addrEl.target = '_blank';
+              addrEl.rel = 'noopener';
+              addrEl.textContent = short(other);
+              addrEl.setAttribute('data-logoed', '1');     // the logo engine repaints short-text elements
+            }
+            // The two reserves that moved, as Stellar prints them: "107.33 HOLA + 51,572 CANNACOIN". A
+            // tfWithdrawAll carries no Amount fields, so that row keeps the pair in its label and says
+            // nothing here rather than inventing a figure.
+            if (isLp) {
+              var d1 = amt(tx.Amount), d2 = amt(tx.Amount2);
+              if (d1 && d2) who = fmt(d1.value, 6) + ' ' + d1.code + ' + ' + fmt(d2.value, 6) + ' ' + d2.code;
+              else if (d1) who = fmt(d1.value, 6) + ' ' + d1.code;
+            }
             // AN ORDER IS NOT A PAYMENT, AND HAD NOTHING TO SAY (RAZA 2026-10-02: "WTF is this blank trx").
             //
             // Every line on this row is built from a payment's shape: the counterparty comes from
@@ -12627,7 +12740,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
             if (!who && og && op) who = fmt(og.value, 6) + ' ' + og.code + ' → ' + fmt(op.value, 6) + ' ' + op.code;
             // A cancellation names the order it withdrew, which is the only fact it carries.
             if (!who && tx.TransactionType === 'OfferCancel' && tx.OfferSequence) who = 'Offer #' + tx.OfferSequence;
-            mt.textContent = who;
+            // The address branch already wrote the "To "/"From " prefix, so it only appends; every other
+            // branch owns the whole line.
+            if (addrEl) mt.appendChild(addrEl);
+            else mt.textContent = who;
             mt.classList.add('lxp');
           }
 
@@ -12635,7 +12751,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           if (a1) {
             var got = got0;
             // A failed transaction moved nothing, so it shows no amount (its Amount is only what was asked for).
-            if (got && isFinite(got.value) && meta.TransactionResult === 'tesSUCCESS') {
+            if (isLp) {
+              // Blank, as Stellar leaves it. A pool deposit moves TWO assets and the meta line above
+              // already names both; printing one of them here, signed, said "−0.000013 ATOM" about a
+              // transaction that also moved 1,410 PHNIX — half the story with a minus in front of it.
+              a1.textContent = '';
+              a1.classList.remove('up', 'down', 'swap');
+            } else if (got && isFinite(got.value) && meta.TransactionResult === 'tesSUCCESS') {
               // No sign on a pass-through or a swap. On a pass-through the delivered amount is what
               // the DESTINATION received and this account's balance nets out across the hop; on a
               // swap one asset was given for another, so a lone "+" would report half of it. A "−"
@@ -12683,7 +12805,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
           block.appendChild(row);
         });
-      }).catch(function () { /* leave the design's block alone rather than empty it on a failure */ });
+      }).catch(function () {
+        // A FAILED LOOKUP MUST NOT LEAVE THE DESIGN'S HISTORY ON SCREEN. "Leave the block alone" was
+        // written to avoid blanking a section over a dropped request, but what it actually leaves is the
+        // thirty invented rows this function's own header calls the most dangerous thing on the page —
+        // "Received USDT from 0x0222…02b2", in APT, dated today, under a real account's balances.
+        //
+        // Found while verifying the icons: seeding an address that does not exist on the ledger produced
+        // a full page of someone else's fabricated history rather than an error.
+        //
+        // An empty section reads as "nothing here"; this says which of the two it is.
+        activityNote('Could not load activity for this account.');
+      });
   }
 
   // ---- Liq Pools -----------------------------------------------------------------------------------
@@ -13097,6 +13230,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       paintLpPositions(data);
       applyPins();
     }).catch(function (e) {
+      // THE ACTIVITY BLOCK IS CLEARED HERE TOO, AND THIS IS THE PATH THAT ACTUALLY MATTERED.
+      //
+      // When the account read fails, paintActivity() is never reached — so the two guards inside it
+      // cannot help, and the design's thirty invented rows stayed on screen under an "account not
+      // activated" notice. Measured against an address that is not on the ledger: a full page of
+      // "Received USDT from 0x0222…02b2" in APT, dated today.
+      //
+      // Done before the `!h` return, because the assets host being absent is no reason to leave
+      // fabricated history standing.
+      activityNote(/actNotFound/i.test(e.message || '')
+        ? 'No activity on this account yet.'
+        : 'Could not load activity for this account.');
       if (!h) return;
       // An account with no transactions simply does not exist on the ledger yet. Not an error.
       if (/actNotFound/i.test(e.message || '')) { note(h, 'This account is not activated on the XRP Ledger yet.'); return; }
