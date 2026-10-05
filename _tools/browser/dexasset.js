@@ -2561,7 +2561,15 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (row.getAttribute('data-lxsoc') !== key) return;   // navigated to another token meanwhile
-        var links = (j && j.links) || [];
+        // AND AGAIN AGAINST WHAT THE PAGE ACTUALLY SHOWS. The endpoint already drops a link to the
+        // issuer's own site, but it compares against the domain it RESOLVED, and this page does not
+        // always display that one: LUMOS's header is pinned to lumoscore.com while its issuer's ledger
+        // Domain is lumosdao.com. The duplicate globe RAZA reported is "a button repeating the words
+        // beside it", so the thing to compare against is the words beside it.
+        var shown = rootDomain((($('.website') || {}).textContent || '').trim());
+        var links = ((j && j.links) || []).filter(function (l) {
+          return !shown || rootDomain(l.url) !== shown;
+        });
         var NS = 'http://www.w3.org/2000/svg';
         links.forEach(function (l) {
           var g = SOC[l.kind] || SOC.web;
