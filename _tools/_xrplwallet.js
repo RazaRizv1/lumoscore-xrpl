@@ -35,7 +35,7 @@ for (const src of [core, xp, page, px, wr]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + xp + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
 
-let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0;
+let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0, mockCards = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -165,6 +165,34 @@ for (const dev of ['desktop', 'mobile']) {
       function (_, open, close) { blanked++; return open + '—' + close; });
     h = h.replace(/(<div class="sub-value">)\s*≈[^<]*(<\/div>)/g,
       function (_, open, close) { blanked++; return open + close; });
+
+    // AND THEN THE TWO CARDS THEMSELVES GO (RAZA 2026-10-06: "This flash bug is still there when wallet
+    // page is refreshed", circling Open Orders and Liquidity Pools — now reading "—" and "Across your
+    // pools" rather than Aptos figures, so the blanking above did land; the CARDS are what flashes).
+    //
+    // Blanking was the wrong depth for these two. browser/wallet.js hides both in buildTabs(), because
+    // the Assets / Open Orders / Liq Pools tabs replace them and carry the real counts — so they are not
+    // cards waiting for data, they are cards with no future at all. Anything whose final state is
+    // display:none should start there, and a value-blanking pass can only ever shorten the flash, never
+    // end it.
+    //
+    // Inline style rather than a CSS gate, for the reason the note above gives: a gate is a second thing
+    // that has to lift. This is the same markup-level fix, taken one level out from the value to the box
+    // that holds it. buildTabs() still finds them by their .ttl and still hides them, which costs
+    // nothing and means nothing here depends on the other.
+    //
+    // The window is bounded and refuses to span two cards, so a card can never be hidden by the NEXT
+    // card's title; and a tag that already carries the style is left alone, so a second build is a
+    // no-op (see the idempotence note in the chain).
+    const CARD_OPEN = /<div class="insight-card([^"]*)"([^>]*)>([\s\S]{0,900}?<div class="ttl">\s*(?:Open Orders|Liquidity Pools)\s*<\/div>)/g;
+    let hidden = 0;
+    h = h.replace(CARD_OPEN, function (_, cls, rest, body) {
+      if (/display\s*:\s*none/.test(rest)) return _;        // already hidden; second build
+      if (/insight-card/.test(body)) return _;              // the title belongs to a later card
+      hidden++;
+      return '<div class="insight-card' + cls + '" style="display:none"' + rest + '>' + body;
+    });
+    if (hidden) mockCards += hidden;
     if (blanked) mockHeadlines += blanked;
 
     const re = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
@@ -181,5 +209,6 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); disabled '+mockCharts
-  + ' random-walk chart(s); blanked ' + mockHeadlines + ' mock insight figure(s); data layer on '
+  + ' random-walk chart(s); blanked ' + mockHeadlines + ' mock insight figure(s); hid '
+  + mockCards + ' tab-replaced card(s); data layer on '
   + pages + ' page key(s) across ' + files + ' container(s)');
