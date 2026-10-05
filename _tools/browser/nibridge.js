@@ -448,7 +448,12 @@
     var s = document.createElement('span');
     s.className = 'lx-netlm2';
     s.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;'
-      + 'border-radius:50%;background:#5b6170;color:#fff;font-size:9px;font-weight:700';
+      + 'border-radius:50%;background:#5b6170;color:#fff;font-weight:700';
+    // font-size WITH PRIORITY. The asset chip's icon host also carries `.lx-assetic`, inherited from
+    // Stellar, whose rule is `font-size:0 !important` -- and an important declaration in a stylesheet
+    // beats a normal inline one, so initials written here rendered at zero height inside an otherwise
+    // correct disc. Invisible letters look exactly like a logo that failed to appear.
+    s.style.setProperty('font-size', '9px', 'important');
     s.textContent = String(name || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
     host.appendChild(s);
     host.setAttribute('data-logo', '');
@@ -503,8 +508,22 @@
     };
     if (img.getAttribute('src') !== src) img.src = src;
     // A src assigned BEFORE this handler existed may already have failed, and a failed image fires
-    // nothing more. complete && naturalWidth === 0 is that state, and it is the one his screenshot is in.
-    if (img.complete && !img.naturalWidth && img.getAttribute('src')) img.onerror();
+    // nothing more. complete && naturalWidth === 0 is that state.
+    if (img.complete && !img.naturalWidth && img.getAttribute('src')) { img.onerror(); return; }
+    // AND A CHECK THAT DOES NOT DEPEND ON THE EVENT ARRIVING. `alt` is empty on these, so an image that
+    // fails renders as NOTHING -- not a broken glyph -- and the only thing standing between that and
+    // the initials is an onerror that has to fire. Two rounds of this chip have now shown an empty
+    // circle, which is precisely what a missed event looks like. So the state is read instead: if the
+    // image has not produced pixels by the time it should have, take the fallback. Cheap, and it cannot
+    // misfire on a working logo because naturalWidth is non-zero the moment one decodes.
+    if (host.__lxIconT) clearTimeout(host.__lxIconT);
+    host.__lxIconT = setTimeout(function () {
+      host.__lxIconT = 0;
+      var cur = host.querySelector('img');
+      if (!cur || cur.naturalWidth) return;             // gone, or decoded fine
+      if (cur.parentNode) cur.parentNode.removeChild(cur);
+      if (fallbackName) markLetters(host, fallbackName);
+    }, 6000);
   }
 
   // SELECTING AN APPENDED DESTINATION, because the design's own handler never sees one.
