@@ -1856,8 +1856,14 @@
     var side = s2 && s2.querySelectorAll('.br-side')[0];
     var u = side && side.querySelector('.br-amt .usd');
     if (!u) return;
+    // XRP'S PRICE, SO ONLY FOR XRP. ORIGIN is 1Click's entry for the native asset, and this multiplied
+    // the typed amount by it whatever was selected -- so 0.1 ATOM read "~ $0.15" and 72.58 PHNIX read
+    // "~ $109.59", both of them the XRP price wearing another ticker. An issued token's USD value is
+    // not something this page knows: what it can find out is what the token swaps to, and that is the
+    // receive line's job, not this one's. Blank is the honest answer here.
     var amt = amountXrp(), px = ORIGIN && Number(ORIGIN.price);
-    u.textContent = (amt && px) ? ('~ $' + fmt(amt * px, 2)) : '';
+    var native = !SRC || SRC.native;
+    u.textContent = (native && amt && px) ? ('~ $' + fmt(amt * px, 2)) : '';
   }
 
   // Fee and time, in the review list's OWN row markup (`.r` > `.k` + `.v`) rather than a panel of our
@@ -1902,7 +1908,28 @@
   // downstream quote has to read this rather than the input. Zero until the swap has been priced,
   // which is correct: there is nothing to quote a bridge on until then.
   function bridgeXrp() {
-    if (SRC && SRC.viaSwap) return (SWAPQ && SWAPQ.out > 0) ? SWAPQ.out : 0;
+    if (SRC && SRC.viaSwap) {
+      // THE SWAP QUOTE MUST BELONG TO WHAT IS TYPED NOW (RAZA 2026-10-05: "obviously the 'You will
+      // Receive' is not correct" -- ~1.536709 POL shown for 0.1, 0.2 AND 0.01 ATOM, a figure that never
+      // moved).
+      //
+      // This returned SWAPQ.out whenever one existed, with no check of WHAT it had priced. SWAPQ is
+      // only replaced when a new path-find comes back, so between keystrokes -- and for good after any
+      // attempt that fails, which over-balance amounts on a thin book do -- the last successful figure
+      // kept driving the receive line, the minimum check, netDrops() and the review. A number that does
+      // not move when the amount does is worse than no number: it is a quote for a transfer nobody
+      // asked for.
+      //
+      // Matched on amount AND identity. The identity test is the same one doQuote uses to decide
+      // whether to re-price, and for the same reason: two tokens called LUMOS from different issuers
+      // are different assets, and paintSourceAsset rebuilds SRC into a new object on every repaint, so
+      // comparing the objects proves nothing.
+      if (!SWAPQ || !(SWAPQ.out > 0)) return 0;
+      if (SWAPQ.amt !== amountXrp()) return 0;
+      var f = SWAPQ.from;
+      if (!f || String(f.currency) !== String(SRC.currency) || String(f.issuer) !== String(SRC.issuer)) return 0;
+      return SWAPQ.out;
+    }
     return amountXrp();
   }
 
@@ -2598,8 +2625,11 @@
       if (sel && !(picked && picked === o.route)
           && rows.length > 1 && rows.filter(function (x) { return x.state === 'ok'; }).length > 1) {
         h += '<span class="lx-brr-tag">Best price</span>';
-      } else if (sel && o.state === 'idle') {
-        h += '<span class="lx-brr-tag">Ready</span>';
+      // NO "READY" BADGE (RAZA 2026-10-05: "Also remove this Ready tag"). It said only that an amount
+      // had not been typed yet, which the empty amount field already says, and it was the last thing
+      // left on a card he has now twice asked to quieten. "Best price" and "In use" stay: those are
+      // about a transfer that has actually been priced, and which route carries it is the question the
+      // last several rounds were spent making answerable.
       } else if (sel && o.state === 'ok') {
         h += '<span class="lx-brr-tag">In use</span>';
       }
