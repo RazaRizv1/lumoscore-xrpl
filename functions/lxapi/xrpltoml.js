@@ -26,6 +26,8 @@
 // that distinction now matters.
 import { issuerDomains } from './_issuerdomain.js';
 
+// Bumped whenever the link rules change, so a stored answer cannot outlive the code that made it.
+const CACHEV = '2';
 const TTL_OK = 21600;        // six hours; a project's links are not a live figure
 const TTL_NONE = 900;        // fifteen minutes when there is nothing to show, so a new toml lands sooner
 const TTL_UNREACHED = 30;    // the ledger did not answer — not a fact about the token, so barely cached
@@ -184,13 +186,19 @@ export async function onRequest(context) {
   if (!ADDR.test(iss) || !CUR.test(cur)) return json({ ok: false, error: 'bad params', links: [] }, 3600);
 
   const cache = caches.default;
-  const key = new Request(url.origin + url.pathname + '?iss=' + iss + '&cur=' + cur.toUpperCase(), request);
+  // CACHEV, because an answer here lives six hours and the RULES that produced it change (RAZA
+  // 2026-10-06: "ATOM still showing 2 X icons" — the one-button-per-glyph fix shipped, and the colo
+  // went on serving the three-link answer it had already stored). Any change to kindOf, cleanLinks or
+  // safeUrl is a change to what this returns for inputs that have not changed, so the key has to move
+  // with them. Same reason xrplthumb.js carries one.
+  const key = new Request(url.origin + url.pathname + '?v=' + CACHEV + '&iss=' + iss + '&cur=' + cur.toUpperCase(), request);
   const hit = await cache.match(key);
   if (hit) return hit;
 
   let domain = '', links = [], reached = true;
   try {
-    const map = await issuerDomains([iss], url.origin, context, null);
+    // 3s, not the search default: this endpoint has nothing to say without the domain.
+    const map = await issuerDomains([iss], url.origin, context, null, 3000);
     reached = Object.prototype.hasOwnProperty.call(map, iss);
     domain = map[iss] || '';
   } catch (e) { reached = false; }

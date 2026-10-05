@@ -2372,6 +2372,17 @@
     }, 1800);
   }
 
+  // PUBLISHED, so the swap and limit-order layers can use the same one (RAZA 2026-10-06: "When buying
+  // / selling asset on Trade-asset page, its not showing the message at the bottom like it does on
+  // Stellar" — lumoscore.com answers a filled swap with "✓ Sold 1.1541 XLM" bottom-centre).
+  //
+  // Those layers are separate emitted scripts with their own scopes, so the only way to share this is
+  // through window — and sharing it is better than a third and fourth copy of the same twenty lines,
+  // which is how four of them already exist elsewhere in this build. createpool.js and pooldetail.js
+  // already look for `window.lxToast` first and fall back to their own; this is what they were looking
+  // for. Assigned rather than defined here, so there is still exactly one implementation.
+  if (!window.lxToast) window.lxToast = function (msg) { try { copyToast(msg); } catch (e) {} };
+
   function wireIssuerCopy() {
     if (window.__lxxIssuerCopy) return;
     window.__lxxIssuerCopy = 1;
@@ -2561,6 +2572,22 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (row.getAttribute('data-lxsoc') !== key) return;   // navigated to another token meanwhile
+        // "NOT REACHED" IS NOT "NO LINKS". The endpoint resolves the issuer's domain against a 1200ms
+        // deadline and finishes the lookup under waitUntil, so the FIRST ask for a cold issuer
+        // legitimately comes back empty while warming the cache for the next one. This painted once
+        // per token and never again, so that first empty answer was the row's answer until the reader
+        // navigated away — measured: ATOM showed no buttons while the endpoint, asked by hand a
+        // moment later, returned both of them.
+        //
+        // `reached` is the endpoint saying which of the two it was, so this asks again rather than
+        // guessing — once, three seconds later, by which time the per-issuer lookup that was still
+        // running under waitUntil has landed in the cache the second call reads.
+        if (j && j.reached === false && !row.__lxSocRetry) {
+          row.__lxSocRetry = 1;
+          row.removeAttribute('data-lxsoc');
+          setTimeout(function () { paintSocials(asset); }, 3000);
+          return;
+        }
         // AND AGAIN AGAINST WHAT THE PAGE ACTUALLY SHOWS. The endpoint already drops a link to the
         // issuer's own site, but it compares against the domain it RESOLVED, and this page does not
         // always display that one: LUMOS's header is pinned to lumoscore.com while its issuer's ledger

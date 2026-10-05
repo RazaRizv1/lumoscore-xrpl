@@ -534,6 +534,17 @@
         say(p, onBook
           ? ((s === 'sell' ? 'Sell' : 'Buy') + ' order placed — ' + what + ' at ' + at + '.')
           : ('Filled straight away — ' + what + ' at ' + at + ' or better.'), 'good');
+        // The same bottom-centre confirmation the swap pane now draws, for the same reason: it is where
+        // the eye goes once the wallet's own sheet closes. An order that RESTED and one that FILLED are
+        // different outcomes, so they do not share a sentence — "placed" would be wrong about a fill,
+        // and "filled" would be a claim about something that has not happened yet.
+        try {
+          if (typeof window.lxToast === 'function') {
+            window.lxToast(onBook
+              ? ((s === 'sell' ? 'Sell' : 'Buy') + ' order placed — ' + what)
+              : ('Filled ' + what));
+          }
+        } catch (e) {}
         setTimeout(function () { busy = false; b.textContent = label; }, 1800);
         load(true);
         try { if (window.__lxxBookReload) window.__lxxBookReload(); } catch (e) {}

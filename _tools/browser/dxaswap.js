@@ -633,6 +633,22 @@
         return;
       }
       stop('Swap complete ✓', 'good');
+      // THE CONFIRMATION LANDS WHERE STELLAR'S DOES (RAZA 2026-10-06: "When buying / selling asset on
+      // Trade-asset page, its not showing the message at the bottom like it does on Stellar").
+      //
+      // lumoscore.com's dxToast answers a filled swap with "✓ Sold 1.1541 XLM" bottom-centre, and its
+      // wording is (side === "buy" ? "Bought " : "Sold ") + the amount RECEIVED + the asset received.
+      // On this build `quote.out` is that amount and sides(p).get is that asset, so the same sentence
+      // comes out of the same two facts.
+      //
+      // The inline line under the button stays as well. On this page it sits beside the CTA rather than
+      // below the fold, so unlike the pool card there is nothing to move — this adds the half that was
+      // missing, at the place the eye goes after a wallet sheet closes.
+      try {
+        if (typeof window.lxToast === 'function' && quote && quote.out > 0) {
+          window.lxToast((side(p) === 'buy' ? 'Bought ' : 'Sold ') + fmt(quote.out, 6) + ' ' + s.get.code);
+        }
+      } catch (e) {}
     }).then(function () {
       var i = input(fields(p)[0]);
       if (i) i.value = '';
