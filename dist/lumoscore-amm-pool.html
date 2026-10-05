@@ -7738,6 +7738,56 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
   function amtOf(raw, value) { return window.lxx.amountFor(window.lxx.assetOf(raw), value); }
 
+  // SUCCESS IS A TOAST, AS ON STELLAR (RAZA 2026-10-05: "When adding or withdrawing liquidity from a pool
+  // it doesn't show the message 'Liquidity added' or 'Liquidity removed' like it does on Stellar").
+  //
+  // It was being said — as a 13px green line appended to the bottom of the deposit card, which on this page
+  // sits below the fold and, at the exact moment it appears, behind the wallet's own "Transaction accepted"
+  // sheet. lumoscore.com's _ammdata.js sends every success through `ammToast` instead: the bottom-centre
+  // confirmation the copy-address control uses, which lands in the same place whatever is scrolled or
+  // covering the card. The inline line stays for ERRORS, which is also what Stellar does — an error is
+  // about the form you are looking at, a confirmation is about the page.
+  //
+  // The stylesheet is shared by id (`lx-copytoast-css`) with createpool.js, dexasset.js and qorders.js, so
+  // whichever of them draws first owns it and this adds no second copy. The function is local rather than
+  // imported because each emitted script has its own scope.
+  function dwToast(msg) {
+    if (typeof window.lxToast === 'function') { try { window.lxToast(msg, false); return; } catch (e) {} }
+    try {
+      if (!document.getElementById('lx-copytoast-css')) {
+        var st = document.createElement('style');
+        st.id = 'lx-copytoast-css';
+        st.textContent = '.lx-ctoast-stack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);'
+          + 'z-index:99999;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}'
+          + '.lx-ctoast{background:var(--text,#16171b);color:var(--bg,#fff);padding:11px 18px 11px 14px;'
+          + 'border-radius:10px;font-family:"Hanken Grotesk",system-ui,sans-serif;font-size:16px;'
+          + 'font-weight:600;display:inline-flex;align-items:center;gap:9px;white-space:nowrap;'
+          + 'box-shadow:0 12px 32px rgba(0,0,0,.28),0 2px 8px rgba(0,0,0,.16)}'
+          + '.lx-ctoast .ci{width:18px;height:18px;border-radius:50%;background:var(--green,#35c07f);'
+          + 'color:#fff;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;'
+          + 'font-size:12px}';
+        (document.head || document.documentElement).appendChild(st);
+      }
+      var stack = document.querySelector('.lx-ctoast-stack');
+      if (!stack) {
+        stack = document.createElement('div');
+        stack.className = 'lx-ctoast-stack';
+        document.body.appendChild(stack);
+      }
+      var t = document.createElement('div');
+      t.className = 'lx-ctoast';
+      // data-logoed so the logo healer leaves the tick alone — it repaints short-text elements.
+      t.innerHTML = '<span class="ci" data-logoed="1">✓</span>';
+      t.appendChild(document.createTextNode(msg));
+      stack.appendChild(t);
+      setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 4000);
+    } catch (e) {}
+  }
+
+  // A confirmation clears the inline line rather than adding to it, so the card does not end up saying the
+  // same thing twice in two places.
+  function dwOk(msg) { dwSay(''); dwToast(msg); }
+
   function dwSay(text, tone) {
     var card = $('.dw-card');
     if (!card) return;
@@ -8065,7 +8115,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         Amount: amtOf(p.rawA, va), Amount2: amtOf(p.rawB, vb),
         Flags: TF_TWO_ASSET
       }).then(function () {
-        dwSay('Liquidity added.', 'good');
+        // lumoscore.com's exact wording, read off its okMsg: "Liquidity is added" / "Liquidity is withdrawn".
+        dwOk('Liquidity is added');
         i.a.value = ''; i.b.value = '';
         setTimeout(function () { if (window.__lxxPoolDetailReload) window.__lxxPoolDetailReload(); }, 3000);
       }).catch(function (e) {
@@ -8092,9 +8143,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       LPTokenIn: withdrawAll ? undefined : { currency: p.lpToken.currency, issuer: p.lpToken.issuer, value: String(v) },
       Flags: withdrawAll ? 0x00020000 : TF_LP_TOKEN                      // tfWithdrawAll : tfLPToken
     }).then(function () {
-      dwSay('Liquidity withdrawn.', 'good');
-      // A confirmation, not a state: it goes once the page has had time to reload the position.
-      setTimeout(function () { dwSay(''); }, 5000);
+      // The toast expires on its own, so the line that used to clear this after five seconds is gone with it.
+      dwOk('Liquidity is withdrawn');
       i.lp.__lxxAll = false;
       i.lp.value = '';
       setTimeout(function () { if (window.__lxxPoolDetailReload) window.__lxxPoolDetailReload(); }, 3000);
