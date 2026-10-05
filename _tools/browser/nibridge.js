@@ -1924,6 +1924,22 @@
       // whether to re-price, and for the same reason: two tokens called LUMOS from different issuers
       // are different assets, and paintSourceAsset rebuilds SRC into a new object on every repaint, so
       // comparing the objects proves nothing.
+      // AND NOT AT ALL ABOVE THE BALANCE, because the ledger cannot price that.
+      //
+      // ripple_path_find answers "what can THIS ACCOUNT send", not "what is this amount worth", so it
+      // caps at the holding. Measured on a wallet with 21,038 PHNIX: send_max 1,000 -> 0.007008 XRP,
+      // 21,000 -> 0.147164, and both 100,000 AND 500,000 -> 0.147434. Past the balance the answer stops
+      // moving, which is why 0.01, 0.1, 0.2 and 0.5 ATOM -- every one of them above RAZA's 0.000154 --
+      // all produced the same receive figure. Matching the quote to the typed amount was necessary but
+      // not sufficient: the quote genuinely IS for that amount, it is just capped.
+      //
+      // So there is no honest figure to show, and showing the capped one presents a quote for what the
+      // wallet holds as a quote for what was typed. The red banner already says the amount exceeds the
+      // balance; the receive line says nothing rather than something wrong. (The Trade page answers a
+      // DIFFERENT question -- what 0.5 ATOM is worth in the pool, balance or no balance -- which is why
+      // it can quote 158 XRP where this cannot.)
+      var held = (SRC.balance != null) ? SRC.balance : null;
+      if (held != null && amountXrp() > held) return 0;
       if (!SWAPQ || !(SWAPQ.out > 0)) return 0;
       if (SWAPQ.amt !== amountXrp()) return 0;
       var f = SWAPQ.from;
