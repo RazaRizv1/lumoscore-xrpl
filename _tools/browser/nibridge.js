@@ -472,13 +472,39 @@
       img.alt = '';
       if (lazy) { img.loading = 'lazy'; img.decoding = 'async'; }
       img.style.cssText = 'width:100%;height:100%;border-radius:50%;object-fit:cover';
-      img.onerror = function () {
-        if (img.parentNode) img.parentNode.removeChild(img);
-        if (fallbackName) markLetters(host, fallbackName);
-      };
       host.appendChild(img);
     }
+    // THE HANDLER IS ATTACHED EVERY TIME, not only to an img this function created (RAZA 2026-10-05,
+    // twice: "LUMOS logo is still breaking").
+    //
+    // The served file is fine -- fetched and looked at: the orange flame, 160x160, loads here. But when
+    // the host ALREADY holds an <img>, which it does whenever another layer wrote one first (brpolish
+    // builds the From pill that way), this branch was skipped and only `src` was replaced. An image
+    // that then failed had NO onerror, so the browser's own broken-image glyph sat in the circle
+    // permanently instead of falling back to the letters -- which is what a broken logo on this chip
+    // looks like, and why it survived a logo fix that was otherwise correct.
+    //
+    // `onerror` rather than addEventListener: assigning replaces any handler from a previous call, so
+    // repainting the same chip cannot stack them.
+    img.onerror = function () {
+      // ONE RETRY PAST THE CACHE BEFORE GIVING UP. /lxapi/xrplthumb answers a miss with max-age 600 and
+      // a malformed id with 3600, so a single bad moment -- an upstream blip, a request that went out
+      // before a fix -- is remembered by the BROWSER for up to an hour and a reload will not shift it.
+      // Measured from here the LUMOS thumbnail is 200 on six of six tries, 23,747 bytes each, which is
+      // what makes a stale cached failure the likely difference between this machine and his. The
+      // retry is one extra request only on a path that has already failed.
+      if (!img.__lxRetried && /^\/lxapi\//.test(String(img.getAttribute('src') || ''))) {
+        img.__lxRetried = 1;
+        img.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + 'r=' + Date.now();
+        return;
+      }
+      if (img.parentNode) img.parentNode.removeChild(img);
+      if (fallbackName) markLetters(host, fallbackName);
+    };
     if (img.getAttribute('src') !== src) img.src = src;
+    // A src assigned BEFORE this handler existed may already have failed, and a failed image fires
+    // nothing more. complete && naturalWidth === 0 is that state, and it is the one his screenshot is in.
+    if (img.complete && !img.naturalWidth && img.getAttribute('src')) img.onerror();
   }
 
   // SELECTING AN APPENDED DESTINATION, because the design's own handler never sees one.
