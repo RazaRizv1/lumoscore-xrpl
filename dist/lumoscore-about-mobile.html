@@ -6686,6 +6686,81 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return e;
   }
 
+  // WHICH ISSUERS GET THE TICK (RAZA 2026-10-05: "On search, its not showing the verificatin tick" and
+  // "Also in recent searches its no showing the verifiation icon").
+  //
+  // This read xrpl.to's own `vf` flag and nothing else. `vf` is 0 for ARMY, for PHNIX and for most of the
+  // roster, so the badge appeared on LUMOS and almost nowhere else — while the Trade page ticks all one
+  // hundred rows it lists. One site giving two answers to the same question is worse than either answer.
+  //
+  // The rule is now the Trade table's and the wallet's: membership of /lxapi/xrpltokens, with LUMOS
+  // pinned. `vf` still counts on top, so an issuer the upstream does vouch for keeps its badge even when
+  // it is outside the top hundred. The caveat recorded in trade.js — this roster is ranked by volume, not
+  // vetted by anyone, so the tick means "we list it" — applies here too and is not re-argued.
+  //
+  // FETCHED LAZILY, on the first use of the panel. This layer loads on every page of the site; pulling a
+  // 34 KB roster on every page load to decorate a popup most visits never open is not a trade worth
+  // making.
+  //
+  // AND DECIDED AT RENDER, NEVER TAKEN FROM THE STORED ROW. A recent search keeps the payload it was
+  // opened with, `vf` included, so an entry saved before today would have carried vf:0 for as long as that
+  // localStorage key lived — which is exactly the second half of the report. Nothing stored decides this.
+  var LUMOS_ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  var VSET = null, vAsked = false;
+
+  function vKey(t) {
+    return (t && t.i ? t.i : '') + '|' + String((t && t.c) || '').toUpperCase();
+  }
+
+  function vBadge() {
+    var vb = el('span', 'lx-seavfd');
+    vb.setAttribute('title', 'Verified issuer');
+    var NSV = 'http://www.w3.org/2000/svg';
+    var vs = document.createElementNS(NSV, 'svg');
+    vs.setAttribute('viewBox', '0 0 24 24');
+    vs.setAttribute('fill', 'none');
+    vs.setAttribute('stroke', 'currentColor');
+    vs.setAttribute('stroke-width', '3');
+    vs.setAttribute('stroke-linecap', 'round');
+    vs.setAttribute('stroke-linejoin', 'round');
+    var vp = document.createElementNS(NSV, 'path');
+    vp.setAttribute('d', 'M20 6L9 17l-5-5');
+    vs.appendChild(vp);
+    vb.appendChild(vs);
+    return vb;
+  }
+
+  // An empty slot is hidden rather than left as a zero-width span, so it can never add a stray gap to a
+  // row that is not ticked.
+  function vPaint(slot) {
+    var ok = slot.getAttribute('data-lxvf') === '1'
+      || !!(VSET && VSET[slot.getAttribute('data-lxvk') || '']);
+    var has = slot.firstChild;
+    if (ok && !has) slot.appendChild(vBadge());
+    else if (!ok && has) slot.removeChild(has);
+    slot.style.display = ok ? '' : 'none';
+  }
+
+  function vApply() {
+    [].forEach.call(document.querySelectorAll('.lx-seavslot'), vPaint);
+  }
+
+  function vLoad() {
+    if (vAsked) return;
+    vAsked = true;
+    fetch('/lxapi/xrpltokens?n=100')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var s = {};
+        [].forEach.call((d && d.rows) || [], function (x) {
+          if (x && x.i && x.c) s[x.i + '|' + String(x.c).toUpperCase()] = 1;
+        });
+        VSET = s;
+        vApply();
+      })
+      .catch(function () { vAsked = false; });        // a dropped request must not settle the answer
+  }
+
   function rowFor(t) {
     var a = document.createElement('a');
     a.className = 'sp-row sp-row--asset lx-sea';
@@ -6702,31 +6777,20 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var info = el('div', 'sp-info');
     var nameRow = el('div', 'sp-name-row', t.n);
 
-    // The verified badge Stellar shows beside a verified issuer. The payload already carried `vf`
-    // and nothing rendered it, so a verified issuer looked identical to an unverified one — on a
-    // page whose whole job is telling apart tokens that share a ticker.
-    if (t.vf || t.i === 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha') {
-      var vb = el('span', 'lx-seavfd');
-      vb.setAttribute('title', 'Verified issuer');
-      var NSV = 'http://www.w3.org/2000/svg';
-      var vs = document.createElementNS(NSV, 'svg');
-      vs.setAttribute('viewBox', '0 0 24 24');
-      vs.setAttribute('fill', 'none');
-      vs.setAttribute('stroke', 'currentColor');
-      vs.setAttribute('stroke-width', '3');
-      vs.setAttribute('stroke-linecap', 'round');
-      vs.setAttribute('stroke-linejoin', 'round');
-      var vp = document.createElementNS(NSV, 'path');
-      vp.setAttribute('d', 'M20 6L9 17l-5-5');
-      vs.appendChild(vp);
-      vb.appendChild(vs);
-      nameRow.appendChild(vb);
-    }
+    // The verified badge Stellar shows beside a verified issuer. It goes in a SLOT rather than being
+    // appended conditionally, because the domain pill is added straight after it and a badge that
+    // arrives later must land before that pill, not after it. The slot also means the answer can be
+    // revised once the roster lands — see vPaint.
+    var vslot = el('span', 'lx-seavslot');
+    vslot.setAttribute('data-lxvk', vKey(t));
+    if (t.vf || t.i === LUMOS_ISS) vslot.setAttribute('data-lxvf', '1');
+    nameRow.appendChild(vslot);
+    vPaint(vslot);
 
     // THE HOME DOMAIN, as lumoscore.com's rows show it (RAZA 2026-09-15: "Its not showing homedomains in search").
     // The issuer's display name stands in only where no domain is published; a FirstLedger toml host is where a
     // file is stored, not whose token it is.
-    var dom = t.i === 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' ? 'lumoscore.com' : rootDomain(t.d);
+    var dom = t.i === LUMOS_ISS ? 'lumoscore.com' : rootDomain(t.d);
     var pillTxt = dom || t.u;
     // A pill that only repeats the token's own name says nothing ("Atom" beside "Atom").
     if (pillTxt && pillTxt.toLowerCase() !== String(t.n || '').toLowerCase()) {
@@ -7170,6 +7234,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   var timer = null;
   function onInput(e) {
     var q = String(e.target.value || '').trim();
+    vLoad();
     clearTimeout(timer);
     // Debounced: the upstream allows 333 requests a DAY per IP, and although this goes through our
     // own cached proxy, one request per keystroke would still be pointless load for no better answer.
@@ -7181,7 +7246,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (!inp || inp.__lxx) return;
     inp.__lxx = 1;
     inp.addEventListener('input', onInput);
-    inp.addEventListener('focus', recShowIfEmpty);
+    // Opening the panel is the first moment the roster is worth fetching — and the recents it paints on
+    // focus are the rows that most need it, since their stored `vf` is whatever it was months ago.
+    inp.addEventListener('focus', function () { vLoad(); recShowIfEmpty(); });
     recShowIfEmpty();
     // The design's placeholder still offers Stellar; this layer decides what is searchable.
     try { inp.placeholder = 'Search assets, pools and wallets'; } catch (e) {}
