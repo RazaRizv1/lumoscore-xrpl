@@ -9892,6 +9892,26 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
   }
 
+  // THE HEADLINE STATS COMPACT FROM A THOUSAND, NOT FROM A MILLION (RAZA 2026-10-06: "Now on
+  // Trade-Asset page, in Volume and Market cap, please use K,M,B etc, just like on Stellar").
+  //
+  // amount() already had M, B, T, Qa and Qi, all at two decimals — the ladder simply had no K, so
+  // anything between a thousand and a million printed in full: "26,422.66 XRP" and "633,891.84 XRP"
+  // beside a supply reading "5.33B". One box switching conventions.
+  //
+  // The K step is ONE DECIMAL, which is not a guess: lumoscore.com's AQUA page reads "129.8K XLM" for
+  // 24h Volume and "80.05B AQUA" for supply, so its ladder is K→1dp, M→2dp, B→2dp. amount() already
+  // matches above a million; this completes it below.
+  //
+  // SEPARATE FROM amount(), because amount() also formats the trades table, where a fill of 1,234 ATOM
+  // should stay 1,234 rather than become "1.2K" — the AMOUNT column there is a quantity to read, not a
+  // magnitude to skim. Only the four headline cells call this.
+  function statAmt(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v >= 1e3 && v < 1e6) return (v / 1e3).toFixed(1) + 'K';
+    return amount(v);
+  }
+
   // ---- the token in the URL --------------------------------------------------------------------
   // /trade/xrpl/<CODE>-<ISSUER>. The code may itself contain a dash, so split on the LAST one --
   // the issuer is a fixed-shape r-address and the code is whatever is left.
@@ -10362,18 +10382,24 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       d.price == null ? '' : ((d.p24 >= 0 ? '+' : '') + xrp(d.price * d.p24 / 100, 6) + ' XRP'),
       d.p24 >= 0 ? 'up' : 'down');
 
-    setCell('24h volume', d.vol24 == null ? null : amount(d.vol24) + ' ', 'XRP',
+    setCell('24h volume', d.vol24 == null ? null : statAmt(d.vol24) + ' ', 'XRP',
       (d.vol24 != null && usd) ? money(d.vol24 * usd) : '');
 
-    setCell('market cap', d.marketcap == null ? null : amount(d.marketcap) + ' ', 'XRP',
+    setCell('market cap', d.marketcap == null ? null : statAmt(d.marketcap) + ' ', 'XRP',
       (d.marketcap != null && usd) ? money(d.marketcap * usd) : '');
 
-    setCell('liquidity', d.tvl == null ? null : amount(d.tvl) + ' ', 'XRP',
+    setCell('liquidity', d.tvl == null ? null : statAmt(d.tvl) + ' ', 'XRP',
       (d.tvl != null && usd) ? money(d.tvl * usd) : '');
 
-    // Issued and circulating differ for real tokens, so say which this is.
-    setCell('supply', d.circulating == null ? null : amount(d.circulating) + ' ', d.name || '',
-      d.holders == null ? '' : Math.round(d.holders).toLocaleString('en-US') + ' holders');
+    // THE SUB-LINE SAYS WHICH SUPPLY THIS IS, NOT HOW MANY HOLD IT (RAZA 2026-10-06: "In supply box on
+    // the right end, on Stellar we're not showing number of holders ... we've already got that covered
+    // below on the page").
+    //
+    // Read off lumoscore.com's AQUA page: "80.05B" over "AQUA issued". Ours said "8,733 holders", which
+    // is both a different fact from the one above it and the same fact as the holders section further
+    // down — the box was answering a question the page answers twice already.
+    setCell('supply', d.circulating == null ? null : statAmt(d.circulating) + ' ', d.name || '',
+      d.name ? (d.name + ' issued') : '');
   }
 
   // ---- the price chart ----------------------------------------------------------------------------
@@ -12317,6 +12343,74 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     paintLogo(asset, d);
     paintLabels(asset);
+    paintSocials(asset);
+  }
+
+  // THE LINKS THE ISSUER PUBLISHES IN ITS OWN TOML (RAZA 2026-10-06: "if toml on XRPL mentions socials,
+  // please add just like we do on Stellar").
+  //
+  // lumoscore.com puts an `a.lx-soc` beside the home domain — on AQUA that is x.com/aqua_token, out of
+  // the SEP-1 toml. The XRP Ledger keeps the same information under `[[TOKENS.WEBLINKS]]`, and nothing
+  // here was reading it. The styling needed nothing: `.lx-soc` is already in this build's inherited
+  // sheet, 28px, accent-coloured, with the hover.
+  //
+  // /lxapi/xrpltoml does the reading, because the toml lives at the issuer's LEDGER domain and that has
+  // to be resolved first — the same resolver the search rows and the header domain use, so all three
+  // agree about where a token's home is. It costs nothing from the xrpl.to budget.
+  //
+  // ICONS, NOT TITLES. A row of word-links would not be Stellar's shape; the endpoint classifies each
+  // url so the glyph is picked here without re-parsing it, and anything unrecognised gets the globe.
+  var SOC = {
+    x: { t: 'X', d: 'M18.9 2H22l-7.1 8.1L23.2 22h-6.5l-5.1-6.7L5.8 22H2.7l7.6-8.7L1.2 2h6.7l4.6 6.1L18.9 2Zm-1.1 18h1.7L7.4 3.8H5.6L17.8 20Z' },
+    telegram: { t: 'Telegram', d: 'M21.9 3.3 2.9 10.6c-1.1.4-1.1 1.1-.2 1.4l4.8 1.5 1.8 5.6c.2.6.1.9.8.9.5 0 .7-.2 1-.5l2.3-2.2 4.8 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.8-1.3-1.5zM7.9 13.2 18.3 6.6c.5-.3 1-.1.6.2l-8.9 8-.3 3.6-1.8-5.2z' },
+    discord: { t: 'Discord', d: 'M19.3 5.3A16.9 16.9 0 0 0 15.1 4l-.2.4a15.7 15.7 0 0 1 3.7 1.2 12.8 12.8 0 0 0-11.2 0A15.7 15.7 0 0 1 11.1 4.4L10.9 4a16.9 16.9 0 0 0-4.2 1.3C4.1 9.1 3.4 12.8 3.7 16.4a17 17 0 0 0 5.2 2.6l.4-.6a11 11 0 0 1-1.6-.8l.3-.3a12.1 12.1 0 0 0 10 0l.3.3a11 11 0 0 1-1.6.8l.4.6a17 17 0 0 0 5.2-2.6c.4-4.2-.6-7.8-3-11.1zM9.7 14.3c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2c0 1.1-.8 2-1.8 2zm4.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2c0 1.1-.8 2-1.8 2z' },
+    github: { t: 'GitHub', d: 'M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.3-3.4-1.3-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .3.3.7 1 .7 1.9v2.8c0 .3.2.6.7.5A10 10 0 0 0 12 2Z' },
+    reddit: { t: 'Reddit', d: 'M22 12.1a2.1 2.1 0 0 0-3.6-1.5 10.4 10.4 0 0 0-5.5-1.7l.9-4.3 3 .6a1.6 1.6 0 1 0 .2-1l-3.5-.7a.5.5 0 0 0-.6.4l-1.1 5A10.4 10.4 0 0 0 5.6 10.6a2.1 2.1 0 1 0-2.3 3.4 4 4 0 0 0 0 .6c0 3.1 3.9 5.6 8.7 5.6s8.7-2.5 8.7-5.6a4 4 0 0 0 0-.6 2.1 2.1 0 0 0 1.3-1.9zM7.5 13.6a1.6 1.6 0 1 1 1.6 1.6 1.6 1.6 0 0 1-1.6-1.6zm8.9 4.2a5.9 5.9 0 0 1-4.4 1.4 5.9 5.9 0 0 1-4.4-1.4.5.5 0 0 1 .7-.7 5 5 0 0 0 3.7 1.1 5 5 0 0 0 3.7-1.1.5.5 0 1 1 .7.7zm-.5-2.6a1.6 1.6 0 1 1 1.6-1.6 1.6 1.6 0 0 1-1.6 1.6z' },
+    youtube: { t: 'YouTube', d: 'M23 7.5a2.9 2.9 0 0 0-2-2C19.2 5 12 5 12 5s-7.2 0-9 .5a2.9 2.9 0 0 0-2 2A30.4 30.4 0 0 0 .5 12 30.4 30.4 0 0 0 1 16.5a2.9 2.9 0 0 0 2 2c1.8.5 9 .5 9 .5s7.2 0 9-.5a2.9 2.9 0 0 0 2-2 30.4 30.4 0 0 0 .5-4.5 30.4 30.4 0 0 0-.5-4.5zM9.8 15.3V8.7l6 3.3z' },
+    web: { t: 'Website', d: 'M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm6.9 6h-2.6a13.6 13.6 0 0 0-1.3-3.4A8 8 0 0 1 18.9 8ZM12 4.1a12 12 0 0 1 1.6 3.9h-3.2A12 12 0 0 1 12 4.1ZM4.3 14a7.9 7.9 0 0 1 0-4h3a16.6 16.6 0 0 0 0 4Zm.8 2h2.6a13.6 13.6 0 0 0 1.3 3.4A8 8 0 0 1 5.1 16Zm2.6-8H5.1a8 8 0 0 1 3.9-3.4A13.6 13.6 0 0 0 7.7 8ZM12 19.9A12 12 0 0 1 10.4 16h3.2A12 12 0 0 1 12 19.9ZM14 14h-4a14.8 14.8 0 0 1 0-4h4a14.8 14.8 0 0 1 0 4Zm1 5.4a13.6 13.6 0 0 0 1.3-3.4h2.6a8 8 0 0 1-3.9 3.4Zm1.7-5.4a16.6 16.6 0 0 0 0-4h3a7.9 7.9 0 0 1 0 4Z' }
+  };
+  SOC.social = SOC.web;
+
+  function paintSocials(asset) {
+    var row = $('.asset-meta-row') || ($('.website') && $('.website').parentElement);
+    if (!row) return;
+    var key = asset.code + '-' + asset.issuer;
+    if (row.getAttribute('data-lxsoc') === key) return;      // already painted for this token
+    row.setAttribute('data-lxsoc', key);
+    [].forEach.call(row.querySelectorAll('a.lx-soc'), function (a) { a.parentNode.removeChild(a); });
+
+    fetch('/lxapi/xrpltoml?iss=' + encodeURIComponent(asset.issuer)
+      + '&cur=' + encodeURIComponent(currencyOf(asset.code)))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (row.getAttribute('data-lxsoc') !== key) return;   // navigated to another token meanwhile
+        var links = (j && j.links) || [];
+        var NS = 'http://www.w3.org/2000/svg';
+        links.forEach(function (l) {
+          var g = SOC[l.kind] || SOC.web;
+          var a = document.createElement('a');
+          a.className = 'lx-soc';
+          a.href = l.url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer nofollow';
+          a.title = l.title || g.t;
+          a.setAttribute('aria-label', l.title || g.t);
+          // data-lxc opts out of the logo painter and data-logoed out of the healer: both repaint
+          // short or empty elements, and this one is an icon.
+          a.setAttribute('data-lxc', '');
+          a.setAttribute('data-logoed', '1');
+          var svg = document.createElementNS(NS, 'svg');
+          svg.setAttribute('viewBox', '0 0 24 24');
+          svg.setAttribute('fill', 'currentColor');
+          svg.setAttribute('aria-hidden', 'true');
+          var p = document.createElementNS(NS, 'path');
+          p.setAttribute('d', g.d);
+          svg.appendChild(p);
+          a.appendChild(svg);
+          row.appendChild(a);
+        });
+      })
+      .catch(function () { /* no toml, no links — the row simply stays as it was */ });
   }
 
   // THE TOKEN'S LOGO WAS A BLANK GREY SQUARE ON EVERY PAGE.
