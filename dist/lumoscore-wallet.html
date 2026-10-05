@@ -9722,6 +9722,57 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
     else boot();
   }
+
+  // THE COOKIE IS THE ONLY THING THE SERVER CAN READ, AND IT WAS WRITTEN EXACTLY ONCE.
+  //
+  // RAZA 2026-10-06: "There's a flash bug on XRPL wallet page. This shows up for split seconds when
+  // Wallet page is refreshed", with a screenshot of "3 Active" and "3,442 APT · Across 2 pools".
+  // Those are not XRPL's figures and never were: this build ships both of those cards blank, and
+  // `3 Active` appears in its wallet page only inside a comment. They are STELLAR's baked mock,
+  // read straight out of C:/LumosCore/dist/lumoscore-wallet.html. So it is not a flash of our own
+  // markup — the server handed back the other chain's page.
+  //
+  // /dashboard, /wallet and /launchpad are ONE URL each on the combined deployment, with no chain in
+  // the path, so `lx_chain` is the only thing that tells the middleware which build to serve.
+  // cookieChain() ran in store() and in forget() and nowhere else — at connect and at disconnect. Any
+  // browser that keeps localStorage but loses cookies (a cleared cookie jar, a session older than the
+  // cookie itself, ITP-style expiry) therefore remembers an XRPL wallet and is served Stellar's page.
+  // I hit this myself today: seeding only localStorage and opening /wallet served Stellar's wallet,
+  // mock portfolio and all, until I set the cookie by hand.
+  //
+  // That is worse than a flash. Without the reload below it is simply the wrong chain's wallet.
+  //
+  // RUNS DORMANT TOO — deliberately outside the __lxcNoBoot guard above. On the combined site this
+  // module is injected into Stellar's pages with that flag set, and a Stellar page is exactly where a
+  // mis-served XRPL session lands. Gating it would leave it unable to fix the one case it exists for.
+  // It touches nothing but the cookie, so it is safe there: a stored chain of anything but 'xrpl'
+  // returns on the first line.
+  (function reconcileChain() {
+    var want = '';
+    try { want = localStorage.getItem('lumos.chain') || ''; } catch (e) { return; }
+    if (want !== 'xrpl') return;
+    var has = /(?:^|;\s*)lx_chain=xrpl(?:;|$)/.test(document.cookie || '');
+    if (has) {
+      // Healthy again: let a later loss be repaired once more.
+      try { sessionStorage.removeItem('lumos.chainfix'); } catch (e) {}
+      return;
+    }
+    cookieChain('xrpl');
+
+    // Only the shared authgated urls can be served from the wrong build — every other route names its
+    // chain in the path — so the reload is limited to those.
+    var p = (location.pathname || '/').replace(/\/+$/, '') || '/';
+    if (['/dashboard', '/wallet', '/launchpad', '/launchpad/review', '/launchpad/confirm'].indexOf(p) < 0) return;
+
+    // ONCE PER TAB, AND NO RELOAD AT ALL WITHOUT A PLACE TO RECORD IT. If cookies are blocked outright
+    // the write above does nothing, the next load is in exactly this state, and an ungated reload here
+    // is an infinite one. The flag is the whole safety margin, so no flag means no reload.
+    try {
+      if (sessionStorage.getItem('lumos.chainfix') === p) return;
+      sessionStorage.setItem('lumos.chainfix', p);
+    } catch (e) { return; }
+    location.reload();
+  })();
 })();
 
 </script><script id="lx-xrplfeerate">

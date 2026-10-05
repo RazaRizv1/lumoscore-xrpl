@@ -2374,20 +2374,56 @@
     }, true);
   }
 
+  // The curated roster, fetched once per page and shared by every caller. A rejected fetch does not
+  // settle the answer — the promise is dropped so the next caller asks again rather than inheriting
+  // "nothing is verified" from one lost request.
+  var LUMOS_ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  var CURATED = null;
+  function curatedSet() {
+    if (CURATED) return CURATED;
+    CURATED = fetch('/lxapi/xrpltokens?n=100')
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var s = {};
+        [].forEach.call((j && j.rows) || [], function (x) {
+          if (x && x.i && x.c) s[x.i + '|' + String(x.c).toUpperCase()] = 1;
+        });
+        return s;
+      })
+      .catch(function () { CURATED = null; return {}; });
+    return CURATED;
+  }
+
   function paintHeader(asset, d) {
     var h1 = $('h1.asset-name') || $('.asset-name');
     if (h1) {
       h1.textContent = asset.code;
       // THE VERIFIED TICK (RAZA 2026-09-16: "Also add verification tick for LUMOS on all other places where it should be.
-      // eg: Trade-Asset, Wallet, Search"). The same flag the market table and the search rows use decides it.
-      if (d && (d.verified || d.vf || asset.issuer === 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha')) {
+      // eg: Trade-Asset, Wallet, Search"; 2026-10-06: "Verification tick is also not showing on Trade-Asset page", with
+      // PHNIX on screen).
+      //
+      // It decided on xrpl.to's `vf`, which is 0 for PHNIX, for ARMY and for most of the roster — so the tick appeared on
+      // LUMOS and almost nowhere else, while the Trade table one click away ticks all hundred rows it lists. Now the same
+      // rule as that table, the wallet and the search panel: membership of /lxapi/xrpltokens, LUMOS pinned, with `vf`
+      // still counting on top. The caveat recorded in trade.js — the roster is ranked by volume, not vetted — holds here
+      // too and is not re-argued.
+      //
+      // ASYNC, so the roster is awaited rather than raced: this header paints as soon as the asset is known, long before
+      // a hundred-row list has been fetched. The tick is appended when the answer arrives.
+      var vtick = function () {
         var vt = el('span', 'lx-vtick');
         vt.title = 'Verified issuer';
         vt.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:9px;'
           + 'border-radius:50%;background:#2fb46a;color:#fff;vertical-align:middle;flex:none';
         vt.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
-        h1.appendChild(vt);
-      }
+        if (!h1.querySelector('.lx-vtick')) h1.appendChild(vt);
+      };
+      if (d && (d.verified || d.vf || asset.issuer === LUMOS_ISS)) vtick();
+      else curatedSet().then(function (s) {
+        var cur = '';
+        try { cur = window.lxx.encodeCurrency(asset.code) || ''; } catch (e) {}
+        if (s[asset.issuer + '|' + String(cur).toUpperCase()]) vtick();
+      });
     }
 
     // The title was being rewritten at runtime to the Stellar token's. Say what this page is.
