@@ -145,15 +145,29 @@ function kindOf(url, type, title) {
 // PHNIX's toml sits on firstledger.net and its web link is phnix.lol, which is a real second
 // destination, not a repeat.
 //
+// ONE BUTTON PER GLYPH (RAZA 2026-10-06: "wtf", at ATOM showing TWO X buttons side by side).
+//
+// Its toml lists x.com/AtomXRPL and x.com/atomXRPL — the same handle, different capitalisation, one
+// typed "socialmedia" and one typed "info". Deduping on the exact url let both through, and they
+// render as two identical marks.
+//
+// The rule is not "dedupe harder on the string", it is that THE GLYPH IS THE IDENTITY. Two buttons
+// carrying the same icon cannot be told apart by the person looking at them, so the second one is
+// noise whatever its url says — and this row's job is "where to find this project", not "every url in
+// the toml". The first of each kind wins, which is toml order, which is the issuer's own ordering.
+//
 // Its own function so it can be tested; the handler around it needs a ledger and a web server.
 export function cleanLinks(raw, domain) {
   const home = rootOf(domain);
   const seen = {};
+  const kinds = {};
   return (raw || [])
     .map((l) => ({ url: safeUrl(l.url), title: String(l.title || '').slice(0, 60), kind: kindOf(l.url, l.type, l.title) }))
     .filter((l) => {
       if (!l.url) return false;
       if (home && rootOf(l.url) === home) return false;
+      if (kinds[l.kind]) return false;
+      kinds[l.kind] = 1;
       // And a toml that lists the same destination twice gets one button, not two.
       if (seen[l.url]) return false;
       seen[l.url] = 1;

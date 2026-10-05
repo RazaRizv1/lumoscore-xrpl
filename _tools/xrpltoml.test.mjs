@@ -59,5 +59,17 @@ const UNSAFE = [
 got = cleanLinks(readTokenLinks(UNSAFE, 'rXYZ', 'ABC'), '');
 check('only https, no credentials, no javascript:', urls(got).join() === 'https://ok.example/', urls(got));
 
+// RAZA's second report: ATOM's toml lists the same X handle twice, in different case and under two
+// different types, and both rendered as an X button.
+const TWOX = [
+  '[[TOKENS]]', 'issuer = "rXYZ"', 'currency = "ABC"',
+  '[[TOKENS.WEBLINKS]]', 'url = "https://x.com/AtomXRPL"', 'type = "socialmedia"', 'title = "X Social Media"',
+  '[[TOKENS.WEBLINKS]]', 'url = "https://t.me/atomXRPL"', 'type = "socialmedia"', 'title = "Telegram"',
+  '[[TOKENS.WEBLINKS]]', 'url = "https://x.com/atomXRPL"', 'type = "info"', 'title = "Official Website"',
+].join('\n');
+got = cleanLinks(readTokenLinks(TWOX, 'rXYZ', 'ABC'), 'toml.firstledger.net');
+check('one button per glyph', got.map((l) => l.kind).join() === 'x,telegram', got.map((l) => l.kind));
+check('and it is the first of each, in toml order', got[0].url === 'https://x.com/AtomXRPL', got[0] && got[0].url);
+
 console.log(fail ? ('\n' + fail + ' FAILED') : '\nall checks passed');
 process.exit(fail ? 1 : 0);
