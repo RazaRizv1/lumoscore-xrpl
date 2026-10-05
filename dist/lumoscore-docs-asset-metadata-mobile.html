@@ -4665,7 +4665,73 @@ function fetchUsd(tries) {
     });
 }
 
+// WHAT A SWAP WOULD FETCH, WITHOUT ASKING THE ROUTER.
+//
+// ripple_path_find answers "what can THIS ACCOUNT send", so it caps at the holding and goes silent for
+// an account that does not hold the token at all. Measured on a wallet with 21,038 PHNIX: send_max
+// 100,000 and send_max 500,000 both came back 0.147434 XRP, the same figure as its whole balance. The
+// Trade page already worked around this -- the pair's AMM pool and order book are read directly and the
+// amount is filled in small steps from whichever pays more.
+//
+// IT LIVES HERE SO THERE IS ONE OF IT. dxaswap.js's own note says "THIS IS browser/dxaswap.js's SWAP,
+// not a second one... a fresh implementation here would relearn all of it", and the bridge needed the
+// same answer. Two copies of this arithmetic would be two things to get wrong. Both pages inject this
+// file, so both get the same function and the same numbers.
+//
+// `rpc` is passed in rather than imported: each page has its own, with its own node list and deadline.
+function simulateSwap(rpc, opts) {
+  const buying = !!(opts && opts.buying);          // true: paying XRP for the token
+  const tok = opts && opts.token;
+  const amt = Number(opts && opts.amount);
+  if (!rpc || !tok || !(amt > 0)) return Promise.resolve(null);
+  const val = function (a) { return typeof a === 'string' ? Number(a) / 1e6 : Number(a && a.value); };
+  return Promise.all([
+    rpc('amm_info', { asset: { currency: 'XRP' }, asset2: tok, ledger_index: 'validated' }).catch(function () { return null; }),
+    rpc('book_offers', {
+      taker_gets: buying ? tok : { currency: 'XRP' }, taker_pays: buying ? { currency: 'XRP' } : tok,
+      limit: 200, ledger_index: 'validated',
+    }).catch(function () { return null; }),
+  ]).then(function (r) {
+    let pool = null;
+    const amm = r[0] && r[0].amm;
+    if (amm) {
+      const xr = typeof amm.amount === 'string' ? val(amm.amount) : val(amm.amount2);
+      const tr = typeof amm.amount === 'string' ? val(amm.amount2) : val(amm.amount);
+      if (xr > 0 && tr > 0) pool = { x: buying ? xr : tr, y: buying ? tr : xr, f: (Number(amm.trading_fee) || 0) / 100000 };
+    }
+    const offers = ((r[1] && r[1].offers) || []).map(function (o) {
+      return {
+        give: val(o.taker_gets_funded != null ? o.taker_gets_funded : o.TakerGets),
+        want: val(o.taker_pays_funded != null ? o.taker_pays_funded : o.TakerPays),
+      };
+    }).filter(function (o) { return o.give > 0 && o.want > 0; });
+    if (!pool && !offers.length) return null;
+    let spot = 0;
+    if (pool) spot = pool.y / pool.x * (1 - pool.f);
+    if (offers.length) spot = Math.max(spot, offers[0].give / offers[0].want);
+    const steps = 80, dx = amt / steps;
+    let out = 0, oi = 0, left = offers.length ? offers[0].want : 0;
+    for (let k = 0; k < steps; k++) {
+      const ammOut = pool ? pool.y * (1 - pool.x / (pool.x + dx * (1 - pool.f))) : 0;
+      let need = dx, bookOut = 0, j = oi, l = left;
+      while (need > 1e-18 && j < offers.length) {
+        const take = Math.min(need, l);
+        bookOut += take * offers[j].give / offers[j].want;
+        need -= take; l -= take;
+        if (l <= 1e-18) { j++; l = j < offers.length ? offers[j].want : 0; }
+      }
+      if (need > dx * 1e-9) bookOut = 0;                 // the book ran out inside this step
+      if (!(ammOut > 0) && !(bookOut > 0)) break;
+      if (ammOut >= bookOut) { out += ammOut; pool.x += dx; pool.y -= ammOut; }
+      else { out += bookOut; oi = j; left = l; }
+    }
+    if (!(out > 0)) return null;
+    return { out: out, impact: spot > 0 ? (1 - (out / amt) / spot) * 100 : null };
+  });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
+  simulateSwap,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
   iouValue, TF_SELL, offerFor,
@@ -6330,7 +6396,73 @@ function fetchUsd(tries) {
     });
 }
 
+// WHAT A SWAP WOULD FETCH, WITHOUT ASKING THE ROUTER.
+//
+// ripple_path_find answers "what can THIS ACCOUNT send", so it caps at the holding and goes silent for
+// an account that does not hold the token at all. Measured on a wallet with 21,038 PHNIX: send_max
+// 100,000 and send_max 500,000 both came back 0.147434 XRP, the same figure as its whole balance. The
+// Trade page already worked around this -- the pair's AMM pool and order book are read directly and the
+// amount is filled in small steps from whichever pays more.
+//
+// IT LIVES HERE SO THERE IS ONE OF IT. dxaswap.js's own note says "THIS IS browser/dxaswap.js's SWAP,
+// not a second one... a fresh implementation here would relearn all of it", and the bridge needed the
+// same answer. Two copies of this arithmetic would be two things to get wrong. Both pages inject this
+// file, so both get the same function and the same numbers.
+//
+// `rpc` is passed in rather than imported: each page has its own, with its own node list and deadline.
+function simulateSwap(rpc, opts) {
+  const buying = !!(opts && opts.buying);          // true: paying XRP for the token
+  const tok = opts && opts.token;
+  const amt = Number(opts && opts.amount);
+  if (!rpc || !tok || !(amt > 0)) return Promise.resolve(null);
+  const val = function (a) { return typeof a === 'string' ? Number(a) / 1e6 : Number(a && a.value); };
+  return Promise.all([
+    rpc('amm_info', { asset: { currency: 'XRP' }, asset2: tok, ledger_index: 'validated' }).catch(function () { return null; }),
+    rpc('book_offers', {
+      taker_gets: buying ? tok : { currency: 'XRP' }, taker_pays: buying ? { currency: 'XRP' } : tok,
+      limit: 200, ledger_index: 'validated',
+    }).catch(function () { return null; }),
+  ]).then(function (r) {
+    let pool = null;
+    const amm = r[0] && r[0].amm;
+    if (amm) {
+      const xr = typeof amm.amount === 'string' ? val(amm.amount) : val(amm.amount2);
+      const tr = typeof amm.amount === 'string' ? val(amm.amount2) : val(amm.amount);
+      if (xr > 0 && tr > 0) pool = { x: buying ? xr : tr, y: buying ? tr : xr, f: (Number(amm.trading_fee) || 0) / 100000 };
+    }
+    const offers = ((r[1] && r[1].offers) || []).map(function (o) {
+      return {
+        give: val(o.taker_gets_funded != null ? o.taker_gets_funded : o.TakerGets),
+        want: val(o.taker_pays_funded != null ? o.taker_pays_funded : o.TakerPays),
+      };
+    }).filter(function (o) { return o.give > 0 && o.want > 0; });
+    if (!pool && !offers.length) return null;
+    let spot = 0;
+    if (pool) spot = pool.y / pool.x * (1 - pool.f);
+    if (offers.length) spot = Math.max(spot, offers[0].give / offers[0].want);
+    const steps = 80, dx = amt / steps;
+    let out = 0, oi = 0, left = offers.length ? offers[0].want : 0;
+    for (let k = 0; k < steps; k++) {
+      const ammOut = pool ? pool.y * (1 - pool.x / (pool.x + dx * (1 - pool.f))) : 0;
+      let need = dx, bookOut = 0, j = oi, l = left;
+      while (need > 1e-18 && j < offers.length) {
+        const take = Math.min(need, l);
+        bookOut += take * offers[j].give / offers[j].want;
+        need -= take; l -= take;
+        if (l <= 1e-18) { j++; l = j < offers.length ? offers[j].want : 0; }
+      }
+      if (need > dx * 1e-9) bookOut = 0;                 // the book ran out inside this step
+      if (!(ammOut > 0) && !(bookOut > 0)) break;
+      if (ammOut >= bookOut) { out += ammOut; pool.x += dx; pool.y -= ammOut; }
+      else { out += bookOut; oi = j; left = l; }
+    }
+    if (!(out > 0)) return null;
+    return { out: out, impact: spot > 0 ? (1 - (out / amt) / spot) * 100 : null };
+  });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
+  simulateSwap,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,
   iouValue, TF_SELL, offerFor,

@@ -129,9 +129,29 @@
   // So a probe waits until its row is near the viewport, and then only a few run at a time. A
   // wallet shows about ten rows at once, so what you can see resolves immediately and the other
   // three hundred cost nothing until they are scrolled to.
-  var Q = [], active = 0, MAXQ = 6;
-  function pump() { while (active < MAXQ && Q.length) { active++; (Q.shift())(); } }
+  //
+  // AND THE WHOLE QUEUE STOPS WHEN THE UPSTREAM SAYS SO. Measured on the deployed build, 2026-10-05: a
+  // wallet holding 65 tokens asks for 65 marks, and xrpl.to answered 429 to roughly half of them — six
+  // at a time is a burst it will not serve. A 429 is not a fact about a token, it is "ask me later", so
+  // the answer is to ask later rather than to ask harder: the first one pauses every pending probe for
+  // a few seconds and drops the width to two. Total requests go DOWN, not up, which is the point — a
+  // per-row retry against a rate limit is just a second way to be refused.
+  var Q = [], active = 0, MAXQ = 6, HOLD = 0, HOLDT = 0;
+  function pump() {
+    if (!Q.length) return;
+    var wait = HOLD - Date.now();
+    if (wait > 0) {
+      if (!HOLDT) HOLDT = setTimeout(function () { HOLDT = 0; pump(); }, wait + 50);
+      return;
+    }
+    while (active < MAXQ && Q.length) { active++; (Q.shift())(); }
+  }
   function done1() { active--; pump(); }
+  // TUNED AGAINST THE REAL LIST, not guessed. The first attempt — a five-second pause and two in flight
+  // — was measured on a 65-holding wallet and left 62 rows still queued after half a minute, which is
+  // the bug again wearing a different face: a mark nobody waits for is a mark nobody sees. 2.5s and
+  // three in flight clears the same list while staying well inside what the upstream will serve.
+  function backOff() { HOLD = Date.now() + 2500; MAXQ = 3; }
 
   // Runs cb once, when the element comes within a screen of the viewport.
   //
@@ -200,21 +220,55 @@
   // dashboard: a hundred marks each drawn twice, which reads as the section glitching for seconds
   // after every load. So a mark is painted once, when its fate is known. The disc keeps its colour
   // meanwhile, so nothing looks empty, and the initial is drawn if the image fails or is slow.
+  // 429 IS NOT "THIS TOKEN HAS NO LOGO" (RAZA 2026-10-05: "On Wallet page --> My assets: why isn't
+  // LUMOS logo shown"). Measured on the deployed build: half the thumbnail requests a 65-holding wallet
+  // makes come back 429, every one of those rows drew a letter, and none of them ever asked again — the
+  // marks were all there, the wallet simply took a refusal as an answer. Asked by hand a second later,
+  // the same urls are 200.
+  //
+  // AN <img> CANNOT TELL A 429 FROM A 404. Both arrive as `onerror`, which is why this looked for a
+  // year like missing artwork rather than a rate limit, and why the fix had to change the probe: a
+  // fetch can read the status. The mark is still painted through the stylesheet, and that costs nothing
+  // extra — the answer is immutable for a week, so the url() that follows is a browser-cache hit.
+  //
+  //   200        the mark exists; paint it
+  //   400 / 404  a real answer about this token: it has none, draw the letter and stop asking
+  //   anything else (429, 5xx, a dropped request) is about the MOMENT, so the row waits and asks again
+  //
+  // A 429 holds the whole queue rather than spinning this row alone (see pump()), and it is counted
+  // separately from a dropped request: "ask me later" said six times is still a logo that exists, while
+  // six silent failures in a row is a network that is not going to answer. Measured on a cold cache,
+  // sixty-five holdings: three attempts left two rows lettered, both of them 429s that had simply not
+  // got to the front of the line yet.
   function paintMark(node, setLogo, setLetter, url) {
     if (!url) { setLetter(); return; }
-    near(node, function () {
+    var tries = 0, held = 0;
+    function go() {
       Q.push(function () {
-        var fired = false, img = new Image();
-        // This now times the REQUEST, not a wait behind three hundred of them.
-        var t = setTimeout(function () {
-          if (fired) return; fired = true; done1(); setLetter();
-        }, 8000);
-        img.onload = function () { if (fired) return; fired = true; clearTimeout(t); done1(); setLogo(url); };
-        img.onerror = function () { if (fired) return; fired = true; clearTimeout(t); done1(); setLetter(); };
-        img.src = url;
+        var fired = false;
+        // This times the REQUEST, not a wait behind three hundred of them.
+        var t = setTimeout(function () { settle(0); }, 8000);
+        function settle(status) {
+          if (fired) return;
+          fired = true;
+          clearTimeout(t);
+          done1();
+          if (status === 200) { setLogo(url); return; }
+          if (status === 400 || status === 404) { setLetter(); return; }
+          if (status === 429 ? ++held > 6 : ++tries > 3) { setLetter(); return; }
+          if (status === 429) backOff();
+          setTimeout(go, status === 429 ? 1500 : 1200);
+        }
+        fetch(url).then(function (r) {
+          var st = r.status;
+          // Drain the body, so the bytes land in the browser's own cache and the url() that follows is
+          // a hit. A failed read is still an answer about the status, so it settles either way.
+          return r.blob().then(function () { return st; }, function () { return st; });
+        }).then(settle, function () { settle(0); });
       });
       pump();
-    });
+    }
+    near(node, go);
   }
 
   // THE VERIFIED TICK (RAZA 2026-09-16: "Also add verification tick for LUMOS on all other places where it should be").
@@ -228,6 +282,56 @@
     s.innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
     return s;
   }
+
+  // WHICH HOLDINGS GET ONE (RAZA 2026-10-05: "verification ticks missing on most like Army and phnix.
+  // they're already in our curated list"). They are: both sit in the roster the Trade page lists, and
+  // this page was ticking exactly one issuer — LUMOS, hardcoded — so every other holding read as
+  // unvetted beside it.
+  //
+  // THE RULE IS THE TRADE PAGE'S RULE, deliberately, because that table is what "our curated list"
+  // means on this build: the live top of the XRP Ledger market from /lxapi/xrpltokens, with LUMOS
+  // pinned into it. Two surfaces disagreeing about whether a token is verified is worse than either
+  // answer on its own. The same caveat recorded in trade.js applies here and is not re-argued: the
+  // roster is ranked by volume, not vetted by anyone, so the tick means "we list it". If it is ever to
+  // mean verification again, a real issuer+currency allowlist replaces VSET and both surfaces follow.
+  //
+  // NOT xrpl.to's own `vf` flag, which the search rows use: it is 0 for both ARMY and PHNIX, so
+  // reading it here would have answered RAZA's report with "working as intended" and no ticks.
+  //
+  // Rows are painted before this lands, so the tick is applied twice — inline when a row is built, and
+  // again over the whole table once the roster arrives. The key lives on the name node in `data-lxvk`,
+  // which is also what lets the second pass find rows without re-rendering them.
+  var VSET = null;
+  function isVerified(tok) {
+    if (!tok || !tok.issuer) return false;              // XRP itself is the ledger, not an issuance
+    if (tok.issuer === LUMOS_ISS) return true;          // pinned, exactly as in the Trade table
+    return !!(VSET && VSET[tok.issuer + '|' + String(tok.currency || '').toUpperCase()]);
+  }
+  function markVerified(host, tok) {
+    if (!host || !tok || !tok.issuer) return;
+    host.setAttribute('data-lxvk', tok.issuer + '|' + String(tok.currency || '').toUpperCase());
+    if (isVerified(tok) && !host.querySelector('.lx-vtick')) host.appendChild(vtick());
+  }
+  function applyTicks() {
+    [].forEach.call(document.querySelectorAll('[data-lxvk]'), function (h) {
+      var k = h.getAttribute('data-lxvk') || '';
+      var ok = k.slice(0, k.indexOf('|')) === LUMOS_ISS || !!(VSET && VSET[k]);
+      var has = h.querySelector('.lx-vtick');
+      if (ok && !has) h.appendChild(vtick());
+      else if (!ok && has && has.parentNode) has.parentNode.removeChild(has);
+    });
+  }
+  fetch('/lxapi/xrpltokens?n=100')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var s = {};
+      [].forEach.call((d && d.rows) || [], function (t) {
+        if (t && t.i && t.c) s[t.i + '|' + String(t.c).toUpperCase()] = 1;
+      });
+      VSET = s;
+      applyTicks();
+    })
+    .catch(function () {});
 
   // ---- rows, per design ---------------------------------------------------------------------------
   function tableRow(name, sub, right, rightSub, frozen, tok) {
@@ -249,7 +353,7 @@
     var meta = el('div', 'meta');
     var nm = el('div', 'nm');
     plain(nm, name + (frozen ? ' (frozen)' : ''));
-    if (tok && tok.issuer === LUMOS_ISS) nm.appendChild(vtick());
+    markVerified(nm, tok);
     meta.appendChild(nm);
 
     // STELLAR'S ROW (RAZA 2026-09-15: "My assets section is different on Stellar"), read off lumoscore.com:
@@ -709,6 +813,9 @@
     var anm = el('span', 'asset-name');
     plain(anm, name + (frozen ? ' (frozen)' : ''));
     nr.appendChild(anm);
+    // The phone's card carried no tick at all — not LUMOS's either — so the two renderers disagreed
+    // about every holding. Same rule, same node shape, so applyTicks() reaches both.
+    markVerified(nr, tok);
     meta.appendChild(nr);
     meta.appendChild(el('div', 'asset-sub', sub || ''));
     top.appendChild(meta);
