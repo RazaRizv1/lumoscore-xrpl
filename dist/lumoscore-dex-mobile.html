@@ -8250,6 +8250,32 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return Math.round(v).toLocaleString('en-US');
   }
 
+  // A VOLUME IS NOT A PRICE (RAZA 2026-10-06: "Instead of showing the whole number along with decimals
+  // on XRPL, USE K,M,B same as it shown on Stellar").
+  //
+  // The volume cell was calling xrp(), which is the PRICE formatter: it keeps four decimals under a
+  // million because a price of 0.0001189 has to survive, and that is exactly wrong for a figure whose
+  // magnitude is the whole point. "26,430.7313 XRP" against Stellar's "370.7K XLM".
+  //
+  // lumoscore.com's own fmtAmt, read verbatim off its live lx-eac0bfff0cf7.js, so the two tables round
+  // identically rather than merely similarly:
+  //
+  //     n>=1e6 -> (n/1e6).toFixed(2)+"M"   n>=1e3 -> (n/1e3).toFixed(1)+"K"   else n.toFixed(0)
+  //
+  // NO "B". RAZA asked for "K, M, B same as it shown on Stellar", and Stellar has no B — a billion
+  // renders there as "1234.56M". Matching its output is the instruction that keeps being repeated, so
+  // the thousands step is not invented here for XRPL alone; adding B is a change to BOTH tables.
+  //
+  // Only the volume cells call this. xrp() still formats prices and the day's high/low, where the
+  // decimals are the information.
+  function vol0(v) {
+    if (v == null || !isFinite(v)) return '—';
+    v = +v || 0;
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toFixed(0);
+  }
+
   function pct(v) { return (v == null || !isFinite(v)) ? null : (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
 
   // ICONS: the design's icon classes (.mdx-mk-ic, .dex-mk-pair-ic, .dex-mover-ico) and the
@@ -8438,7 +8464,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     // 3: 24h volume
     var c3 = el('td');
-    var vol = el('div', 'dex-mk-vol', xrp(t.v) + ' XRP');
+    var vol = el('div', 'dex-mk-vol', vol0(t.v) + ' XRP');
     if (usd != null && t.v != null) {
       var vs = el('span', 'sub');
       vs.appendChild(el('span', 'lc-money', money(t.v * usd)));
@@ -8534,7 +8560,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // `usd` was already a parameter here and was simply never used.
     var usdOn = (DEN === 'usd' && usd != null);
 
-    var vol = el('div', 'mdx-mk-vol', 'Vol ' + (usdOn ? money(t.v * usd) : (xrp(t.v) + ' XRP')));
+    var vol = el('div', 'mdx-mk-vol', 'Vol ' + (usdOn ? money(t.v * usd) : (vol0(t.v) + ' XRP')));
     if (t.x != null) vol.appendChild(el('span', 'mdx-mk-trades', count(t.x) + ' trades'));
     meta.appendChild(vol);
     top.appendChild(meta);
