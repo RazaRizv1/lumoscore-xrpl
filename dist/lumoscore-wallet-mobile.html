@@ -9515,8 +9515,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       if (tb) { e.preventDefault(); e.stopImmediatePropagation(); openTradeMenu(tb); return; }
       var mb = t.closest('[data-lxmenu]');
       if (mb) { e.preventDefault(); e.stopImmediatePropagation(); openRowMenu(mb); return; }
+      var pb = t.closest('[data-lxpmenu]');
+      if (pb) { e.preventDefault(); e.stopImmediatePropagation(); openPoolMenu(pb); return; }
       var mi = t.closest('.lx-rowmenu [data-lxmi]');
       if (mi) { e.preventDefault(); e.stopImmediatePropagation(); rowMenuAct(mi); return; }
+      var pi = t.closest('.lx-rowmenu [data-lxpi]');
+      if (pi) { e.preventDefault(); e.stopImmediatePropagation(); poolMenuAct(pi); return; }
       if (!t.closest('.lx-rowmenu')) closeRowMenu();
 
       // THE WALLET CHIP'S LINK ICON opens this account on Bithomp (RAZA 2026-09-15), as Stellar's opens it on
@@ -9632,6 +9636,60 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeRowMenu(); });
     }
   }
+  // THE LIQ POOLS KEBAB IS A MENU, NOT A LINK (RAZA 2026-10-06: "clicking on 3 dots icon on the right is
+  // taking me to bithomp when it should actually open the dropdown for 'View pool details' and 'Copy pool
+  // address'. Please compare with Stellar").
+  //
+  // The asset rows got their menu and the pool rows did not: that third button was simply given
+  // `data-lxexp` and a "View on Bithomp" tooltip, so the kebab beside a pool behaved differently from the
+  // identical kebab one tab away.
+  //
+  // Two items, matching lumoscore.com. The design's own definition for an `lp` row carries THREE —
+  // "View pool details", "View transaction history", "Copy pool address" — read out of the live
+  // lx-aed79fbe3c71.js; Stellar ships the first and the last, which is also what RAZA's screenshot shows,
+  // so the middle one is left out here too rather than invented for XRPL alone. The icons are the
+  // design's: the info circle and the copy rectangles.
+  //
+  // The explorer is NOT kept as a third item. Nothing about the pool page is missing from it, and the
+  // kebab's job here is the two actions Stellar offers.
+  function openPoolMenu(btn) {
+    var open = document.querySelector('.lx-rowmenu');
+    var again = open && open.__lxFor === btn;
+    closeRowMenu();
+    if (again) return;
+    var acct = btn.getAttribute('data-lxpmenu') || '';
+    var m = document.createElement('div');
+    m.className = 'row-menu open lx-rowmenu';
+    m.__lxFor = btn;
+    m.setAttribute('data-lxpool', acct);
+    m.innerHTML =
+      '<button type="button" data-lxpi="details">'
+      + menuSvg('<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>')
+      + ' View pool details</button>'
+      + '<button type="button" data-lxpi="copy">'
+      + menuSvg('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>')
+      + ' Copy pool address</button>';
+    m.style.position = 'fixed';
+    m.style.visibility = 'hidden';
+    document.body.appendChild(m);
+    var r = btn.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 96;
+    var top = r.bottom + 6;
+    if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+    m.style.top = Math.round(top) + 'px';
+    m.style.left = Math.round(Math.max(8, Math.min(window.innerWidth - mw - 8, r.right - mw))) + 'px';
+    m.style.visibility = '';
+  }
+
+  function poolMenuAct(item) {
+    var m = item.closest('.lx-rowmenu');
+    var acct = (m && m.getAttribute('data-lxpool')) || '';
+    var what = item.getAttribute('data-lxpi');
+    closeRowMenu();
+    if (!acct) return;
+    if (what === 'details') window.location.href = '/pools/xrpl/id/' + encodeURIComponent(acct);
+    else if (what === 'copy') copyText(acct);
+  }
+
   // The Trade button's two-item menu, in the same shell the kebab uses so it inherits the design's
   // surface, placement and dismissal. Two lines per item, as Stellar's has: what it is, and what it is
   // for — "Order book & charts" against "Instant swap" is the whole distinction being offered.
@@ -10780,7 +10838,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         var go = '/pools/xrpl/id/' + encodeURIComponent(x.lp.issuer);
         if (btns[0]) btns[0].setAttribute('data-lxgo', go);
         if (btns[1]) btns[1].setAttribute('data-lxgo', go + '?act=withdraw');
-        if (btns[2]) { btns[2].setAttribute('data-lxexp', x.lp.issuer); btns[2].title = 'View on Bithomp'; }
+        // `x.lp.issuer` is the AMM account — the pool's own address, which is both what the detail url is
+        // keyed on and what "Copy pool address" is expected to put on the clipboard.
+        if (btns[2]) {
+          btns[2].setAttribute('data-lxpmenu', x.lp.issuer);
+          btns[2].removeAttribute('data-lxexp');
+          btns[2].title = '';
+          btns[2].setAttribute('aria-label', 'Pool actions');
+        }
         body.appendChild(tr);
       });
       var cnt = [].filter.call(document.querySelectorAll('.asset-tabs .cnt'), function (c) {
