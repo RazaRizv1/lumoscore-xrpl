@@ -8095,6 +8095,34 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return tr;
   }
 
+  // AND THE COLUMNS ARE SIZED, NOT LEFT TO THE CONTENT ("Align it exactly like stellar").
+  //
+  // Removing the Actions header alone did not do it: measured at a 1540px viewport, this table put Your
+  // Liquidity at 35.5% and Pool Share at 64.5%, against lumoscore.com's ~24% and ~38.5%. Nothing was
+  // holding the first columns narrow, so the slack spread through them instead of collecting in the
+  // unlabelled track on the right.
+  //
+  // Stellar pins them, and these are its own numbers, read off the live page's stylesheet:
+  //
+  //     th/td:nth-child(2) { white-space:nowrap; width:1px }   Pair, shrink-to-fit
+  //     th/td:nth-child(3) { width:200px }                     Your Liquidity
+  //     td:nth-child(4)    { width:130px }                     Pool Share
+  //
+  // THE FORK HAS NONE OF THEM, and the reason is worth recording: half of Stellar's rules are scoped
+  // to `#lx-mypanel`, and this build's panel is `#panelMyPositions` — so even where the sheet came
+  // across, the selector could never match. Scoped here to this build's id, which also keeps it off the
+  // All Pools table that shares `table.pools`.
+  function colWidths() {
+    if (document.getElementById('lx-mypos-cols')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-mypos-cols';
+    st.textContent = '#panelMyPositions table.pools th:nth-child(2),#panelMyPositions table.pools td:nth-child(2)'
+      + '{white-space:nowrap;width:1px}'
+      + '#panelMyPositions table.pools th:nth-child(3),#panelMyPositions table.pools td:nth-child(3){width:200px}'
+      + '#panelMyPositions table.pools th:nth-child(4),#panelMyPositions table.pools td:nth-child(4){width:130px}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
   function load() {
     if (!host()) return;                                 // not a page with a positions list
     var me = addr();
@@ -8150,9 +8178,19 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           var make = h.kind === 'table' ? row : posCard;
           if (h.kind === 'table') {
             var tbl = h.node.closest && h.node.closest('table');
+            // AND "ACTIONS" GOES WITH THEM (RAZA 2026-10-06: "the header bar that says Pair, Your
+            // liquidity, Pool share, & actions should exactly be like it's on Stellar. Align it exactly
+            // like stellar and remove Action from the right").
+            //
+            // lumoscore.com's header is four cells — # / Pair / Your Liquidity / Pool Share — over rows
+            // that still carry five, the fifth being the unlabelled "View position →". That is also what
+            // pulls the columns left: with no header claiming the right-hand track, the three labelled
+            // ones sit where the content puts them instead of being spread to the table's full width.
+            // So removing the cell is both halves of the request, not just the word.
             if (tbl) [].forEach.call(tbl.querySelectorAll('thead th'), function (th) {
-              if (/fees earned|deposited/i.test(th.textContent || '') && th.parentNode) th.parentNode.removeChild(th);
+              if (/fees earned|deposited|actions/i.test(th.textContent || '') && th.parentNode) th.parentNode.removeChild(th);
             });
+            colWidths();
           }
           for (var i = 0; i < pos.length; i++) h.node.appendChild(make(i, pos[i]));
           reveal();

@@ -27,7 +27,7 @@
 import { issuerDomains } from './_issuerdomain.js';
 
 // Bumped whenever the link rules change, so a stored answer cannot outlive the code that made it.
-const CACHEV = '2';
+const CACHEV = '3';
 const TTL_OK = 21600;        // six hours; a project's links are not a live figure
 const TTL_NONE = 900;        // fifteen minutes when there is nothing to show, so a new toml lands sooner
 const TTL_UNREACHED = 30;    // the ledger did not answer — not a fact about the token, so barely cached
@@ -158,6 +158,24 @@ function kindOf(url, type, title) {
 // noise whatever its url says — and this row's job is "where to find this project", not "every url in
 // the toml". The first of each kind wins, which is toml order, which is the issuer's own ordering.
 //
+// SOCIAL PLATFORMS ONLY — NO WEBSITE BUTTON AT ALL (RAZA 2026-10-06: "ARMY is still showing an extra
+// url icon, fix it on all listed tokens").
+//
+// The root-domain filter was the wrong rule, and ARMY is the case that proves it: its toml host is
+// firstledger.net and its web link is xrparmy-cto.com, so the hosts genuinely differ and the globe
+// survived. Checked against lumoscore.com rather than reasoned about — AQUA shows aqua.network and ONE
+// button (x.com), xLMNR shows thelumenaire.com and two (X, Telegram). Stellar renders no globe on any
+// token. The row is "where to find this project's community", and the project's own site is already
+// the words next to it.
+//
+// So the test is an allowlist of platforms that have a mark of their own, not a comparison of hosts.
+// Anything else — a website, a whitepaper, a docs page, an unrecognised host typed "socialmedia" —
+// has no glyph but the globe, and the globe is the thing being removed.
+//
+// The home-domain comparison stays anyway: it costs nothing and keeps the payload honest for any
+// future caller that does want the full list.
+const SOCIAL_KINDS = { x: 1, telegram: 1, discord: 1, github: 1, reddit: 1, youtube: 1 };
+
 // Its own function so it can be tested; the handler around it needs a ledger and a web server.
 export function cleanLinks(raw, domain) {
   const home = rootOf(domain);
@@ -167,6 +185,7 @@ export function cleanLinks(raw, domain) {
     .map((l) => ({ url: safeUrl(l.url), title: String(l.title || '').slice(0, 60), kind: kindOf(l.url, l.type, l.title) }))
     .filter((l) => {
       if (!l.url) return false;
+      if (!SOCIAL_KINDS[l.kind]) return false;
       if (home && rootOf(l.url) === home) return false;
       if (kinds[l.kind]) return false;
       kinds[l.kind] = 1;
