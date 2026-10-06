@@ -8130,15 +8130,42 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // to `#lx-mypanel`, and this build's panel is `#panelMyPositions` — so even where the sheet came
   // across, the selector could never match. Scoped here to this build's id, which also keeps it off the
   // All Pools table that shares `table.pools`.
-  function colWidths() {
-    if (document.getElementById('lx-mypos-cols')) return;
-    var st = document.createElement('style');
-    st.id = 'lx-mypos-cols';
-    st.textContent = '#panelMyPositions table.pools th:nth-child(2),#panelMyPositions table.pools td:nth-child(2)'
-      + '{white-space:nowrap;width:1px}'
-      + '#panelMyPositions table.pools th:nth-child(3),#panelMyPositions table.pools td:nth-child(3){width:200px}'
-      + '#panelMyPositions table.pools th:nth-child(4),#panelMyPositions table.pools td:nth-child(4){width:130px}';
-    (document.head || document.documentElement).appendChild(st);
+  // TEN RULES WERE ORPHANED, NOT ONE (RAZA 2026-10-06: "My pools section on pools main page is still
+  // different on XRPL. wth is wrong." — after three passes that each moved one thing).
+  //
+  // Stellar scopes its whole My Pools stylesheet to `#lx-mypanel`, the panel ITS layer builds. This
+  // build fills the design's `#panelMyPositions` instead, so every one of those rules is present in the
+  // inherited sheet and matches nothing. Found by listing them rather than chasing symptoms:
+  //
+  //   #lx-mypanel td                              font-size 15px, JetBrains Mono
+  //   #lx-mypanel .pair-name                      15.5px / 700, Hanken Grotesk
+  //   #lx-mypanel .pair-sub                       12.5px
+  //   #lx-mypanel td div:not(.pair-name):not(.pair-sub)   15px
+  //   #lx-mypanel table.pools th/td:nth-child(2)  white-space:nowrap; width:1px
+  //   #lx-mypanel table.pools th/td:nth-child(3)  width:200px
+  //   #lx-mypanel table.pools th/td:nth-child(4)  width:130px
+  //   #lx-mypanel table.pools .lx-viewcell        text-align:right !important + padding
+  //   #lx-mypanel                                 opacity/visibility/animation overrides
+  //
+  // That last-but-one is the one in the screenshot: the "View position →" button sat at the LEFT edge
+  // of an 782px-wide cell because `text-align:right` never applied. Measured: computed textAlign
+  // "start" on a cell whose stylesheet plainly says right.
+  //
+  // So instead of hand-porting ten rules — and missing the eleventh Stellar adds next — the panel is
+  // given the ancestor those selectors are written against. Every rule is a DESCENDANT selector, so one
+  // wrapper satisfies all of them at once, now and later.
+  //
+  // SAFE BECAUSE NOTHING READS THE ID: grepped the built page for getElementById/querySelector on
+  // `lx-mypanel` and for an existing element carrying it — zero of each. It is a CSS hook only, and
+  // the design's own tab script keeps toggling `#panelMyPositions` inside it exactly as before.
+  function stellarPanelHook() {
+    if (document.getElementById('lx-mypanel')) return;
+    var p = document.getElementById('panelMyPositions');
+    if (!p || !p.parentNode) return;
+    var w = document.createElement('div');
+    w.id = 'lx-mypanel';
+    p.parentNode.insertBefore(w, p);
+    w.appendChild(p);
   }
 
   function load() {
@@ -8211,7 +8238,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
               if (/fees earned|deposited/i.test(t) && th.parentNode) { th.parentNode.removeChild(th); return; }
               if (/actions/i.test(t)) { th.textContent = ''; th.removeAttribute('style'); }
             });
-            colWidths();
+            stellarPanelHook();
           }
           for (var i = 0; i < pos.length; i++) h.node.appendChild(make(i, pos[i]));
           reveal();
