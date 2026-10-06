@@ -8062,11 +8062,28 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     icons.appendChild(logo('pa', pos.a));
     icons.appendChild(logo('pb', pos.b));
     cell.appendChild(icons);
+    // STELLAR'S ROW, READ OFF ITS OWN DOM RATHER THAN ITS SCREENSHOT (RAZA 2026-10-06: "Pools --> My
+    // pools page is not the same as Stellar. I can spot so many differences").
+    //
+    // Loading lumoscore.com/pools/stellar against a real account with eight positions
+    // (GAFKBYED…744H, found through Horizon's /accounts?liquidity_pool=) gives the exact markup:
+    //
+    //   td.idx         01
+    //   td             .pair-cell > .pair-icons + the pair name, AND NOTHING ELSE
+    //   td             <div>17.8 AQUA</div><div class="pair-sub">70,931 META</div>
+    //   td             100.00%                       — bare text, no wrapper
+    //   td.lx-viewcell <a class="lx-ammview">View position →</a>
+    //
+    // Three of those were different here, and the classes are what carry the typography: `.num` and
+    // `.num-sub` are the All Pools table's, not this one's, and `.participants-cell` is a numeric
+    // column borrowed for a button.
+    //
+    // THE "AMM r…" SUB-LINE GOES. It was written here because the design's second line is a category
+    // ("Native - Utility") that this ledger has no equivalent for, and naming the AMM account was at
+    // least true. But Stellar prints no second line at all, the account is already in the link this
+    // row opens, and "exactly like Stellar" is the instruction.
     var meta = el('div');
     meta.appendChild(el('div', 'pair-name', pos.a.name + ' / ' + pos.b.name));
-    // The design's second line is a category ("Native - Utility"). There is no such classification
-    // on this ledger, so it names the AMM account instead, which is a fact.
-    meta.appendChild(el('div', 'pair-sub', 'AMM ' + pos.account.slice(0, 5) + '…' + pos.account.slice(-4)));
     cell.appendChild(meta);
     pc.appendChild(cell);
     tr.appendChild(pc);
@@ -8074,17 +8091,18 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // Your liquidity: the pool's own reserves scaled by this account's share. Both sides, because a
     // position is two assets and naming one of them would be half the answer.
     var liq = el('td');
-    liq.appendChild(el('div', 'num', fmt(pos.a.amount * pos.share) + ' ' + pos.a.name));
-    liq.appendChild(el('div', 'num-sub', fmt(pos.b.amount * pos.share) + ' ' + pos.b.name));
+    liq.appendChild(el('div', null, fmt(pos.a.amount * pos.share) + ' ' + pos.a.name));
+    liq.appendChild(el('div', 'pair-sub', fmt(pos.b.amount * pos.share) + ' ' + pos.b.name));
     tr.appendChild(liq);
 
-    var sh = el('td');
-    sh.appendChild(el('div', 'num', (pos.share * 100).toFixed(pos.share * 100 < 0.01 ? 4 : 3) + '%'));
-    tr.appendChild(sh);
+    // AND THE SHARE IS STELLAR'S TWO DECIMALS, with "<0.01%" below that rather than more digits.
+    // lumoscore.com prints "100.00%" and "<0.01%"; this printed "100.000%" and "0.0004%". Four decimals
+    // on a share that small is precision about a rounding error — the point of the cell is that the
+    // position is negligible, which is what the "<" says.
+    var pct = pos.share * 100;
+    tr.appendChild(el('td', null, pct > 0 && pct < 0.01 ? '<0.01%' : pct.toFixed(2) + '%'));
 
-    // STELLAR'S ROW (RAZA 2026-09-16, "here's how the row looks like on Stellar"): Pair · Your liquidity · Pool share · "View position →".
-    // Stellar drops Fees Earned and Deposited — neither is kept by its ledger or this one.
-    var act = el('td', 'participants-cell');
+    var act = el('td', 'lx-viewcell');
     var a = document.createElement('a');
     a.href = '/pools/xrpl/id/' + encodeURIComponent(pos.account);
     a.className = 'lx-ammview';
@@ -8178,17 +8196,20 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           var make = h.kind === 'table' ? row : posCard;
           if (h.kind === 'table') {
             var tbl = h.node.closest && h.node.closest('table');
-            // AND "ACTIONS" GOES WITH THEM (RAZA 2026-10-06: "the header bar that says Pair, Your
-            // liquidity, Pool share, & actions should exactly be like it's on Stellar. Align it exactly
-            // like stellar and remove Action from the right").
+            // AND "ACTIONS" IS EMPTIED, NOT REMOVED (RAZA 2026-10-06: "remove Action from the right").
             //
-            // lumoscore.com's header is four cells — # / Pair / Your Liquidity / Pool Share — over rows
-            // that still carry five, the fifth being the unlabelled "View position →". That is also what
-            // pulls the columns left: with no header claiming the right-hand track, the three labelled
-            // ones sit where the content puts them instead of being spread to the table's full width.
-            // So removing the cell is both halves of the request, not just the word.
+            // Both get the word off the screen; only one matches the markup. lumoscore.com's own header,
+            // read off its DOM, is FIVE cells — # / Pair / Your Liquidity / Pool Share / "" — the last
+            // present and blank, holding the track the "View position →" button sits in. Removing it
+            // instead leaves four headers over five body cells, which the browser is entitled to lay out
+            // differently from a table whose columns are declared.
+            //
+            // Fees Earned and Deposited still GO: Stellar has no such columns at all, because neither
+            // ledger records them per provider.
             if (tbl) [].forEach.call(tbl.querySelectorAll('thead th'), function (th) {
-              if (/fees earned|deposited|actions/i.test(th.textContent || '') && th.parentNode) th.parentNode.removeChild(th);
+              var t = th.textContent || '';
+              if (/fees earned|deposited/i.test(t) && th.parentNode) { th.parentNode.removeChild(th); return; }
+              if (/actions/i.test(t)) { th.textContent = ''; th.removeAttribute('style'); }
             });
             colWidths();
           }
