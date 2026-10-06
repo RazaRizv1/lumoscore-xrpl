@@ -54,6 +54,7 @@ const CHAIN = [
   // LAST, and that position is load-bearing: it mirrors each page's visible FAQ into its schema.org
   // block, so it must run after every pass that can change that copy. Moved earlier, it would
   // faithfully republish the exact sentences the later passes are about to correct.
+  '_xrplfaqcard',
   '_xrplfaqld',
   // AFTER _xrplroutes, AND THAT IS NOT A PREFERENCE. The chain switcher is the one layer here whose
   // whole job is to point AWAY from this build, so it is the one layer whose urls _xrplroutes must not
