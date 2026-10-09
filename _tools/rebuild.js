@@ -56,6 +56,15 @@ const CHAIN = [
   // faithfully republish the exact sentences the later passes are about to correct.
   '_xrplfaqcard',
   '_xrplfaqld',
+  // Removes the inherited auth guard from Bridge and Rewards. Position is not load-bearing — it strips
+  // one script by id and nothing downstream re-injects it (checked: the only other mentions of
+  // lx-authgate in this repo are two comments). Here so it runs before the page-rebuilding passes
+  // below, which would otherwise carry the guard into their rewritten output.
+  '_xrplungate',
+  // Demotes the hidden network-chooser h1 so each page states one subject. Position is not
+  // load-bearing — it rewrites one tag by class and nothing downstream reads h1s — but it sits after
+  // the copy passes so it can never be the thing that re-introduces a heading they just corrected.
+  '_xrplh1',
   // AFTER _xrplroutes, AND THAT IS NOT A PREFERENCE. The chain switcher is the one layer here whose
   // whole job is to point AWAY from this build, so it is the one layer whose urls _xrplroutes must not
   // touch — and it would touch six of the ten: MAP turns "/trade/stellar" into "/trade/xrpl" and BARE
@@ -74,6 +83,28 @@ const CHAIN = [
   // <a> tags pointing off-site — the switcher's own targets are internal and script-built, so there
   // is nothing here for it to reach.
   '_nofollow',
+  // LAST, and deliberately so. It rewrites the design's static asset-picker buttons, and putting it
+  // at the end means no later pass can hand the Aptos mock back — _xrplchainswitch above rebuilds 94
+  // page keys, which is already known to drop attributes an earlier pass wrote (see the _nofollow
+  // note). Nothing downstream reads those buttons, so there is no cost to running it here, and it is
+  // idempotent: a rewritten row is marked data-lxreal="1" and skipped on every subsequent run.
+  // Late, for the same reason as the two below: it asserts the MCP page ends up with exactly 14
+  // command cards, and _xrplchainswitch above rebuilds 94 page keys. Running before that could have
+  // the cards rebuilt away and the assertion fire on a build that was previously fine.
+  '_xrplmcptools',
+  // After every pass that writes prose, because its whole job is to settle one spelling and any of
+  // them could reintroduce the other. Its own guard aborts if a spaced "trust line" survives.
+  '_xrpltrustline',
+  '_xrplmockassets',
+  // Beside _xrplmockassets and for the same reason: last, so no page-rebuilding pass upstream can
+  // hand the Aptos strings back. It aborts rather than writing if a ">Aptos" text node survives in
+  // any page key it is responsible for, so a moved template fails the build instead of shipping.
+  '_xrplaptossweep',
+  // Dead last, for the same reason as the two above but about CSS rather than prose: it appends one
+  // stylesheet to every page key's <head>, and any pass that rebuilds a page key from a donor clone
+  // would hand back a head without it. It strips its own block before inserting, so running it here
+  // cannot stack copies.
+  '_xrplzoomfloor',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {
