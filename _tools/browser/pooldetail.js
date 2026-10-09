@@ -105,14 +105,28 @@
     return null;
   }
 
-  function rpc(method, params) {
+  // A DEADLINE, the way write.js and qorders.js already have one. This call had none, so a request
+  // the public cluster accepted and then never answered left the whole page waiting on a promise that
+  // would not settle — and a reader with no reason to wait presses refresh, which is the shape of the
+  // complaint this page keeps attracting. 15s is well past the ~300ms a healthy amm_info takes
+  // (measured across 32 consecutive calls while chasing RAZA's 2026-10-08 "pool not found" report).
+  function rpc(method, params, ms) {
+    var ctl = null;
+    try { ctl = new AbortController(); } catch (e) {}
+    var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, ms || 15000);
     return fetch(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: method, params: [params || {}] })
+      body: JSON.stringify({ method: method, params: [params || {}] }),
+      signal: ctl ? ctl.signal : undefined
     }).then(function (r) { return r.json(); }).then(function (j) {
+      clearTimeout(timer);
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'no pool');
       return res;
+    }, function (e) {
+      clearTimeout(timer);
+      throw new Error((e && e.name === 'AbortError') ? 'the ledger did not answer in time'
+        : ((e && e.message) || 'ledger unavailable'));
     });
   }
 
@@ -880,6 +894,35 @@
     return '/lxapi/xrplrichlist?iss=' + encodeURIComponent(p.lpToken.issuer) + '&cur=' + encodeURIComponent(p.lpToken.currency)
       + '&n=100' + (start ? '&start=' + start : '');
   }
+  // THE LEDGER IS ASKED FOR THE COUNT, because the upstream's own is not consistent about what it
+  // counts. Measured across seven pools against account_lines: for most tokens xrpl.to's `length` is
+  // the number of holders, but for some it is the number of TRUSTLINES — XRP/XAH came back as 216
+  // when 190 accounts actually hold any of the LP token, the other 26 having withdrawn in full and
+  // left the line behind. There is no flag distinguishing the two, so the only way to be right every
+  // time is to count it here.
+  //
+  // Every line of the LP currency with a non-zero balance, and only that currency: account_lines on
+  // an AMM also returns the pool's own trustlines to the assets it holds, which are not providers.
+  // Paged, because a busy pool has more than the 400 one call returns.
+  // Returns null rather than a floor when the walk runs out of pages. A pool with more than 4,000
+  // trustlines would otherwise report whatever it managed to count, which is lower than the truth
+  // and lower than the figure the list already shows — swapping a number that is one or two out for
+  // one that is hundreds out, and putting the two pages back into disagreement. The list page makes
+  // the same call on the same evidence (`complete:false` from /lxapi/xrplparticipants).
+  function countProviders(lp, acct, seen, marker, tries) {
+    return rpc('account_lines', marker
+      ? { account: acct, limit: 400, ledger_index: 'validated', marker: marker }
+      : { account: acct, limit: 400, ledger_index: 'validated' }
+    ).then(function (r) {
+      (r.lines || []).forEach(function (l) {
+        if (l.currency === lp.currency && Math.abs(parseFloat(l.balance)) > 0) seen.n++;
+      });
+      if (!r.marker) return seen.n;
+      if (tries > 1) return countProviders(lp, acct, seen, r.marker, tries - 1);
+      return null;                      // truncated: the upstream figure stands
+    });
+  }
+
   function loadParticipants() {
     var p = window.__lxxPool;
     if (!p || !p.lpToken) { participants('This pool has no LP token.'); return; }
@@ -892,6 +935,14 @@
       PART.total = d.total != null ? +d.total : PART.rows.length;
       renderParticipants();
       setStat('participant', PART.total.toLocaleString('en-US'), 'liquidity providers');
+      // Then correct it from the ledger. Second rather than first so the box fills at the speed it
+      // always has; the figure only moves when the upstream was counting the wrong thing.
+      countProviders(p.lpToken, p.account || fromUrl(), { n: 0 }, null, 10).then(function (n) {
+        if (n == null || !(n > 0) || n === PART.total) return;
+        PART.total = n;
+        renderParticipants();
+        setStat('participant', n.toLocaleString('en-US'), 'liquidity providers');
+      }).catch(function () { /* the upstream figure stands */ });
     }).catch(function () { PART.loading = false; participants('Could not load the liquidity providers.'); });
   }
   function renderParticipants() {
@@ -911,8 +962,15 @@
         if (ADDR_RE.test(h.account || '') && window.lxIdent) { try { av.innerHTML = window.lxIdent(h.account, 26); } catch (e) {} }
         row.appendChild(av);
         row.appendChild(el('div', 'wallet', short(h.account)));
+        // "0.00%" AGAINST A REAL BALANCE READS AS NOTHING. Two providers in this pool hold ~10,685
+        // and ~3,367 of a 470.6M supply — 0.002%, which the upstream reports as a flat 0 share, so
+        // the row claimed they held none of it while being counted as providers. The share is still
+        // not recomputed here (dividing by a supply figure from another call is how two numbers on
+        // one screen start disagreeing); the row's own balance only decides WHICH of the two honest
+        // labels to print.
         var share = h.holding != null ? +h.holding : 0;
-        row.appendChild(el('div', 'share', (share < 0.01 && share > 0 ? '<0.01' : share.toFixed(2)) + '%'));
+        var tiny = (share > 0 && share < 0.01) || (share === 0 && +h.balance > 0);
+        row.appendChild(el('div', 'share', (tiny ? '<0.01' : share.toFixed(2)) + '%'));
         var bar = el('div', 'share-bar'), fill = el('div', 'fill');
         fill.style.width = Math.max(2, Math.min(100, share)) + '%';
         bar.appendChild(fill);
@@ -990,6 +1048,20 @@
         nameEl.appendChild(lk);
       });
     });
+
+    // THE TAB SAYS THE PAIR, not the account. The middleware can only title this page from the url,
+    // which on this ledger is an r-address, so it ships "Liquidity pool rhWTXC…tcS3 on the XRP
+    // Ledger" -- correct, and useless as a tab label, a bookmark or a pasted link. Stellar's copy of
+    // this page has upgraded its own title since pdCopy() in _ammdata.js; this one never did, so the
+    // two chains disagreed about the same screen. Same shape of sentence, this chain's name.
+    //
+    // Only once the pair is actually known -- this runs in the painter that has just written both
+    // tickers, so there is no window where it could print "undefined / undefined".
+    try {
+      if (a && a.name && b && b.name) {
+        document.title = a.name + ' / ' + b.name + ' liquidity pool on the XRP Ledger | LumosCore';
+      }
+    } catch (e) {}
 
     // On this ledger a pool IS an account, so that is its id; the copy button carries the whole of it.
     var idSpan = $('.ph-id span');
@@ -1132,6 +1204,19 @@
   // The alternatives — single-asset deposits and withdrawals — move the price and charge for it, so
   // they are deliberately not offered from a form with one number in it.
   var TF_TWO_ASSET = 0x00100000;
+
+  // The same mark createpool.js writes, and for the same reason: pool operations pay no platform fee,
+  // so without it an AMMDeposit made here is indistinguishable on the ledger from one made on any
+  // other XRPL app — and the dashboard feed will not claim what it cannot attribute. See the longer
+  // note in createpool.js.
+  function lxMemo(text) {
+    var hex = function (s) {
+      var h = '';
+      for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+      return h.toUpperCase();
+    };
+    return { Memo: { MemoType: hex('LumosCore'), MemoFormat: hex('text/plain'), MemoData: hex(text) } };
+  }
   var TF_LP_TOKEN = 0x00010000;
 
   function addr() {
@@ -1520,7 +1605,8 @@
         TransactionType: 'AMMDeposit', Account: me,
         Asset: asset, Asset2: asset2,
         Amount: amtOf(p.rawA, va), Amount2: amtOf(p.rawB, vb),
-        Flags: TF_TWO_ASSET
+        Flags: TF_TWO_ASSET,
+        Memos: [lxMemo('LumosCore: add liquidity')]
       }).then(function () {
         // lumoscore.com's exact wording, read off its okMsg: "Liquidity is added" / "Liquidity is withdrawn".
         dwOk('Liquidity is added');
@@ -1548,7 +1634,8 @@
       TransactionType: 'AMMWithdraw', Account: me,
       Asset: asset, Asset2: asset2,
       LPTokenIn: withdrawAll ? undefined : { currency: p.lpToken.currency, issuer: p.lpToken.issuer, value: String(v) },
-      Flags: withdrawAll ? 0x00020000 : TF_LP_TOKEN                      // tfWithdrawAll : tfLPToken
+      Flags: withdrawAll ? 0x00020000 : TF_LP_TOKEN,                     // tfWithdrawAll : tfLPToken
+      Memos: [lxMemo('LumosCore: remove liquidity')]
     }).then(function () {
       // The toast expires on its own, so the line that used to clear this after five seconds is gone with it.
       dwOk('Liquidity is withdrawn');
@@ -1757,20 +1844,56 @@
     clearMockPosition();
     releaseGates();
 
-    rpc('amm_info', { amm_account: acct }).catch(function (e) {
-      // One dropped read from the public node is asked again before the page says it could not read the pool.
-      if (/not found|actNotFound/i.test(String(e && e.message))) throw e;
-      return new Promise(function (res) { setTimeout(res, 1200); }).then(function () { return rpc('amm_info', { amm_account: acct }); });
-    }).then(function (r) {
+    // TWO HANDLERS, NOT A TRAILING .catch (RAZA 2026-10-08: "When im opening any pool randomly, its
+    // says pool not foun. after couple of refreshes it opens").
+    //
+    // A .catch() placed after the success handler catches the success handler TOO. So anything that
+    // threw while DRAWING a pool that had just been read perfectly — in paint, loadParticipants,
+    // wireTx, loadTx or renderTx — arrived at the same place as a dead node and was reported as
+    // "Could not read the pool", at which point fail() wiped the header, all four stat cards, the
+    // chart and the position panel. A fully readable pool, erased and labelled not found.
+    //
+    // Measured on the deployed page: the failing loads made their amm_info calls and got HTTP 200
+    // both times, and 32 straight hand-made calls for the same account — with and without
+    // ledger_index — came back with the pool every time. The read was never the thing that failed.
+    //
+    // The error handler is now the SECOND ARGUMENT of this then(), so it sees only a rejected read.
+    // A render fault is caught separately: it leaves whatever drew on screen, because a pool read and
+    // half-painted is worth more than a wiped one, and says so on the console rather than silently.
+    function renderFailed(e) {
+      // Parked on window as well as logged: a console line is gone the moment the tab is reloaded,
+      // and this is a fault that only shows up on some loads. Having it readable afterwards is what
+      // makes it diagnosable at all, from a support session or a bug report.
+      try { window.__lxPoolRenderError = { message: String(e && e.message || e), stack: String(e && e.stack || '') }; } catch (_) {}
+      if (window.console && window.console.error) {
+        window.console.error('[lx pooldetail] the pool read fine; drawing it threw', e);
+      }
+    }
+    // THREE ATTEMPTS, BACKING OFF, and the retry stays attached to the READ alone — which is the
+    // whole point of the split below. One retry was not much of a safety net for a public cluster:
+    // it turned two unlucky moments a second apart into a page that says the pool does not exist.
+    // An account the ledger genuinely does not know is not retried at all, since the answer will not
+    // change and the reader should hear it straight away.
+    function readPool(tries) {
+      return rpc('amm_info', { amm_account: acct }).catch(function (e) {
+        var msg = String(e && e.message);
+        if (/not found|actNotFound/i.test(msg) || tries <= 1) throw e;
+        return new Promise(function (res) { setTimeout(res, tries === 3 ? 900 : 2200); })
+          .then(function () { return readPool(tries - 1); });
+      });
+    }
+    readPool(3).then(function (r) {
       if (!r || !r.amm) { fail('That account is not an AMM.'); return; }
-      paint(acct, r.amm);
-      // The LP token's holder list is public after all — xrpl.to keeps it — so the list is real now.
-      loadParticipants();
-      wireTx();
-      var txLoad = loadTx(false);
-      renderTx();
-      txLoad.then(renderTx);
-    }).catch(function (e) {
+      try {
+        paint(acct, r.amm);
+        // The LP token's holder list is public after all — xrpl.to keeps it — so the list is real now.
+        loadParticipants();
+        wireTx();
+        var txLoad = loadTx(false);
+        renderTx();
+        txLoad.then(renderTx, renderFailed);
+      } catch (e) { renderFailed(e); }
+    }, function (e) {
       fail((e && e.message) === 'no pool' ? 'That account is not an AMM.' : 'Could not read the pool.');
     });
   }
