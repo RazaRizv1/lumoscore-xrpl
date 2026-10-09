@@ -523,7 +523,40 @@ if (WRITE) {
   const altCount = Object.keys(chainAlt).length;
   if (!altCount) die('CHAIN_ALT came out empty — the gated pages would all serve Stellar');
 
+  // ---- POOL_PAIRS: the AMM account -> pair table the pool title reads ----------------------------
+  // Same shape of problem CHAIN_ALT solves, and filled the same way: extract_site.js emits it empty
+  // because a Stellar-only build has nothing to put in it, and this step supplies the XRPL table.
+  // Built by _tools/_xrplpoolpairs.js, which is a separate command on purpose — it talks to a
+  // rate-limited third party, and a combine that has to reach the network to succeed is a combine
+  // that fails for reasons unrelated to combining.
+  //
+  // MISSING IS A WARNING, NOT A FAILURE. Without it every pool keeps the account-named title it has
+  // always had, which is a worse title and not a broken page; stopping the whole deploy over it would
+  // be the wrong trade. An EMPTY file is different and does fail, because that means the generator
+  // ran and produced nothing, and shipping it would silently undo the feature.
+  // Asserted, because a silent no-op here is indistinguishable from the feature not existing: a
+  // Stellar build from before POOL_PAIRS was added has no anchor, the replace below matches nothing,
+  // and every pool ships the account-named title while this step reports success.
+  if (sMw.indexOf('const POOL_PAIRS = ') < 0) {
+    die('sitemap/middleware: no POOL_PAIRS anchor in Stellar\'s _middleware.js — rebuild Stellar first');
+  }
+  let poolPairs = {};
+  const PP = path.join(XRPL, '_tools', 'poolpairs.generated.json');
+  if (!fs.existsSync(PP)) {
+    console.log('    pool pairs    : NONE — ' + path.basename(PP) + ' missing; pool titles will name'
+      + ' the account. Build it with: node _tools/_xrplpoolpairs.js');
+  } else {
+    try { poolPairs = JSON.parse(fs.readFileSync(PP, 'utf8')); } catch (e) {
+      die('poolpairs.generated.json does not parse: ' + e.message);
+    }
+    if (!Object.keys(poolPairs).length) die('poolpairs.generated.json is empty — regenerate it');
+    console.log('    pool pairs    : ' + Object.keys(poolPairs).length + ' AMM account(s) named');
+  }
+
   const out = sMw
+    .replace(/const POOL_PAIRS = \{[^}]*\};/,
+      '// Filled in by _tools/combine_with_stellar.js from _tools/poolpairs.generated.json.\n'
+      + 'const POOL_PAIRS = ' + JSON.stringify(poolPairs) + ';')
     .replace(/const CHAIN_ALT = \{[^}]*\};/,
       '// Filled in by _tools/combine_with_stellar.js. Key is "<chain> <stellar file>".\n'
       + 'const CHAIN_ALT = ' + JSON.stringify(chainAlt, null, 2) + ';')
