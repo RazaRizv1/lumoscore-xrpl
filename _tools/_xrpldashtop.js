@@ -101,6 +101,30 @@ const STYLE = `<style id="lx-xrpldashtop-css">
   .lx-xlmpanel.lx-xlmpanel{padding:14px 14px 0;gap:12px}
   .lx-xlmpanel.lx-xlmpanel>.status-row{margin:12px -14px 0}
 }
+/* THE ACTIVITY FLASH (RAZA 2026-10-07: "Flash bug on Dashboard platfrom activity for split seconds
+   when i refresh the page"). What flashed was another chain's invented transactions -- "MOD launched
+   on Aptos", "Bridged 2,400 APT" -- for a few hundred milliseconds before the real feed replaced
+   them.
+
+   NOT IN THE MARKUP, which is why there was nothing to strip at build time: #activityList ships EMPTY
+   and the DESIGN'S OWN script fills it, so this is the second-writer shape rather than leftover mock
+   HTML. The next remedy in order is a container gate, and this is it.
+
+   Hiding the CHILDREN, not the panel: the card, its heading and its border stay on screen the whole
+   time. dashboard.js sets data-lxact the moment it writes -- rows, "no activity", or an error -- and
+   on a timer regardless, so a feed that never answers degrades to an empty card rather than a
+   permanently blank one.
+
+   VISIBILITY, NOT DISPLAY (changed 2026-10-09, when the same gate was ported to Stellar and the
+   side effect was measured): "display:none" collapsed the card from 691px to 131px and let it snap
+   back when the feed landed. The claim above that "the page does not change height" was simply
+   wrong. A "min-height" would be the obvious patch and is the wrong one -- the winning rule is
+   ".market-grid>.activity-card .activity-scroll{flex:1 1 0;min-height:0;max-height:none}", so the
+   height is flex-driven, any number is a guess that a tablet breaks (it gets the MOBILE build at
+   desktop widths), and over-reserving for an account with three transactions shrinks the card
+   afterwards -- the same jump, backwards. Concealing in place needs no number: 691px shut, 691px
+   open. Stellar's copy in _dashtop.js is the same rule; change one, change the other. */
+#activityList:not([data-lxact]) > *{visibility:hidden!important}
 </style>`;
 
 // No `${` anywhere below this line: it is a template literal and an interpolation here would be
