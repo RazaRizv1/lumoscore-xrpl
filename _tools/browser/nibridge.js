@@ -3674,13 +3674,47 @@
     } catch (e) {}
   }
 
+  // The post-delivery clear. Deliberately NOT a page reload: the Recent transactions table below is
+  // painted from localStorage and a reload would throw away the "Delivered" row the reader is looking
+  // at, which is the opposite of what was asked for.
+  function resetAfterDelivery() {
+    try {
+      var ai = amtInput(); if (ai) ai.value = '';
+      SWAPQ = null; SIMQ = null; QUOTE = null; THQ = null; AXQ = null; BEST = '';
+      NOTE = { ni: '', th: '', ax: '' };
+      try { paintSourceUsd(); } catch (_) {}
+      try { paintSteps(); setCta(); } catch (_) {}
+      var back = $('.br-step[data-step="3"] .br-back[data-go="2"]') || $('.br-back[data-go="2"]');
+      if (back) back.click();
+    } catch (e) {}
+  }
+
   function poll(dep, tries) {
     if (tries > 40) { busy = false; setCta(); return; }
     fetch(API + '?op=status&depositAddress=' + encodeURIComponent(dep))
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var st = j && j.status;
-        if (st === 'SUCCESS') { say('Delivered'); mark(dep, st); busy = false; setTimeout(setCta, 5000); return; }
+        // A DELIVERED TRANSFER MUST NOT LEAVE THE FORM STANDING (RAZA 2026-10-09: "after the swap is
+        // done, why is this stuck here. please make it like it refreshes on Stellar"). This used to
+        // say "Delivered", re-arm the button five seconds later and stop — leaving the review step on
+        // screen with the amount that had just been sent still in it and a live "Bridge 2.1 XRP"
+        // button under it. The next press would have sent the same amount again.
+        //
+        // The clear is the one destChanged() already performs when the destination changes, for the
+        // same reason: the amount and every quote belonged to a transfer that is now finished. The
+        // ADDRESS is deliberately left — it is the reader's own wallet on the far chain, and making
+        // them paste it again to send a second time is friction, not safety.
+        //
+        // The step move goes through the design's own `.br-back[data-go="2"]`, not a transform written
+        // here: each .br-step carries its own slide transform and driving that by hand is how this
+        // layer has broken the wizard before. Five seconds, so "Delivered" is read before it moves,
+        // and the transfer stays visible in Recent transactions afterwards either way.
+        if (st === 'SUCCESS') {
+          say('Delivered'); mark(dep, st); busy = false;
+          setTimeout(function () { setCta(); resetAfterDelivery(); }, 5000);
+          return;
+        }
         if (st === 'REFUNDED' || st === 'FAILED') { say(st === 'REFUNDED' ? 'Refunded' : 'Failed'); mark(dep, st); busy = false; setTimeout(setCta, 5000); return; }
         say(st === 'PROCESSING' ? 'Processing…' : 'Confirming…');
         setTimeout(function () { poll(dep, tries + 1); }, 4000);

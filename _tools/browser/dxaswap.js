@@ -193,6 +193,11 @@
 
   function paintStatic(p) {
     claimFeeRow(p);
+    // Both of these ride paintStatic because it is already the one function that runs on init AND
+    // 30ms after every side flip — the two moments the design relabels the button and the amount box
+    // is emptied. Hooking the side button separately would be a second thing to keep in step.
+    swapLabel(p);
+    setDis(p, !hasAmt(p));
     var f = fields(p);
     var s = sides(p);
     var bal = payBalance(p);
@@ -204,8 +209,38 @@
     if (recv) recv.removeAttribute('readonly');
   }
 
+  // THE DESIGN'S ORDER WORDING, REPLACED WITH "Swap" (RAZA 2026-10-09: "on stellar the Trade-asset
+  // page, the button says swap. but on XRPL it says place buy/sell order").
+  //
+  // _xrplcopy2.js already rewrites the SHIPPED markup, and that is still needed — it is what the page
+  // reads before any script runs. What it cannot reach is the relabel the design's own widget does
+  // when the side is flipped, which is why the button came back as "Place Sell Order" the moment Sell
+  // was pressed.
+  //
+  // MATCHED ON THE TWO EXACT STRINGS, not on a prefix. The same pane shows "Connect wallet" when no
+  // wallet is attached and a pending label while a swap is in flight, and the LIMIT pane's button
+  // legitimately reads "Place Limit Order" — a limit order really is placed, and rests. Anything that
+  // is not one of the two order labels is left exactly as it is.
+  function swapLabel(p) {
+    var b = cta(p);
+    if (!b) return;
+    if (/^Place (Buy|Sell) Order$/i.test((b.textContent || '').trim())) b.textContent = 'Swap';
+  }
+
+  // Is there an amount to act on? Shared by the two callers below so they cannot disagree.
+  function hasAmt(p) {
+    var i = input(fields(p)[0]);
+    return num(i && i.value) > 0;
+  }
+
   function clearQuote(p) {
     quote = null;
+    // DIMMED UNTIL THERE IS AN AMOUNT (RAZA 2026-10-09: "the button should be disabled if nothing is
+    // entered just like on stellar"). This read setDis(p, false) with the note "an empty box is not an
+    // impossible order" — true of the order itself, but Stellar dims its CTA until a size is typed and
+    // this pane now matches it. validate() still answers "Enter an amount." for anyone who gets past
+    // the dimming, so nothing is lost if the gate is ever bypassed.
+    setDis(p, !hasAmt(p));
     // A quote still in flight belongs to an amount that is gone. Without this, clearing the box (or
     // switching side) let a slow ripple_path_find land afterwards and write "You receive 17.84" under an
     // empty "You pay" (RAZA 2026-09-15).
@@ -265,9 +300,109 @@
     if (sp.textContent !== txt) sp.textContent = txt;
   }
 
+  // Stellar's wording, so the two chains answer this the same way.
+  var SAT_MSG = 'Not enough liquidity to fill this size — try a smaller amount';
+
+  // Saturated when doubling the money buys less than half as much again — or when nothing is
+  // obtainable at all.
+  //
+  // STELLAR'S 1% BAND DOES NOT TRANSFER, and measuring is what showed it. On the reported ATOM (total
+  // supply 1), 3600 XRP simulates to 0.4196 and 1800 XRP to 0.3736 — halving the spend still returns
+  // 89% of the output, so "within 1%" calls that fillable. It is not. Horizon flatlines or even
+  // reverses once it stops finding a path, which is what makes 1% the right test there; a
+  // constant-product pool never flattens that far, because there is always fractionally more to buy.
+  //
+  // THE RATIO IS THE SIGNAL, and it has an exact meaning. For a pool, half-input ÷ full-input runs
+  // from 0.5 (a small trade, nearly linear) toward 1.0 (saturated), and it passes 2/3 precisely when
+  // the input equals the pool's whole opposite reserve. So `full <= half * 1.5` reads: you are
+  // spending more than the entire reserve, and doubling your money buys under 50% more. The ATOM
+  // case sits at 0.89 — about seven times the reserve.
+  //
+  // Only ever consulted once the impact is already past 100%, so an ordinary trade never reaches it.
+  function satCheck(s, amt) {
+    return Promise.all([simulate(s, amt), simulate(s, amt / 2)]).then(function (r) {
+      var full = r[0] && r[0].out, half = r[1] && r[1].out;
+      if (!(full > 0)) return true;
+      return !!(half > 0 && full <= half * 1.5);
+    }).catch(function () { return false; });   // unknown must not block a trade
+  }
+
+  // THE BUTTON LOOKS LIKE WHAT IT IS (RAZA 2026-10-08: "Please disable the orange button if the order
+  // is not possible"). Stellar sets data-lxdis on its CTA and styles it; this build has no such rule,
+  // so the look is set inline rather than by adding a stylesheet — a CSS edit here would be the ninth
+  // way for a rule to land in the file and do nothing on the page.
+  //
+  // NOT pointer-events:none. The click still runs, validate() still returns the same sentence, and
+  // the reader gets feedback instead of a button that silently ignores them.
+  //
+  // THE ATTRIBUTE IS OURS; THE INLINE STYLE IS NOT, and that is why this is a stylesheet rule rather
+  // than b.style.opacity. The page already ships
+  //   .dxa-trade-cta[data-lxdis="1"]{opacity:.55;cursor:not-allowed;filter:grayscale(.25)}
+  // and it was having no effect, because the DESIGN'S OWN trade widget rewrites this button after we
+  // touch it — measured: data-lxdis stayed "1" while style.opacity came back as an inline "1", which
+  // beats any ordinary rule and beat the inline value this function used to set too. A second writer
+  // on one node, the shape this project keeps meeting.
+  //
+  // An !important declaration in a stylesheet outranks a plain inline one, so the rule wins without
+  // this having to race the other writer or watch the node. Injected at runtime rather than at build
+  // time so it travels with the script that depends on it, and guarded by id so it lands once.
+  function disStyle() {
+    if (document.getElementById('lx-dxadis')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-dxadis';
+    // NOT opacity, AND NOT cursor. The design's widget writes them INLINE WITH !important —
+    // measured on the live button: `opacity: 1 !important; cursor: pointer !important`. An inline
+    // important declaration is the top of the cascade; no stylesheet can outrank it, so a rule
+    // naming either property is a rule that will never apply, however it is written.
+    //
+    // It claims nothing else, which is why `filter` landed while those two did not. So the disabled
+    // state is drawn with the properties left free: the orange fill dims, which is the cue a reader
+    // actually reads, and the explanation already sits underneath the button.
+    //
+    // FILTER DOES BOTH JOBS, AND NO PALETTE TOKENS. Stellar's own disabled CTA is
+    //   opacity:.55; cursor:not-allowed; filter:grayscale(.25)
+    // — a DIMMED ORANGE, not a grey one. `filter: opacity()` is a filter FUNCTION, not the opacity
+    // property, so it rides in on the one channel the widget leaves alone and reproduces the .55
+    // exactly (RAZA 2026-10-08: "the color of swap button when its inactive is different on XRPL" —
+    // this rule used to be grayscale(1), a flat neutral grey nothing like lumoscore.com's).
+    // No palette token either: an earlier version painted the button var(--surface-2), which measures
+    // #fafbfc on this build — very nearly white, so on the dark card it would have been glaring.
+    // Naming a token means guessing which theme the reader is in; a filter derives from whatever the
+    // button already is, so it reads the same way in both. `cursor` stays unwinnable.
+    //
+    // MATCH THE BUTTON THE SAME WAY cta() DOES. Mobile's class is mdxa-trade-cta, a different class
+    // name that merely contains the desktop one as a substring, so `.dxa-trade-cta` misses it entirely
+    // — the first version of this rule greyed the desktop button and did nothing on the phone.
+    st.textContent = '[data-lxunfill="1"] [class*="dxa-trade-cta"]{filter:grayscale(.25) opacity(.55)!important}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  // THE MARK GOES ON THE PANE, NOT THE BUTTON, and that is the whole trick.
+  //
+  // Two earlier attempts lost to the same second writer. Setting b.style.opacity lost because the
+  // design's widget reassigns inline opacity afterwards. Setting data-lxdis="1" and styling it with
+  // !important lost too — measured: the attribute itself came back as "0", so the widget rewrites
+  // the button's attributes as well, and anything written ON that node is a race we do not control.
+  //
+  // The pane is not something it touches. A descendant selector reaches the button from there, so
+  // the button keeps whatever the widget wants to put on it and still renders disabled.
+  function setDis(p, on) {
+    if (!p || !p.setAttribute) return;
+    disStyle();
+    if (on) p.setAttribute('data-lxunfill', '1');
+    else p.removeAttribute('data-lxunfill');
+  }
+
   function applyQuote(p, amt, out, paths, est, impactPct) {
     var f = fields(p), s = sides(p), d = window.__lxxAssetData;
-    quote = { amt: amt, out: out, paths: paths || null, side: side(p), est: !!est };
+    quote = { amt: amt, out: out, paths: paths || null, side: side(p), est: !!est, unfillable: 0 };
+    // A FRESH QUOTE CLEARS A STALE "not enough liquidity", and only that one. Typing 5 ATOM and then
+    // 0.01 left the warning standing over a perfectly ordinary 30% quote — the flag resets on every
+    // quote but the sentence on screen did not, so the pane contradicted itself. Matched by text so
+    // a balance warning, which is about the account rather than the size, is left alone.
+    var staleNote = $('.lxx-limit-note', p);
+    if (staleNote && staleNote.textContent === SAT_MSG) say(p, '');
+    setDis(p, false);                 // a new size is innocent until the check says otherwise
     var recv = input(f[1]);
     // NOT OVER THE BOX BEING TYPED IN: the receive amount is the user's own figure while it has focus.
     if (recv && document.activeElement !== recv) recv.value = plainNum(floorTo(out, 6));
@@ -291,10 +426,79 @@
       if (!isFinite(mag)) impact = buy ? '>+999,999%' : '-100%';
       else if (mag < 0.01) impact = '<0.01%';
       else impact = (buy ? '+' : '-') + (mag < 100 ? mag.toFixed(2) : (mag < 10000 ? mag.toFixed(1) : Math.round(mag).toLocaleString('en-US'))) + '%';
+      // THE SIGN ENCODES DIRECTION, AND THE COLOUR FOLLOWS THE SIGN. A buy reads "+x%" in green, a
+      // sell reads "-x%" in red, whatever the magnitude. `|| buy` is what does that, and it is
+      // DELIBERATE — do not "fix" it into a magnitude threshold.
+      //
+      // I did exactly that on 2026-10-07 and RAZA caught it the same day: "You've messed it up. When
+      // buying ... the asset will always show positive impact (+ sign and green color). if sold ...
+      // the impact will always be in negative (- and red color)." The reasoning that led there was
+      // checking Stellar's BRIDGE card ("price impact above 1%: amber") and assuming it governed the
+      // swap pane. It does not. The counterpart is Stellar's own swap, and lumoscore.com renders a
+      // 1000 XLM buy of LUMOS at "+18.72%" in GREEN — so magnitude-colouring here was a divergence
+      // from the one build this fork exists to match, not a correction of one.
       tone = (mag < 0.01 || buy) ? 'var(--green,#22c55e)' : 'var(--red,#ff5b5b)';
     }
     sumRow(p, 'price impact', impact);
     impactTone(p, tone);
+
+    // PAST THE END OF THE BOOK, A PERCENTAGE STOPS MEANING ANYTHING.
+    //
+    // RAZA 2026-10-08: "ATOM has a total supply of 1, so buying 5 should be impossible. Check what
+    // we're showing on Stellar in such situation." We were showing "+1098.9%" and a live Place Buy
+    // Order, with "min received 0.417725" under a request for 5 — a figure that only counts how far
+    // beyond the end of the book the amount was typed.
+    //
+    // Stellar already answers this, in _dexassetdata.js's dxSatCheck, and this is that behaviour on
+    // this ledger: only test once the impact is already steep (a doubling of price is harsh but
+    // real), then re-quote at HALF and see whether the output moves. If halving what you pay barely
+    // changes what you get, the market cannot fill this size — on an AMM the output asymptotes to
+    // the whole reserve, so beyond a point more money buys nothing more.
+    //
+    // BOTH SIDES OF THE COMPARISON COME FROM simulateSwap, deliberately. The displayed quote may
+    // have come from ripple_path_find instead, and mixing the two would compare models rather than
+    // sizes. Saturation is a property of the CURVE, so the two points only have to agree with each
+    // other. It is also local arithmetic over the pool and book — no second network round trip,
+    // which is what Stellar spends here.
+    // THE THRESHOLD CANNOT BE ONE NUMBER, because the two directions are not measured on one scale.
+    // A buy's impact is unbounded (paying 11x spot reads +1091%), while a sell's is bounded at −100%
+    // by construction — you cannot receive less than nothing. So `mag > 100` can NEVER be true on a
+    // sell, and the whole check was unreachable in that direction: selling 5 ATOM, five times the
+    // entire supply, quoted at −92.75% with no warning at all (RAZA 2026-10-08, asking what the sell
+    // side does).
+    //
+    // The matched condition is the same statement in both directions — "worse than 2:1 against the
+    // page's spot price". For a buy that is paying over twice spot, mag > 100. For a sell it is
+    // receiving under half of spot, mag > 50. Both mean rr < 0.5.
+    //
+    // It is only a cost gate, not the verdict: satCheck below is what decides, and it reads the same
+    // either way (measured on this ATOM: sell 5 → ratio 0.932 blocked, sell 0.2 → 0.602 allowed).
+    if (mag != null && mag > (buy ? 100 : 50)) {
+      var myq = seq;
+      satCheck(s, amt).then(function (sat) {
+        if (!sat || myq !== seq || !quote || quote.amt !== amt) return;
+        quote.unfillable = 1;
+        // EVERY FIGURE DERIVED FROM THE REJECTED QUOTE GOES WITH IT (RAZA 2026-10-08: "When a swap is
+        // not possible on Stellar, You pay is left blank on Stellar but on XRPL it shows the value").
+        // lumoscore.com's own unfillable state leaves You pay empty and prints "—" for Rate and Min
+        // received; this pane was still showing a pay amount, a rate and a min-received computed from
+        // the very quote it had just declared untrustworthy, which reads as a priced, placeable order
+        // sitting under a red refusal. Only price impact had been blanked.
+        //
+        // The pay box is written by the input handler when the typing happens in "You receive", so
+        // clearing it here is the only place it comes out — and never while it has focus, since then
+        // the figure is the user's own.
+        var payI = input(f[0]);
+        if (payI && document.activeElement !== payI) payI.value = '';
+        payUsd(p, 0);
+        sumRow(p, 'rate', '—');
+        sumRow(p, 'min received', '—');
+        sumRow(p, 'price impact', '—');     // a number here would be answering the wrong question
+        impactTone(p, '');
+        say(p, SAT_MSG, 'bad');
+        setDis(p, true);
+      });
+    }
     payUsd(p, usdOf(amt, s.pay));
     sumRow(p, 'min received', fmt(out * (1 - SLIP), 6) + ' ' + s.get.code);
   }
@@ -417,6 +621,10 @@
     var amt = num(input(fields(p)[0]) && input(fields(p)[0]).value);
     if (!(amt > 0)) return 'Enter an amount.';
     if (!quote || Math.abs(quote.amt - amt) > 1e-12 || quote.side !== side(p)) return 'Getting a quote — try again in a moment.';
+    // The button stays pressable, but the order is refused with the same sentence already on screen.
+    // This pane has no disabled state of its own, so refusing here is its equivalent of the
+    // data-lxdis Stellar sets on its CTA.
+    if (quote.unfillable) return SAT_MSG;
     if (acct.key == null) return 'Reading your balance — try again in a moment.';
     var s = sides(p);
     if (s.pay.currency === 'XRP') {
