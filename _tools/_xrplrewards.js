@@ -56,8 +56,19 @@ for (const dev of ['desktop', 'mobile']) {
     // meaningless; "/blogs/" 301s to "/blog/", a redirect hop paid on a phone; and target="_blank"
     // opens a new tab for an internal link, without rel=noopener. Dropping the target settles the
     // last two at once. The DESTINATION is unchanged: only the form of the url.
+    // `blogs?`, NOT `blogs`, AND THAT IS WHAT MAKES THIS RE-RUNNABLE. The original pattern matched
+    // only the absolute `/blogs/` spelling. Something downstream re-absolutises these hrefs, so by the
+    // second chain run they read `https://lumoscore.com/blog/…` — path already corrected, still
+    // absolute. The regex then matched nothing, annRel counted 0 against annBefore 3, and the guard
+    // below aborted the whole chain on a build that was otherwise fine (2026-10-09: a second
+    // rebuild.js in a row failed where the first had passed).
+    //
+    // Matching either spelling fixes both halves: the link ends up relative whichever form it arrives
+    // in, and a run where they are ALREADY relative counts 3 and 3 and passes. The guard keeps its
+    // teeth for the case it was written for — an href shape nobody anticipated — without firing on
+    // the one it creates itself.
     const annBefore = (h.match(/<a class="blog"/g) || []).length;
-    h = h.replace(/<a class="blog" href="https:\/\/lumoscore\.com\/blogs\/([A-Za-z0-9-]+)"[^>]*>/g,
+    h = h.replace(/<a class="blog" href="https:\/\/lumoscore\.com\/blogs?\/([A-Za-z0-9-]+)"[^>]*>/g,
       '<a class="blog" href="/blog/$1">');
     const annRel = (h.match(/<a class="blog" href="\/blog\//g) || []).length;
     if (annBefore && annRel !== annBefore) {

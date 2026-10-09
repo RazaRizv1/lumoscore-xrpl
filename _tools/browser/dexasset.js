@@ -575,7 +575,17 @@
     // Read off lumoscore.com's AQUA page: "80.05B" over "AQUA issued". Ours said "8,733 holders", which
     // is both a different fact from the one above it and the same fact as the holders section further
     // down — the box was answering a question the page answers twice already.
-    setCell('supply', d.circulating == null ? null : statAmt(d.circulating) + ' ', d.name || '',
+    // THE BOX SAYS "issued", SO IT MUST SHOW WHAT WAS ISSUED (RAZA 2026-10-09: "why does it say
+    // 289.40M lumos issued when clearly the supply is 1 billion"). It was reading d.circulating while
+    // the sub-line above read "<name> issued" -- two different quantities, and the upstream really
+    // does report them far apart: for LUMOS, amount 999,952,640 against supply 289,397,824. Checked
+    // against the ledger rather than the feed, gateway_balances on rsPqeam…g6Ha returns obligations
+    // of 999,952,640.39, so `issued` is the one that matches what the ledger says exists.
+    //
+    // Both already travel: lxapi/xrpltoken.js sends `issued: num(t.amount)` beside
+    // `circulating: num(t.supply)` precisely so this box can choose. Market cap is left on
+    // CIRCULATING -- that is the convention its own tooltip states, and the two legitimately differ.
+    setCell('supply', d.issued == null ? null : statAmt(d.issued) + ' ', d.name || '',
       d.name ? (d.name + ' issued') : '');
   }
 

@@ -573,8 +573,13 @@
     $$('.br-netchip:not(.brd-trigger)').forEach(function (c) {
       var nm = c.querySelector('.nm');
       if (nm) nm.textContent = 'XRP Ledger';
-      var img = c.querySelector('img');
-      if (img) { img.src = XRP_LOGO; img.alt = ''; }
+      // setIcon, NOT a bare img.src (RAZA 2026-10-09: "on XRPL, source network logo is not there").
+      // On the combined build the source chip ships as `<span class="br-ic"></span>` with nothing in
+      // it, so `if (img)` was false and the chip kept a 26px hole. setIcon creates the img when the
+      // host has none. The 'XRP' third argument matters: symLogo() returns '' when it cannot build a
+      // url, and without a fallback name that would leave the same empty circle this is fixing --
+      // with it, the letters are drawn instead.
+      setIcon(c.querySelector('.br-ic'), XRP_LOGO, 'XRP');
     });
     $$('.br-wallet').forEach(function (w) {
       var a = w.querySelector('.addr');
@@ -1518,6 +1523,86 @@
   // Checked against it before relying on it: of the tokens RAZA named, USDC, RLUSD, ARMY, FUZZY,
   // PHNIX, 666 and SHX are all in the top 40 with their real issuers. ATOM and LUMOS are not, and
   // both are already in his holdings, so they arrive through the section above.
+  // THE VERIFIED TICK (RAZA 2026-10-07: "Also add verified icons in Cross-chain, step 2, From network
+  // assets dropdown").
+  //
+  // Same rule as Trade, search, the wallet and the Custom Swap pickers — membership of
+  // /lxapi/xrpltokens keyed `issuer|CURRENCY`, LUMOS pinned — and deliberately NOT the `CURATED` list
+  // below it. That one is fetched at n=40 because it exists to populate a picker; ticking from it
+  // would make this dropdown disagree with every other surface on the site about the same asset.
+  // One question, one answer. [[xrpl-verified-tick-rule]]
+  //
+  // The set lives on `window` and is shared with qorders.js, which asks for the same hundred: whichever
+  // layer opens first pays for the fetch and both read it. That is also the bug qorders hit — two
+  // copies of a layer, each with its own closure, one holding the roster and the other drawing the
+  // rows ([[lumoscore-externalize-scope]]).
+  var LUMOS_ISS = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+  function vset() { try { return window.__lxxVSET || null; } catch (e) { return null; } }
+  function vKey(a) {
+    if (!a) return '';
+    return (a.issuer || '') + '|' + String(a.currency || '').toUpperCase();
+  }
+  function isVerified(a) {
+    if (!a) return false;
+    if (a.native || a.currency === 'XRP') return true;
+    if (a.issuer === LUMOS_ISS) return true;
+    var s = vset();
+    return !!(s && s[vKey(a)]);
+  }
+  function vApplyRows() {
+    var s = vset();
+    if (!s) return;
+    [].forEach.call(document.querySelectorAll('.lx-amlist [data-vk]'), function (el) {
+      if (s[el.getAttribute('data-vk') || ''] && !el.querySelector('.lx-nivf')) el.appendChild(vBadge());
+    });
+  }
+  function vLoad() {
+    if (vset()) { vApplyRows(); return; }
+    try { if (window.__lxxVAsked) return; window.__lxxVAsked = 1; } catch (e) {}
+    fetch('/lxapi/xrpltokens?n=100').then(function (r) { return r.json(); }).then(function (d) {
+      var s = {};
+      [].forEach.call((d && d.rows) || [], function (x) {
+        if (x && x.i && x.c) s[x.i + '|' + String(x.c).toUpperCase()] = 1;
+      });
+      try { window.__lxxVSET = s; } catch (e) {}
+      vApplyRows();
+    }).catch(function () { try { window.__lxxVAsked = 0; } catch (e) {} });
+  }
+
+  // A WHITE CHECK INSIDE A FILLED GREEN CIRCLE — the site's badge, not a green tick (RAZA 2026-10-07:
+  // "this is not how we show verified tick. its green circle").
+  //
+  // The first version drew a bare stroked check because this menu is appended to <body>, outside any
+  // stylesheet this layer owns, and I did not want a badge that depends on CSS arriving from
+  // elsewhere. Right instinct, wrong conclusion: inline styles can carry the real design just as well
+  // as an improvised one. These values are `.lx-seavfd` from the search panel, copied exactly — 14px
+  // circle, `--green` fill, white 9px glyph — so the two cannot drift.
+  function vBadge() {
+    var NSV = 'http://www.w3.org/2000/svg';
+    var s = document.createElement('span');
+    s.className = 'lx-nivf';
+    s.setAttribute('data-logoed', '1');
+    s.setAttribute('title', 'Verified issuer');
+    s.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:14px;'
+      + 'height:14px;margin-left:5px;flex:0 0 auto;border-radius:50%;'
+      + 'background:var(--green,#35c07f);color:#fff;vertical-align:-2px';
+    var svg = document.createElementNS(NSV, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '3.6');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('width', '9');
+    svg.setAttribute('height', '9');
+    svg.style.cssText = 'width:9px;height:9px;display:block';
+    var p = document.createElementNS(NSV, 'path');
+    p.setAttribute('d', 'M20 6L9 17l-5-5');
+    svg.appendChild(p);
+    s.appendChild(svg);
+    return s;
+  }
+
   var CURATED = null;
   function curatedTokens() {
     if (CURATED) return Promise.resolve(CURATED);
@@ -1599,6 +1684,7 @@
 
   function toggleSrcMenu(as) {
     if (document.getElementById('lx-br-amenu')) { closeSrcMenu(); return; }
+    vLoad();            // the verified roster, in time for the rows below or applied when it lands
     // directAssets, not sourceAssets: sourceAssets now CONTAINS the swap entries, and the swap
     // section below adds them again -- which listed every token twice.
     var list = directAssets().filter(function (a) { return !a.lp; });
@@ -1647,7 +1733,9 @@
       var nm = document.createElement('span');
       nm.className = 'anm';
       nm.setAttribute('data-logo', ''); nm.setAttribute('data-logoed', '1');
+      nm.setAttribute('data-vk', vKey(a));          // so a late roster can tick this row afterwards
       nm.textContent = a.symbol;
+      if (isVerified(a)) nm.appendChild(vBadge());
 
       var iss = document.createElement('span');
       iss.className = 'aiss';
@@ -3257,6 +3345,14 @@
     // already has a home on its card, and two places saying the same thing is the mistake that put an
     // extra line under "You will receive".
     step2Err(formBanner());
+    // STEP 2's "Review transfer" is gated here too, and BEFORE the early return below. gateReview()
+    // used to run only on an address keystroke -- at which moment the quote has just been cleared, so
+    // blockReason() answers with LAST_NOTE, still "Enter a destination address" from the amount-only
+    // quote a moment earlier. When the real quote then landed, only this function ran, and it gates
+    // step 3's button alone (ctaButton() matches confirm/bridge/swap, never "Review transfer"), so step
+    // 2 stayed disabled for good with a quote on screen. Found by the daily bot 2026-10-09; reproduced
+    // in a plain browser on Bitcoin and Stellar destinations.
+    gateReview();
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();

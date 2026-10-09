@@ -235,8 +235,14 @@
     $$('.br-netchip:not(.brd-trigger)').forEach(function (c) {
       var nm = c.querySelector('.nm');
       if (nm) nm.textContent = 'XRP Ledger';
-      var img = c.querySelector('img');
-      if (img) { img.src = XRP_LOGO; img.alt = ''; }
+      // setIcon, NOT a bare img.src (RAZA 2026-10-09: "on XRPL, source network logo is not there").
+      // The comment above says the design embeds the old chain's logo as a base64 webp and that this
+      // replaces it -- true on the build that comment was written against, and not true here: on the
+      // combined build the source chip ships as `<span class="br-ic"></span>`, empty. `if (img)` was
+      // then simply false and the chip kept a 26px hole where its mark belongs, reporting nothing.
+      // setIcon creates the img when the host has none, which is the whole difference, and it is what
+      // every other icon on this page already goes through.
+      setIcon(c.querySelector('.br-ic'), XRP_LOGO);
     });
 
     // The source wallet. Never a fabricated address: either the one that is connected, or a plain
