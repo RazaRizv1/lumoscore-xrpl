@@ -34,6 +34,23 @@
 // The account field is `ammAccount`, read off our own lxapi/xrplpools.js (`acct: String(p.ammAccount
 // || '')`) rather than guessed from the url scheme — the proxy is the one place in this repo that is
 // known to parse this upstream correctly.
+// A BAKED FLOOR, BECAUSE AN EMPTY RESULT HERE IS INVISIBLE. Every failure path below returns [], and
+// the sitemap then publishes normally with no XRPL page in it at all. That is not hypothetical:
+// observed on the deployed site 2026-10-09, minutes after the build tool had called this same API,
+// the sitemap served 549 urls with ZERO XRPL pools and ZERO XRPL assets while Stellar's 199 and 291
+// were intact, then recovered on the next request. A crawler reading it on that minute is told those
+// pages do not exist, and nothing anywhere reports a fault.
+//
+// So the live fetch is now an AUGMENTATION, not the source. This list is written at build time by
+// _tools/_xrplpoolpairs.js from the same upstream and the same rules, and filled in here by
+// combine_with_stellar.js — the pattern CHAIN_ALT and POOL_PAIRS already use. The result is the union
+// of the two, so the sitemap can be fresher than the last build but never emptier, and a bad minute
+// upstream costs nothing.
+//
+// Empty in this repo as checked in; a build that has not run the generator simply gets the old
+// behaviour, which is the live fetch alone.
+const BAKED = [];
+
 const UP = 'https://api.xrpl.to/api';
 const LIMIT = 200;
 
@@ -66,6 +83,24 @@ function isAccount(a) {
 }
 
 export async function xrplSitemapUrls(env) {
+  const live = await liveUrls(env);
+  // The floor first, so its ordering is stable across requests, then anything the live call knows
+  // about that the last build did not. Deduped on the path: the two produce the same url for the
+  // same pool by construction, and a duplicate <loc> is a fault in a sitemap.
+  const seen = new Set();
+  const out = [];
+  for (const u of BAKED) {
+    if (!u || !u.path || seen.has(u.path)) continue;
+    seen.add(u.path); out.push(u);
+  }
+  for (const u of live) {
+    if (!u || !u.path || seen.has(u.path)) continue;
+    seen.add(u.path); out.push(u);
+  }
+  return out;
+}
+
+async function liveUrls(env) {
   try {
     const headers = { accept: 'application/json' };
     if (env && env.XRPLTO_API_KEY) headers['x-api-key'] = env.XRPLTO_API_KEY;
@@ -106,7 +141,8 @@ export async function xrplSitemapUrls(env) {
     }
     return out;
   } catch (e) {
-    // A sitemap missing these urls is recoverable; a sitemap that 500s is not.
+    // Still never throws: a sitemap that 500s is worse than one built from the floor alone. The
+    // difference from before is what an empty return now costs, which is nothing.
     return [];
   }
 }

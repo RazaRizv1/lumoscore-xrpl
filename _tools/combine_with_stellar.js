@@ -422,9 +422,37 @@ if (WRITE) {
   // The module and this patch are one unit: the export was renamed from xrplAssetUrls when it started
   // returning pool urls too, and a stale copy of either would build cleanly and publish the wrong
   // sitemap. Assert the name it actually exports rather than trusting the file on disk.
-  const smSrc = fs.readFileSync(FN_OUT + '/_xrplsitemap.js', 'utf8');
+  let smSrc = fs.readFileSync(FN_OUT + '/_xrplsitemap.js', 'utf8');
   if (smSrc.indexOf('export async function xrplSitemapUrls') < 0) {
     die('_xrplsitemap.js does not export xrplSitemapUrls — the module and the sitemap patch are out of step');
+  }
+
+  // ---- the sitemap's baked floor ----------------------------------------------------------------
+  // The live fetch inside that module returns [] on any failure, and a sitemap with no XRPL urls at
+  // all looks exactly like a healthy one. Seen on the deployed site: 549 urls, zero XRPL. The floor
+  // makes the live call an augmentation instead of the source.
+  //
+  // Missing is a warning for the same reason POOL_PAIRS is: without it the module behaves as it did
+  // before, which is the live fetch alone. An EMPTY file fails, because the generator produced
+  // nothing and shipping it would quietly remove the protection.
+  const SU = path.join(XRPL, '_tools', 'sitemapurls.generated.json');
+  if (!fs.existsSync(SU)) {
+    console.log('    sitemap floor : NONE — ' + path.basename(SU) + ' missing; the sitemap falls back'
+      + ' to the live fetch alone. Build it with: node _tools/_xrplpoolpairs.js');
+  } else {
+    let baked;
+    try { baked = JSON.parse(fs.readFileSync(SU, 'utf8')); } catch (e) {
+      die('sitemapurls.generated.json does not parse: ' + e.message);
+    }
+    if (!Array.isArray(baked) || !baked.length) die('sitemapurls.generated.json is empty — regenerate it');
+    if (smSrc.indexOf('const BAKED = [];') < 0) {
+      die('_xrplsitemap.js has no BAKED anchor — the module and this patch are out of step');
+    }
+    smSrc = smSrc.replace('const BAKED = [];',
+      '// Filled in by _tools/combine_with_stellar.js from _tools/sitemapurls.generated.json.\n'
+      + 'const BAKED = ' + JSON.stringify(baked) + ';');
+    fs.writeFileSync(FN_OUT + '/_xrplsitemap.js', smSrc, 'utf8');
+    console.log('    sitemap floor : ' + baked.length + ' url(s) baked in');
   }
   fs.writeFileSync(SM, sm, 'utf8');
   console.log('    sitemap xrpl  : asset + pool urls wired into sitemap.xml.js (live)');

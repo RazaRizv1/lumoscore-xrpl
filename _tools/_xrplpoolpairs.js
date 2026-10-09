@@ -31,10 +31,28 @@
 // AND THE RESULT IS UNIONED WITH THE PREVIOUS FILE, which is sound for exactly the reason the whole
 // approach is: a pair never changes, so an entry written by an earlier run cannot have gone stale.
 // Coverage therefore only ever grows, and a rate-limited build cannot shrink it.
+//
+// ---- IT ALSO WRITES THE SITEMAP'S XRPL URL LIST, from the same walk ------------------------------
+//
+// functions/_xrplsitemap.js fetches this same upstream at REQUEST time and, on any failure, returns
+// an empty list. Observed on the deployed site 2026-10-09, minutes after this tool had made five
+// calls to that API: the sitemap served 549 urls with ZERO XRPL pools and ZERO XRPL assets, while
+// Stellar's 199 and 291 were intact. It looked like a healthy sitemap that simply had no XRPL pages.
+// It recovered on the next request, which is the whole problem — the failure is invisible and
+// intermittent, and a crawler that reads it on a bad minute is told those pages do not exist.
+//
+// So the url list is baked here too and shipped as a FLOOR: the edge still fetches, and still gets
+// fresh pools between deploys, but it unions the result with this list instead of replacing it. The
+// sitemap can then be more complete than the build, never emptier.
+//
+// ONE WALK, TWO FILES, deliberately: the upstream rate-limits hard enough that a second command
+// walking the same pages would be the thing that breaks the first.
 const fs = require('fs');
 const path = require('path');
 
 const OUT = path.join(__dirname, 'poolpairs.generated.json');
+// The second output, from the same walk. See the note above about why one command writes two files.
+const URLS_OUT = path.join(__dirname, 'sitemapurls.generated.json');
 const UP = 'https://api.xrpl.to/api/amm';
 const PAGE = 100;          // the upstream's cap: limit=200 returns 100
 const PAGES = 5;           // 500 pools, by volume
@@ -79,6 +97,14 @@ function isAccount(a) {
   return /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(String(a || ''));
 }
 
+// The url-segment rule, kept identical to functions/_xrplsitemap.js: the asset page splits on the
+// LAST dash and needs the tail to be an r-address, so a dash in a ticker is fine and a slash or a
+// space is not. The two must agree, or the baked floor and the live fetch would publish different
+// urls for the same asset.
+function usableCode(code) {
+  return !!code && code !== 'XRP' && /^[\x21-\x7E]+$/.test(code) && code.indexOf('/') < 0;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // THIS UPSTREAM RATE-LIMITS, and five pages back to back trips it: the first run of this tool took a
@@ -100,6 +126,13 @@ async function getPage(offset) {
 
 (async () => {
   const map = {};
+  const urls = [];
+  const seenUrl = new Set();
+  const addUrl = (p, priority) => {
+    if (seenUrl.has(p)) return;
+    seenUrl.add(p);
+    urls.push({ path: p, priority });
+  };
   let fetched = 0, stoppedBy = '';
   for (let p = 0; p < PAGES; p++) {
     if (p) await sleep(1500);
@@ -118,7 +151,22 @@ async function getPage(offset) {
     fetched += rows.length;
     for (const row of rows) {
       const acct = row && row.ammAccount;
-      if (!isAccount(acct) || map[acct]) continue;
+      if (!isAccount(acct)) continue;
+
+      // The pool's own url. Independent of whether the pair NAMES are usable: a title can fall back
+      // to the account, so a pool with an awkward ticker still belongs in the sitemap.
+      addUrl('/pools/xrpl/id/' + acct, '0.6');
+
+      // The two asset urls, same rule and same priority the live fetch uses.
+      for (const side of [row.asset1 || row.asset || row.a1, row.asset2 || row.a2]) {
+        if (!side) continue;
+        const issuer = side.issuer || side.i || '';
+        const code = decodeCurrency(side.currency || side.c || '');
+        if (!isAccount(issuer) || !usableCode(code)) continue;
+        addUrl('/trade/xrpl/' + encodeURIComponent(code + '-' + issuer), '0.7');
+      }
+
+      if (map[acct]) continue;
       const a = sideName(row.asset1 || row.asset || row.a1);
       const b = sideName(row.asset2 || row.a2);
       if (!usableName(a) || !usableName(b)) continue;
@@ -141,10 +189,24 @@ async function getPage(offset) {
   const sorted = {};
   for (const k of Object.keys(merged).sort()) sorted[k] = merged[k];
   fs.writeFileSync(OUT, JSON.stringify(sorted, null, 0) + '\n', 'utf8');
+
+  // The url floor, unioned with the previous file for the same reason and sorted for the same one.
+  // A url that has dropped out of the top 500 is kept: the page still serves, and a sitemap listing
+  // a page that exists is not a fault. What it must never do is list fewer than it did last time
+  // because of a bad minute upstream.
+  const prevUrls = fs.existsSync(URLS_OUT) ? JSON.parse(fs.readFileSync(URLS_OUT, 'utf8')) : [];
+  const byPath = new Map();
+  for (const u of prevUrls) if (u && u.path) byPath.set(u.path, u);
+  for (const u of urls) byPath.set(u.path, u);
+  const mergedUrls = [...byPath.values()].sort((x, y) => (x.path < y.path ? -1 : x.path > y.path ? 1 : 0));
+  fs.writeFileSync(URLS_OUT, JSON.stringify(mergedUrls, null, 0) + '\n', 'utf8');
+
   console.log('xrpl pool pairs: ' + Object.keys(sorted).length + ' pair(s)'
     + ' (' + fresh + ' fetched from ' + fetched + ' row(s), was ' + Object.keys(prev).length + ')'
     + (stoppedBy ? ' — walk stopped early: ' + stoppedBy : '')
     + ' -> ' + path.basename(OUT));
+  console.log('xrpl sitemap floor: ' + mergedUrls.length + ' url(s)'
+    + ' (' + urls.length + ' fetched, was ' + prevUrls.length + ') -> ' + path.basename(URLS_OUT));
 })().catch((e) => {
   console.error('xrpl pool pairs: ' + e.message + ' — previous file left in place');
   process.exit(1);
