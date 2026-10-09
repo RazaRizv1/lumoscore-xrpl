@@ -73,6 +73,12 @@ const FIELDS = [
   '#poolSearch',              // pool filter, /pools/xrpl
   '#mdxMkSearch',             // new-mints search, /trade/xrpl
   '#roundSel',                // round picker, /rewards/xrpl
+  // "Search wallets…" inside the connect-wallet modal (#lcConnectModal). Verified a real id, not a
+  // class, before writing the "#": getElementById hits, querySelectorAll('.lcWalletSearch') finds
+  // nothing, and the element carries no class at all. Its only rule is the design's
+  // `.lc-msearch input{font-size:14.3px}` with no !important, so an id plus !important settles it.
+  // Reaches three phone pages here (account, pool detail, Trade-Asset) against Stellar's one.
+  '#lcWalletSearch',          // wallet picker in the connect modal
   'input.ad-search-input',    // asset picker inside the add-liquidity dialog
   'input.brd-q',              // network search, /bridge/xrpl
   'input.br-addr-in',         // bridge DESTINATION ADDRESS, /bridge/xrpl
