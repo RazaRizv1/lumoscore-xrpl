@@ -76,6 +76,68 @@ if (WRITE) {
 console.log('    stellar files : ' + (WRITE ? sN : 'n/a (dry run)'));
 console.log('    xrpl files    : ' + (WRITE ? xN : 'n/a (dry run)') + '  -> /xrpl');
 
+// ---- the shared pages are LOCAL in the combined deploy -------------------------------------------
+//
+// XRPL's footer, and the Documentation link in its sidebar, point at https://lumoscore.com/docs,
+// /blog, /about, /faq, /support, /terms, /privacy and /whitepaper. `_xrplroutes.js` wrote those
+// absolutes deliberately and its reasoning was correct AT THE TIME: this build does not route those
+// eight pages, so on the standalone lumoscore-xrpl deploy a bare "/docs" is a 404.
+//
+// In the COMBINED deploy they are served from the same origin — Stellar's own copies sit right
+// beside these pages. So here the absolute is wrong twice over: on a preview host every one of
+// those links walks the tester out of the build under test and into production, and on any host it
+// spends eight would-be internal links per page pointing off-site. Measured 2026-10-07: XRPL's
+// Trade page offered 12 distinct internal hrefs against Stellar's 22, entirely because of this.
+//
+// REWRITTEN IN THE OUTPUT, NOT IN THE REPO, for precisely the reason the absolutes exist: this
+// repo's own `npm run deploy` still targets the standalone lumoscore-xrpl project, where a
+// root-relative /docs would 404 all over again. The repo keeps the form that is right standalone;
+// the combined tree gets the form that is right combined. Neither build is left wrong.
+//
+// ANCHORS ONLY, and that restriction is load-bearing. `<link rel="canonical" href="https://
+// lumoscore.com/...">` is also an href, and og:url and the JSON-LD carry the same absolute host on
+// purpose — a canonical and a sitemap must name production, never the host they were fetched from.
+// Only <a> elements are touched.
+if (WRITE) {
+  const SHARED = ['docs', 'blog', 'about', 'faq', 'support', 'terms', 'privacy', 'whitepaper'];
+
+  // The gate: each one must actually be served at the root by Stellar, or "localising" these links
+  // trades a working absolute for a 404. Read from Stellar's own route table. `/docs` is matched by
+  // subtree because it canonicalises to /docs/introduction and so never appears bare in that list.
+  const rt = fs.readFileSync(STELLAR + '/functions/_sitemap-routes.js', 'utf8');
+  const ri = rt.indexOf('['), rj = rt.lastIndexOf(']');
+  if (ri < 0 || rj < 0) die('could not read Stellar SITEMAP_ROUTES for the shared-page check');
+  const sPaths = JSON.parse(rt.slice(ri, rj + 1)).map((r) => r[0]);
+  const served = (name) => sPaths.indexOf('/' + name) >= 0
+    || sPaths.some((p) => p.indexOf('/' + name + '/') === 0);
+  const absent = SHARED.filter((s) => !served(s));
+  if (absent.length) {
+    die('Stellar does not serve /' + absent.join(', /') + ' — refusing to point XRPL at them');
+  }
+
+  const RE = new RegExp('(<a\\b[^>]*href=")https://lumoscore\\.com(/(?:' + SHARED.join('|') + ')\\b[^"]*")', 'g');
+  // ...and the one that is not an anchor. A "Read the docs" button navigates with
+  // onclick="location.href='https://lumoscore.com/docs'", which the anchor rule above rightly does
+  // not see; it is the same link with the same problem. Single-quoted inside the attribute, so it is
+  // matched as its own shape rather than by loosening the rule above.
+  const RE2 = new RegExp("(location\\.href=')https://lumoscore\\.com(/(?:" + SHARED.join('|') + ")\\b[^']*')", 'g');
+  let shFiles = 0, shLinks = 0;
+  for (const f of fs.readdirSync(OUT + '/xrpl')) {
+    if (!f.endsWith('.html')) continue;
+    const p = OUT + '/xrpl/' + f;
+    const h = fs.readFileSync(p, 'utf8');
+    let n = 0;
+    let localised = h.replace(RE, (m, open, tail) => { n++; return open + tail; });
+    localised = localised.replace(RE2, (m, open, tail) => { n++; return open + tail; });
+    if (n) { fs.writeFileSync(p, localised, 'utf8'); shFiles++; shLinks += n; }
+  }
+  // Zero means the premise moved — either _xrplroutes stopped writing the absolutes or the footer
+  // was rebuilt. Silence here would mean shipping the old links believing they were fixed.
+  if (!shLinks) die('shared-page links: none found in dist/xrpl — did _xrplroutes stop writing them?');
+  console.log('    shared links  : ' + shLinks + ' absolute link(s) made root-relative across '
+    + shFiles + ' xrpl page(s)');
+}
+
 // ---- the assets XRPL has and Stellar does not ----------------------------------------------------
 // XRPL's pages are served from /xrpl but reference assets ROOT-relative — "/assets/networks/axelar.png"
 // — so in the combined tree every one of them resolves against STELLAR's asset directory. Most do
@@ -291,6 +353,85 @@ if (WRITE) {
     fs.copyFileSync(XRPL + '/functions/lxapi/' + f, FN_OUT + '/lxapi/' + f);
     fnAdded.push(f);
   }
+
+  // ---- the sitemap's static routes, from BOTH builds -------------------------------------------
+  //
+  // MEASURED 2026-10-07: the live sitemap carried 542 urls, every one of them Stellar's, and not a
+  // single XRPL page — not /trade/xrpl, not /pools/xrpl, nothing. `sitemap.xml.js` builds its list
+  // from `_sitemap-routes.js`, each build generates its own, and this step was copying Stellar's over
+  // the top. Each repo was right about itself and the combined site published only half of itself.
+  //
+  // Merged HERE rather than in either repo: both files are generated by their own extract_site.js
+  // from their own route table, so neither can know about the other, and the combined deploy is the
+  // only place both exist. Nothing in the Stellar repo is touched.
+  //
+  // Stellar wins a path collision — `/`, `/dashboard`, `/wallet`, `/launchpad` are shared bare routes
+  // and its priorities are the published ones.
+  //
+  // The host is NOT set here and must not be: `sitemap.xml.js` hardcodes `https://lumoscore.com`, so
+  // a sitemap fetched from a staging or preview host still publishes production urls (RAZA
+  // 2026-10-07: "make sure not to add staging on sitemap"). Verified by reading that function.
+  const ROUTES_FILE = '/_sitemap-routes.js';
+  const readRoutes = (p) => {
+    const t = fs.readFileSync(p, 'utf8');
+    const i = t.indexOf('['), j = t.lastIndexOf(']');
+    if (i < 0 || j < 0) die('Could not read SITEMAP_ROUTES from ' + p);
+    return JSON.parse(t.slice(i, j + 1));
+  };
+  const sRoutes = readRoutes(STELLAR + '/functions' + ROUTES_FILE);
+  const xRoutes = readRoutes(XRPL + '/functions' + ROUTES_FILE);
+  const seenPath = new Set(sRoutes.map((r) => r[0]));
+  const merged = sRoutes.slice();
+  let smAdded = 0;
+  for (const r of xRoutes) {
+    if (seenPath.has(r[0])) continue;
+    seenPath.add(r[0]);
+    merged.push(r);
+    smAdded++;
+  }
+  fs.writeFileSync(FN_OUT + ROUTES_FILE,
+    '// GENERATED by combine_with_stellar.js — do not edit.\n'
+    + '// Both builds\' static routes. Each repo generates only its own; the combined site serves both.\n'
+    + 'export const SITEMAP_ROUTES = ' + JSON.stringify(merged, null, 2) + ';\n', 'utf8');
+  // ---- and the XRPL asset AND pool pages ---------------------------------------------------------
+  //
+  // Stellar's sitemap lists 289 per-asset urls, fetched live from Horizon. XRPL listed none, so its
+  // asset pages existed and were unreachable to a crawler. `_xrplsitemap.js` produces the equivalent
+  // list; it is copied in beside the function and called from it.
+  //
+  // Since 2026-10-09 it returns the POOL pages as well, which had the same gap one level deeper: 199
+  // /pools/stellar/ urls were published against 0 for XRPL, while /pools/xrpl/id/<account> served a
+  // real titled page. It returns {path, priority} objects rather than bare strings so a pool page
+  // keeps Stellar's 0.6 and an asset page its 0.7, instead of flattening both to one weight here.
+  //
+  // PATCHED IN THE OUTPUT, NEVER IN THE STELLAR REPO. `sitemap.xml.js` is Stellar's file and XRPL work
+  // does not touch it, so the import and the one call are inserted into the copy under .deploy. Both
+  // anchors are asserted — if Stellar ever rewrites that function this fails loudly at build time
+  // rather than silently producing the old sitemap again.
+  fs.copyFileSync(XRPL + '/functions/_xrplsitemap.js', FN_OUT + '/_xrplsitemap.js');
+  const SM = FN_OUT + '/sitemap.xml.js';
+  let sm = fs.readFileSync(SM, 'utf8');
+  const impAnchor = "import { SITEMAP_ROUTES as STATIC } from './_sitemap-routes.js';";
+  const bodyAnchor = '  const body = ';
+  if (sm.indexOf(impAnchor) < 0) die('sitemap.xml.js: import anchor missing — did Stellar rewrite it?');
+  if (sm.indexOf(bodyAnchor) < 0) die('sitemap.xml.js: body anchor missing — did Stellar rewrite it?');
+  sm = sm.replace(impAnchor, impAnchor + "\nimport { xrplSitemapUrls } from './_xrplsitemap.js';");
+  sm = sm.replace(bodyAnchor,
+    '  for (const u of await xrplSitemapUrls(env)) urls.push({ loc: origin + u.path, priority: u.priority, freq: \'daily\' });\n\n'
+    + bodyAnchor);
+  // The module and this patch are one unit: the export was renamed from xrplAssetUrls when it started
+  // returning pool urls too, and a stale copy of either would build cleanly and publish the wrong
+  // sitemap. Assert the name it actually exports rather than trusting the file on disk.
+  const smSrc = fs.readFileSync(FN_OUT + '/_xrplsitemap.js', 'utf8');
+  if (smSrc.indexOf('export async function xrplSitemapUrls') < 0) {
+    die('_xrplsitemap.js does not export xrplSitemapUrls — the module and the sitemap patch are out of step');
+  }
+  fs.writeFileSync(SM, sm, 'utf8');
+  console.log('    sitemap xrpl  : asset + pool urls wired into sitemap.xml.js (live)');
+
+  console.log('    sitemap       : ' + merged.length + ' static route(s) — ' + sRoutes.length
+    + ' stellar + ' + smAdded + ' xrpl'
+    + (smAdded ? (' (' + xRoutes.filter((r) => !sRoutes.some((s) => s[0] === r[0])).map((r) => r[0]).join(', ') + ')') : ''));
 }
 console.log('    functions     : ' + (WRITE ? ('+' + fnAdded.length + ' (' + fnAdded.join(', ') + ')') : 'n/a (dry run)'));
 
