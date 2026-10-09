@@ -39,6 +39,17 @@
   // ---------------------------------------------------------------------------------------------
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
+
+  // WHERE XAMAN SENDS THE USER BACK. It must be a page that runs THIS file: the library finishes a
+  // sign-in only on the page it returns to -- in the desktop popup it posts the result to the opener,
+  // on a phone it picks the session up after the app hands back. It used to be origin + '/', which on
+  // the combined site is STELLAR's landing page and carries no Xaman code at all, so the popup sat
+  // there and a phone came back signed out. /trade/xrpl is an XRPL page on both the combined and the
+  // standalone builds and is not behind the authgate. Every origin + this path must be listed as a
+  // redirect URL at apps.xaman.dev, or the gateway answers "Invalid client/redirect URL".
+  var XAMAN_RETURN = '/trade/xrpl';
+  // The page the sign-in started from, so a phone returning to XAMAN_RETURN is taken back to it.
+  var XAMAN_BACK = 'lumos.xamanBack';
   var RPC = 'https://xrplcluster.com/';
 
   var K = {
@@ -282,7 +293,7 @@
     xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
       if (!window.XummPkce) throw new Error('The Xaman library did not load.');
       // One fixed return address, the site's root, whichever page sign-in starts from — the address that must be listed in the Xaman app.
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: window.location.origin + '/' });
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: xamanRedirect() });
 
       // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
       // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
@@ -304,6 +315,27 @@
     return xummReady;
   }
 
+  function xamanRedirect() { return window.location.origin + XAMAN_RETURN; }
+
+  // localStorage, not sessionStorage: on a phone the return can arrive in a different tab than the
+  // one that left for the app. Stamped, so a stale entry from an abandoned sign-in is ignored.
+  function rememberBack() {
+    try {
+      localStorage.setItem(XAMAN_BACK, JSON.stringify({
+        u: window.location.pathname + window.location.search + window.location.hash, t: Date.now() }));
+    } catch (e) {}
+  }
+  function goBack() {
+    var b = null;
+    try { b = JSON.parse(localStorage.getItem(XAMAN_BACK) || 'null'); localStorage.removeItem(XAMAN_BACK); } catch (e) {}
+    // Never inside the desktop popup -- the library closes that itself once it has posted.
+    if (window.opener) return;
+    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return;
+    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return;
+    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return;
+    window.location.replace(b.u);
+  }
+
   function adoptXumm(x) {
     try {
       var p = x.state();
@@ -311,7 +343,8 @@
       p.then(function (state) {
         if (!state || !state.me || !state.me.account) return;
         if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
+        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) { return; }
+        goBack();
       }).catch(noop);
     } catch (e) {}
   }
@@ -342,11 +375,11 @@
     // so the wording has to carry both without asserting either.
     if (/popup-closed/.test(m)) {
       return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
-        + 'client/redirect URL", then ' + window.location.origin + ' is not a registered redirect '
+        + 'client/redirect URL", then ' + xamanRedirect() + ' is not a registered redirect '
         + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
     }
     if (/invalid client|redirect|access_denied/i.test(m)) {
-      return new Error('Xaman would not accept a sign-in from ' + window.location.origin
+      return new Error('Xaman would not accept a sign-in returning to ' + xamanRedirect()
         + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
         + 'redirect URL at apps.xaman.dev; otherwise open LumosCore from its main address.');
     }
@@ -358,6 +391,7 @@
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
+      rememberBack();
       var p = x.authorize();
       if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
