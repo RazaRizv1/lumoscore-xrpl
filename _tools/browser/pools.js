@@ -93,6 +93,41 @@
     return (v == null || !isFinite(v)) ? '—' : Math.round(v).toLocaleString('en-US');
   }
 
+  // A MONEY FIGURE, ABBREVIATED THE WAY STELLAR'S OVERVIEW ABBREVIATES ONE — "$5.32M", "$545.3K".
+  // K is one decimal and M upward are two, which is the same ladder the Trade table and the asset
+  // page use; the dollar sign is the caller's, because one of these is a headline and one a sub-line.
+  function money(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+
+  // A Market Overview caption, coloured the way Stellar colours one — WITHOUT naming a colour.
+  //
+  // RAZA 2026-10-06, the two captions this file writes against the two it does not: "text colour on
+  // difference on Stellar and XRPL". Measured in dark on both pages, the plain captions already
+  // agree — `.amm-snapshot-sub` is rgb(110,109,120) on lumoscore.com and here — and only the two we
+  // touch were off, at rgb(165,164,172).
+  //
+  // Both halves of that were mine. The Active Pools caption inherits `up`, the design's positive-delta
+  // style, from a row that once carried a week-on-week change; it renders rgb(53,192,127), green, and
+  // there is no delta here for green to mean. I covered it with an inline `var(--text-muted)` — which
+  // is a DIFFERENT TOKEN from the one the caption class uses: #a5a4ac in dark, #5a5a66 in light. So the
+  // override swapped a wrong colour for another wrong colour, and in opposite directions per theme.
+  //
+  // Removing the class and the inline both, instead, lands on rgb(110,109,120) — Stellar's exact
+  // value — because the caption class then applies, which is all Stellar ever does. Measured all three
+  // ways on the live page before writing this. Naming a literal here would have had to be re-picked
+  // for light; inheriting cannot drift. [[lumoscore-css-override-traps]]
+  function plainSub(el) {
+    if (!el) return;
+    el.classList.remove('up');
+    el.classList.remove('down');
+    el.style.color = '';          // clears an override an earlier build of this file may have set
+  }
+
   // The XRP -> USD rate, read once per page from the tokens endpoint — the same source every other
   // USD figure on this site derives from, so the table cannot disagree with the overview or the
   // dashboard about what an XRP is worth. Null until it arrives, and null is rendered as an em dash
@@ -198,22 +233,42 @@
   // WINDOW capture is the earliest phase there is: it runs before any document-level listener, so
   // stopImmediatePropagation here settles the question before anything else is consulted. Scoped
   // strictly to clicks inside #poolsBody, so no other navigation on the page is affected.
+  // A NEW TAB HAS TO BE OPENED BY US, NOT LEFT TO THE BROWSER (RAZA 2026-10-08: "Allow me to open
+  // pools in new tabs. It doesn't let me"). This handler used to RETURN on a modifier click, meaning
+  // to let the browser do what it always does with ctrl+click. That is precisely what cannot work
+  // here: getting out of the way hands the click to the design's own window-capture router, which
+  // calls preventDefault and navigates in the same tab. Measured on the deployed page — ctrl+click on
+  // the pair anchor itself came back defaultPrevented with an unload following, so even the real
+  // <a href> lost. lumoscore.com hit the same wall and records it in _ammdata.js: "the design's shim
+  // runs on window capture and calls preventDefault, so 'let the browser handle it' loses that race".
+  //
+  // So the row is claimed in every case and the destination is opened explicitly: a modifier click
+  // gets window.open, a plain one gets location.href. Right-click is excluded so the context menu
+  // (and its own "Open link in new tab") still works. auxclick is bound as well as click because the
+  // MIDDLE BUTTON FIRES NO CLICK EVENT AT ALL in Chrome — binding only click would leave middle-click
+  // broken in exactly the way this fix is meant to address.
   function claimRowClicks() {
     if (window.__lxxPoolNav) return;
     window.__lxxPoolNav = 1;
-    window.addEventListener('click', function (e) {
+    function wantsTab(e) { return !!(e && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)); }
+    function nav(e) {
       var t = e.target;
       if (!t || !t.closest) return;
       var tr = t.closest('#poolsBody tr');
       if (!tr) return;
       var a = tr.querySelector('a.pool-pair');
       if (!a) return;
-      // Let a genuine modifier-click (new tab, new window) behave normally.
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      if (e.button != null && e.button !== 0 && e.button !== 1) return;   // right-click: leave it alone
       e.preventDefault();
       e.stopImmediatePropagation();
-      window.location.href = a.getAttribute('href');
-    }, true);
+      var h = a.getAttribute('href');
+      if (wantsTab(e)) {
+        try { window.open(h, '_blank', 'noopener'); return; } catch (_) {}
+      }
+      window.location.href = h;
+    }
+    window.addEventListener('click', nav, true);
+    window.addEventListener('auxclick', nav, true);
   }
 
   function row(p, rank) {
@@ -288,7 +343,17 @@
     // `p.holders == null` FIRST, and that is the whole bug (RAZA reported this pool twice). The upstream sends null when
     // it has no count; `+null` is 0, which isFinite() happily accepts — so the one case this repair exists for was the one
     // case it skipped, and the cell kept the em dash `count(null)` had already written. Nothing else was wrong with it.
-    if ((p.holders == null || !isFinite(+p.holders)) && p.acct) partTd.setAttribute('data-lxpart', p.acct);
+    //
+    // AND NOW FOR EVERY ROW, NOT ONLY THE EMPTY ONES (RAZA 2026-10-08: "yes make it exact on the
+    // visible rows"). The upstream's lpHolderCount is a real holder count but a stale snapshot:
+    // measured against the ledger across six pools it was right on three and over by one or two on
+    // the three busiest — 1206 against 1204, 455 against 454, 184 against 183. Small, but the pool
+    // page now counts from the ledger exactly, so leaving the column on the upstream figure would
+    // bring back the complaint that started this, just one digit at a time.
+    //
+    // The sweep below is already viewport-gated, queued and edge-cached, so asking for every visible
+    // row costs the same per row as asking for the few that were null.
+    if (p.acct) partTd.setAttribute('data-lxpart', p.acct);
     tr.appendChild(partTd);
     // WEIGHTS OFF THE LIVE STELLAR ROW: the liquidity headline and the participant count are 700 there,
     // the volume and fee figures 400. Set inline on those two cells only.
@@ -467,15 +532,36 @@
         // Matched anywhere in the label, not at position 0: the row reads "Total Liquidity", so an
         // indexOf(...) === 0 test silently skipped it and left 12.7M APT sitting beside three
         // corrected rows — the one wrong figure in a block that otherwise looked freshly filled.
+        // STELLAR'S SHAPE, ROW BY ROW (RAZA 2026-10-06, six numbered differences on one screenshot).
+        // Read off lumoscore.com/pools/stellar:
+        //
+        //   Total Liquidity   63,771,155 XLM        over  ≈ $5.32M
+        //   Active Pools      39,253                over  "Liquidity pools on Stellar"
+        //   24h Volume        $545.3K               over  "2,523,911 XLM (24h)"
+        //
+        // Two of them were INVERTED here. Total Liquidity showed the compacted native figure with the
+        // exact dollar underneath ("27.24M XRP" over "≈ $41,363,917"); Stellar shows the exact native
+        // figure with the compacted dollar underneath. And 24h Volume led with the native count where
+        // Stellar leads with the money — the headline is the dollar, the native amount is the detail.
         if (label.indexOf('liquidity') >= 0) {
-          setVal(amount(s.liquidity), 'XRP');
-          if (vsub) vsub.textContent = usd ? ('≈ $' + Math.round(s.liquidity * usd).toLocaleString('en-US')) : '';
+          // Grouped, not abbreviated: "63,771,155 XLM" is Stellar's headline, so "27,243,110 XRP" is ours.
+          setVal(s.liquidity != null ? Math.round(s.liquidity).toLocaleString('en-US') : '—', 'XRP');
+          if (vsub) vsub.textContent = usd ? ('≈ $' + money(s.liquidity * usd)) : '';
         } else if (label.indexOf('active pools') === 0) {
           setVal(d.total != null ? count(d.total) : '—');
-          if (sub) sub.textContent = 'Across the XRP Ledger';   // no week-ago figure to compare with
+          // Stellar's wording, and Stellar's colour by the same route Stellar gets it — see plainSub.
+          if (sub) {
+            sub.textContent = 'Liquidity pools on XRP Ledger';
+            plainSub(sub);
+          }
         } else if (label.indexOf('24h volume') === 0) {
-          setVal(amount(s.vol24), 'XRP');
-          if (sub) sub.textContent = usd ? ('≈ $' + Math.round(s.vol24 * usd).toLocaleString('en-US') + ' swapped') : 'past 24 hours';
+          setVal(usd ? ('$' + money(s.vol24 * usd)) : (amount(s.vol24) + ' '), usd ? '' : 'XRP');
+          if (sub) {
+            sub.textContent = s.vol24 != null
+              ? (Math.round(s.vol24).toLocaleString('en-US') + ' XRP (24h)')
+              : 'past 24 hours';
+            plainSub(sub);
+          }
         } else if (label.indexOf('participant') === 0) {
           setVal('—');
           if (sub) sub.textContent = 'Not published by a public node';
@@ -525,6 +611,10 @@
   // ships `#paginationAll` — "Showing 1–10 of 100 pools" plus First/Prev/numbers/Next/Last — and it
   // had never been wired to anything. Nothing new is introduced; only what the buttons do.
   var PER = 50;
+  // The phone has no pager, so it grows by chunk as the reader scrolls instead of drawing the whole
+  // dataset at once. 60 is two or three screens of cards -- enough that the first scroll is never a
+  // wait, small enough that the first paint is 120 images rather than 20,000.
+  var PHONE_CHUNK = 60, phoneShown = 0, phoneWired = 0, phoneData = null;
   var pageNo = 1;
 
   function setPageInfo(from, to, total) {
@@ -558,16 +648,16 @@
       if (k !== first && k !== prev && k !== next && k !== last) k.remove();
     });
 
-    function numBtn(n) {
-      var b = document.createElement('button');
-      if (n === pageNo) b.className = 'active';
-      b.textContent = String(n);
-      b.addEventListener('click', function () { renderPage(h, d, n); });
-      return b;
-    }
-    // Ascending, each inserted before `next` — a descending loop stacks them backwards, which is how
-    // the trade pager once shipped reading "2 1".
-    for (var n = 1; n <= pages; n++) ctrls.insertBefore(numBtn(n), next);
+    // "PAGE 1 OF 442", NOT A ROW OF NUMBERED BUTTONS (RAZA 2026-10-06, difference 3). Stellar puts a
+    // plain label between Prev and Next; this built one button per page, which is also why the two
+    // pagers look nothing alike at a glance even before you read them.
+    //
+    // It is a span, not a disabled button: nothing here is clickable, and a button that cannot be
+    // pressed invites the press.
+    var lbl = document.createElement('span');
+    lbl.className = 'lx-pageno';
+    lbl.textContent = 'Page ' + pageNo + ' of ' + pages;
+    ctrls.insertBefore(lbl, next);
 
     function nav(btn, target, disabled) {
       if (!btn) return;
@@ -582,10 +672,74 @@
     nav(last, pages, pageNo === pages);
 
     pg.style.display = pages > 1 ? '' : 'none';
+    pagerStyle();
+    pagerAboveOverview();
   }
 
-  // Which column the table is ordered by. The endpoint already returns pools by liquidity, descending, which is what the
-  // page opens on — so the default here has to describe that, not impose a second ordering on top of it.
+  // Stellar's label is a muted 13.5px span (`.lx-netpag-m`); ours is a span of our own, so it needs the
+  // same three declarations. Injected once, by id, so a re-render cannot stack copies.
+  function pagerStyle() {
+    if (document.getElementById('lx-pageno-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-pageno-css';
+    st.textContent = '.lx-pageno{font-size:13.5px;font-weight:400;color:var(--text-muted,#6e6d78);'
+      + 'display:inline-flex;align-items:center;padding:0 10px;white-space:nowrap}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  // THE PAGER GOES ABOVE THE MARKET OVERVIEW (RAZA 2026-10-06, difference 6). On Stellar the order is
+  // table → "Showing 1–25 of 11,029 pools" + controls → Market Overview; here the overview card sat
+  // between the table and its own pager, so the count belonged to nothing you could see.
+  //
+  // Verified on lumoscore.com by document order rather than by eye: compareDocumentPosition puts
+  // #paginationAll before .amm-snapshot-card.
+  // IT IS THE CARD THAT MOVES, NOT THE PAGER — and it is `_sidecard.js` that moves it, on both builds.
+  //
+  // Three attempts failed before reading the layer that actually owns this, so the mechanism is worth
+  // stating. `_sidecard.js` (inherited; `lx-sc` is on <html> here, so it RUNS on this build) relocates
+  // `.amm-snapshot-card` out of the hero and down the page, placing it after an anchor:
+  //
+  //     .lx-netpag-host  ||  .lx-netpag  ||  #panelMine,#panelMyPositions   (whichever is LAST)
+  //
+  // On lumoscore.com the pools pager carries `lx-netpag`, so the anchor is the pager and the card
+  // lands directly after it — which is the whole of the difference RAZA screenshotted. This build
+  // inherited netpag's STYLESHEET but never the class on the element: measured, our pager's className
+  // is just "pagination". So the anchor fell through to `#panelMyPositions`, which sits INSIDE the
+  // list card above, and the overview was parked there — above the pager instead of below it.
+  //
+  // So the fix is one class, plus the same placement _sidecard would do, applied now rather than at
+  // its next observer tick. `lx-netpag-host` and not `lx-netpag`: anchor() checks the host class
+  // first, and it carries a single `margin-top:10px`, where `.lx-netpag` would restyle the whole
+  // pager — border-top, padding, font, every button.
+  //
+  // WHAT NOT TO DO, all three measured on deploys:
+  //   * Moving the PAGER up works and is undone seconds later — _sidecard puts the card back where
+  //     its anchor says, and its anchor was wrong. The node that was fighting me was mine.
+  //   * A MutationObserver re-asserting that move HUNG THE TAB (deploy 11dc2b93): move → childList
+  //     mutation → _sidecard answers → forever. _sidecard's own observer is safe only because
+  //     place() is a no-op once settled, which is why the guard below is the same shape.
+  //   * `.page{display:flex}` + `order:1` on the card. This measured correct here at every width and
+  //     theme and was still wrong on RAZA's screen — a declared order that only holds in one browser
+  //     is not a fix, and it made the page's root a flex container for no reason.
+  function pagerAboveOverview() {
+    var pg = $('#paginationAll');
+    if (!pg || !pg.parentNode) return;
+    pg.classList.add('lx-netpag-host');                 // the anchor _sidecard.js looks for
+    var card = document.querySelector('.amm-snapshot-card');
+    if (!card) return;                                  // painted by a later layer; _sidecard places it
+    if (card.parentNode === pg.parentNode && pg.nextElementSibling === card) return;   // settled
+    pg.parentNode.insertBefore(card, pg.nextSibling);
+  }
+
+  // Which column the table is ordered by.
+  //
+  // The note here used to say the endpoint returns pools by liquidity descending, "so the default
+  // has to describe that rather than impose a second ordering". That was not true: the endpoint asks
+  // the upstream for a VOLUME ranking, and until 2026-10-07 it asked with a key the upstream does
+  // not sort by, so the rows arrived in no order at all. This client-side sort was therefore not
+  // describing the response — it was the only thing ordering the table.
+  // It still is, and that is now correct by construction: the endpoint selects the top pools by 24h
+  // volume across the whole ledger, and this orders that set by whichever column the reader picks.
   var SORT = { key: 'liq', dir: -1 };
   function applySort(rows) {
     if (!SORT.key) return rows;
@@ -621,9 +775,33 @@
 
     // NO PAGER, NO PAGING. The phone build carries no #paginationAll at all, so paging there would
     // hide rows behind a control that does not exist — the mistake this made once already on the
-    // trade page. The phone gets the whole hundred; the desktop pages them.
+    // trade page.
     var paged = !!$('#paginationAll');
-    var per = paged ? PER : total;
+
+    // ...BUT "THE WHOLE LOT" STOPPED MEANING A HUNDRED. This drew every row the dataset held, which
+    // was right when the dataset WAS the first hundred. deepen() now walks it to 10,000 (RAZA
+    // 2026-10-07, "its only considering 100 pools unlike Stellar"), and the phone was still drawing
+    // all of them: 10,000 cards, each with two logo <img>, so ~20,000 images at once. Measured on
+    // the deployed build — the phone fired roughly 7,000 requests, every /lxapi/xrplthumb came back
+    // 429, and the renderer pinned hard enough that neither a script nor a screenshot could run.
+    // The list ended up EMPTY, so the page that was supposed to show more pools showed none.
+    // Desktop never had this: it pages at 50. Two reasonable decisions that only became lethal once
+    // they met.
+    //
+    // loading="lazy" is not the answer and was already on every one of those images: the browser
+    // still builds 20,000 elements, and it loads far more than a screenful. So the phone draws a
+    // chunk and grows as the reader scrolls — the same rule fillParticipants() below already
+    // follows for its own requests, and it keeps all 10,000 reachable rather than capping the list
+    // and quietly throwing RAZA's ask away.
+    // RESET ONLY ON A NEW DATASET, never on a repaint. deepen() calls back in here with the SAME
+    // object every time a batch of a thousand lands, so keying the reset on n===1 would snap the
+    // list back to 60 rows under a reader who had scrolled past them -- ten times over. A search
+    // builds a fresh rows object and so does reset, which is what it should do.
+    if (!paged) {
+      if (phoneData !== d) { phoneData = d; phoneShown = 0; }
+      phoneShown = phoneShown ? Math.min(phoneShown, total) : Math.min(PHONE_CHUNK, total);
+    }
+    var per = paged ? PER : phoneShown;
     var pages = Math.max(1, Math.ceil(total / per));
     pageNo = Math.min(Math.max(1, n), pages);
 
@@ -639,7 +817,44 @@
 
     setPageInfo(from + 1, to, total);
     buildPager(h, d, pages);
+    if (!paged) wirePhoneGrow(h);
     fillParticipants();
+  }
+
+  // Appends the next chunk when the reader nears the end of the list. APPENDS rather than re-renders:
+  // redrawing would rebuild every card already on screen, and with it every <img> the reader has
+  // already paid for -- which is the cost this whole change exists to avoid.
+  //
+  // Reads the live dataset off window.__lxxPoolsData rather than closing over `d`, because deepen()
+  // keeps growing the same object underneath and a stale reference would stop the list at whatever
+  // depth it had when the listener was bound.
+  function wirePhoneGrow(h) {
+    if (phoneWired) return;
+    phoneWired = 1;
+    var busy = 0;
+    function grow() {
+      if (busy) return;
+      var d = window.__lxxPoolsData;
+      if (!d || !d.rows) return;
+      var total = d.rows.length;
+      if (phoneShown >= total) return;
+      // within one screen of the bottom
+      var doc = document.documentElement;
+      if ((window.innerHeight + window.scrollY) < (doc.scrollHeight - window.innerHeight)) return;
+      busy = 1;
+      var rows = applySort(d.rows);
+      var make = h.kind === 'table' ? row : card;
+      var from = phoneShown, to = Math.min(from + PHONE_CHUNK, total);
+      for (var i = from; i < to; i++) h.node.appendChild(make(rows[i], i + 1));
+      phoneShown = to;
+      setPageInfo(1, to, total);
+      try { fillParticipants(); } catch (e) {}
+      busy = 0;
+    }
+    window.addEventListener('scroll', grow, { passive: true });
+    window.addEventListener('resize', grow, { passive: true });
+    // A short list on a tall screen never fires a scroll, so the first check is made directly.
+    setTimeout(grow, 400);
   }
 
   // The same count the pool page shows: the LP token's holder list, which needs the token's currency from amm_info first.
@@ -688,7 +903,16 @@
         return fetch('/lxapi/xrplparticipants?acct=' + encodeURIComponent(acct))
           .then(function (x) { return x.json(); })
           .then(function (d) {
-            if (d && d.ok && d.total != null) { td.textContent = count(d.total); return; }
+            if (d && d.ok && d.total != null) {
+              // A TRUNCATED COUNT MUST NOT REPLACE A WHOLE ONE. The endpoint stops after five pages
+              // of four hundred lines and says so with `complete:false`; past that its total is a
+              // floor, not a figure. Where the upstream already gave a number, that stays — it is
+              // only one or two out — and the partial is used solely where the cell had nothing but
+              // an em dash, which is the case this sweep was built for.
+              if (d.complete !== false) { td.textContent = count(d.total); return; }
+              if (!/[0-9]/.test(td.textContent || '')) td.textContent = count(d.total);
+              return;
+            }
             throw new Error('no count');
           })
           .catch(function () {
@@ -822,8 +1046,21 @@
           seen[t.i] = 1;
           issuers.push(t.i);
         });
-        return Promise.all(issuers.slice(0, 8).map(function (iss) {
-          return fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(iss))
+        // EVERY POOL FOR THE ASSET, which is the point of searching by issuer rather than filtering
+        // the loaded page (RAZA 2026-10-07: "it must show all pools for any asset").
+        //
+        // Two caps used to stop that being true, and both were invisible in the result — a short
+        // list reads exactly like a complete one:
+        //   * `n=100` per issuer. The endpoint now pages behind a single call, so 1000 covers any
+        //     issuer on the ledger; it costs ONE upstream request for a typical issuer because the
+        //     paging loop stops the moment a page comes back short.
+        //   * `slice(0, 8)` issuers. A ticker like USD is issued by dozens of accounts, so the 9th
+        //     onwards contributed nothing and the search quietly understated the ledger. Raised to
+        //     32, which covers every code measured here and still bounds a pathological query.
+        var ISSUER_CAP = 32;
+        window.__lxxPoolSearchTrunc = issuers.length > ISSUER_CAP;
+        return Promise.all(issuers.slice(0, ISSUER_CAP).map(function (iss) {
+          return fetch('/lxapi/xrplpools?n=1000&issuer=' + encodeURIComponent(iss))
             .then(function (r) { return r.json(); }).catch(function () { return null; });
         })).then(function (res) {
           if (my !== poolQ) return;
@@ -871,6 +1108,62 @@
     renderPage(h, { ok: true, rows: rows, total: rows.length }, 1);
   }
 
+  // Walk the ranking out past the first batch, in the background (RAZA 2026-10-07: raise it to
+  // 10,000). It has to be the client that accumulates depth: 10,000 rows is 100 upstream pages, and
+  // a Worker on the free plan gets 50 subrequests and 10ms of CPU, so one request asking for all of
+  // them fails at page 51. Ten calls of a thousand each stay inside the limits and cache separately.
+  //
+  // SEQUENTIAL, one batch in flight at a time. The upstream rate-limits readily — this
+  // investigation tripped it — so a burst of ten parallel calls would be the thing that breaks it.
+  // A failed or short batch simply stops the walk and keeps everything already in hand.
+  var DEEP_TARGET = 10000;
+  function deepen(h, d) {
+    if (!d || !d.more) return;
+    var next = d.nextP0 || 11;
+    var qAtStart = poolQ;
+    function step() {
+      // Abandon if the dataset was replaced (reload) or the reader started searching — repainting
+      // under a search is the second-writer repaint this project keeps getting bitten by.
+      if (window.__lxxPoolsData !== d || poolQ !== qAtStart) return;
+      if (d.rows.length >= DEEP_TARGET) return;
+      fetch('/lxapi/xrplpools?n=1000&p0=' + next)
+        .then(function (r) { return r.json(); })
+        .then(function (b) {
+          // WHY THE WALK STOPPED, recorded rather than swallowed. The first version of this ended in
+          // an empty .catch(), and when the walk halted at 3,000 rows there was no way to tell a
+          // rate-limited upstream from a bug in this function — the two look identical from outside.
+          // Read window.__lxxPoolsDeep in the console to see where it got to and why.
+          window.__lxxPoolsDeep = { rows: d.rows.length, lastP0: next, reason: 'running' };
+          if (!b || !b.ok) { window.__lxxPoolsDeep.reason = 'upstream refused (' + ((b && b.error) || 'no body') + ')'; return; }
+          if (!b.rows || !b.rows.length) { window.__lxxPoolsDeep.reason = 'empty batch'; return; }
+          if (window.__lxxPoolsData !== d || poolQ !== qAtStart) { window.__lxxPoolsDeep.reason = 'superseded'; return; }
+          // Dedupe on the AMM account. A repeated page would otherwise pad the count with rows the
+          // table already holds, and a padded count is worse than a short one: it reads as coverage.
+          var got = {};
+          d.rows.forEach(function (r) { if (r && r.acct) got[r.acct] = 1; });
+          var added = 0;
+          b.rows.forEach(function (r) {
+            if (!r || !r.acct || got[r.acct]) return;
+            got[r.acct] = 1; d.rows.push(r); added++;
+          });
+          next = b.nextP0 || (next + 10);
+          // Only while the reader is on the first page. Deeper batches can carry a pool whose
+          // liquidity puts it near the top, so a repaint reorders the table — fine to watch fill in
+          // from page one, not fine to have happen under someone reading page seven.
+          window.__lxxPoolsDeep.rows = d.rows.length;
+          if (added && pageNo === 1) renderPage(h, d, 1);
+          if (!added) { window.__lxxPoolsDeep.reason = 'batch held nothing new'; return; }
+          if (!b.more) { window.__lxxPoolsDeep.reason = 'ranking exhausted'; return; }
+          if (d.rows.length >= DEEP_TARGET) { window.__lxxPoolsDeep.reason = 'target reached'; return; }
+          step();
+        })
+        .catch(function (err) {
+          window.__lxxPoolsDeep = { rows: d.rows.length, lastP0: next, reason: 'threw: ' + ((err && err.message) || err) };
+        });
+    }
+    step();
+  }
+
   function load() {
     var h = listHost();
     if (!h) return;                                    // not the Pools page
@@ -890,9 +1183,14 @@
     // two-writers-on-one-element shape this project keeps getting bitten by. Promise.all costs
     // nothing here: the tokens response is edge-cached and the two requests overlap.
     Promise.all([
-      // n=100 — the endpoint's ceiling, and the upstream's. See the note above the pager.
-      // On the LUMOS page the table is "All LUMOS pools", not the site's top hundred (RAZA 2026-09-15).
-      fetch('/lxapi/xrplpools?n=100' + ($('.lumos-hero-row') ? '&issuer=rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' : ''))
+      // n=1000, raised from 100 (RAZA 2026-10-07: "its only considering 100 pools unlike Stellar
+      // where it considers all network pools"). 100 was the UPSTREAM's per-request limit, mistaken
+      // for a limit on what could be ranked; the endpoint now pages up to ten times behind this
+      // single call. The endpoint also had the wrong sort key, so the old hundred were not even the
+      // top hundred — see the note there, which is the half of this that actually changes the table.
+      // On the LUMOS page the table is "All LUMOS pools", not the site's top ranks (RAZA 2026-09-15),
+      // and the issuer filter narrows the upstream to ~22 rows, so it costs one request either way.
+      fetch('/lxapi/xrplpools?n=1000' + ($('.lumos-hero-row') ? '&issuer=rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' : ''))
         .then(function (r) { return r.json(); }),
       fetchUsd(3),
     ]).then(function (both) {
@@ -917,6 +1215,7 @@
       paintSummary(d.summary);
       paintOverview(d);
       attribution(d);
+      deepen(h, d);
       // A table of em dashes is repainted the moment a rate does arrive, rather than waiting for the next visit.
       if (USD == null) {
         fetchUsd(4).then(function (u) {
