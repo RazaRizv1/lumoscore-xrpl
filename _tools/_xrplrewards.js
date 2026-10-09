@@ -34,7 +34,7 @@ if (page.indexOf('isTeamWallet') < 0 || core.indexOf('TEAM_WALLETS') < 0) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
 
-let files = 0, pages = 0, stripped = 0;
+let files = 0, pages = 0, stripped = 0, ann = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -46,6 +46,26 @@ for (const dev of ['desktop', 'mobile']) {
     if (typeof json[key] !== 'string') continue;
     let h = json[key];
     if (h.indexOf('id="eligBox"') < 0) continue;
+
+    // THE "Read the announcement" LINKS, the XRPL half of a fix Stellar got in _rewardslinks.js on
+    // 2026-10-09. Three faults in one href, found in a mobile audit:
+    //
+    //   https://lumoscore.com/blogs/introducing-native-lp-rewards-for-lumos  target="_blank"
+    //
+    // ABSOLUTE, so on staging it leaves for production -- which is what makes a staging check
+    // meaningless; "/blogs/" 301s to "/blog/", a redirect hop paid on a phone; and target="_blank"
+    // opens a new tab for an internal link, without rel=noopener. Dropping the target settles the
+    // last two at once. The DESTINATION is unchanged: only the form of the url.
+    const annBefore = (h.match(/<a class="blog"/g) || []).length;
+    h = h.replace(/<a class="blog" href="https:\/\/lumoscore\.com\/blogs\/([A-Za-z0-9-]+)"[^>]*>/g,
+      '<a class="blog" href="/blog/$1">');
+    const annRel = (h.match(/<a class="blog" href="\/blog\//g) || []).length;
+    if (annBefore && annRel !== annBefore) {
+      console.error('  ! ' + key + ': ' + annBefore + ' announcement link(s), only ' + annRel
+        + ' relative afterwards — the href shape changed');
+      process.exit(1);
+    }
+    ann += annRel;
 
     const gone = stripById(h, 'lx-rewardsdata');
     h = gone.html;
@@ -64,5 +84,5 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl rewards: injected on ' + pages + ' page key(s) across ' + files
-  + ' container(s); stripped the Stellar layer from ' + stripped);
+  + ' container(s); stripped the Stellar layer from ' + stripped + '; ' + ann + ' announcement link(s) made relative');
 if (!pages) console.error('  ! no page carried id="eligBox" — nothing was wired');
