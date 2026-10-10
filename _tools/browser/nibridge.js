@@ -2016,19 +2016,86 @@
   }
   // The source USD line, from the price 1Click gives XRP in its own token list -- not a second feed
   // that could disagree with the quote sitting beside it.
+  // THE SOURCE TOKEN'S OWN PRICE, ASKED FOR (RAZA 2026-10-09: "it doesn't show $value when i input in
+  // Available to send like it does on Stellar. it does show if i select XRP as the source asset, but
+  // when i select any asset, it disappears").
+  //
+  // The blank this replaces was the right answer to an earlier bug and the wrong answer to the
+  // question. This line used to multiply the typed amount by ORIGIN.price — 1Click's XRP entry —
+  // whatever was selected, so 0.1 ATOM read "~ $0.15" and 72.58 PHNIX read "~ $109.59": the XRP price
+  // wearing another ticker. Blanking it stopped the lie, and the note said an issued token's USD value
+  // "is not something this page knows". It is, through the same endpoint the rest of this build prices
+  // tokens with; it just had not been asked.
+  //
+  // /lxapi/xrplprices with a single `<issuer>-<currency>` slug, exactly as account.js asks for a pool's
+  // two sides, and the same reading of the answer: row[0] is the token's price IN XRP and j.usd is
+  // XRP in dollars, so the dollar value is amount x row[0] x usdPerXrp. ORIGIN.price supplies the last
+  // term, which is what the native branch has always used.
+  //
+  // CACHED PER SLUG AND ASKED ONCE, including the failures. This runs on every keystroke through
+  // requote(), and an uncached lookup would be a request per character against an upstream that
+  // rate-limits. A slug that comes back unpriced is remembered as 0 and renders blank — the old
+  // behaviour, for the tokens where it was the honest one.
+  var TOKEN_XRP = {};
+  // A currency over three characters lives on the ledger as forty hex digits, and the price endpoint
+  // is keyed on the LEDGER form: measured against it, `<issuer>-4C554D4F5300…` returns LUMOS at
+  // 0.0000245 XRP while `<issuer>-LUMOS` returns nothing at all. Which of the two SRC carries is not
+  // worth asserting from here, so both are asked for in the one request — the endpoint takes a comma
+  // list — and whichever answers is used. One request either way.
+  function hexCurrency(c) {
+    var s = String(c || '');
+    if (s.length <= 3 || /^[0-9A-Fa-f]{40}$/.test(s)) return '';
+    var h = '';
+    for (var i = 0; i < s.length && i < 20; i++) {
+      var x = s.charCodeAt(i).toString(16).toUpperCase();
+      h += x.length < 2 ? ('0' + x) : x;
+    }
+    while (h.length < 40) h += '0';
+    return h;
+  }
+  function srcSlugs() {
+    if (!SRC || SRC.native || !SRC.issuer || !SRC.currency) return [];
+    var out = [SRC.issuer + '-' + SRC.currency];
+    var hx = hexCurrency(SRC.currency);
+    if (hx) out.push(SRC.issuer + '-' + hx);
+    return out;
+  }
+  function fetchSrcPrice(key, slugs) {
+    if (!key || TOKEN_XRP[key] !== undefined) return;
+    TOKEN_XRP[key] = null;                     // in flight: never asked twice
+    fetch('/lxapi/xrplprices?t=' + encodeURIComponent(slugs.join(',')))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var px = 0;
+        if (j && j.ok && j.t) {
+          for (var i = 0; i < slugs.length; i++) {
+            var row = j.t[slugs[i]];
+            if (row && Number(row[0]) > 0) { px = Number(row[0]); break; }
+          }
+        }
+        TOKEN_XRP[key] = px;
+        try { paintSourceUsd(); } catch (_) {}
+      })
+      .catch(function () { TOKEN_XRP[key] = 0; });
+  }
+
   function paintSourceUsd() {
     var s2 = $('.br-step[data-step="2"]');
     var side = s2 && s2.querySelectorAll('.br-side')[0];
     var u = side && side.querySelector('.br-amt .usd');
     if (!u) return;
-    // XRP'S PRICE, SO ONLY FOR XRP. ORIGIN is 1Click's entry for the native asset, and this multiplied
-    // the typed amount by it whatever was selected -- so 0.1 ATOM read "~ $0.15" and 72.58 PHNIX read
-    // "~ $109.59", both of them the XRP price wearing another ticker. An issued token's USD value is
-    // not something this page knows: what it can find out is what the token swaps to, and that is the
-    // receive line's job, not this one's. Blank is the honest answer here.
     var amt = amountXrp(), px = ORIGIN && Number(ORIGIN.price);
     var native = !SRC || SRC.native;
-    u.textContent = (native && amt && px) ? ('~ $' + fmt(amt * px, 2)) : '';
+    var usd = null;
+    if (native) {
+      if (amt && px) usd = amt * px;
+    } else {
+      var slugs = srcSlugs(), k = slugs[0] || '';
+      if (k && TOKEN_XRP[k] === undefined) fetchSrcPrice(k, slugs);
+      var tp = k ? TOKEN_XRP[k] : 0;
+      if (amt && px && tp > 0) usd = amt * tp * px;
+    }
+    u.textContent = usd != null ? ('~ $' + fmt(usd, 2)) : '';
   }
 
   // Fee and time, in the review list's OWN row markup (`.r` > `.k` + `.v`) rather than a panel of our
