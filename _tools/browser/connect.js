@@ -353,14 +353,41 @@
     window.location.replace(b.u);
   }
 
+  // ADOPTING A SESSION IS NOT THE SAME AS ANNOUNCING ONE, and conflating them produced both of the
+  // things RAZA saw the first time Xaman ever connected (iPhone, 2026-10-11):
+  //
+  //   "it showed me the confirmation for connection twice"
+  //        'retrieved' AND 'success' both fire for ONE sign-in, and both landed here, so the
+  //        "You're connected" dialog was opened twice for a single approval.
+  //
+  //   "this popup keeps appearing and it reappears over and over"
+  //        the SDK is constructed with rememberJwt, so it re-fires 'retrieved' on EVERY later page
+  //        load to hand back the remembered session. That is the whole point of it -- it is how the
+  //        phone stays signed in across the redirect -- but it meant every page load re-announced a
+  //        connection the reader made once, and goBack() then moved them as well.
+  //
+  // So: adopt on every event (the session must be picked up, silently, as often as it is offered),
+  // but ANNOUNCE only when this page view is actually completing a sign-in. rememberBack() writes
+  // XAMAN_BACK before leaving for Xaman and goBack() consumes it, so its presence IS that signal --
+  // read before goBack() can clear it, and false on an ordinary page load.
+  var xamanAdopted = '';
   function adoptXumm(x) {
     try {
       var p = x.state();
       if (!p || !p.then) return;
+      // Read now: both events may resolve before either reaches goBack().
+      var announce = false;
+      try { announce = !!localStorage.getItem(XAMAN_BACK); } catch (e) {}
       p.then(function (state) {
         if (!state || !state.me || !state.me.account) return;
         if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) { return; }
+        var addr = state.me.account;
+        // The second event of the pair, for a sign-in already taken. Not an error, just done.
+        if (xamanAdopted === addr) return;
+        xamanAdopted = addr;
+        try { accept(addr, 'Xaman', 'xaman'); } catch (e) { return; }
+        if (!announce) return;                       // a remembered session, quietly restored
+        try { ui.done(get(K.addr)); } catch (e) {}
         goBack();
       }).catch(noop);
     } catch (e) {}
