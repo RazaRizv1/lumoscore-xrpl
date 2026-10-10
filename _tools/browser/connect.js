@@ -1046,12 +1046,36 @@
     // The home target is passed to lxwOpenWallet so the design's own Continue button navigates
     // through its goHome(); we do not wire that button ourselves either.
     function designConnected(addr) {
-      // The DESIGN's opener, captured before we replaced window.lxwOpenWallet with our own picker.
-      var mount = window.__lxwDesignOpen;
-      if (typeof mount !== 'function') return false;
-      try { mount('xrpl', '/dashboard'); } catch (e) { return false; }
+      // THE DESIGN'S CONNECTED SCREEN IS THE ONE RAZA WANTS, and it must look identical to Stellar's:
+      // green tick, wallet logo, "rhabrr...aNoP", "XRP Ledger - Xaman", Continue. The block below
+      // fills exactly that markup. The fallback underneath is a plain address and a button, and it
+      // is NOT a second design -- it exists only for a page that ships no wallet modal at all.
+      //
+      // WHAT DECIDES BETWEEN THEM IS THE MARKUP, NOT THE OPENER. This used to return false whenever
+      // window.__lxwDesignOpen was missing, and on the LANDING PAGE it is: that global is captured
+      // when this file replaces window.lxwOpenWallet, which does not happen where the XRPL layer is
+      // injected dormant. The landing page nevertheless carries the whole modal -- measured on the
+      // deployed build: .lxw-modal present, screens [wallet, connecting, connected, network],
+      // .lxw-acct-addr and .lxw-chipname both there. So the one page that fell back to the plain
+      // dialog was a page fully equipped to show the real one. RAZA, 2026-10-11: "Wtf did you
+      // redesign this popup. We already got this for stellar. I need it to be identical."
+      //
+      // It only became visible once the chooser stopped navigating: before that the confirmation was
+      // shown on the DASHBOARD, where the opener does exist, so the design screen was what appeared.
+      //
+      // The opener is an optimisation now, not a gate -- and the modal is revealed directly, because
+      // the network chooser hides it (parentNode [hidden]) before handing over to this layer.
       var scr = document.querySelectorAll('.lxw-screen');
-      if (!scr.length) return false;
+      if (!scr.length) return false;                 // genuinely no design modal on this page
+      var mount = window.__lxwDesignOpen;
+      if (typeof mount === 'function') { try { mount('xrpl', '/dashboard'); } catch (e) {} }
+      try {
+        var mo = document.querySelector('.lxw-modal');
+        if (mo) {
+          mo.removeAttribute('hidden');
+          if (mo.parentNode && mo.parentNode.removeAttribute) mo.parentNode.removeAttribute('hidden');
+        }
+      } catch (e) {}
 
       var w = null, nm = String(get(K.wallet) || '').toLowerCase();
       for (var j = 0; j < WALLETS.length; j++) {
