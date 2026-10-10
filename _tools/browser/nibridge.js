@@ -3075,8 +3075,12 @@
   function txRecords() {
     var read = function (k) { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } };
     var out = [];
+    // THE SOURCE SIDE NAMES WHAT THE READER SENT, not the XRP leg the bridge saw. srcAmt/srcSym are
+    // written only when the two differ — an issued token sold to XRP first — so an XRP transfer, and
+    // every row recorded before this existed, falls back to exactly what it showed before.
     read('lumos.ni.txs').forEach(function (r) {
-      out.push({ at: r.at, hash: r.hash, route: 'ni', sent: r.inAmt, sentSym: 'XRP',
+      out.push({ at: r.at, hash: r.hash, route: 'ni',
+        sent: (r.srcAmt > 0 ? r.srcAmt : r.inAmt), sentSym: (r.srcSym || 'XRP'),
         recv: r.out, recvSym: r.sym, place: NI_CHAIN[r.chain] || r.chain || '',
         to: r.to || '', status: r.status || '' });
     });
@@ -3088,7 +3092,8 @@
     });
     read('lumos.th.txs').forEach(function (r) {
       var p = String(r.asset || '').split('.');
-      out.push({ at: r.at, hash: r.hash, route: 'th', sent: r.sent, sentSym: 'XRP',
+      out.push({ at: r.at, hash: r.hash, route: 'th',
+        sent: (r.srcAmt > 0 ? r.srcAmt : r.sent), sentSym: (r.srcSym || 'XRP'),
         recv: r.expected, recvSym: p[1] || '', place: TH_NAME[p[0]] || p[0] || '',
         to: r.to || '', status: '' });
     });
@@ -3562,9 +3567,11 @@
     }).then(function (hash) {
       try {
         var k = 'lumos.th.txs';
+        var leg = srcLeg();                        // the token the reader picked, if it was not XRP
         var list = JSON.parse(localStorage.getItem(k) || '[]');
         list.unshift({ at: Date.now(), hash: hash, route: 'thorchain', asset: THQ.asset,
-          sent: amt, expected: Number(THQ.expected) / (THQ.e8 || 1e8), to: recipient() });
+          sent: amt, srcSym: leg && leg.srcSym, srcAmt: leg && leg.srcAmt,
+          expected: Number(THQ.expected) / (THQ.e8 || 1e8), to: recipient() });
         localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
           try { paintTxs(); } catch (_) {}
       } catch (e) {}
@@ -3759,14 +3766,33 @@
   // Per-browser record of what this device sent, so a refresh does not lose the transfer. The shared
   // cross-device history the Stellar build has lives in /lxapi/bridgetx and needs a KV binding this
   // project does not have yet; until then this is honest about being local.
+  // WHAT THE READER ACTUALLY CHOSE, when that is not what reaches the bridge (RAZA 2026-10-09: "I
+  // swapped 100,000 LUMOS to AVAX using Thorchain so why its saying XRPL. its supposed to show the
+  // same source asset that was used").
+  //
+  // Neither NEAR Intents nor THORChain takes an issued token, so picking one means this page sells it
+  // to XRP first — that is what SWAPQ is — and only the XRP leg reaches the bridge. Both stores then
+  // recorded that leg and nothing else, so a 100,000 LUMOS transfer was filed, truthfully but
+  // uselessly, as "2.45828 XRP". The row answered a question the reader had not asked.
+  //
+  // Axelar is deliberately not touched: it moves the ITS token itself, so its record already names the
+  // asset that was sent.
+  function srcLeg() {
+    if (!SRC || SRC.native) return null;          // XRP in, XRP to the bridge: nothing to remember
+    var a = amountXrp();
+    return a > 0 ? { srcSym: SRC.symbol || '', srcAmt: a } : null;
+  }
+
   function record(r) {
     try {
       var k = 'lumos.ni.txs';
+      var leg = srcLeg();
       var list = JSON.parse(localStorage.getItem(k) || '[]');
       // `to` was missing here and present in the other two stores, so a NEAR Intents row in the
       // history had no destination address to show -- on the widest of the three routes.
       list.unshift({ at: Date.now(), hash: r.hash, dep: r.q.depositAddress,
         inAmt: r.q.amountInFormatted, out: r.q.amountOutFormatted, to: recipient(),
+        srcSym: leg && leg.srcSym, srcAmt: leg && leg.srcAmt,
         sym: DEST.token.symbol, chain: DEST.chain, status: 'PENDING_DEPOSIT' });
       localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
           try { paintTxs(); } catch (_) {}
