@@ -3,8 +3,8 @@
 <head><link rel="preconnect" href="https://xrplcluster.com" crossorigin><link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/hankengrotesk-latin.woff2"><script>window.__lxTokenRegistry={};(function(){try{var R=window.__lxTokenRegistry,L=(window.__lxLogos=window.__lxLogos||{});for(var k in R){if(!Object.prototype.hasOwnProperty.call(R,k))continue;var d=k.indexOf("-");if(d<1)continue;var c=k.slice(0,d),u=R[k]&&R[k].image;if(typeof u==="string"&&u.charAt(0)==="/"&&u.indexOf("//")!==0&&!L[c])L[c]=u;}}catch(e){}})();(function(){if(document.__lxRowNav)return;document.__lxRowNav=1;function go(c,i){if(!c)return;window.location.href=(c==="XLM")?"lumoscore-dex.html":("lumoscore-dex-asset.html?asset="+encodeURIComponent(c)+(i?("-"+i):""));}document.addEventListener("click",function(e){if(!e.target||!e.target.closest)return;var mb=e.target.closest(".row-menu button");if(mb&&/view/i.test(mb.textContent||"")){var a=window.__lxActiveAsset||{};if(a.code){e.preventDefault();e.stopPropagation();go(a.code,a.iss);}return;}if(e.target.closest("button,a,input,select,[class*=copy],[data-copy]"))return;var row=e.target.closest("#assetsTable tbody tr");if(!row)return;var ico=row.querySelector(".lx-aico");if(!ico)return;go(ico.getAttribute("data-lxc")||"",ico.getAttribute("data-lxi")||"");},true);})();</script><style>#assetsTable tbody tr{cursor:pointer}</style><link rel="icon" type="image/png" href="/assets/favicon.png"><link rel="apple-touch-icon" href="/assets/favicon.png"><script id="lx-nonav">(function(){var armed=0;function isSearch(t){try{return !!(t&&t.closest&&t.closest(".hero-search,.hero-search-wrap,.search-box"));}catch(e){return false;}}function arm(e){if(isSearch(e.target))armed=Date.now();}document.addEventListener("mousedown",arm,true);document.addEventListener("touchstart",arm,true);document.addEventListener("click",function(e){if(!armed)return;var dt=Date.now()-armed;armed=0;if(dt>800)return;e.stopImmediatePropagation();e.preventDefault();},true);})();</script><script>/* lxtheme */(function(){var r=document.documentElement;function top(){try{return window.top||window;}catch(e){return window;}}function rd(){var v=null;try{v=top().__lumosTheme||null;}catch(e){}if(v!=='light'&&v!=='dark'){try{var l=localStorage.getItem('lumos.theme');if(l)v=l;}catch(e){}}return v;}function wr(t){try{top().__lumosTheme=t;}catch(e){}try{localStorage.setItem('lumos.theme',t);}catch(e){}}try{var t=rd();if(t==='light'||t==='dark'){if(r.getAttribute('data-theme')!==t)r.setAttribute('data-theme',t);}else{wr(r.getAttribute('data-theme')||'dark');}}catch(e){}try{new MutationObserver(function(){var c=r.getAttribute('data-theme');if(c==='light'||c==='dark')wr(c);}).observe(r,{attributes:true,attributeFilter:['data-theme']});}catch(e){}})();</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>XRP Ledger Liquidity Pools — TVL, Volume and Fees | LumosCore</title>
-  <meta name="description" content="Browse XRP Ledger AMM pools with live TVL, volume and fees. Add or withdraw liquidity, or create a new pool.">
+<title>XRP Ledger Liquidity Pools — TVL, Volume, Fees | LumosCore</title>
+  <meta name="description" content="Browse every XRP Ledger AMM pool with live total value locked, 24h volume and fees earned. Add or withdraw liquidity, create a pool, and track your positions.">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 
 
@@ -2598,7 +2598,30 @@ html[data-theme="light"] .lm-pools .lx-hstat[data-k=top] .pair-icons .lx-ico,htm
    card, which is the point -- the eye goes to the action. */
 .lx-dctas .dex-hero-btn.ghost,.lm-pools .lx-dctas .dex-hero-btn.ghost{color:rgba(255,255,255,.80)!important}
 html[data-theme="light"] .lx-dctas .dex-hero-btn.ghost,html[data-theme="light"] .lm-pools .lx-dctas .dex-hero-btn.ghost{color:#2b2b33!important}
-</style><style id="lx-xrplto-css">.lx-xrplto{margin-top:10px;font:400 12px/1.5 "Hanken Grotesk",system-ui,sans-serif}.lx-xrplto a{color:var(--text-muted,#8a8a93);text-decoration:none;border-bottom:1px solid transparent}.lx-xrplto a:hover{color:var(--text,#f6f5f3);border-bottom-color:currentColor}</style><style id="lx-faqcard">section.lx-faq h2{text-align:center;font-size:36px;font-weight:800;margin-bottom:26px}section.lx-faq .lx-faq-grid{gap:18px}.lx-faq-grid>div{border:1px solid var(--border,#26262c);border-radius:16px;padding:22px 22px 24px}.lx-faq-grid>div>.lx-faq-q{font-size:16.5px;font-weight:700;margin:0 0 9px}.lx-faq-grid>div>.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted,#a5a4ac);margin:0}</style><style id="lxmc-css">.lxmc-row{display:flex;align-items:center;gap:11px;width:100%;margin-top:auto;padding:13.2px;background:var(--surface-2);border:0;border-radius:10px;color:var(--text);cursor:pointer;font:600 14.3px/1.2 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-row+.menu-theme-row{margin-top:8px}.lxmc-row .lxmc-rl{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-row .lxmc-rl img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-row .lxmc-rt{flex:1 1 auto}.lxmc-row svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft)}</style></head>
+</style><style id="lx-xrplto-css">.lx-xrplto{margin-top:10px;font:400 12px/1.5 "Hanken Grotesk",system-ui,sans-serif}.lx-xrplto a{color:var(--text-muted,#8a8a93);text-decoration:none;border-bottom:1px solid transparent}.lx-xrplto a:hover{color:var(--text,#f6f5f3);border-bottom-color:currentColor}</style><style id="lx-faq-css">.lx-faq{max-width:1180px;margin:8px auto 0;padding:52px 24px 60px;border-top:1px solid var(--border)}
+.lx-faq h2{font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.02em;color:var(--text);
+ text-align:center;text-wrap:balance;margin:0 0 26px}
+.lx-faq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.lx-faq-item{position:relative;padding:22px 22px 24px;border-radius:16px;
+ border:1px solid var(--border);background:linear-gradient(180deg,var(--surface),var(--bg));
+ transform-origin:center bottom;
+ transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.lx-faq-item:hover{transform:scale(1.012);border-color:rgba(234,106,44,.42);
+ box-shadow:0 16px 36px -26px rgba(234,106,44,.7)}
+.lx-faq-q{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;
+ font-size:16.5px;font-weight:700;line-height:1.38;color:var(--text);margin:0 0 9px}
+.lx-faq-q::before{content:"?";display:flex;align-items:center;justify-content:center;
+ width:24px;height:24px;border-radius:8px;font-size:14px;font-weight:800;line-height:1;
+ color:var(--accent);background:rgba(234,106,44,.14);border:1px solid rgba(234,106,44,.26)}
+.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0;padding-left:35px}
+.lx-faq .lx-faqtabs{gap:10px}
+.lx-faq .lx-faqtab{padding:13px 19px}
+@media(max-width:900px){.lx-faq .lx-faqtab{padding:11px 16px}}
+@media(max-width:640px){.lx-faq .lx-faqtab{padding:9px 14px}}
+@media(prefers-reduced-motion:reduce){.lx-faq-item,.lx-faq-item:hover{transition:none;transform:none}}
+@media(max-width:640px){.lx-faq{padding:34px 16px 40px}.lx-faq h2{font-size:22px;margin-bottom:20px}
+.lx-faq-grid{gap:14px}.lx-faq-item{padding:18px 17px 19px;border-radius:14px}
+.lx-faq-a{padding-left:0}}</style><style id="lxmc-css">.lxmc-row{display:flex;align-items:center;gap:11px;width:100%;margin-top:auto;padding:13.2px;background:var(--surface-2);border:0;border-radius:10px;color:var(--text);cursor:pointer;font:600 14.3px/1.2 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-row+.menu-theme-row{margin-top:8px}.lxmc-row .lxmc-rl{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-row .lxmc-rl img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-row .lxmc-rt{flex:1 1 auto}.lxmc-row svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft)}</style></head>
 <body>
 <div class="app">
   <aside class="nx-side"><div class="nx-brand"><div class="logo"><div class="logo-mark"></div><div class="logo-text">LUMOSCORE</div></div><button class="nx-collapse" aria-label="Collapse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button></div><span class="nx-rail"></span><nav class="nx-nav"><a class="nx-item" data-id="dashboard" href="/dashboard" title="Dashboard"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="5" rx="1.6"/><rect x="13" y="11" width="8" height="10" rx="1.6"/><rect x="3" y="14" width="8" height="7" rx="1.6"/></svg></span><span class="nx-lab">Dashboard</span></a><a class="nx-item" data-id="trade" href="/trade/xrpl" title="Trade"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 6v3"/><rect x="6" y="9" width="4" height="6" rx="1"/><path d="M8 15v3"/><path d="M16 4v2"/><rect x="14" y="6" width="4" height="9" rx="1"/><path d="M16 15v3"/></svg></span><span class="nx-lab">Trade</span></a><a class="nx-item active" data-id="pools" href="/pools/xrpl" title="Pools"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A11 11 0 0 0 14 3c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a7 7 0 0 1-11.9 5"/></svg></span><span class="nx-lab">Pools</span></a><a class="nx-item" data-id="bridge" href="/bridge/xrpl" title="Bridge"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 1.5 12 4 15"/><path d="M20 9l2.5 3L20 15"/><path d="M2.5 12h19"/></svg></span><span class="nx-lab">Bridge</span></a><a class="nx-item" data-id="launchpad" href="/launchpad" title="Launchpad"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.9 12.9 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></span><span class="nx-lab">Launchpad</span></a><a class="nx-item" data-id="lumos" href="/lumos/xrpl" title="$LUMOS"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span><span class="nx-lab">$LUMOS</span></a><a class="nx-item" data-id="wallet" href="/wallet" title="Wallet"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H6a2 2 0 0 1 0-4h13v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M19 12a2 2 0 1 0 0 4h3v-4z"/></svg></span><span class="nx-lab">Wallet</span></a><a class="nx-item" data-id="rewards" href="/rewards/xrpl" title="Rewards"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v9H4v-9"/><rect x="2" y="7" width="20" height="5" rx="1"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></span><span class="nx-lab">Rewards</span></a><a class="nx-item" data-id="mcp" href="/mcp/xrpl" title="MCP"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.9 4.9l2.8 2.8"/><path d="M16.3 16.3l2.8 2.8"/><path d="M2 12h4"/><path d="M18 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nx-lab">MCP</span></a></nav><div class="nx-foot"><button class="nx-logout" type="button" title="Disconnect wallet" onclick="event.stopPropagation();if(window.__lxNav)__lxNav('lumoscore-signin.html')"><span class="nx-lo-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="nx-lab">Disconnect</span></button></div></aside><script id="lx-sc-early">(function(){try{var s=document.querySelector(".nx-side");if(s&&localStorage.getItem("lumos.side")==="1")s.classList.add("nx-collapsed");}catch(e){}})();</script>
@@ -2616,8 +2639,8 @@ html[data-theme="light"] .lx-dctas .dex-hero-btn.ghost,html[data-theme="light"] 
       
       
       <div class="user-chip">
-        <div class="avatar">RR</div>
-        <div class="name">Raza Rizvi</div>
+        <div class="avatar"></div>
+        <div class="name"></div>
       </div>
     </header>
 
@@ -2709,7 +2732,7 @@ html[data-theme="light"] .lm-bg{opacity:.09}
 .lm-track b .dn{color:var(--red)}
 @keyframes lm-marq{to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){.lm-bars i,.lm-rip,.lm-track,.lm-svg g *{animation:none !important}}
-</style><div class="lumos-promo lm-on lm-pools" aria-label="Aptos AMM"><div class="lm"><div class="lm-streams"><svg viewBox="0 0 260 300" preserveAspectRatio="none"><defs><linearGradient id="pga" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity="0"/><stop offset=".35" stop-color="var(--accent)"/><stop offset=".7" stop-color="var(--accent-2,#ff894c)"/><stop offset="1" stop-color="var(--accent-2,#ff894c)" stop-opacity="0"/></linearGradient><linearGradient id="pga2" x1="0" x2="1"><stop offset="0" stop-color="var(--accent-2,#ff894c)" stop-opacity="0"/><stop offset=".5" stop-color="var(--accent-2,#ff894c)"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="13s" repeatCount="indefinite"/><path d="M0.0,79.3 L3.9,81.1 L7.9,81.9 L11.8,81.8 L15.8,80.8 L19.7,78.8 L23.6,76.2 L27.6,73.1 L31.5,69.7 L35.5,66.3 L39.4,63.2 L43.3,60.7 L47.3,58.9 L51.2,58.1 L55.2,58.2 L59.1,59.2 L63.0,61.2 L67.0,63.8 L70.9,66.9 L74.8,70.3 L78.8,73.7 L82.7,76.8 L86.7,79.3 L90.6,81.1 L94.5,81.9 L98.5,81.8 L102.4,80.8 L106.4,78.8 L110.3,76.2 L114.2,73.1 L118.2,69.7 L122.1,66.3 L126.1,63.2 L130.0,60.7 L133.9,58.9 L137.9,58.1 L141.8,58.2 L145.8,59.2 L149.7,61.2 L153.6,63.8 L157.6,66.9 L161.5,70.3 L165.5,73.7 L169.4,76.8 L173.3,79.3 L177.3,81.1 L181.2,81.9 L185.2,81.8 L189.1,80.8 L193.0,78.8 L197.0,76.2 L200.9,73.1 L204.8,69.7 L208.8,66.3 L212.7,63.2 L216.7,60.7 L220.6,58.9 L224.5,58.1 L228.5,58.2 L232.4,59.2 L236.4,61.2 L240.3,63.8 L244.2,66.9 L248.2,70.3 L252.1,73.7 L256.1,76.8 L260.0,79.3 L263.9,81.1 L267.9,81.9 L271.8,81.8 L275.8,80.8 L279.7,78.8 L283.6,76.2 L287.6,73.1 L291.5,69.7 L295.5,66.3 L299.4,63.2 L303.3,60.7 L307.3,58.9 L311.2,58.1 L315.2,58.2 L319.1,59.2 L323.0,61.2 L327.0,63.8 L330.9,66.9 L334.8,70.3 L338.8,73.7 L342.7,76.8 L346.7,79.3 L350.6,81.1 L354.5,81.9 L358.5,81.8 L362.4,80.8 L366.4,78.8 L370.3,76.2 L374.2,73.1 L378.2,69.7 L382.1,66.3 L386.1,63.2 L390.0,60.7 L393.9,58.9 L397.9,58.1 L401.8,58.2 L405.8,59.2 L409.7,61.2 L413.6,63.8 L417.6,66.9 L421.5,70.3 L425.5,73.7 L429.4,76.8 L433.3,79.3 L437.3,81.1 L441.2,81.9 L445.2,81.8 L449.1,80.8 L453.0,78.8 L457.0,76.2 L460.9,73.1 L464.8,69.7 L468.8,66.3 L472.7,63.2 L476.7,60.7 L480.6,58.9 L484.5,58.1 L488.5,58.2 L492.4,59.2 L496.4,61.2 L500.3,63.8 L504.2,66.9 L508.2,70.3 L512.1,73.7 L516.1,76.8 L520.0,79.3" fill="none" stroke="url(#pga2)" stroke-width="1.4" stroke-linecap="round" opacity="0.5"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="9s" repeatCount="indefinite"/><path d="M0.0,94.2 L4.7,97.5 L9.5,102.0 L14.2,107.2 L18.9,112.9 L23.6,118.5 L28.4,123.6 L33.1,127.7 L37.8,130.5 L42.5,131.9 L47.3,131.6 L52.0,129.8 L56.7,126.5 L61.5,122.0 L66.2,116.8 L70.9,111.1 L75.6,105.5 L80.4,100.4 L85.1,96.3 L89.8,93.5 L94.5,92.1 L99.3,92.4 L104.0,94.2 L108.7,97.5 L113.5,102.0 L118.2,107.2 L122.9,112.9 L127.6,118.5 L132.4,123.6 L137.1,127.7 L141.8,130.5 L146.5,131.9 L151.3,131.6 L156.0,129.8 L160.7,126.5 L165.5,122.0 L170.2,116.8 L174.9,111.1 L179.6,105.5 L184.4,100.4 L189.1,96.3 L193.8,93.5 L198.5,92.1 L203.3,92.4 L208.0,94.2 L212.7,97.5 L217.5,102.0 L222.2,107.2 L226.9,112.9 L231.6,118.5 L236.4,123.6 L241.1,127.7 L245.8,130.5 L250.5,131.9 L255.3,131.6 L260.0,129.8 L264.7,126.5 L269.5,122.0 L274.2,116.8 L278.9,111.1 L283.6,105.5 L288.4,100.4 L293.1,96.3 L297.8,93.5 L302.5,92.1 L307.3,92.4 L312.0,94.2 L316.7,97.5 L321.5,102.0 L326.2,107.2 L330.9,112.9 L335.6,118.5 L340.4,123.6 L345.1,127.7 L349.8,130.5 L354.5,131.9 L359.3,131.6 L364.0,129.8 L368.7,126.5 L373.5,122.0 L378.2,116.8 L382.9,111.1 L387.6,105.5 L392.4,100.4 L397.1,96.3 L401.8,93.5 L406.5,92.1 L411.3,92.4 L416.0,94.2 L420.7,97.5 L425.5,102.0 L430.2,107.2 L434.9,112.9 L439.6,118.5 L444.4,123.6 L449.1,127.7 L453.8,130.5 L458.5,131.9 L463.3,131.6 L468.0,129.8 L472.7,126.5 L477.5,122.0 L482.2,116.8 L486.9,111.1 L491.6,105.5 L496.4,100.4 L501.1,96.3 L505.8,93.5 L510.5,92.1 L515.3,92.4 L520.0,94.2" fill="none" stroke="url(#pga)" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="15s" repeatCount="indefinite"/><path d="M0.0,139.3 L3.9,142.7 L7.9,146.6 L11.8,150.9 L15.8,155.1 L19.7,158.9 L23.6,161.9 L27.6,164.0 L31.5,164.9 L35.5,164.7 L39.4,163.2 L43.3,160.7 L47.3,157.3 L51.2,153.4 L55.2,149.1 L59.1,144.9 L63.0,141.1 L67.0,138.1 L70.9,136.0 L74.8,135.1 L78.8,135.3 L82.7,136.8 L86.7,139.3 L90.6,142.7 L94.5,146.6 L98.5,150.9 L102.4,155.1 L106.4,158.9 L110.3,161.9 L114.2,164.0 L118.2,164.9 L122.1,164.7 L126.1,163.2 L130.0,160.7 L133.9,157.3 L137.9,153.4 L141.8,149.1 L145.8,144.9 L149.7,141.1 L153.6,138.1 L157.6,136.0 L161.5,135.1 L165.5,135.3 L169.4,136.8 L173.3,139.3 L177.3,142.7 L181.2,146.6 L185.2,150.9 L189.1,155.1 L193.0,158.9 L197.0,161.9 L200.9,164.0 L204.8,164.9 L208.8,164.7 L212.7,163.2 L216.7,160.7 L220.6,157.3 L224.5,153.4 L228.5,149.1 L232.4,144.9 L236.4,141.1 L240.3,138.1 L244.2,136.0 L248.2,135.1 L252.1,135.3 L256.1,136.8 L260.0,139.3 L263.9,142.7 L267.9,146.6 L271.8,150.9 L275.8,155.1 L279.7,158.9 L283.6,161.9 L287.6,164.0 L291.5,164.9 L295.5,164.7 L299.4,163.2 L303.3,160.7 L307.3,157.3 L311.2,153.4 L315.2,149.1 L319.1,144.9 L323.0,141.1 L327.0,138.1 L330.9,136.0 L334.8,135.1 L338.8,135.3 L342.7,136.8 L346.7,139.3 L350.6,142.7 L354.5,146.6 L358.5,150.9 L362.4,155.1 L366.4,158.9 L370.3,161.9 L374.2,164.0 L378.2,164.9 L382.1,164.7 L386.1,163.2 L390.0,160.7 L393.9,157.3 L397.9,153.4 L401.8,149.1 L405.8,144.9 L409.7,141.1 L413.6,138.1 L417.6,136.0 L421.5,135.1 L425.5,135.3 L429.4,136.8 L433.3,139.3 L437.3,142.7 L441.2,146.6 L445.2,150.9 L449.1,155.1 L453.0,158.9 L457.0,161.9 L460.9,164.0 L464.8,164.9 L468.8,164.7 L472.7,163.2 L476.7,160.7 L480.6,157.3 L484.5,153.4 L488.5,149.1 L492.4,144.9 L496.4,141.1 L500.3,138.1 L504.2,136.0 L508.2,135.1 L512.1,135.3 L516.1,136.8 L520.0,139.3" fill="none" stroke="url(#pga2)" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="7.5s" repeatCount="indefinite"/><path d="M0.0,183.5 L5.9,177.5 L11.8,172.7 L17.7,169.5 L23.6,168.1 L29.5,168.6 L35.5,171.0 L41.4,175.1 L47.3,180.6 L53.2,187.0 L59.1,193.9 L65.0,200.5 L70.9,206.5 L76.8,211.3 L82.7,214.5 L88.6,215.9 L94.5,215.4 L100.5,213.0 L106.4,208.9 L112.3,203.4 L118.2,197.0 L124.1,190.1 L130.0,183.5 L135.9,177.5 L141.8,172.7 L147.7,169.5 L153.6,168.1 L159.5,168.6 L165.5,171.0 L171.4,175.1 L177.3,180.6 L183.2,187.0 L189.1,193.9 L195.0,200.5 L200.9,206.5 L206.8,211.3 L212.7,214.5 L218.6,215.9 L224.5,215.4 L230.5,213.0 L236.4,208.9 L242.3,203.4 L248.2,197.0 L254.1,190.1 L260.0,183.5 L265.9,177.5 L271.8,172.7 L277.7,169.5 L283.6,168.1 L289.5,168.6 L295.5,171.0 L301.4,175.1 L307.3,180.6 L313.2,187.0 L319.1,193.9 L325.0,200.5 L330.9,206.5 L336.8,211.3 L342.7,214.5 L348.6,215.9 L354.5,215.4 L360.5,213.0 L366.4,208.9 L372.3,203.4 L378.2,197.0 L384.1,190.1 L390.0,183.5 L395.9,177.5 L401.8,172.7 L407.7,169.5 L413.6,168.1 L419.5,168.6 L425.5,171.0 L431.4,175.1 L437.3,180.6 L443.2,187.0 L449.1,193.9 L455.0,200.5 L460.9,206.5 L466.8,211.3 L472.7,214.5 L478.6,215.9 L484.5,215.4 L490.5,213.0 L496.4,208.9 L502.3,203.4 L508.2,197.0 L514.1,190.1 L520.0,183.5" fill="none" stroke="url(#pga)" stroke-width="3.2" stroke-linecap="round" opacity="0.85"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="12s" repeatCount="indefinite"/><path d="M0.0,223.7 L3.9,228.6 L7.9,233.7 L11.8,238.7 L15.8,243.1 L19.7,246.6 L23.6,249.0 L27.6,250.0 L31.5,249.5 L35.5,247.6 L39.4,244.4 L43.3,240.3 L47.3,235.4 L51.2,230.3 L55.2,225.3 L59.1,220.9 L63.0,217.4 L67.0,215.0 L70.9,214.0 L74.8,214.5 L78.8,216.4 L82.7,219.6 L86.7,223.7 L90.6,228.6 L94.5,233.7 L98.5,238.7 L102.4,243.1 L106.4,246.6 L110.3,249.0 L114.2,250.0 L118.2,249.5 L122.1,247.6 L126.1,244.4 L130.0,240.3 L133.9,235.4 L137.9,230.3 L141.8,225.3 L145.8,220.9 L149.7,217.4 L153.6,215.0 L157.6,214.0 L161.5,214.5 L165.5,216.4 L169.4,219.6 L173.3,223.7 L177.3,228.6 L181.2,233.7 L185.2,238.7 L189.1,243.1 L193.0,246.6 L197.0,249.0 L200.9,250.0 L204.8,249.5 L208.8,247.6 L212.7,244.4 L216.7,240.3 L220.6,235.4 L224.5,230.3 L228.5,225.3 L232.4,220.9 L236.4,217.4 L240.3,215.0 L244.2,214.0 L248.2,214.5 L252.1,216.4 L256.1,219.6 L260.0,223.7 L263.9,228.6 L267.9,233.7 L271.8,238.7 L275.8,243.1 L279.7,246.6 L283.6,249.0 L287.6,250.0 L291.5,249.5 L295.5,247.6 L299.4,244.4 L303.3,240.3 L307.3,235.4 L311.2,230.3 L315.2,225.3 L319.1,220.9 L323.0,217.4 L327.0,215.0 L330.9,214.0 L334.8,214.5 L338.8,216.4 L342.7,219.6 L346.7,223.7 L350.6,228.6 L354.5,233.7 L358.5,238.7 L362.4,243.1 L366.4,246.6 L370.3,249.0 L374.2,250.0 L378.2,249.5 L382.1,247.6 L386.1,244.4 L390.0,240.3 L393.9,235.4 L397.9,230.3 L401.8,225.3 L405.8,220.9 L409.7,217.4 L413.6,215.0 L417.6,214.0 L421.5,214.5 L425.5,216.4 L429.4,219.6 L433.3,223.7 L437.3,228.6 L441.2,233.7 L445.2,238.7 L449.1,243.1 L453.0,246.6 L457.0,249.0 L460.9,250.0 L464.8,249.5 L468.8,247.6 L472.7,244.4 L476.7,240.3 L480.6,235.4 L484.5,230.3 L488.5,225.3 L492.4,220.9 L496.4,217.4 L500.3,215.0 L504.2,214.0 L508.2,214.5 L512.1,216.4 L516.1,219.6 L520.0,223.7" fill="none" stroke="url(#pga2)" stroke-width="2" stroke-linecap="round" opacity="0.55"/></g></svg></div><div class="lm-chip"><div class="p1">TOTAL VALUE LOCKED</div><div class="p2">$5.32M</div><div class="p3"><span>&#9650;</span> 4.2% &middot; 7d</div><div class="lx-hstats"><div class="lx-hstat" data-k="fees"><span class="v"><span class="lx-hskel"></span></span><span class="l">24h Fees</span></div><div class="lx-hstat" data-k="trades"><span class="v"><span class="lx-hskel"></span></span><span class="l">24h Trades</span></div><div class="lx-hstat" data-k="tokens"><span class="v"><span class="lx-hskel"></span></span><span class="l">Tokens</span></div><div class="lx-hstat" data-k="top"><span class="v"><span class="lx-hpairskel"><span class="pa"></span><span class="pb"></span></span><span class="lx-toptxt lx-hskel"></span></span><span class="l">Top Pool</span></div></div></div><div class="lm-c lm-c-pool"><h2 class="lm-h">Provide liquidity, earn <em>swap fees</em>.</h2><p class="lm-sub">Deposit a token pair and earn a share of the fee from every swap routed through the pool.</p><a class="lm-cta" href="/pools/xrpl">Provide Liquidity <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></a></div></div></div>
+</style><div class="lumos-promo lm-on lm-pools" aria-label="XRP Ledger AMM"><div class="lm"><div class="lm-streams"><svg viewBox="0 0 260 300" preserveAspectRatio="none"><defs><linearGradient id="pga" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity="0"/><stop offset=".35" stop-color="var(--accent)"/><stop offset=".7" stop-color="var(--accent-2,#ff894c)"/><stop offset="1" stop-color="var(--accent-2,#ff894c)" stop-opacity="0"/></linearGradient><linearGradient id="pga2" x1="0" x2="1"><stop offset="0" stop-color="var(--accent-2,#ff894c)" stop-opacity="0"/><stop offset=".5" stop-color="var(--accent-2,#ff894c)"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="13s" repeatCount="indefinite"/><path d="M0.0,79.3 L3.9,81.1 L7.9,81.9 L11.8,81.8 L15.8,80.8 L19.7,78.8 L23.6,76.2 L27.6,73.1 L31.5,69.7 L35.5,66.3 L39.4,63.2 L43.3,60.7 L47.3,58.9 L51.2,58.1 L55.2,58.2 L59.1,59.2 L63.0,61.2 L67.0,63.8 L70.9,66.9 L74.8,70.3 L78.8,73.7 L82.7,76.8 L86.7,79.3 L90.6,81.1 L94.5,81.9 L98.5,81.8 L102.4,80.8 L106.4,78.8 L110.3,76.2 L114.2,73.1 L118.2,69.7 L122.1,66.3 L126.1,63.2 L130.0,60.7 L133.9,58.9 L137.9,58.1 L141.8,58.2 L145.8,59.2 L149.7,61.2 L153.6,63.8 L157.6,66.9 L161.5,70.3 L165.5,73.7 L169.4,76.8 L173.3,79.3 L177.3,81.1 L181.2,81.9 L185.2,81.8 L189.1,80.8 L193.0,78.8 L197.0,76.2 L200.9,73.1 L204.8,69.7 L208.8,66.3 L212.7,63.2 L216.7,60.7 L220.6,58.9 L224.5,58.1 L228.5,58.2 L232.4,59.2 L236.4,61.2 L240.3,63.8 L244.2,66.9 L248.2,70.3 L252.1,73.7 L256.1,76.8 L260.0,79.3 L263.9,81.1 L267.9,81.9 L271.8,81.8 L275.8,80.8 L279.7,78.8 L283.6,76.2 L287.6,73.1 L291.5,69.7 L295.5,66.3 L299.4,63.2 L303.3,60.7 L307.3,58.9 L311.2,58.1 L315.2,58.2 L319.1,59.2 L323.0,61.2 L327.0,63.8 L330.9,66.9 L334.8,70.3 L338.8,73.7 L342.7,76.8 L346.7,79.3 L350.6,81.1 L354.5,81.9 L358.5,81.8 L362.4,80.8 L366.4,78.8 L370.3,76.2 L374.2,73.1 L378.2,69.7 L382.1,66.3 L386.1,63.2 L390.0,60.7 L393.9,58.9 L397.9,58.1 L401.8,58.2 L405.8,59.2 L409.7,61.2 L413.6,63.8 L417.6,66.9 L421.5,70.3 L425.5,73.7 L429.4,76.8 L433.3,79.3 L437.3,81.1 L441.2,81.9 L445.2,81.8 L449.1,80.8 L453.0,78.8 L457.0,76.2 L460.9,73.1 L464.8,69.7 L468.8,66.3 L472.7,63.2 L476.7,60.7 L480.6,58.9 L484.5,58.1 L488.5,58.2 L492.4,59.2 L496.4,61.2 L500.3,63.8 L504.2,66.9 L508.2,70.3 L512.1,73.7 L516.1,76.8 L520.0,79.3" fill="none" stroke="url(#pga2)" stroke-width="1.4" stroke-linecap="round" opacity="0.5"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="9s" repeatCount="indefinite"/><path d="M0.0,94.2 L4.7,97.5 L9.5,102.0 L14.2,107.2 L18.9,112.9 L23.6,118.5 L28.4,123.6 L33.1,127.7 L37.8,130.5 L42.5,131.9 L47.3,131.6 L52.0,129.8 L56.7,126.5 L61.5,122.0 L66.2,116.8 L70.9,111.1 L75.6,105.5 L80.4,100.4 L85.1,96.3 L89.8,93.5 L94.5,92.1 L99.3,92.4 L104.0,94.2 L108.7,97.5 L113.5,102.0 L118.2,107.2 L122.9,112.9 L127.6,118.5 L132.4,123.6 L137.1,127.7 L141.8,130.5 L146.5,131.9 L151.3,131.6 L156.0,129.8 L160.7,126.5 L165.5,122.0 L170.2,116.8 L174.9,111.1 L179.6,105.5 L184.4,100.4 L189.1,96.3 L193.8,93.5 L198.5,92.1 L203.3,92.4 L208.0,94.2 L212.7,97.5 L217.5,102.0 L222.2,107.2 L226.9,112.9 L231.6,118.5 L236.4,123.6 L241.1,127.7 L245.8,130.5 L250.5,131.9 L255.3,131.6 L260.0,129.8 L264.7,126.5 L269.5,122.0 L274.2,116.8 L278.9,111.1 L283.6,105.5 L288.4,100.4 L293.1,96.3 L297.8,93.5 L302.5,92.1 L307.3,92.4 L312.0,94.2 L316.7,97.5 L321.5,102.0 L326.2,107.2 L330.9,112.9 L335.6,118.5 L340.4,123.6 L345.1,127.7 L349.8,130.5 L354.5,131.9 L359.3,131.6 L364.0,129.8 L368.7,126.5 L373.5,122.0 L378.2,116.8 L382.9,111.1 L387.6,105.5 L392.4,100.4 L397.1,96.3 L401.8,93.5 L406.5,92.1 L411.3,92.4 L416.0,94.2 L420.7,97.5 L425.5,102.0 L430.2,107.2 L434.9,112.9 L439.6,118.5 L444.4,123.6 L449.1,127.7 L453.8,130.5 L458.5,131.9 L463.3,131.6 L468.0,129.8 L472.7,126.5 L477.5,122.0 L482.2,116.8 L486.9,111.1 L491.6,105.5 L496.4,100.4 L501.1,96.3 L505.8,93.5 L510.5,92.1 L515.3,92.4 L520.0,94.2" fill="none" stroke="url(#pga)" stroke-width="2.6" stroke-linecap="round" opacity="0.95"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="15s" repeatCount="indefinite"/><path d="M0.0,139.3 L3.9,142.7 L7.9,146.6 L11.8,150.9 L15.8,155.1 L19.7,158.9 L23.6,161.9 L27.6,164.0 L31.5,164.9 L35.5,164.7 L39.4,163.2 L43.3,160.7 L47.3,157.3 L51.2,153.4 L55.2,149.1 L59.1,144.9 L63.0,141.1 L67.0,138.1 L70.9,136.0 L74.8,135.1 L78.8,135.3 L82.7,136.8 L86.7,139.3 L90.6,142.7 L94.5,146.6 L98.5,150.9 L102.4,155.1 L106.4,158.9 L110.3,161.9 L114.2,164.0 L118.2,164.9 L122.1,164.7 L126.1,163.2 L130.0,160.7 L133.9,157.3 L137.9,153.4 L141.8,149.1 L145.8,144.9 L149.7,141.1 L153.6,138.1 L157.6,136.0 L161.5,135.1 L165.5,135.3 L169.4,136.8 L173.3,139.3 L177.3,142.7 L181.2,146.6 L185.2,150.9 L189.1,155.1 L193.0,158.9 L197.0,161.9 L200.9,164.0 L204.8,164.9 L208.8,164.7 L212.7,163.2 L216.7,160.7 L220.6,157.3 L224.5,153.4 L228.5,149.1 L232.4,144.9 L236.4,141.1 L240.3,138.1 L244.2,136.0 L248.2,135.1 L252.1,135.3 L256.1,136.8 L260.0,139.3 L263.9,142.7 L267.9,146.6 L271.8,150.9 L275.8,155.1 L279.7,158.9 L283.6,161.9 L287.6,164.0 L291.5,164.9 L295.5,164.7 L299.4,163.2 L303.3,160.7 L307.3,157.3 L311.2,153.4 L315.2,149.1 L319.1,144.9 L323.0,141.1 L327.0,138.1 L330.9,136.0 L334.8,135.1 L338.8,135.3 L342.7,136.8 L346.7,139.3 L350.6,142.7 L354.5,146.6 L358.5,150.9 L362.4,155.1 L366.4,158.9 L370.3,161.9 L374.2,164.0 L378.2,164.9 L382.1,164.7 L386.1,163.2 L390.0,160.7 L393.9,157.3 L397.9,153.4 L401.8,149.1 L405.8,144.9 L409.7,141.1 L413.6,138.1 L417.6,136.0 L421.5,135.1 L425.5,135.3 L429.4,136.8 L433.3,139.3 L437.3,142.7 L441.2,146.6 L445.2,150.9 L449.1,155.1 L453.0,158.9 L457.0,161.9 L460.9,164.0 L464.8,164.9 L468.8,164.7 L472.7,163.2 L476.7,160.7 L480.6,157.3 L484.5,153.4 L488.5,149.1 L492.4,144.9 L496.4,141.1 L500.3,138.1 L504.2,136.0 L508.2,135.1 L512.1,135.3 L516.1,136.8 L520.0,139.3" fill="none" stroke="url(#pga2)" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="7.5s" repeatCount="indefinite"/><path d="M0.0,183.5 L5.9,177.5 L11.8,172.7 L17.7,169.5 L23.6,168.1 L29.5,168.6 L35.5,171.0 L41.4,175.1 L47.3,180.6 L53.2,187.0 L59.1,193.9 L65.0,200.5 L70.9,206.5 L76.8,211.3 L82.7,214.5 L88.6,215.9 L94.5,215.4 L100.5,213.0 L106.4,208.9 L112.3,203.4 L118.2,197.0 L124.1,190.1 L130.0,183.5 L135.9,177.5 L141.8,172.7 L147.7,169.5 L153.6,168.1 L159.5,168.6 L165.5,171.0 L171.4,175.1 L177.3,180.6 L183.2,187.0 L189.1,193.9 L195.0,200.5 L200.9,206.5 L206.8,211.3 L212.7,214.5 L218.6,215.9 L224.5,215.4 L230.5,213.0 L236.4,208.9 L242.3,203.4 L248.2,197.0 L254.1,190.1 L260.0,183.5 L265.9,177.5 L271.8,172.7 L277.7,169.5 L283.6,168.1 L289.5,168.6 L295.5,171.0 L301.4,175.1 L307.3,180.6 L313.2,187.0 L319.1,193.9 L325.0,200.5 L330.9,206.5 L336.8,211.3 L342.7,214.5 L348.6,215.9 L354.5,215.4 L360.5,213.0 L366.4,208.9 L372.3,203.4 L378.2,197.0 L384.1,190.1 L390.0,183.5 L395.9,177.5 L401.8,172.7 L407.7,169.5 L413.6,168.1 L419.5,168.6 L425.5,171.0 L431.4,175.1 L437.3,180.6 L443.2,187.0 L449.1,193.9 L455.0,200.5 L460.9,206.5 L466.8,211.3 L472.7,214.5 L478.6,215.9 L484.5,215.4 L490.5,213.0 L496.4,208.9 L502.3,203.4 L508.2,197.0 L514.1,190.1 L520.0,183.5" fill="none" stroke="url(#pga)" stroke-width="3.2" stroke-linecap="round" opacity="0.85"/></g><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-260 0" dur="12s" repeatCount="indefinite"/><path d="M0.0,223.7 L3.9,228.6 L7.9,233.7 L11.8,238.7 L15.8,243.1 L19.7,246.6 L23.6,249.0 L27.6,250.0 L31.5,249.5 L35.5,247.6 L39.4,244.4 L43.3,240.3 L47.3,235.4 L51.2,230.3 L55.2,225.3 L59.1,220.9 L63.0,217.4 L67.0,215.0 L70.9,214.0 L74.8,214.5 L78.8,216.4 L82.7,219.6 L86.7,223.7 L90.6,228.6 L94.5,233.7 L98.5,238.7 L102.4,243.1 L106.4,246.6 L110.3,249.0 L114.2,250.0 L118.2,249.5 L122.1,247.6 L126.1,244.4 L130.0,240.3 L133.9,235.4 L137.9,230.3 L141.8,225.3 L145.8,220.9 L149.7,217.4 L153.6,215.0 L157.6,214.0 L161.5,214.5 L165.5,216.4 L169.4,219.6 L173.3,223.7 L177.3,228.6 L181.2,233.7 L185.2,238.7 L189.1,243.1 L193.0,246.6 L197.0,249.0 L200.9,250.0 L204.8,249.5 L208.8,247.6 L212.7,244.4 L216.7,240.3 L220.6,235.4 L224.5,230.3 L228.5,225.3 L232.4,220.9 L236.4,217.4 L240.3,215.0 L244.2,214.0 L248.2,214.5 L252.1,216.4 L256.1,219.6 L260.0,223.7 L263.9,228.6 L267.9,233.7 L271.8,238.7 L275.8,243.1 L279.7,246.6 L283.6,249.0 L287.6,250.0 L291.5,249.5 L295.5,247.6 L299.4,244.4 L303.3,240.3 L307.3,235.4 L311.2,230.3 L315.2,225.3 L319.1,220.9 L323.0,217.4 L327.0,215.0 L330.9,214.0 L334.8,214.5 L338.8,216.4 L342.7,219.6 L346.7,223.7 L350.6,228.6 L354.5,233.7 L358.5,238.7 L362.4,243.1 L366.4,246.6 L370.3,249.0 L374.2,250.0 L378.2,249.5 L382.1,247.6 L386.1,244.4 L390.0,240.3 L393.9,235.4 L397.9,230.3 L401.8,225.3 L405.8,220.9 L409.7,217.4 L413.6,215.0 L417.6,214.0 L421.5,214.5 L425.5,216.4 L429.4,219.6 L433.3,223.7 L437.3,228.6 L441.2,233.7 L445.2,238.7 L449.1,243.1 L453.0,246.6 L457.0,249.0 L460.9,250.0 L464.8,249.5 L468.8,247.6 L472.7,244.4 L476.7,240.3 L480.6,235.4 L484.5,230.3 L488.5,225.3 L492.4,220.9 L496.4,217.4 L500.3,215.0 L504.2,214.0 L508.2,214.5 L512.1,216.4 L516.1,219.6 L520.0,223.7" fill="none" stroke="url(#pga2)" stroke-width="2" stroke-linecap="round" opacity="0.55"/></g></svg></div><div class="lm-chip"><div class="p1">TOTAL VALUE LOCKED</div><div class="p2">$5.32M</div><div class="p3"><span>&#9650;</span> 4.2% &middot; 7d</div><div class="lx-hstats"><div class="lx-hstat" data-k="fees"><span class="v"><span class="lx-hskel"></span></span><span class="l">24h Fees</span></div><div class="lx-hstat" data-k="trades"><span class="v"><span class="lx-hskel"></span></span><span class="l">24h Trades</span></div><div class="lx-hstat" data-k="tokens"><span class="v"><span class="lx-hskel"></span></span><span class="l">Tokens</span></div><div class="lx-hstat" data-k="top"><span class="v"><span class="lx-hpairskel"><span class="pa"></span><span class="pb"></span></span><span class="lx-toptxt lx-hskel"></span></span><span class="l">Top Pool</span></div></div></div><div class="lm-c lm-c-pool"><h2 class="lm-h">Provide liquidity, earn <em>swap fees</em>.</h2><p class="lm-sub">Deposit a token pair and earn a share of the fee from every swap routed through the pool.</p><a class="lm-cta" href="/pools/xrpl">Provide Liquidity <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></a></div></div></div>
 
   <div class="amm-snapshot-card" data-lxnonav="1">
     <div class="amm-snapshot-head">
@@ -2724,7 +2747,7 @@ html[data-theme="light"] .lm-bg{opacity:.09}
         <div class="amm-snapshot-ic liquidity"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg></div>
         <div class="amm-snapshot-meta">
           <div class="amm-snapshot-label">Total Liquidity</div>
-          <div class="amm-snapshot-sub">Across all pools</div>
+          <div class="amm-snapshot-sub">Across all XRPL pools</div>
         </div>
         <div class="amm-snapshot-right">
           <div class="amm-snapshot-value">—</div>
@@ -3123,7 +3146,7 @@ html[data-theme="light"] .lm-bg{opacity:.09}
           <button>Last »</button>
         </div>
       </div>
-    </main><section class="lx-faq" id="faq"><h2>Frequently asked questions</h2><div class="lx-faq-grid"><div><h3 class="lx-faq-q">What is a liquidity pool?</h3><p class="lx-faq-a">A pool holds reserves of two assets and lets people swap between them, with the price set by the ratio between the two rather than by an order book. Every swap pays a fee to whoever supplied the reserves.</p></div><div><h3 class="lx-faq-q">How do I create a liquidity pool?</h3><p class="lx-faq-a">Choose Create pool, pick two assets and an amount of each. The ratio sets the opening price, so match the market rate. Keep spare XRP: a new pool position holds an LP token, which locks 0.2 XRP of reserve.</p></div><div><h3 class="lx-faq-q">Do I need to deposit both assets?</h3><p class="lx-faq-a">Yes. A pool prices one asset against the other, so it needs both sides, deposited at the pool’s current ratio. If you hold only one of them, swap part of it first.</p></div><div><h3 class="lx-faq-q">Can I withdraw my liquidity at any time?</h3><p class="lx-faq-a">Yes, with no lock-up and no waiting period. What comes back is your share of the reserves as they stand then, which will not be the same split you deposited if the price has moved.</p></div></div></section><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a liquidity pool?","acceptedAnswer":{"@type":"Answer","text":"A pool holds reserves of two assets and lets people swap between them, with the price set by the ratio between the two rather than by an order book. Every swap pays a fee to whoever supplied the reserves."}},{"@type":"Question","name":"How do I create a liquidity pool?","acceptedAnswer":{"@type":"Answer","text":"Choose Create pool, pick two assets and an amount of each. The ratio sets the opening price, so match the market rate. Keep spare XRP: a new pool position holds an LP token, which locks 0.2 XRP of reserve."}},{"@type":"Question","name":"Do I need to deposit both assets?","acceptedAnswer":{"@type":"Answer","text":"Yes. A pool prices one asset against the other, so it needs both sides, deposited at the pool’s current ratio. If you hold only one of them, swap part of it first."}},{"@type":"Question","name":"Can I withdraw my liquidity at any time?","acceptedAnswer":{"@type":"Answer","text":"Yes, with no lock-up and no waiting period. What comes back is your share of the reserves as they stand then, which will not be the same split you deposited if the price has moved."}}]}</script><footer>
+    </main><section class="lx-faq" id="faq"><h2>Frequently asked questions</h2><div class="lx-faq-grid"><div class="lx-faq-item"><h3 class="lx-faq-q">What is a liquidity pool?</h3><p class="lx-faq-a">A pool holds reserves of two assets and lets people swap between them, with the price set by the ratio between the two rather than by an order book. Every swap pays a fee to whoever supplied the reserves.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">How do I create a liquidity pool?</h3><p class="lx-faq-a">Choose Create pool, pick two assets and an amount of each. The ratio sets the opening price, so match the market rate. Keep spare XRP: a new pool position holds an LP token, which locks 0.2 XRP of reserve.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">Do I need to deposit both assets?</h3><p class="lx-faq-a">Yes. A pool prices one asset against the other, so it needs both sides, deposited at the pool’s current ratio. If you hold only one of them, swap part of it first.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">Can I withdraw my liquidity at any time?</h3><p class="lx-faq-a">Yes, with no lock-up and no waiting period. What comes back is your share of the reserves as they stand then, which will not be the same split you deposited if the price has moved.</p></div></div></section><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is a liquidity pool?","acceptedAnswer":{"@type":"Answer","text":"A pool holds reserves of two assets and lets people swap between them, with the price set by the ratio between the two rather than by an order book. Every swap pays a fee to whoever supplied the reserves."}},{"@type":"Question","name":"How do I create a liquidity pool?","acceptedAnswer":{"@type":"Answer","text":"Choose Create pool, pick two assets and an amount of each. The ratio sets the opening price, so match the market rate. Keep spare XRP: a new pool position holds an LP token, which locks 0.2 XRP of reserve."}},{"@type":"Question","name":"Do I need to deposit both assets?","acceptedAnswer":{"@type":"Answer","text":"Yes. A pool prices one asset against the other, so it needs both sides, deposited at the pool’s current ratio. If you hold only one of them, swap part of it first."}},{"@type":"Question","name":"Can I withdraw my liquidity at any time?","acceptedAnswer":{"@type":"Answer","text":"Yes, with no lock-up and no waiting period. What comes back is your share of the reserves as they stand then, which will not be the same split you deposited if the price has moved."}}]}</script><footer>
       <div class="ft-grid"><div class="ft-col ft-brand"><div class="ft-mark"><span class="ft-logo"></span><span class="ft-name">LUMOSCORE</span></div><p>Multichain infrastructure for issuing and trading assets on multiple networks.</p><div class="lx-xrplto"><a rel="nofollow noopener" target="_blank" href="https://xrpl.to">Data by xrpl.to</a></div><div class="socials">
           <a href="https://x.com/LumosCore" target="_blank" rel="noopener nofollow" aria-label="X"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
           <a href="http://t.me/lumoscore" target="_blank" rel="noopener nofollow" aria-label="Telegram"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M22.05 1.577c-.393-.016-.784.08-1.117.235-.484.186-21.087 8.502-21.087 8.502s5.523 1.86 5.523 1.86 2.61 8.155 2.708 8.479c.108.357.42.768.793 1.052.473.288 1.214.336 1.86-.016.7-.382 2.166-1.255 2.166-1.255l4.13 3.046s.572.345 1.218.396c.323.025 1.082-.27 1.082-.27.371-.255.62-.7.74-1.211l3.32-16.65c.085-.382-.094-.59-.166-.66-.43-.404-1.038-.524-1.295-.522l-.012-.06z"/></svg></a>
@@ -3131,9 +3154,14 @@ html[data-theme="light"] .lm-bg{opacity:.09}
         </div></div>
         <div class="ft-col">
           <h4>Menu</h4>
-          <a href="#">Home</a>
-          <a href="https://lumoscore.com/blog">Blogs</a>
-          <a href="https://lumoscore.com/about">About</a>
+          <a href="/">Home</a>
+          <a href="/trade/xrpl">Trade</a>
+          <a href="/pools/xrpl">Pools</a>
+          <a href="/bridge/xrpl">Cross-Chain</a>
+          <a href="/launchpad/xrpl">Launchpad</a>
+          <a href="/lumos/xrpl">LUMOS Token</a>
+          <a href="/blog">Blogs</a>
+          <a href="/about">About</a>
         </div>
         <div class="ft-col">
           <h4>Resources</h4>
@@ -3204,35 +3232,35 @@ html[data-theme="light"] .lm-bg{opacity:.09}
             <input type="text" placeholder="Search asset..." class="ad-search-input" />
           </div>
           <div class="ad-list">
-            <button type="button" class="ad-item" data-asset="APT" data-asset-name="Aptos" data-asset-bal="12,847.50" data-asset-color1="#0b1220" data-asset-color2="#000">
-              <span class="ad-ico" style="background:#000000"><span style="display:inline-flex;width:13px;height:13px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,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" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span></span>
-              <span class="ad-meta"><span class="ad-tk">APT</span><span class="ad-nm">XRP Ledger</span></span>
-              <span class="ad-bal">12,847.50</span>
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="XRP" data-asset-name="XRP" data-asset-bal="" data-asset-color1="#0b1220" data-asset-color2="#000">
+              <span class="ad-ico" style="background:#000000"><span style="display:inline-flex;width:13px;height:13px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"></span></span>
+              <span class="ad-meta"><span class="ad-tk">XRP</span><span class="ad-nm">XRP</span></span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="USDC" data-asset-name="USD Coin" data-asset-bal="3,420.18" data-asset-color1="#2775ca" data-asset-color2="#1a5491">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="USDC" data-asset-name="USD Coin" data-asset-bal="" data-asset-color1="#2775ca" data-asset-color2="#1a5491">
               <span class="ad-ico" style="background:linear-gradient(135deg,#2775ca,#1a5491);color:#fff;font-weight:700;font-size:13px">U</span>
               <span class="ad-meta"><span class="ad-tk">USDC</span><span class="ad-nm">USD Coin</span></span>
-              <span class="ad-bal">3,420.18</span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="LUMOS" data-asset-name="Lumos" data-asset-bal="58,932.10" data-asset-color1="var(--accent)" data-asset-color2="#ff9a3d">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="LUMOS" data-asset-name="Lumos" data-asset-bal="" data-asset-color1="var(--accent)" data-asset-color2="#ff9a3d">
               <span class="ad-ico" style="background:linear-gradient(135deg,var(--accent),#ff9a3d);color:#fff;font-weight:700;font-size:13px">L</span>
               <span class="ad-meta"><span class="ad-tk">LUMOS</span><span class="ad-nm">Lumos</span></span>
-              <span class="ad-bal">58,932.10</span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="GUI" data-asset-name="Kale" data-asset-bal="124,500.00" data-asset-color1="#35c07f" data-asset-color2="#16a34a">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="RLUSD" data-asset-name="Ripple USD" data-asset-bal="" data-asset-color1="#35c07f" data-asset-color2="#16a34a">
               <span class="ad-ico" style="background:linear-gradient(135deg,#35c07f,#16a34a);color:#fff;font-weight:700;font-size:13px">K</span>
-              <span class="ad-meta"><span class="ad-tk">GUI</span><span class="ad-nm">Kale</span></span>
-              <span class="ad-bal">124,500.00</span>
+              <span class="ad-meta"><span class="ad-tk">RLUSD</span><span class="ad-nm">Ripple USD</span></span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="AMI" data-asset-name="Yieldblox APT" data-asset-bal="0.00" data-asset-color1="#7c3aed" data-asset-color2="#5b21b6">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="USDT" data-asset-name="Tether USD" data-asset-bal="" data-asset-color1="#7c3aed" data-asset-color2="#5b21b6">
               <span class="ad-ico" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;font-weight:700;font-size:13px">Y</span>
-              <span class="ad-meta"><span class="ad-tk">AMI</span><span class="ad-nm">Yieldblox APT</span></span>
-              <span class="ad-bal">0.00</span>
+              <span class="ad-meta"><span class="ad-tk">USDT</span><span class="ad-nm">Tether USD</span></span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="CELL" data-asset-name="Cellana" data-asset-bal="1,250.00" data-asset-color1="#06b6d4" data-asset-color2="#0e7490">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="SOLO" data-asset-name="Sologenic" data-asset-bal="" data-asset-color1="#06b6d4" data-asset-color2="#0e7490">
               <span class="ad-ico" style="background:linear-gradient(135deg,#06b6d4,#0e7490);color:#fff;font-weight:700;font-size:13px">A</span>
-              <span class="ad-meta"><span class="ad-tk">CELL</span><span class="ad-nm">Cellana</span></span>
-              <span class="ad-bal">1,250.00</span>
+              <span class="ad-meta"><span class="ad-tk">SOLO</span><span class="ad-nm">Sologenic</span></span>
+              <span class="ad-bal"></span>
             </button>
           </div>
         </div>
@@ -3265,35 +3293,35 @@ html[data-theme="light"] .lm-bg{opacity:.09}
             <input type="text" placeholder="Search asset..." class="ad-search-input" />
           </div>
           <div class="ad-list">
-            <button type="button" class="ad-item" data-asset="APT" data-asset-name="Aptos" data-asset-bal="12,847.50" data-asset-color1="#0b1220" data-asset-color2="#000">
-              <span class="ad-ico" style="background:#000000"><span style="display:inline-flex;width:13px;height:13px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,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" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span></span>
-              <span class="ad-meta"><span class="ad-tk">APT</span><span class="ad-nm">XRP Ledger</span></span>
-              <span class="ad-bal">12,847.50</span>
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="XRP" data-asset-name="XRP" data-asset-bal="" data-asset-color1="#0b1220" data-asset-color2="#000">
+              <span class="ad-ico" style="background:#000000"><span style="display:inline-flex;width:13px;height:13px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"></span></span>
+              <span class="ad-meta"><span class="ad-tk">XRP</span><span class="ad-nm">XRP</span></span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="USDC" data-asset-name="USD Coin" data-asset-bal="3,420.18" data-asset-color1="#2775ca" data-asset-color2="#1a5491">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="USDC" data-asset-name="USD Coin" data-asset-bal="" data-asset-color1="#2775ca" data-asset-color2="#1a5491">
               <span class="ad-ico" style="background:linear-gradient(135deg,#2775ca,#1a5491);color:#fff;font-weight:700;font-size:13px">U</span>
               <span class="ad-meta"><span class="ad-tk">USDC</span><span class="ad-nm">USD Coin</span></span>
-              <span class="ad-bal">3,420.18</span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="LUMOS" data-asset-name="Lumos" data-asset-bal="58,932.10" data-asset-color1="var(--accent)" data-asset-color2="#ff9a3d">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="LUMOS" data-asset-name="Lumos" data-asset-bal="" data-asset-color1="var(--accent)" data-asset-color2="#ff9a3d">
               <span class="ad-ico" style="background:linear-gradient(135deg,var(--accent),#ff9a3d);color:#fff;font-weight:700;font-size:13px">L</span>
               <span class="ad-meta"><span class="ad-tk">LUMOS</span><span class="ad-nm">Lumos</span></span>
-              <span class="ad-bal">58,932.10</span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="GUI" data-asset-name="Kale" data-asset-bal="124,500.00" data-asset-color1="#35c07f" data-asset-color2="#16a34a">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="RLUSD" data-asset-name="Ripple USD" data-asset-bal="" data-asset-color1="#35c07f" data-asset-color2="#16a34a">
               <span class="ad-ico" style="background:linear-gradient(135deg,#35c07f,#16a34a);color:#fff;font-weight:700;font-size:13px">K</span>
-              <span class="ad-meta"><span class="ad-tk">GUI</span><span class="ad-nm">Kale</span></span>
-              <span class="ad-bal">124,500.00</span>
+              <span class="ad-meta"><span class="ad-tk">RLUSD</span><span class="ad-nm">Ripple USD</span></span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="AMI" data-asset-name="Yieldblox APT" data-asset-bal="0.00" data-asset-color1="#7c3aed" data-asset-color2="#5b21b6">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="USDT" data-asset-name="Tether USD" data-asset-bal="" data-asset-color1="#7c3aed" data-asset-color2="#5b21b6">
               <span class="ad-ico" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;font-weight:700;font-size:13px">Y</span>
-              <span class="ad-meta"><span class="ad-tk">AMI</span><span class="ad-nm">Yieldblox APT</span></span>
-              <span class="ad-bal">0.00</span>
+              <span class="ad-meta"><span class="ad-tk">USDT</span><span class="ad-nm">Tether USD</span></span>
+              <span class="ad-bal"></span>
             </button>
-            <button type="button" class="ad-item" data-asset="CELL" data-asset-name="Cellana" data-asset-bal="1,250.00" data-asset-color1="#06b6d4" data-asset-color2="#0e7490">
+            <button type="button" class="ad-item" data-lxreal="1" data-asset="SOLO" data-asset-name="Sologenic" data-asset-bal="" data-asset-color1="#06b6d4" data-asset-color2="#0e7490">
               <span class="ad-ico" style="background:linear-gradient(135deg,#06b6d4,#0e7490);color:#fff;font-weight:700;font-size:13px">A</span>
-              <span class="ad-meta"><span class="ad-tk">CELL</span><span class="ad-nm">Cellana</span></span>
-              <span class="ad-bal">1,250.00</span>
+              <span class="ad-meta"><span class="ad-tk">SOLO</span><span class="ad-nm">Sologenic</span></span>
+              <span class="ad-bal"></span>
             </button>
           </div>
         </div>
@@ -4635,14 +4663,7 @@ function ping(){
 if(document.readyState!=="loading")ping(); else document.addEventListener("DOMContentLoaded",ping);
 setInterval(ping,5000);
 window.addEventListener("storage",ping);
-})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"/dashboard"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><style id="lx-faq-css">
-.lx-faq{max-width:1180px;margin:8px auto 0;padding:38px 24px 46px;border-top:1px solid var(--border)}
-.lx-faq h2{font-size:26px;font-weight:800;letter-spacing:-.01em;color:var(--text);margin:0 0 22px}
-.lx-faq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px 34px}
-.lx-faq-q{font-size:16px;font-weight:700;color:var(--text);margin:0 0 7px}
-.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0}
-@media(max-width:640px){.lx-faq{padding:28px 16px 34px}.lx-faq h2{font-size:21px}}
-</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><script id="lx-xrplconnect">
+})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"/dashboard"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><script id="lx-xrplconnect">
 // XRPL primitives, kept in one place and testable in node.
 //
 // Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
@@ -4877,14 +4898,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -5158,6 +5179,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // ---------------------------------------------------------------------------------------------
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
+
+  // WHERE XAMAN SENDS THE USER BACK. It must be a page that runs THIS file: the library finishes a
+  // sign-in only on the page it returns to -- in the desktop popup it posts the result to the opener,
+  // on a phone it picks the session up after the app hands back. It used to be origin + '/', which on
+  // the combined site is STELLAR's landing page and carries no Xaman code at all, so the popup sat
+  // there and a phone came back signed out. /trade/xrpl is an XRPL page on both the combined and the
+  // standalone builds and is not behind the authgate. Every origin + this path must be listed as a
+  // redirect URL at apps.xaman.dev, or the gateway answers "Invalid client/redirect URL".
+  var XAMAN_RETURN = '/trade/xrpl';
+  // The page the sign-in started from, so a phone returning to XAMAN_RETURN is taken back to it.
+  var XAMAN_BACK = 'lumos.xamanBack';
   var RPC = 'https://xrplcluster.com/';
 
   var K = {
@@ -5401,7 +5433,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
       if (!window.XummPkce) throw new Error('The Xaman library did not load.');
       // One fixed return address, the site's root, whichever page sign-in starts from — the address that must be listed in the Xaman app.
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: window.location.origin + '/' });
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: xamanRedirect() });
 
       // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
       // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
@@ -5423,6 +5455,27 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return xummReady;
   }
 
+  function xamanRedirect() { return window.location.origin + XAMAN_RETURN; }
+
+  // localStorage, not sessionStorage: on a phone the return can arrive in a different tab than the
+  // one that left for the app. Stamped, so a stale entry from an abandoned sign-in is ignored.
+  function rememberBack() {
+    try {
+      localStorage.setItem(XAMAN_BACK, JSON.stringify({
+        u: window.location.pathname + window.location.search + window.location.hash, t: Date.now() }));
+    } catch (e) {}
+  }
+  function goBack() {
+    var b = null;
+    try { b = JSON.parse(localStorage.getItem(XAMAN_BACK) || 'null'); localStorage.removeItem(XAMAN_BACK); } catch (e) {}
+    // Never inside the desktop popup -- the library closes that itself once it has posted.
+    if (window.opener) return;
+    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return;
+    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return;
+    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return;
+    window.location.replace(b.u);
+  }
+
   function adoptXumm(x) {
     try {
       var p = x.state();
@@ -5430,7 +5483,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       p.then(function (state) {
         if (!state || !state.me || !state.me.account) return;
         if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
+        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) { return; }
+        goBack();
       }).catch(noop);
     } catch (e) {}
   }
@@ -5461,24 +5515,64 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // so the wording has to carry both without asserting either.
     if (/popup-closed/.test(m)) {
       return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
-        + 'client/redirect URL", then ' + window.location.origin + ' is not a registered redirect '
+        + 'client/redirect URL", then ' + xamanRedirect() + ' is not a registered redirect '
         + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
     }
     if (/invalid client|redirect|access_denied/i.test(m)) {
-      return new Error('Xaman would not accept a sign-in from ' + window.location.origin
+      return new Error('Xaman would not accept a sign-in returning to ' + xamanRedirect()
         + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
         + 'redirect URL at apps.xaman.dev; otherwise open LumosCore from its main address.');
     }
     return new Error(m || 'Xaman sign-in failed.');
   }
 
+  // THE SIGN-IN WINDOW HAS TO BE OPENED INSIDE THE TAP, AND THE SDK CANNOT DO THAT.
+  //
+  // This is why Xaman never worked on a phone. The SDK's authorize() is:
+  //     yield this.ping ... window.open(authorizeUrl, "XummPkceLogin", ...)
+  // so the open happens AFTER an await. Measured on the deployed XRPL build 2026-10-11: the tap lands,
+  // and window.open is called 108ms later. Desktop browsers tolerate that; iOS Safari does not -- it
+  // only allows a window to be created while a user gesture is active, so the call returns null.
+  //
+  // Nothing then reports it. The SDK stores the null on x.popup, so the watcher below (which asks
+  // whether x.popup has CLOSED) never fires, authorize() stays pending forever, and the dialog sits on
+  // "Waiting for Xaman" with a Cancel button. Reproduced exactly by stubbing window.open to return
+  // null: that is the screen RAZA has been getting on iPhone Safari every time.
+  //
+  // A window opened in the gesture under the SDK's own window NAME fixes it: when authorize() later
+  // calls window.open(url, "XummPkceLogin"), the browser retargets the window that already exists
+  // rather than creating one, which is allowed after the gesture has expired. Same name, or this does
+  // nothing. The SDK's feature string is copied so desktop keeps the sized popup it had.
+  var xamanWin = null;
+  function xamanPreopen() {
+    try {
+      xamanWin = window.open('about:blank', 'XummPkceLogin',
+        'directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=no,width=600,height=790');
+    } catch (e) { xamanWin = null; }
+    return xamanWin;
+  }
+  function xamanDropWin() {
+    try { if (xamanWin && !xamanWin.closed) xamanWin.close(); } catch (e) {}
+    xamanWin = null;
+  }
+
   function xamanConnect() {
+    // SYNCHRONOUS, BEFORE ANY PROMISE. run() calls this straight out of the row's click handler, so the
+    // gesture is still live here -- one await later it is not, which is the whole bug.
+    var pre = xamanPreopen();
+    if (!pre) {
+      // Blocked even inside the gesture: pop-ups are switched off for this site. Say so, rather than
+      // opening a dialog that waits for a window that will never exist.
+      return Promise.reject(new Error('Your browser blocked the Xaman sign-in window. Allow pop-ups '
+        + 'for this site, then try again.'));
+    }
     return xumm().then(function (x) {
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
+      rememberBack();
       var p = x.authorize();
-      if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+      if (!p || !p.then) { xamanPending = null; xamanDropWin(); return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
       // WATCH THE WINDOW, because the SDK's events do not cover this. It settles only when the popup
       // POSTS a message back -- 'xumm_sign_request_rejected' or 'xumm_sign_request_popup_closed' --
@@ -5486,18 +5580,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // just renders. So authorize() stays pending, 'error' never fires, and even closing the window
       // by hand leaves this dialog spinning; RAZA hit that twice on 2026-10-01. The SDK does keep the
       // handle on x.popup, so the window going away is a signal we can read ourselves.
-      // Null on mobile, where the flow is a full-page redirect rather than a popup — the timer simply
-      // never fires there, which is correct.
+      // FALL BACK TO OUR OWN HANDLE. x.popup is whatever the SDK's window.open returned, so when that
+      // call was the one iOS refused it is null and this watcher watched nothing -- the silent half of
+      // the bug above. The window we opened in the gesture is the same window once authorize()
+      // retargets it, so it answers "did the user close it" just as well, and it answers even when the
+      // SDK never got a handle at all.
       var watch = setInterval(function () {
-        var w = x && x.popup;
+        var w = (x && x.popup) || xamanWin;
         if (w && w.closed) { clearInterval(watch); failXaman(new Error('popup-closed')); }
       }, 800);
 
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { clearInterval(watch); xamanPending = null; return v; },
-        function (e) { clearInterval(watch); xamanPending = null; throw e; });
+        function (v) { clearInterval(watch); xamanPending = null; xamanWin = null; return v; },
+        function (e) { clearInterval(watch); xamanPending = null; xamanDropWin(); throw e; });
     }).then(function (state) {
       xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
@@ -5505,6 +5602,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
       }
       return accept(state.me.account, 'Xaman', 'xaman');
+    }).catch(function (e) {
+      // Anything that fails BEFORE authorize() retargets it -- a missing key, the library not
+      // loading, a refusal -- would otherwise leave the blank window we opened sitting there for the
+      // user to close by hand.
+      xamanDropWin();
+      throw e;
     });
   }
 
@@ -5849,6 +5952,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     function pick() {
       build();
+      // WARM THE XAMAN SDK WHILE THE USER IS READING THE LIST. The script is 89KB and was fetched
+      // inside the tap, which is dead time with a blank sign-in window already on screen. Loading it
+      // here does not make the tap synchronous -- authorize() still awaits its own ping, which is why
+      // the window is pre-opened -- it just stops the wait being longer than it needs to be.
+      // Fire and forget: a failure here is reported properly when the row is actually tapped.
+      try { if (XAMAN_KEY) xumm().catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
       var list = document.createElement('div');
@@ -6342,7 +6451,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
-  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
+  // Ledger a pool position is an LP token -- a trustline whose 40-char currency starts with 03 --
   // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
   function poolLumos(rows, cb) {
     var lps = [];
@@ -6659,14 +6768,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -6994,6 +7103,41 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return (v == null || !isFinite(v)) ? '—' : Math.round(v).toLocaleString('en-US');
   }
 
+  // A MONEY FIGURE, ABBREVIATED THE WAY STELLAR'S OVERVIEW ABBREVIATES ONE — "$5.32M", "$545.3K".
+  // K is one decimal and M upward are two, which is the same ladder the Trade table and the asset
+  // page use; the dollar sign is the caller's, because one of these is a headline and one a sub-line.
+  function money(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+
+  // A Market Overview caption, coloured the way Stellar colours one — WITHOUT naming a colour.
+  //
+  // RAZA 2026-10-06, the two captions this file writes against the two it does not: "text colour on
+  // difference on Stellar and XRPL". Measured in dark on both pages, the plain captions already
+  // agree — `.amm-snapshot-sub` is rgb(110,109,120) on lumoscore.com and here — and only the two we
+  // touch were off, at rgb(165,164,172).
+  //
+  // Both halves of that were mine. The Active Pools caption inherits `up`, the design's positive-delta
+  // style, from a row that once carried a week-on-week change; it renders rgb(53,192,127), green, and
+  // there is no delta here for green to mean. I covered it with an inline `var(--text-muted)` — which
+  // is a DIFFERENT TOKEN from the one the caption class uses: #a5a4ac in dark, #5a5a66 in light. So the
+  // override swapped a wrong colour for another wrong colour, and in opposite directions per theme.
+  //
+  // Removing the class and the inline both, instead, lands on rgb(110,109,120) — Stellar's exact
+  // value — because the caption class then applies, which is all Stellar ever does. Measured all three
+  // ways on the live page before writing this. Naming a literal here would have had to be re-picked
+  // for light; inheriting cannot drift. [[lumoscore-css-override-traps]]
+  function plainSub(el) {
+    if (!el) return;
+    el.classList.remove('up');
+    el.classList.remove('down');
+    el.style.color = '';          // clears an override an earlier build of this file may have set
+  }
+
   // The XRP -> USD rate, read once per page from the tokens endpoint — the same source every other
   // USD figure on this site derives from, so the table cannot disagree with the overview or the
   // dashboard about what an XRP is worth. Null until it arrives, and null is rendered as an em dash
@@ -7099,22 +7243,42 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // WINDOW capture is the earliest phase there is: it runs before any document-level listener, so
   // stopImmediatePropagation here settles the question before anything else is consulted. Scoped
   // strictly to clicks inside #poolsBody, so no other navigation on the page is affected.
+  // A NEW TAB HAS TO BE OPENED BY US, NOT LEFT TO THE BROWSER (RAZA 2026-10-08: "Allow me to open
+  // pools in new tabs. It doesn't let me"). This handler used to RETURN on a modifier click, meaning
+  // to let the browser do what it always does with ctrl+click. That is precisely what cannot work
+  // here: getting out of the way hands the click to the design's own window-capture router, which
+  // calls preventDefault and navigates in the same tab. Measured on the deployed page — ctrl+click on
+  // the pair anchor itself came back defaultPrevented with an unload following, so even the real
+  // <a href> lost. lumoscore.com hit the same wall and records it in _ammdata.js: "the design's shim
+  // runs on window capture and calls preventDefault, so 'let the browser handle it' loses that race".
+  //
+  // So the row is claimed in every case and the destination is opened explicitly: a modifier click
+  // gets window.open, a plain one gets location.href. Right-click is excluded so the context menu
+  // (and its own "Open link in new tab") still works. auxclick is bound as well as click because the
+  // MIDDLE BUTTON FIRES NO CLICK EVENT AT ALL in Chrome — binding only click would leave middle-click
+  // broken in exactly the way this fix is meant to address.
   function claimRowClicks() {
     if (window.__lxxPoolNav) return;
     window.__lxxPoolNav = 1;
-    window.addEventListener('click', function (e) {
+    function wantsTab(e) { return !!(e && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)); }
+    function nav(e) {
       var t = e.target;
       if (!t || !t.closest) return;
       var tr = t.closest('#poolsBody tr');
       if (!tr) return;
       var a = tr.querySelector('a.pool-pair');
       if (!a) return;
-      // Let a genuine modifier-click (new tab, new window) behave normally.
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      if (e.button != null && e.button !== 0 && e.button !== 1) return;   // right-click: leave it alone
       e.preventDefault();
       e.stopImmediatePropagation();
-      window.location.href = a.getAttribute('href');
-    }, true);
+      var h = a.getAttribute('href');
+      if (wantsTab(e)) {
+        try { window.open(h, '_blank', 'noopener'); return; } catch (_) {}
+      }
+      window.location.href = h;
+    }
+    window.addEventListener('click', nav, true);
+    window.addEventListener('auxclick', nav, true);
   }
 
   function row(p, rank) {
@@ -7189,7 +7353,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // `p.holders == null` FIRST, and that is the whole bug (RAZA reported this pool twice). The upstream sends null when
     // it has no count; `+null` is 0, which isFinite() happily accepts — so the one case this repair exists for was the one
     // case it skipped, and the cell kept the em dash `count(null)` had already written. Nothing else was wrong with it.
-    if ((p.holders == null || !isFinite(+p.holders)) && p.acct) partTd.setAttribute('data-lxpart', p.acct);
+    //
+    // AND NOW FOR EVERY ROW, NOT ONLY THE EMPTY ONES (RAZA 2026-10-08: "yes make it exact on the
+    // visible rows"). The upstream's lpHolderCount is a real holder count but a stale snapshot:
+    // measured against the ledger across six pools it was right on three and over by one or two on
+    // the three busiest — 1206 against 1204, 455 against 454, 184 against 183. Small, but the pool
+    // page now counts from the ledger exactly, so leaving the column on the upstream figure would
+    // bring back the complaint that started this, just one digit at a time.
+    //
+    // The sweep below is already viewport-gated, queued and edge-cached, so asking for every visible
+    // row costs the same per row as asking for the few that were null.
+    if (p.acct) partTd.setAttribute('data-lxpart', p.acct);
     tr.appendChild(partTd);
     // WEIGHTS OFF THE LIVE STELLAR ROW: the liquidity headline and the participant count are 700 there,
     // the volume and fee figures 400. Set inline on those two cells only.
@@ -7368,15 +7542,36 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         // Matched anywhere in the label, not at position 0: the row reads "Total Liquidity", so an
         // indexOf(...) === 0 test silently skipped it and left 12.7M APT sitting beside three
         // corrected rows — the one wrong figure in a block that otherwise looked freshly filled.
+        // STELLAR'S SHAPE, ROW BY ROW (RAZA 2026-10-06, six numbered differences on one screenshot).
+        // Read off lumoscore.com/pools/stellar:
+        //
+        //   Total Liquidity   63,771,155 XLM        over  ≈ $5.32M
+        //   Active Pools      39,253                over  "Liquidity pools on Stellar"
+        //   24h Volume        $545.3K               over  "2,523,911 XLM (24h)"
+        //
+        // Two of them were INVERTED here. Total Liquidity showed the compacted native figure with the
+        // exact dollar underneath ("27.24M XRP" over "≈ $41,363,917"); Stellar shows the exact native
+        // figure with the compacted dollar underneath. And 24h Volume led with the native count where
+        // Stellar leads with the money — the headline is the dollar, the native amount is the detail.
         if (label.indexOf('liquidity') >= 0) {
-          setVal(amount(s.liquidity), 'XRP');
-          if (vsub) vsub.textContent = usd ? ('≈ $' + Math.round(s.liquidity * usd).toLocaleString('en-US')) : '';
+          // Grouped, not abbreviated: "63,771,155 XLM" is Stellar's headline, so "27,243,110 XRP" is ours.
+          setVal(s.liquidity != null ? Math.round(s.liquidity).toLocaleString('en-US') : '—', 'XRP');
+          if (vsub) vsub.textContent = usd ? ('≈ $' + money(s.liquidity * usd)) : '';
         } else if (label.indexOf('active pools') === 0) {
           setVal(d.total != null ? count(d.total) : '—');
-          if (sub) sub.textContent = 'Across the XRP Ledger';   // no week-ago figure to compare with
+          // Stellar's wording, and Stellar's colour by the same route Stellar gets it — see plainSub.
+          if (sub) {
+            sub.textContent = 'Liquidity pools on XRP Ledger';
+            plainSub(sub);
+          }
         } else if (label.indexOf('24h volume') === 0) {
-          setVal(amount(s.vol24), 'XRP');
-          if (sub) sub.textContent = usd ? ('≈ $' + Math.round(s.vol24 * usd).toLocaleString('en-US') + ' swapped') : 'past 24 hours';
+          setVal(usd ? ('$' + money(s.vol24 * usd)) : (amount(s.vol24) + ' '), usd ? '' : 'XRP');
+          if (sub) {
+            sub.textContent = s.vol24 != null
+              ? (Math.round(s.vol24).toLocaleString('en-US') + ' XRP (24h)')
+              : 'past 24 hours';
+            plainSub(sub);
+          }
         } else if (label.indexOf('participant') === 0) {
           setVal('—');
           if (sub) sub.textContent = 'Not published by a public node';
@@ -7426,6 +7621,10 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // ships `#paginationAll` — "Showing 1–10 of 100 pools" plus First/Prev/numbers/Next/Last — and it
   // had never been wired to anything. Nothing new is introduced; only what the buttons do.
   var PER = 50;
+  // The phone has no pager, so it grows by chunk as the reader scrolls instead of drawing the whole
+  // dataset at once. 60 is two or three screens of cards -- enough that the first scroll is never a
+  // wait, small enough that the first paint is 120 images rather than 20,000.
+  var PHONE_CHUNK = 60, phoneShown = 0, phoneWired = 0, phoneData = null;
   var pageNo = 1;
 
   function setPageInfo(from, to, total) {
@@ -7459,16 +7658,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       if (k !== first && k !== prev && k !== next && k !== last) k.remove();
     });
 
-    function numBtn(n) {
-      var b = document.createElement('button');
-      if (n === pageNo) b.className = 'active';
-      b.textContent = String(n);
-      b.addEventListener('click', function () { renderPage(h, d, n); });
-      return b;
-    }
-    // Ascending, each inserted before `next` — a descending loop stacks them backwards, which is how
-    // the trade pager once shipped reading "2 1".
-    for (var n = 1; n <= pages; n++) ctrls.insertBefore(numBtn(n), next);
+    // "PAGE 1 OF 442", NOT A ROW OF NUMBERED BUTTONS (RAZA 2026-10-06, difference 3). Stellar puts a
+    // plain label between Prev and Next; this built one button per page, which is also why the two
+    // pagers look nothing alike at a glance even before you read them.
+    //
+    // It is a span, not a disabled button: nothing here is clickable, and a button that cannot be
+    // pressed invites the press.
+    var lbl = document.createElement('span');
+    lbl.className = 'lx-pageno';
+    lbl.textContent = 'Page ' + pageNo + ' of ' + pages;
+    ctrls.insertBefore(lbl, next);
 
     function nav(btn, target, disabled) {
       if (!btn) return;
@@ -7483,10 +7682,74 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     nav(last, pages, pageNo === pages);
 
     pg.style.display = pages > 1 ? '' : 'none';
+    pagerStyle();
+    pagerAboveOverview();
   }
 
-  // Which column the table is ordered by. The endpoint already returns pools by liquidity, descending, which is what the
-  // page opens on — so the default here has to describe that, not impose a second ordering on top of it.
+  // Stellar's label is a muted 13.5px span (`.lx-netpag-m`); ours is a span of our own, so it needs the
+  // same three declarations. Injected once, by id, so a re-render cannot stack copies.
+  function pagerStyle() {
+    if (document.getElementById('lx-pageno-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-pageno-css';
+    st.textContent = '.lx-pageno{font-size:13.5px;font-weight:400;color:var(--text-muted,#6e6d78);'
+      + 'display:inline-flex;align-items:center;padding:0 10px;white-space:nowrap}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  // THE PAGER GOES ABOVE THE MARKET OVERVIEW (RAZA 2026-10-06, difference 6). On Stellar the order is
+  // table → "Showing 1–25 of 11,029 pools" + controls → Market Overview; here the overview card sat
+  // between the table and its own pager, so the count belonged to nothing you could see.
+  //
+  // Verified on lumoscore.com by document order rather than by eye: compareDocumentPosition puts
+  // #paginationAll before .amm-snapshot-card.
+  // IT IS THE CARD THAT MOVES, NOT THE PAGER — and it is `_sidecard.js` that moves it, on both builds.
+  //
+  // Three attempts failed before reading the layer that actually owns this, so the mechanism is worth
+  // stating. `_sidecard.js` (inherited; `lx-sc` is on <html> here, so it RUNS on this build) relocates
+  // `.amm-snapshot-card` out of the hero and down the page, placing it after an anchor:
+  //
+  //     .lx-netpag-host  ||  .lx-netpag  ||  #panelMine,#panelMyPositions   (whichever is LAST)
+  //
+  // On lumoscore.com the pools pager carries `lx-netpag`, so the anchor is the pager and the card
+  // lands directly after it — which is the whole of the difference RAZA screenshotted. This build
+  // inherited netpag's STYLESHEET but never the class on the element: measured, our pager's className
+  // is just "pagination". So the anchor fell through to `#panelMyPositions`, which sits INSIDE the
+  // list card above, and the overview was parked there — above the pager instead of below it.
+  //
+  // So the fix is one class, plus the same placement _sidecard would do, applied now rather than at
+  // its next observer tick. `lx-netpag-host` and not `lx-netpag`: anchor() checks the host class
+  // first, and it carries a single `margin-top:10px`, where `.lx-netpag` would restyle the whole
+  // pager — border-top, padding, font, every button.
+  //
+  // WHAT NOT TO DO, all three measured on deploys:
+  //   * Moving the PAGER up works and is undone seconds later — _sidecard puts the card back where
+  //     its anchor says, and its anchor was wrong. The node that was fighting me was mine.
+  //   * A MutationObserver re-asserting that move HUNG THE TAB (deploy 11dc2b93): move → childList
+  //     mutation → _sidecard answers → forever. _sidecard's own observer is safe only because
+  //     place() is a no-op once settled, which is why the guard below is the same shape.
+  //   * `.page{display:flex}` + `order:1` on the card. This measured correct here at every width and
+  //     theme and was still wrong on RAZA's screen — a declared order that only holds in one browser
+  //     is not a fix, and it made the page's root a flex container for no reason.
+  function pagerAboveOverview() {
+    var pg = $('#paginationAll');
+    if (!pg || !pg.parentNode) return;
+    pg.classList.add('lx-netpag-host');                 // the anchor _sidecard.js looks for
+    var card = document.querySelector('.amm-snapshot-card');
+    if (!card) return;                                  // painted by a later layer; _sidecard places it
+    if (card.parentNode === pg.parentNode && pg.nextElementSibling === card) return;   // settled
+    pg.parentNode.insertBefore(card, pg.nextSibling);
+  }
+
+  // Which column the table is ordered by.
+  //
+  // The note here used to say the endpoint returns pools by liquidity descending, "so the default
+  // has to describe that rather than impose a second ordering". That was not true: the endpoint asks
+  // the upstream for a VOLUME ranking, and until 2026-10-07 it asked with a key the upstream does
+  // not sort by, so the rows arrived in no order at all. This client-side sort was therefore not
+  // describing the response — it was the only thing ordering the table.
+  // It still is, and that is now correct by construction: the endpoint selects the top pools by 24h
+  // volume across the whole ledger, and this orders that set by whichever column the reader picks.
   var SORT = { key: 'liq', dir: -1 };
   function applySort(rows) {
     if (!SORT.key) return rows;
@@ -7522,9 +7785,33 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     // NO PAGER, NO PAGING. The phone build carries no #paginationAll at all, so paging there would
     // hide rows behind a control that does not exist — the mistake this made once already on the
-    // trade page. The phone gets the whole hundred; the desktop pages them.
+    // trade page.
     var paged = !!$('#paginationAll');
-    var per = paged ? PER : total;
+
+    // ...BUT "THE WHOLE LOT" STOPPED MEANING A HUNDRED. This drew every row the dataset held, which
+    // was right when the dataset WAS the first hundred. deepen() now walks it to 10,000 (RAZA
+    // 2026-10-07, "its only considering 100 pools unlike Stellar"), and the phone was still drawing
+    // all of them: 10,000 cards, each with two logo <img>, so ~20,000 images at once. Measured on
+    // the deployed build — the phone fired roughly 7,000 requests, every /lxapi/xrplthumb came back
+    // 429, and the renderer pinned hard enough that neither a script nor a screenshot could run.
+    // The list ended up EMPTY, so the page that was supposed to show more pools showed none.
+    // Desktop never had this: it pages at 50. Two reasonable decisions that only became lethal once
+    // they met.
+    //
+    // loading="lazy" is not the answer and was already on every one of those images: the browser
+    // still builds 20,000 elements, and it loads far more than a screenful. So the phone draws a
+    // chunk and grows as the reader scrolls — the same rule fillParticipants() below already
+    // follows for its own requests, and it keeps all 10,000 reachable rather than capping the list
+    // and quietly throwing RAZA's ask away.
+    // RESET ONLY ON A NEW DATASET, never on a repaint. deepen() calls back in here with the SAME
+    // object every time a batch of a thousand lands, so keying the reset on n===1 would snap the
+    // list back to 60 rows under a reader who had scrolled past them -- ten times over. A search
+    // builds a fresh rows object and so does reset, which is what it should do.
+    if (!paged) {
+      if (phoneData !== d) { phoneData = d; phoneShown = 0; }
+      phoneShown = phoneShown ? Math.min(phoneShown, total) : Math.min(PHONE_CHUNK, total);
+    }
+    var per = paged ? PER : phoneShown;
     var pages = Math.max(1, Math.ceil(total / per));
     pageNo = Math.min(Math.max(1, n), pages);
 
@@ -7540,7 +7827,44 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     setPageInfo(from + 1, to, total);
     buildPager(h, d, pages);
+    if (!paged) wirePhoneGrow(h);
     fillParticipants();
+  }
+
+  // Appends the next chunk when the reader nears the end of the list. APPENDS rather than re-renders:
+  // redrawing would rebuild every card already on screen, and with it every <img> the reader has
+  // already paid for -- which is the cost this whole change exists to avoid.
+  //
+  // Reads the live dataset off window.__lxxPoolsData rather than closing over `d`, because deepen()
+  // keeps growing the same object underneath and a stale reference would stop the list at whatever
+  // depth it had when the listener was bound.
+  function wirePhoneGrow(h) {
+    if (phoneWired) return;
+    phoneWired = 1;
+    var busy = 0;
+    function grow() {
+      if (busy) return;
+      var d = window.__lxxPoolsData;
+      if (!d || !d.rows) return;
+      var total = d.rows.length;
+      if (phoneShown >= total) return;
+      // within one screen of the bottom
+      var doc = document.documentElement;
+      if ((window.innerHeight + window.scrollY) < (doc.scrollHeight - window.innerHeight)) return;
+      busy = 1;
+      var rows = applySort(d.rows);
+      var make = h.kind === 'table' ? row : card;
+      var from = phoneShown, to = Math.min(from + PHONE_CHUNK, total);
+      for (var i = from; i < to; i++) h.node.appendChild(make(rows[i], i + 1));
+      phoneShown = to;
+      setPageInfo(1, to, total);
+      try { fillParticipants(); } catch (e) {}
+      busy = 0;
+    }
+    window.addEventListener('scroll', grow, { passive: true });
+    window.addEventListener('resize', grow, { passive: true });
+    // A short list on a tall screen never fires a scroll, so the first check is made directly.
+    setTimeout(grow, 400);
   }
 
   // The same count the pool page shows: the LP token's holder list, which needs the token's currency from amm_info first.
@@ -7589,7 +7913,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         return fetch('/lxapi/xrplparticipants?acct=' + encodeURIComponent(acct))
           .then(function (x) { return x.json(); })
           .then(function (d) {
-            if (d && d.ok && d.total != null) { td.textContent = count(d.total); return; }
+            if (d && d.ok && d.total != null) {
+              // A TRUNCATED COUNT MUST NOT REPLACE A WHOLE ONE. The endpoint stops after five pages
+              // of four hundred lines and says so with `complete:false`; past that its total is a
+              // floor, not a figure. Where the upstream already gave a number, that stays — it is
+              // only one or two out — and the partial is used solely where the cell had nothing but
+              // an em dash, which is the case this sweep was built for.
+              if (d.complete !== false) { td.textContent = count(d.total); return; }
+              if (!/[0-9]/.test(td.textContent || '')) td.textContent = count(d.total);
+              return;
+            }
             throw new Error('no count');
           })
           .catch(function () {
@@ -7723,8 +8056,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           seen[t.i] = 1;
           issuers.push(t.i);
         });
-        return Promise.all(issuers.slice(0, 8).map(function (iss) {
-          return fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(iss))
+        // EVERY POOL FOR THE ASSET, which is the point of searching by issuer rather than filtering
+        // the loaded page (RAZA 2026-10-07: "it must show all pools for any asset").
+        //
+        // Two caps used to stop that being true, and both were invisible in the result — a short
+        // list reads exactly like a complete one:
+        //   * `n=100` per issuer. The endpoint now pages behind a single call, so 1000 covers any
+        //     issuer on the ledger; it costs ONE upstream request for a typical issuer because the
+        //     paging loop stops the moment a page comes back short.
+        //   * `slice(0, 8)` issuers. A ticker like USD is issued by dozens of accounts, so the 9th
+        //     onwards contributed nothing and the search quietly understated the ledger. Raised to
+        //     32, which covers every code measured here and still bounds a pathological query.
+        var ISSUER_CAP = 32;
+        window.__lxxPoolSearchTrunc = issuers.length > ISSUER_CAP;
+        return Promise.all(issuers.slice(0, ISSUER_CAP).map(function (iss) {
+          return fetch('/lxapi/xrplpools?n=1000&issuer=' + encodeURIComponent(iss))
             .then(function (r) { return r.json(); }).catch(function () { return null; });
         })).then(function (res) {
           if (my !== poolQ) return;
@@ -7772,6 +8118,62 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     renderPage(h, { ok: true, rows: rows, total: rows.length }, 1);
   }
 
+  // Walk the ranking out past the first batch, in the background (RAZA 2026-10-07: raise it to
+  // 10,000). It has to be the client that accumulates depth: 10,000 rows is 100 upstream pages, and
+  // a Worker on the free plan gets 50 subrequests and 10ms of CPU, so one request asking for all of
+  // them fails at page 51. Ten calls of a thousand each stay inside the limits and cache separately.
+  //
+  // SEQUENTIAL, one batch in flight at a time. The upstream rate-limits readily — this
+  // investigation tripped it — so a burst of ten parallel calls would be the thing that breaks it.
+  // A failed or short batch simply stops the walk and keeps everything already in hand.
+  var DEEP_TARGET = 10000;
+  function deepen(h, d) {
+    if (!d || !d.more) return;
+    var next = d.nextP0 || 11;
+    var qAtStart = poolQ;
+    function step() {
+      // Abandon if the dataset was replaced (reload) or the reader started searching — repainting
+      // under a search is the second-writer repaint this project keeps getting bitten by.
+      if (window.__lxxPoolsData !== d || poolQ !== qAtStart) return;
+      if (d.rows.length >= DEEP_TARGET) return;
+      fetch('/lxapi/xrplpools?n=1000&p0=' + next)
+        .then(function (r) { return r.json(); })
+        .then(function (b) {
+          // WHY THE WALK STOPPED, recorded rather than swallowed. The first version of this ended in
+          // an empty .catch(), and when the walk halted at 3,000 rows there was no way to tell a
+          // rate-limited upstream from a bug in this function — the two look identical from outside.
+          // Read window.__lxxPoolsDeep in the console to see where it got to and why.
+          window.__lxxPoolsDeep = { rows: d.rows.length, lastP0: next, reason: 'running' };
+          if (!b || !b.ok) { window.__lxxPoolsDeep.reason = 'upstream refused (' + ((b && b.error) || 'no body') + ')'; return; }
+          if (!b.rows || !b.rows.length) { window.__lxxPoolsDeep.reason = 'empty batch'; return; }
+          if (window.__lxxPoolsData !== d || poolQ !== qAtStart) { window.__lxxPoolsDeep.reason = 'superseded'; return; }
+          // Dedupe on the AMM account. A repeated page would otherwise pad the count with rows the
+          // table already holds, and a padded count is worse than a short one: it reads as coverage.
+          var got = {};
+          d.rows.forEach(function (r) { if (r && r.acct) got[r.acct] = 1; });
+          var added = 0;
+          b.rows.forEach(function (r) {
+            if (!r || !r.acct || got[r.acct]) return;
+            got[r.acct] = 1; d.rows.push(r); added++;
+          });
+          next = b.nextP0 || (next + 10);
+          // Only while the reader is on the first page. Deeper batches can carry a pool whose
+          // liquidity puts it near the top, so a repaint reorders the table — fine to watch fill in
+          // from page one, not fine to have happen under someone reading page seven.
+          window.__lxxPoolsDeep.rows = d.rows.length;
+          if (added && pageNo === 1) renderPage(h, d, 1);
+          if (!added) { window.__lxxPoolsDeep.reason = 'batch held nothing new'; return; }
+          if (!b.more) { window.__lxxPoolsDeep.reason = 'ranking exhausted'; return; }
+          if (d.rows.length >= DEEP_TARGET) { window.__lxxPoolsDeep.reason = 'target reached'; return; }
+          step();
+        })
+        .catch(function (err) {
+          window.__lxxPoolsDeep = { rows: d.rows.length, lastP0: next, reason: 'threw: ' + ((err && err.message) || err) };
+        });
+    }
+    step();
+  }
+
   function load() {
     var h = listHost();
     if (!h) return;                                    // not the Pools page
@@ -7791,9 +8193,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // two-writers-on-one-element shape this project keeps getting bitten by. Promise.all costs
     // nothing here: the tokens response is edge-cached and the two requests overlap.
     Promise.all([
-      // n=100 — the endpoint's ceiling, and the upstream's. See the note above the pager.
-      // On the LUMOS page the table is "All LUMOS pools", not the site's top hundred (RAZA 2026-09-15).
-      fetch('/lxapi/xrplpools?n=100' + ($('.lumos-hero-row') ? '&issuer=rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' : ''))
+      // n=1000, raised from 100 (RAZA 2026-10-07: "its only considering 100 pools unlike Stellar
+      // where it considers all network pools"). 100 was the UPSTREAM's per-request limit, mistaken
+      // for a limit on what could be ranked; the endpoint now pages up to ten times behind this
+      // single call. The endpoint also had the wrong sort key, so the old hundred were not even the
+      // top hundred — see the note there, which is the half of this that actually changes the table.
+      // On the LUMOS page the table is "All LUMOS pools", not the site's top ranks (RAZA 2026-09-15),
+      // and the issuer filter narrows the upstream to ~22 rows, so it costs one request either way.
+      fetch('/lxapi/xrplpools?n=1000' + ($('.lumos-hero-row') ? '&issuer=rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' : ''))
         .then(function (r) { return r.json(); }),
       fetchUsd(3),
     ]).then(function (both) {
@@ -7818,6 +8225,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       paintSummary(d.summary);
       paintOverview(d);
       attribution(d);
+      deepen(h, d);
       // A table of em dashes is repainted the moment a rate does arrive, rather than waiting for the next visit.
       if (USD == null) {
         fetchUsd(4).then(function (u) {
@@ -7852,7 +8260,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 // tab is clicked — the known blind spot of any pass that reads the page at rest.
 //
 // WHERE THE REAL NUMBERS COME FROM. An LP token's ISSUER is the AMM account itself, so the account's
-// own trust lines are the position list: every line whose currency is an LP token (40 hex starting
+// own trustlines are the position list: every line whose currency is an LP token (40 hex starting
 // 03) is a pool this account is in, and its balance is the LP tokens held. `amm_info` on that issuer
 // returns the pool's two sides and the total LP supply, and share = held / total. Nothing here is
 // derived from a price feed; the amounts are the pool's own reserves scaled by that share.
@@ -8519,14 +8927,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -8765,7 +9173,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 // "Trading fee 0.5%" row that Stellar does not show, and a "Select asset" that read dimmer than Stellar's.
 // All three came from the same place: this dialog was deliberately disabled while nothing on the build
 // could sign, and the disabling faded the pickers, relabelled the button and left the design's fee row up.
-// Every other write path (send, swap, trust lines, LP deposit, limit orders) signs through window.lxc now,
+// Every other write path (send, swap, trustlines, LP deposit, limit orders) signs through window.lxc now,
 // so this one does too.
 //
 // NO NEW UI. The asset pickers, dropdowns, balance lines, MAX, summary rows and buttons are the design's.
@@ -8782,7 +9190,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 //   * Its transaction cost is SPECIAL: it destroys one owner-reserve increment (0.2 XRP today), not the
 //     usual ~0.00001. The Network fee row states that figure, read from the ledger, and Fee is set to it
 //     explicitly so no wallet autofill can under-pay and have the transaction rejected.
-//   * The creator receives LP tokens on a new trust line, which reserves one more increment.
+//   * The creator receives LP tokens on a new trustline, which reserves one more increment.
 //   * One pool per pair: if amm_info finds one, the same two amounts are DEPOSITED into it (AMMDeposit,
 //     tfTwoAsset) rather than refused — RAZA 2026-09-15.
 //   * An issued token can only enter a pool if its issuer has Default Ripple enabled (else terNO_RIPPLE).
@@ -8820,6 +9228,29 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function $$(s, r) { return [].slice.call((r || document).querySelectorAll(s)); }
   function modal() { return document.getElementById('createPoolModal'); }
   function lxx() { return window.lxx; }
+
+  // LUMOSCORE'S OWN MARK ON A POOL TRANSACTION (RAZA 2026-10-07: "on XRPL i cant see all types of
+  // activities. I mean, ive been doing so many things like creating pools, withdrawing, swapping").
+  //
+  // A swap is attributable because it pays a platform fee, and the dashboard feed finds swaps by
+  // pairing each fee with the self-payment beside it. **Pool operations pay no fee**, so until now
+  // nothing on the ledger distinguished an AMMCreate made here from one made on xrpl.to, Sologenic or
+  // First Ledger — and the feed cannot honestly list what it cannot attribute. That is the same
+  // objection RAZA raised on 2026-09-17 about rows that were not his.
+  //
+  // This memo is the attribution. It costs a few bytes, it is visible to anyone reading the ledger,
+  // and it says only what is true: this transaction was built by LumosCore.
+  //
+  // Only transactions signed from today forward carry it, so pool actions taken before this ships
+  // stay unattributable and will not appear.
+  function lxMemo(text) {
+    var hex = function (s) {
+      var h = '';
+      for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+      return h.toUpperCase();
+    };
+    return { Memo: { MemoType: hex('LumosCore'), MemoFormat: hex('text/plain'), MemoData: hex(text) } };
+  }
 
   function addr() {
     try { return (window.lxc && window.lxc.address && window.lxc.address()) || localStorage.getItem('lumos.address') || ''; }
@@ -9244,8 +9675,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     tecAMM_FAILED: 'The pool could not take those amounts at its current ratio. Try smaller amounts.',
     tecINSUF_RESERVE_LINE: 'Not enough XRP to cover the reserve for the pool’s LP token line.',
     tecFROZEN: 'One of these assets is frozen by its issuer, so it cannot enter a pool.',
-    tecNO_AUTH: 'One of these assets needs its issuer to authorise your trust line first.',
-    tecNO_LINE: 'You do not have a trust line for one of these assets.',
+    tecNO_AUTH: 'One of these assets needs its issuer to authorise your trustline first.',
+    tecNO_LINE: 'You do not have a trustline for one of these assets.',
     tecAMM_INVALID_TOKENS: 'One of these assets cannot be used in a pool.',
     terNO_RIPPLE: 'An issuer of one of these assets has not enabled rippling, so the XRP Ledger will not accept it in a pool.',
     temBAD_AMM_TOKENS: 'Pick two different assets.',
@@ -9305,7 +9736,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           TransactionType: 'AMMDeposit', Account: who,
           Asset: specOf(a), Asset2: specOf(b),
           Amount: A, Amount2: B,
-          Flags: 0x00100000                                    // tfTwoAsset
+          Flags: 0x00100000,                                   // tfTwoAsset
+          Memos: [lxMemo('LumosCore: add liquidity to the ' + (a.code || '?') + '/' + (b.code || '?') + ' pool')]
         };
         say('This pair already has a pool, so your liquidity goes into it.');
         if (go) setLabel(go, 'Confirm in wallet…');
@@ -9354,7 +9786,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           Amount: A, Amount2: B,
           TradingFee: TRADING_FEE,
           // The special cost, set rather than left to autofill: under-paying it is a rejection.
-          Fee: lxx().toDrops(inc)
+          Fee: lxx().toDrops(inc),
+          Memos: [lxMemo('LumosCore: create the ' + (a.code || '?') + '/' + (b.code || '?') + ' pool')]
         };
         if (go) setLabel(go, 'Confirm in wallet…');
         return window.lxc.submit(tx).then(function (hash) {
@@ -9771,14 +10204,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -10205,9 +10638,22 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     $$('.addr-row').forEach(function (row) {
       row.classList.add('lxlt');
       var tag = row.querySelector('.net-tag');
-      if (tag && !tag.querySelector('.b-ico')) {
+      // REBUILT EVEN WHEN A .b-ico IS ALREADY THERE (RAZA 2026-10-09: "Aptos logo showing up on Lumos
+      // token page on XRPL"). The guard used to be `!tag.querySelector('.b-ico')` — build the mark
+      // only if the tag has none — and the design ships one, holding APTOS's logo as a 96x96 base64
+      // webp. So the condition was false, this block never ran, and the row read "XRP Ledger" beside
+      // Aptos's mark. Confirmed by blowing the image up on the deployed page rather than inferring it
+      // from the filename: there is no filename, which is also why every Aptos sweep misses it — they
+      // match text, and this is pixels.
+      //
+      // The whole tag is rewritten rather than the nested <img> repointed, because the shipped
+      // structure nests the image inside a 7px span and repointing it would leave an XRP mark at 7px
+      // in a larger circle. data-lxnet marks it done, so a second call is a no-op instead of
+      // rebuilding on every paint.
+      if (tag && tag.getAttribute('data-lxnet') !== 'xrpl') {
         tag.textContent = '';
         tag.setAttribute('data-logoed', '1');
+        tag.setAttribute('data-lxnet', 'xrpl');
         var bi = el('span', 'b-ico');
         var im = document.createElement('img');
         im.src = XRP_LOGO;
@@ -10233,6 +10679,25 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         dom.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>lumoscore.com</span>';
         row.appendChild(dom);
       }
+    });
+    // THE SECOND COPY OF THE SAME INHERITED MARK. The comparison row carries its own wrapper —
+    // .lt-cmp-chain > .lt-cmp-ico — holding Aptos's base64 webp nested inside a 14px span, beside the
+    // words "XRP Ledger". Found by sweeping the page for that image after fixing the .net-tag one and
+    // discovering a second still rendering, which is the only reason it is here: the text pass in
+    // paintChainLabels() cannot reach it (it matches text, and this is pixels) and the .addr-row
+    // rebuild above is scoped to .net-tag.
+    //
+    // The ICON is emptied rather than the whole chain element, because .lt-cmp-chain also holds the
+    // label and the row's own structure. data-lxnet makes a second call a no-op.
+    $$('.lt-cmp-ico').forEach(function (ic) {
+      if (ic.getAttribute('data-lxnet') === 'xrpl') return;
+      ic.setAttribute('data-lxnet', 'xrpl');
+      ic.textContent = '';
+      var cim = document.createElement('img');
+      cim.src = XRP_LOGO;
+      cim.alt = '';
+      cim.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%';
+      ic.appendChild(cim);
     });
     // The XRP price and the 24h change share one line under the dollar price, as on lumoscore.com.
     $$('.hero-price-block').forEach(function (hb) {
@@ -10655,7 +11120,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   //     card two panels up says 1,200;
   //   * five top holders, each an 0x address tagged "Aptos · 1.48% of supply".
   //
-  // ALL OF IT IS COMPUTABLE, exactly, from one place: the issuer's own trust lines. A trust line to
+  // ALL OF IT IS COMPUTABLE, exactly, from one place: the issuer's own trustlines. A trustline to
   // the issuer IS a holding, so account_lines on ISS enumerates every holder with their balance —
   // seen from the issuer, which owes them, so the balances come back negative. Paged, because there
   // are more than one page of them.
@@ -11429,14 +11894,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -12159,7 +12624,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       list.appendChild(poolRow({ acct: q, a1: side(r.amm.amount), a2: side(r.amm.amount2) }));
     });
   }
-  // The connected wallet's own trust lines, read once per page: a token the index has never heard of is still one
+  // The connected wallet's own trustlines, read once per page: a token the index has never heard of is still one
   // the user holds (RAZA 2026-09-15: "WHy cant i search this asset. I even have this asset in my wallet" — XYIELD,
   // absent from xrpl.to's index entirely).
   var LINES = null;
@@ -12184,9 +12649,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }).slice(0, 5);
       if (!hits.length) return;
       dropNote(list);
+      // PRESENTED AS AN ORDINARY ASSET, not as a section of its own (RAZA 2026-10-08, comparing the
+      // two chains: "it also shows 'in your wallet' ... we dont have that on Stellar. so please
+      // remove it from xrpl as well").
+      //
+      // The LOOKUP stays — it is the only reason XYIELD is findable at all, since xrpl.to's index
+      // has never heard of it, which is what the "(0)" in that screenshot is saying. Only the
+      // labelling goes: no group heading, and no "· in your wallet" under the name. Stellar needs no
+      // equivalent because its assets come back from its own index with a holder count, so a row
+      // there already looks like this.
       var anchor = list.querySelector('.lx-recgrp');                // before any pool group
-      var grp = el('div', 'lx-recgrp', 'In your wallet');
-      list.insertBefore(grp, anchor);
       hits.forEach(function (l) {
         var code = codeOf(l.currency) || l.currency;
         var r = rowFor({ n: code, u: '', i: l.account, c: l.currency, h: null, vf: 0, m: '', d: '' });
@@ -12199,10 +12671,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
           ico.appendChild(im);
         }
-        var sub = r.querySelector('.sp-sub');
-        if (sub) sub.textContent = code + ' · in your wallet';
+        // No subtitle override: rowFor already writes the code alone when there is no holder count,
+        // which is exactly how an indexed row reads minus the figure we genuinely do not have.
         list.insertBefore(r, anchor);
       });
+      // COUNTED, because these rows ARE assets on the ledger. render() set the heading from the
+      // index alone, so a token only the wallet knows about left it reading "(0)" above a visible
+      // result — the contradiction in the screenshot.
+      setCount(((d && d.rows) ? d.rows.length : 0) + hits.length);
     });
     var issuers = [];
     (d.rows || []).forEach(function (t) { if (issuers.indexOf(t.i) < 0 && issuers.length < 2) issuers.push(t.i); });
@@ -12375,7 +12851,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   window.__lxxSearchRun = run;
 })();
 
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","launchpad":"launchpad/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
   var KEEP=[];
   function own(h){
     if(!h)return true;
@@ -12431,5 +12907,5 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
   else boot();
-})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad/xrpl","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>

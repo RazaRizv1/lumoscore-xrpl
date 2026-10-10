@@ -114,6 +114,15 @@
       st.id = 'lx-xrplfeed-css';
       st.textContent =
         '.activity-feed-row .lx-fg{position:relative;flex:0 0 42px;width:42px;height:42px;display:block}'
+        // The asset-pair variant, copied from Stellar's _realdata.js rather than re-derived — one mark
+        // at 36px when a row has a single asset, 32 + 23 overlapped when it has two, the smaller one
+        // ringed in the card's own surface colour so it reads as in front rather than merged.
+        + '.activity-feed-row .lx-fg .act-inl.lx-fgi{position:absolute;margin:0!important;'
+        + 'vertical-align:0!important;border-radius:50%}'
+        + '.activity-feed-row .lx-fg:not(.lx-fg2) .lx-fgi{left:3px;top:3px;width:36px!important;height:36px!important}'
+        + '.activity-feed-row .lx-fg2 .lx-fga .lx-fgi{left:0;top:0;width:32px!important;height:32px!important}'
+        + '.activity-feed-row .lx-fg2 .lx-fgb .lx-fgi{right:-1px;bottom:-1px;width:23px!important;'
+        + 'height:23px!important;box-shadow:0 0 0 2.5px var(--surface,var(--bg-2,#141419))}'
         + '.activity-feed-row .lx-fgt{display:flex!important;align-items:center;justify-content:center;'
         + 'border-radius:50%;color:#94a3b8;background:color-mix(in srgb,currentColor 15%,transparent)}'
         + '.activity-feed-row .lx-fgt svg{width:19px;height:19px;display:block}'
@@ -281,18 +290,112 @@
   // Token amounts are written with a decimal exponent, and 1000000000000000e65 -- 1e80, the largest
   // an XRPL token amount can be -- is what a client sends to mean "no limit". It is a sentinel, not
   // a quantity, and printing it yields the nonsense "1e+71B".
+  // THE WHOLE OF STELLAR'S `amt()`, PORTED (RAZA 2026-10-07: "we only show 3 digits on stellar after
+  // decimal and then put .. which makes it much neater. also do this on XRPL. Use same logic").
+  //
+  // My first pass took only the subscript half of it and got even that wrong — it kept FOUR digits
+  // where lumoscore.com keeps three. The rest of the rule was the part he is pointing at, so this is
+  // the function from `_realdata.js` end to end rather than another partial copy:
+  //
+  //   >= 1e3   K / M / B
+  //   >= 1     two decimals, trailing zeros dropped — "1", not "1.00"
+  //   < 1      three leading zeros or more  -> subscript, three digits  (0.0000998 -> 0.0₃998)
+  //            otherwise cut after three decimals with an ellipsis       (0.099123  -> 0.099…)
+  //            unless those three decimals are all zero, in which case keep three SIGNIFICANT
+  //            digits, because "0.000" says nothing                      (0.0000998 handled above)
+  //
+  // TRUNCATED, NEVER ROUNDED — Stellar's note, kept: 0.00998 reads 0.009, not 0.01. A feed row should
+  // not report a number larger than the one on the ledger, however slightly.
+  //
+  // ONE DELIBERATE DIFFERENCE. Stellar builds its string with toFixed(7) and floors at
+  // "<0.0000001", because a Stellar amount stops at seven decimals. An XRP Ledger token amount does
+  // not — it carries fifteen significant digits and a real exponent — so flooring there would print
+  // "<0.0000001" for figures this ledger represents exactly. The string is built deeper and the
+  // subscript branch, which handles any run of zeros, takes it from there.
+  function amtNum(n) {
+    n = +n || 0;
+    var a = Math.abs(n);
+    if (a >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    if (a >= 1) return (Math.round(n * 100) / 100).toString();
+    if (!(a > 0)) return '0';
+
+    // FIFTEEN, NOT EIGHTEEN, and the difference is visible: a plain 0.1 XRP swap printed "0.100…".
+    // `(0.1).toFixed(18)` is "0.100000000000000006" — binary floating point, not the ledger — so the
+    // trim left a long string, the three-decimal cut fired, and an exact number grew an ellipsis
+    // claiming there was more of it. Fifteen is where doubles stop lying AND what an XRPL token
+    // amount carries (fifteen significant digits), so it is the right answer twice.
+    var s = n.toFixed(15).replace(/0+$/, '').replace(/\.$/, '');
+    if (!s || s === '0' || s === '-0') {
+      // Below 1e-15. Expanded rather than floored, so the subscript branch can still describe it —
+      // this ledger can represent amounts that far down even if doubles get vague about them.
+      s = n.toFixed(30).replace(/0+$/, '').replace(/\.$/, '');
+      if (!s || s === '0' || s === '-0') return '0';
+    }
+
+    var z = /^(-?)0\.(0+)([0-9]+)$/.exec(s);
+    if (z && z[2].length >= 3) {
+      var SUB = '₀₁₂₃₄₅₆₇₈₉';
+      var tag = String(z[2].length - 1).split('').map(function (d) { return SUB.charAt(+d); }).join('');
+      return z[1] + '0.0' + tag + z[3].slice(0, 3);
+    }
+    var dot = s.indexOf('.');
+    if (dot < 0 || s.length <= dot + 4) return s;
+    var head = s.slice(0, dot + 4);
+    if (/[1-9]/.test(head.slice(dot + 1))) return head + '…';
+    var m = /^(-?0\.0*)(\d+)$/.exec(s);
+    if (m) return m[1] + m[2].slice(0, 3) + (m[2].length > 3 ? '…' : '');
+    return s;
+  }
+
   function amtStr(a) {
     if (!a || !isFinite(a.v)) return '';
     if (a.v >= 1e17) return a.c;                     // the no-limit sentinel: name the asset only
-    var n = a.v >= 1000 ? compact(a.v)
-      : (a.v >= 1 ? a.v.toFixed(2) : Number(a.v.toPrecision(3)).toString());
-    return n + ' ' + a.c;
+    return amtNum(a.v) + ' ' + a.c;
   }
 
   // WHAT A PATH PAYMENT'S `Amount` ACTUALLY IS: the most the sender is willing to have delivered,
   // not what arrived. Measured on this very pool -- claimed 9,718.80 SHROOMIES against 6,479.10
   // delivered (33% less), and claimed 1e80 MXI against 4,102.42. The exact figure is in the
   // METADATA. Reading `Amount` would overstate every swap on the feed.
+  // What the two sides of a pool action actually moved, from the metadata rather than the request.
+  //
+  // Walks the account's own balance changes: its AccountRoot for XRP and its RippleState lines for
+  // tokens. Three details that are easy to get wrong and were checked against real transactions:
+  //
+  //   * THE NETWORK FEE IS ADDED BACK. It comes out of the same AccountRoot, so without this a pool
+  //     deposit of exactly 1 XRP reads as 1.000012 — the fee is not liquidity.
+  //   * THE LP TOKEN IS SKIPPED. Every AMM action also moves the pool's own LP token, whose currency
+  //     code begins with 03. Left in, it would appear as a third asset nobody deposited.
+  //   * A RippleState Balance IS SIGNED FROM THE LOW ACCOUNT'S SIDE, so the delta is negated when
+  //     this account is the high one. Getting that backwards turns every deposit into a withdrawal.
+  function lpDeltas(meta, tx) {
+    var me = tx.Account, out = [];
+    var nodes = (meta && meta.AffectedNodes) || [];
+    for (var i = 0; i < nodes.length && out.length < 2; i++) {
+      var w = nodes[i].ModifiedNode || nodes[i].DeletedNode || nodes[i].CreatedNode;
+      if (!w) continue;
+      var f = w.FinalFields || w.NewFields || {}, pv = w.PreviousFields || {};
+      if (w.LedgerEntryType === 'AccountRoot') {
+        if (f.Account !== me || pv.Balance === undefined) continue;
+        var d = (Number(f.Balance) - Number(pv.Balance)) / 1e6 + (Number(tx.Fee || 0) / 1e6);
+        if (Math.abs(d) > 1e-9) out.push({ v: d, c: 'XRP', raw: 'XRP', i: '' });
+      } else if (w.LedgerEntryType === 'RippleState') {
+        var bal = f.Balance || {}, pb = pv.Balance;
+        if (pb === undefined || !bal.currency) continue;
+        if (/^03/.test(String(bal.currency))) continue;              // the pool's own LP token
+        var hi = (f.HighLimit || {}).issuer, lo = (f.LowLimit || {}).issuer;
+        if (hi !== me && lo !== me) continue;
+        var dv = (Number(bal.value) - Number(pb.value)) * (lo === me ? 1 : -1);
+        if (Math.abs(dv) > 1e-12) {
+          out.push({ v: dv, c: curName(bal.currency), raw: bal.currency, i: (lo === me ? hi : lo) });
+        }
+      }
+    }
+    return out;
+  }
+
   function describe(tx, meta) {
     var type = tx.TransactionType;
 
@@ -334,9 +437,43 @@
       };
     }
 
-    if (type === 'AMMDeposit') return { cls: 'lp', tag: 'Liquidity', type: 'Liquidity added', meta: 'LUMOS/XRP pool' };
-    if (type === 'AMMWithdraw') return { cls: 'lp', tag: 'Liquidity', type: 'Liquidity withdrawn', meta: 'LUMOS/XRP pool' };
-    if (type === 'AMMCreate') return { cls: 'lp', tag: 'Pool created', type: 'Pool created', meta: 'LUMOS/XRP pool' };
+    // THE TWO AMOUNTS, SIGNED, AS ON STELLAR (RAZA 2026-10-07: "Liquidity deposit and withdrawal is
+    // showing differently on Platform activity on Stellar"). lumoscore.com renders
+    // "+20.0K ⟡ TKG · +347.3K ⟡ LUMOS" over a LIQUIDITY ADDED pill — the amounts ARE the line. These
+    // rows read "LUMOS/XRP pool", a hardcoded string that was also simply wrong once pools other than
+    // that one could appear.
+    //
+    // THE AMOUNTS ARE NOT ALWAYS IN THE TRANSACTION, which is the part worth knowing: an AMMWithdraw
+    // sent with tfWithdrawAll carries no Amount or Amount2 at all — measured on RAZA's own withdrawals,
+    // Flags 131072 and both fields absent. Only the metadata says what came back, so both deposits and
+    // withdrawals are read from the balance changes rather than from the request, which also makes the
+    // figure the amount that actually moved rather than the one that was asked for.
+    if (type === 'AMMDeposit' || type === 'AMMWithdraw' || type === 'AMMCreate') {
+      var dep = type !== 'AMMWithdraw';
+      var lpa = lpDeltas(meta, tx);
+      var lpParts = [];
+      for (var li = 0; li < lpa.length; li++) {
+        if (li) lpParts.push(' · ');
+        // THE SIGN IS THE POOL'S, NOT THE WALLET'S. Read off lumoscore.com: a deposit is "+20.0K TKG"
+        // in green and a withdrawal is "-149.98 XLM" in red — it describes what happened to the POOL.
+        // The wallet's balance moves the opposite way, so signing from the delta (which is what this
+        // did at first) printed every deposit red with a minus and every withdrawal green with a plus:
+        // correct arithmetic, backwards meaning, and the exact opposite of the feed beside it.
+        lpParts.push({ a: { v: Math.abs(lpa[li].v), c: lpa[li].c, raw: lpa[li].raw, i: lpa[li].i }, lp: 1, pos: dep });
+      }
+      // TWO PILLS, NOT THREE (RAZA 2026-10-07: "on xrpl it says pool created while on stellar its
+      // liquidity added and withdrawn"). Stellar has no "pool created" state because creating a pool
+      // there IS a deposit — `liquidity_pool_deposit` — so its feed only ever reads LIQUIDITY ADDED or
+      // LIQUIDITY WITHDRAWN. An AMMCreate is the same act on this ledger: liquidity going in, and the
+      // first lot of it. It takes the deposit pill like any other.
+      return {
+        cls: 'lp',
+        tag: dep ? 'Liquidity added' : 'Liquidity withdrawn',
+        type: dep ? 'Liquidity added' : 'Liquidity withdrawn',
+        meta: lpa.length ? '' : (dep ? 'Liquidity added' : 'Liquidity withdrawn'),
+        parts: lpParts,
+      };
+    }
     if (type === 'AMMBid') return { cls: 'lp', tag: 'Auction bid', type: 'Auction slot bid', meta: 'LUMOS/XRP pool' };
     if (type === 'AMMVote') return { cls: 'lp', tag: 'Fee vote', type: 'Trading-fee vote', meta: 'LUMOS/XRP pool' };
     if (type === 'OfferCreate') {
@@ -409,18 +546,50 @@
     // instead, which is why its rows open with a coloured mark and these opened straight into text.
     // (RAZA 2026-10-01: "Platform activity on Dashboard on XRPL is not like Stellar.")
     //
-    // The TYPE variant is used rather than Stellar's asset-logo pair: the amounts on the line beside
-    // it already carry their own asset chips, so a second copy of the same logo would add nothing,
-    // while the KIND of action is not otherwise visible until the verb chip underneath. d.cls is
-    // already one of swap / transfer / lp / order — exactly the palette Stellar colours this mark by,
-    // so the two feeds read the same without a mapping between them.
+    // THE ASSET PAIR, NOT THE TYPE GLYPH, WHEN THE ROW HAS ASSETS (RAZA 2026-10-07, reporting the same
+    // heading a second time). The first pass here chose the type variant on the argument that the
+    // amounts beside it already carry their own chips, so a second copy of the logo adds nothing.
+    // That reasoning is fine and it is not what lumoscore.com does: its rows open with the two token
+    // marks stacked, and only fall back to a coloured glyph when a row HAS no asset pair — a
+    // cancelled order, a trust line. Matching it is the whole point of the report, so the rule is
+    // Stellar's: `r.pair.a` present → logos; otherwise the glyph.
+    //
+    // The pair is read off the parts this row already renders, in order, so it cannot disagree with
+    // the line beside it: first asset large, second tucked bottom-right.
     injectFeedCss();
+    // A POOL ROW KEEPS THE DROPLET. Stellar builds its pair badge only for rows that set one, and its
+    // liquidity rows set `ic:DROP` instead — so a pool action there opens with the teal droplet even
+    // though the line beside it names two assets. Now that these rows carry amounts, the pair logic
+    // below would otherwise claim them.
+    var pair = [];
+    if (d.cls !== 'lp' && d.parts && d.parts.length) {
+      for (var qi = 0; qi < d.parts.length && pair.length < 2; qi++) {
+        var q = d.parts[qi];
+        if (q && typeof q !== 'string' && q.a && q.a.c) pair.push(q.a);
+      }
+    }
     var ic = document.createElement('span');
-    ic.className = 'lx-fg lx-fgt ' + (d.cls || '');
     ic.setAttribute('aria-hidden', 'true');
-    // Drawn rather than lettered: the logo healer repaints short text as a ticker mark and skips
-    // anything containing an svg — the same reason the dot this replaces was one.
-    ic.innerHTML = KIND_SVG[d.cls] || KIND_SVG._;
+    if (pair.length) {
+      ic.className = 'lx-fg' + (pair.length > 1 ? ' lx-fg2' : '');
+      var fga = document.createElement('span');
+      fga.className = 'lx-fga';
+      var ca = assetChip(pair[0]); ca.className += ' lx-fgi';
+      fga.appendChild(ca);
+      ic.appendChild(fga);
+      if (pair.length > 1) {
+        var fgb = document.createElement('span');
+        fgb.className = 'lx-fgb';
+        var cb = assetChip(pair[1]); cb.className += ' lx-fgi';
+        fgb.appendChild(cb);
+        ic.appendChild(fgb);
+      }
+    } else {
+      ic.className = 'lx-fg lx-fgt ' + (d.cls || '');
+      // Drawn rather than lettered: the logo healer repaints short text as a ticker mark and skips
+      // anything containing an svg — the same reason the dot this replaces was one.
+      ic.innerHTML = KIND_SVG[d.cls] || KIND_SVG._;
+    }
     row.appendChild(ic);
 
     // STELLAR'S ROW SHAPE (RAZA 2026-09-17: "compare it with Stellar dashboard → Platform activity. XRP is designed
@@ -440,8 +609,23 @@
         var p = d.parts[pi];
         if (typeof p === 'string') { t.appendChild(document.createTextNode(p)); continue; }
         var b = document.createElement('b');
-        b.appendChild(assetChip(p.a));
-        b.appendChild(document.createTextNode(p.nameOnly ? p.a.c : amtStr(p.a)));
+        // A POOL AMOUNT LEADS WITH ITS SIGN, in Stellar's own shape and its own classes:
+        // <b><span class="lx-lppos">+20.0K</span> ⟡ TKG</b>. `lx-lppos` / `lx-lpneg` came across with
+        // the fork and had nothing using them. Everything else keeps the chip-first order this feed
+        // already uses.
+        if (p.lp) {
+          var sg = document.createElement('span');
+          sg.className = p.pos ? 'lx-lppos' : 'lx-lpneg';
+          sg.setAttribute('data-logoed', '1');
+          sg.textContent = (p.pos ? '+' : '-') + amtStr({ v: Math.abs(p.a.v), c: '' }).trim();
+          b.appendChild(sg);
+          b.appendChild(document.createTextNode(' '));
+          b.appendChild(assetChip(p.a));
+          b.appendChild(document.createTextNode(p.a.c));
+        } else {
+          b.appendChild(assetChip(p.a));
+          b.appendChild(document.createTextNode(p.nameOnly ? p.a.c : amtStr(p.a)));
+        }
         t.appendChild(b);
       }
     } else {
@@ -502,6 +686,8 @@
   // made before today as well as after.
   var COLLECTOR_ACCT = 'rBDV4nwHzg5ByAYJtPWrbBZnuUXSUtFr94';
   function platformSwaps() {
+    // Filled from the same per-account windows the swap pairing already reads — see the note there.
+    var pools = [];
     return rpc('account_tx', { account: COLLECTOR_ACCT, limit: 20, binary: false, ledger_index_min: -1, ledger_index_max: -1 })
       .then(function (j) {
         var list = (j && j.result && j.result.transactions) || [];
@@ -509,7 +695,38 @@
           var t = e.tx || e.tx_json || {}, m = e.meta || e.metaData || {};
           return t.TransactionType === 'Payment' && t.Destination === COLLECTOR_ACCT && m.TransactionResult === 'tesSUCCESS';
         }).slice(0, 8);
-        return Promise.all(fees.map(function (e) {
+
+        // THE POOL ACTIONS NEED THEIR OWN PASS, and piggybacking on the fee windows was my mistake.
+        // Those windows span L-10 to L+30 around a FEE PAYMENT, which is right for finding the swap a
+        // fee belongs to and useless for anything free: a pool deposit pays no fee, so it is almost
+        // never within thirty ledgers of one. RAZA created a pool and withdrew on 2026-10-07 at 12:20,
+        // both correctly memo-marked, and neither appeared — they were simply outside every window
+        // being read.
+        //
+        // One unbounded `account_tx` per account that has used LumosCore instead, which is where free
+        // actions actually live. Capped at five accounts so the feed cannot grow a request per user,
+        // and still gated on the memo: the account list says WHO has used this site, the memo says
+        // WHICH of their transactions were made on it.
+        var accts = [];
+        fees.forEach(function (e) {
+          var a = (e.tx || e.tx_json || {}).Account;
+          if (a && accts.indexOf(a) < 0) accts.push(a);
+        });
+        var freeScan = Promise.all(accts.slice(0, 5).map(function (a) {
+          return rpc('account_tx', { account: a, limit: 40, binary: false, ledger_index_min: -1, ledger_index_max: -1 })
+            .then(function (jr) {
+              var l = (jr && jr.result && jr.result.transactions) || [];
+              for (var i = 0; i < l.length; i++) {
+                var x = l[i].tx || l[i].tx_json || {}, mm = l[i].meta || l[i].metaData || {};
+                if (!/^(AMM(Create|Deposit|Withdraw)|OfferCreate)$/.test(x.TransactionType || '')) continue;
+                if (mm.TransactionResult !== 'tesSUCCESS') continue;
+                if (!hasLumosMemo(x)) continue;
+                pools.push(l[i]);
+              }
+            }, function () {});
+        }));
+
+        return freeScan.then(function () { return Promise.all(fees.map(function (e) {
           var t = e.tx || e.tx_json || {};
           var L = e.ledger_index || t.ledger_index;
           if (!L) return null;
@@ -531,7 +748,7 @@
               }
               return best;
             }, function () { return null; });
-        }));
+        })); });
       })
       // RETURNS the rows rather than inserting them. The feed is written once, by loadActivity, from both sources at
       // the same time — inserting here is what made the newest entries appear seconds after the rest.
@@ -541,9 +758,22 @@
         // explain where it was made.
         return (swaps || []).filter(Boolean).map(function (s) {
           return { entry: s, label: null };
-        });
+        }).concat(pools.map(function (p) { return { entry: p, label: null }; }));
       })
       .catch(function () { return []; });
+  }
+
+  // Does this transaction carry LumosCore's own memo? The mark is written as hex, so the test is on the
+  // hex of "LumosCore" rather than on decoded text — decoding every memo of every transaction to read
+  // one field would be work for nothing.
+  var LUMOS_MEMO_HEX = '4C756D6F73436F7265';          // "LumosCore"
+  function hasLumosMemo(tx) {
+    var ms = (tx && tx.Memos) || [];
+    for (var i = 0; i < ms.length; i++) {
+      var m = (ms[i] && ms[i].Memo) || {};
+      if (String(m.MemoType || '').toUpperCase() === LUMOS_MEMO_HEX) return true;
+    }
+    return false;
   }
 
   // When the feed was written, in seconds since the Ripple epoch — the one field both sources always carry.
@@ -569,8 +799,40 @@
       // because the feed is account_tx on the LUMOS/XRP AMM account, and I did not want a heading
       // claiming more than the data supports. RAZA's call is that it matches the Stellar heading,
       // and the chain suffix is the design's own pattern.
-      h3.appendChild(document.createTextNode('Platform Activity — XRP Ledger'));
+      // THE CHAIN MARK, which this heading never had. lumoscore.com reads "Platform Activity — ⟡
+      // Stellar" with the XLM token mark between the dash and the chain name; `.lx-chainmark` came
+      // across with the fork and had nothing creating it, so the words sat alone.
+      //
+      // data-lxc is the logo healer's opt-out — Stellar's own note says the guard otherwise treats
+      // this as an asset icon and swaps the source out from under it. Same marker here, plus
+      // data-lxpainted, which is this build's equivalent for the background painter.
+      h3.appendChild(document.createTextNode('Platform Activity — '));
+      var cm = document.createElement('img');
+      cm.className = 'lx-chainmark';
+      cm.src = '/lxapi/xrplthumb?id=' + XRP_ID + '&w=48';
+      cm.alt = '';
+      cm.setAttribute('aria-hidden', 'true');
+      cm.setAttribute('data-lxc', 'XRP');
+      cm.setAttribute('data-lxpainted', '1');
+      h3.appendChild(cm);
+      // "XRPL", NOT "XRP Ledger" (RAZA 2026-10-07: "The top is breaking … you could have just written
+      // Platform Activity -- XRPL"). Stellar's chain name is one short word and the heading was built
+      // around that; ten characters plus a mark wrapped "Platform Activity —" onto its own line and
+      // pushed the card's top out of shape. The short form is the fix he asked for and the one the
+      // layout was designed for.
+      h3.appendChild(document.createTextNode('XRPL'));
+      // NOT A SIZE PROBLEM, and I nearly "fixed" one that did not exist. Both builds ship the same
+      // rule — `.market-head h3{font-size:22.6px}`, byte-identical in each container — so forcing a
+      // smaller size here would have made this heading differ from lumoscore.com in the other
+      // direction. "XRPL" is shorter than "Stellar", so with the label changed the line fits
+      // wherever Stellar's does and needs nothing else.
     }
+
+    // Opens the gate `_xrpldashtop.js` holds shut — see the note on it there. Called from every path
+    // that writes this list, and from a timer, so the rows can never stay hidden by a feed that never
+    // answers.
+    var ready = function () { try { host.setAttribute('data-lxact', '1'); } catch (e) {} };
+    setTimeout(ready, 6000);
 
     var note = function (msg) {
       host.innerHTML = '';
@@ -579,6 +841,7 @@
       d.textContent = msg;
       d.style.cssText = 'opacity:.6;justify-content:center';
       host.appendChild(d);
+      ready();
     };
     // EMPTY WHILE IT LOADS, NOT A MESSAGE (RAZA 2026-09-17: "on Stellar we're not showing anything like 'Reading the
     // ledger' so please dont show that on XRPL as well"). The design's mock rows still have to go — they are another
@@ -633,6 +896,7 @@
         }
         host.appendChild(el);
       });
+      ready();
       paint24(host);
     }).catch(function () {
       note('Could not read the XRP Ledger.');

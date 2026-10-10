@@ -386,14 +386,53 @@
     return new Error(m || 'Xaman sign-in failed.');
   }
 
+  // THE SIGN-IN WINDOW HAS TO BE OPENED INSIDE THE TAP, AND THE SDK CANNOT DO THAT.
+  //
+  // This is why Xaman never worked on a phone. The SDK's authorize() is:
+  //     yield this.ping ... window.open(authorizeUrl, "XummPkceLogin", ...)
+  // so the open happens AFTER an await. Measured on the deployed XRPL build 2026-10-11: the tap lands,
+  // and window.open is called 108ms later. Desktop browsers tolerate that; iOS Safari does not -- it
+  // only allows a window to be created while a user gesture is active, so the call returns null.
+  //
+  // Nothing then reports it. The SDK stores the null on x.popup, so the watcher below (which asks
+  // whether x.popup has CLOSED) never fires, authorize() stays pending forever, and the dialog sits on
+  // "Waiting for Xaman" with a Cancel button. Reproduced exactly by stubbing window.open to return
+  // null: that is the screen RAZA has been getting on iPhone Safari every time.
+  //
+  // A window opened in the gesture under the SDK's own window NAME fixes it: when authorize() later
+  // calls window.open(url, "XummPkceLogin"), the browser retargets the window that already exists
+  // rather than creating one, which is allowed after the gesture has expired. Same name, or this does
+  // nothing. The SDK's feature string is copied so desktop keeps the sized popup it had.
+  var xamanWin = null;
+  function xamanPreopen() {
+    try {
+      xamanWin = window.open('about:blank', 'XummPkceLogin',
+        'directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=no,width=600,height=790');
+    } catch (e) { xamanWin = null; }
+    return xamanWin;
+  }
+  function xamanDropWin() {
+    try { if (xamanWin && !xamanWin.closed) xamanWin.close(); } catch (e) {}
+    xamanWin = null;
+  }
+
   function xamanConnect() {
+    // SYNCHRONOUS, BEFORE ANY PROMISE. run() calls this straight out of the row's click handler, so the
+    // gesture is still live here -- one await later it is not, which is the whole bug.
+    var pre = xamanPreopen();
+    if (!pre) {
+      // Blocked even inside the gesture: pop-ups are switched off for this site. Say so, rather than
+      // opening a dialog that waits for a window that will never exist.
+      return Promise.reject(new Error('Your browser blocked the Xaman sign-in window. Allow pop-ups '
+        + 'for this site, then try again.'));
+    }
     return xumm().then(function (x) {
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
       rememberBack();
       var p = x.authorize();
-      if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+      if (!p || !p.then) { xamanPending = null; xamanDropWin(); return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
       // WATCH THE WINDOW, because the SDK's events do not cover this. It settles only when the popup
       // POSTS a message back -- 'xumm_sign_request_rejected' or 'xumm_sign_request_popup_closed' --
@@ -401,18 +440,21 @@
       // just renders. So authorize() stays pending, 'error' never fires, and even closing the window
       // by hand leaves this dialog spinning; RAZA hit that twice on 2026-10-01. The SDK does keep the
       // handle on x.popup, so the window going away is a signal we can read ourselves.
-      // Null on mobile, where the flow is a full-page redirect rather than a popup — the timer simply
-      // never fires there, which is correct.
+      // FALL BACK TO OUR OWN HANDLE. x.popup is whatever the SDK's window.open returned, so when that
+      // call was the one iOS refused it is null and this watcher watched nothing -- the silent half of
+      // the bug above. The window we opened in the gesture is the same window once authorize()
+      // retargets it, so it answers "did the user close it" just as well, and it answers even when the
+      // SDK never got a handle at all.
       var watch = setInterval(function () {
-        var w = x && x.popup;
+        var w = (x && x.popup) || xamanWin;
         if (w && w.closed) { clearInterval(watch); failXaman(new Error('popup-closed')); }
       }, 800);
 
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { clearInterval(watch); xamanPending = null; return v; },
-        function (e) { clearInterval(watch); xamanPending = null; throw e; });
+        function (v) { clearInterval(watch); xamanPending = null; xamanWin = null; return v; },
+        function (e) { clearInterval(watch); xamanPending = null; xamanDropWin(); throw e; });
     }).then(function (state) {
       xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
@@ -420,6 +462,12 @@
         throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
       }
       return accept(state.me.account, 'Xaman', 'xaman');
+    }).catch(function (e) {
+      // Anything that fails BEFORE authorize() retargets it -- a missing key, the library not
+      // loading, a refusal -- would otherwise leave the blank window we opened sitting there for the
+      // user to close by hand.
+      xamanDropWin();
+      throw e;
     });
   }
 
@@ -764,6 +812,12 @@
 
     function pick() {
       build();
+      // WARM THE XAMAN SDK WHILE THE USER IS READING THE LIST. The script is 89KB and was fetched
+      // inside the tap, which is dead time with a blank sign-in window already on screen. Loading it
+      // here does not make the tap synchronous -- authorize() still awaits its own ping, which is why
+      // the window is pre-opened -- it just stops the wait being longer than it needs to be.
+      // Fire and forget: a failure here is reported properly when the row is actually tapped.
+      try { if (XAMAN_KEY) xumm().catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
       var list = document.createElement('div');

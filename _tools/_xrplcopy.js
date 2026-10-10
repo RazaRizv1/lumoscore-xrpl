@@ -36,7 +36,15 @@ const COPY = [
   ['run on Stellar mainnet', 'run on XRP Ledger mainnet'],
   ['the Stellar DEX', 'the XRP Ledger DEX'],
   ['any ticker on Stellar', 'any ticker on the XRP Ledger'],
-  ['Platform Activity — Stellar', 'Platform Activity — XRP Ledger'],
+  // "XRPL", not "XRP Ledger" (RAZA 2026-10-07: "The top is breaking"). Also half of the flash he
+  // reported in the same message: the static heading is what shows before dashboard.js rewrites it,
+  // so a static heading that already reads the final words has nothing left to visibly change.
+  ['Platform Activity — Stellar', 'Platform Activity — XRPL'],
+  // AND THE MIGRATION, because the containers persist. They already read "XRP Ledger" from the
+  // earlier rule, so changing only the line above matched nothing — 0 replacements on the first run
+  // after the edit. The rule for a fresh base copy and the rule for the containers on this machine
+  // are two different rules. [[lumoscore-container-drift]]
+  ['Platform Activity — XRP Ledger', 'Platform Activity — XRPL'],
 
   // --- APTOS leftovers that are actually VISIBLE ------------------------------------------------
   // The design predates Stellar, so "Aptos"/"APT" is still all over the markup — 206 distinct

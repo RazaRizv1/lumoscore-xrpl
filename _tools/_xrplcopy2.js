@@ -308,6 +308,19 @@ const PHRASES = [
   ['Aptos DEX', 'XRP Ledger DEX'],
   ['Aptos AMM', 'XRP Ledger AMM'],
   ['on Aptos', 'on the XRP Ledger'],
+
+  // THE MARKET OVERVIEW'S TOTAL LIQUIDITY CAPTION. Stellar reads "Across all Stellar pools"; this
+  // build read "Across all pools", with the chain dropped (RAZA 2026-10-06: "Add XRPL"). It is not a
+  // wrong-chain string, which is why no earlier sweep caught it — it is a MISSING one, and the only
+  // caption in that card not naming its network while the row beneath it says "Liquidity pools on
+  // XRP Ledger".
+  //
+  // Done here rather than in pools.js, where the other two captions are written, because this one is
+  // static markup the data layer never touches: setting it at runtime would ship the page with the
+  // short caption and rewrite it a moment later, and a one-word flash on a card RAZA reads side by
+  // side with Stellar is exactly the class of bug this build keeps hitting. Six occurrences across
+  // the amm page keys, all the same caption.
+  ['Across all pools', 'Across all XRPL pools'],
 ];
 
 // Elements whose ENTIRE text is a bare network name. Handled separately because replacing the bare
@@ -382,6 +395,34 @@ const GUARDED = [
 // deliberately. Anchoring to the class turns an unsafe rule into an exact one.
 const MARKUP_LITERALS = [
   ['class="input-suffix">APT<', 'class="input-suffix">XRP<'],
+
+  // THE SWAP BUTTON IS CALLED "Swap" (RAZA 2026-10-08: "on Stellar we call it Swap, not Place buy
+  // order, so fix it on XRPL"). lumoscore.com's Trade-Asset swap pane reads "Swap" on both sides of
+  // the trade, and this one read "Place Buy Order" — which also stayed wrong after switching to
+  // Sell, since the design ships one button for both.
+  //
+  // ONLY THE SWAP PANE. The page carries a second `.dxa-trade-cta`, "Place Limit Order", and that
+  // one is right: a limit order IS placed, and rests. Matching the full button tag rather than the
+  // words alone is what keeps this off it.
+  // TWO ENTRIES, BECAUSE MOBILE IS A DIFFERENT CLASS. The phone container calls the same button
+  // `mdxa-trade-cta`, so the desktop literal left the mobile page reading "Place Buy Order" — and
+  // mobile is UA-served, so nothing on the desktop page shows it.
+  ['<button class="dxa-trade-cta">Place Buy Order</button>',
+    '<button class="dxa-trade-cta">Swap</button>'],
+  ['<button class="mdxa-trade-cta">Place Buy Order</button>',
+    '<button class="mdxa-trade-cta">Swap</button>'],
+
+  // THE TRADE PAGE'S SUBHEADING SAID "DEX on Stellar." — on /trade/xrpl, in an <h2>, which is both the
+  // first thing a reader sees under the title and a heading a crawler weighs (RAZA 2026-10-07).
+  //
+  // WHY EVERY COPY SWEEP MISSED IT: the sentence is split across two elements —
+  //   <span class="lx-h1">The most advanced</span><span class="lx-h2"><em>DEX</em> on Stellar.</span>
+  // so the page contains no text node reading "DEX on Stellar", and a phrase rule for that string
+  // matches nothing. Its text nodes are "The most advanced", "DEX", and " on Stellar." — and a rule
+  // for the last of those alone would rewrite that fragment anywhere on the site.
+  //
+  // Anchoring to the <em> turns an unsafe rule into an exact one, which is what this list is for.
+  ['<em>DEX</em> on Stellar.', '<em>DEX</em> on the XRP Ledger.'],
 ];
 
 let markupFixes = 0;

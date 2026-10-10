@@ -452,14 +452,33 @@ const ROUTES = [
   // /launchpad/stellar and /rewards/stellar alongside the bare ones, so this is the scheme it was
   // already using — extended to the three surfaces (dashboard, wallet, mcp) neither build had
   // qualified. Stellar's bare routes keep working untouched, which is the whole point.
-  // THE AUTHGATED FIVE ARE BARE, not /xrpl-suffixed, and that is deliberate (RAZA 2026-10-01: "neither
+  // THE AUTHGATED FOUR ARE BARE, not /xrpl-suffixed, and that is deliberate (RAZA 2026-10-01: "neither
   // its indexable. so why create dashboard/xrpl"). The gate bounces anyone without a wallet, so these
   // are never indexed and never shared; a per-chain url for them would be a second private link to the
   // same screen. On the combined deployment they are ONE url each and the middleware serves this
   // build's file when the lx_chain cookie says xrpl. Standalone, they are simply this build's pages.
+  //
+  // THE LAUNCHPAD LEFT THAT GROUP ON 2026-10-10, because the premise above stopped being true of it.
+  // It is no longer gated and no longer unindexed: /launchpad is a network chooser with its own
+  // sitemap row, and /launchpad/stellar ranks for "launch a token on Stellar".
+  //
+  // Sharing one url with Stellar made the chooser unreachable, which is how this surfaced. RAZA:
+  // "why its not taking me to hubpage of launchpad where i could select the network like I do on
+  // Trade, Cross-chain, Pools, and lumos." Measured on the deployed build: /launchpad with no cookie
+  // served the chooser script and 2 cards; with lx_chain=xrpl it served 0 and 0 and 194 XRP
+  // references. His browser had carried lx_chain=xrpl since earlier XRPL testing, so for him the hub
+  // did not exist. A url cannot be both "choose a network" AND one of the choices, and the chooser
+  // only ever lived in Stellar's copy of the file.
+  //
+  // /launchpad/xrpl is the same shape every other section already uses -- /trade/xrpl beside
+  // /trade/stellar -- which is precisely why /trade never had this problem: the bare /trade is always
+  // Stellar's file, so its chooser always runs. Now the launchpad behaves the same, and the XRPL
+  // launchpad becomes a real indexable page instead of a cookie state.
+  //
+  // review and confirm STAY bare and shared: they are still gated, still mid-flow, still unindexed.
   ['/launchpad/review',          'lumoscore-launch-review.html'],   // review must precede /launchpad
   ['/launchpad/confirm',         'lumoscore-launch-confirm.html'],
-  ['/launchpad',                 'lumoscore-launch-token.html'],
+  ['/launchpad/xrpl',            'lumoscore-launch-token.html'],
   ['/dashboard',                 'lumoscore-home.html'],
   ['/wallet',                    'lumoscore-wallet.html'],
   ['/bridge/xrpl',               'lumoscore-bridge.html'],   // Wanchain / Axelar here, not CCTP
@@ -538,7 +557,21 @@ function pad(s){ return s + ' '.repeat(Math.max(1, 42 - s.length)); }
 //   * /signin, and the launchpad's mid-flow steps, which are states rather than pages and would be
 //     thin, duplicated entries;
 //   * admin, which is not part of the public site at all.
-const SITEMAP_SKIP = new Set(['/signin', '/launchpad/review', '/launchpad/confirm']);
+//
+// /dashboard AND /wallet ARE HERE BECAUSE THE COMBINED DEPLOY MERGES BOTH TABLES. Stellar's side
+// dropped them on 2026-10-10 -- they are wallet-gated by a CLIENT-SIDE guard, so a crawler got 200
+// and the whole app shell while the sitemap submitted them -- and combine_with_stellar.js then put
+// them straight back from THIS table. The build log said so plainly:
+//
+//   sitemap: 47 static route(s) -- 38 stellar + 9 xrpl (..., /dashboard, /wallet, ...)
+//
+// These two urls are SHARED between the chains (one address each, served per the lx_chain cookie), so
+// either table listing them is enough to re-submit them and the fix has to be made in both. Caught by
+// reading the combine output rather than trusting the Stellar-side change.
+const SITEMAP_SKIP = new Set([
+  '/signin', '/launchpad/review', '/launchpad/confirm',
+  '/dashboard', '/wallet',
+]);
 // A few pages deserve a stronger signal than the default.
 const SITEMAP_WEIGHT = {
   '/': ['1.0', 'daily'],
@@ -1051,7 +1084,11 @@ export async function onRequest(context){
   if (url.pathname === '/xrpl' || url.pathname.indexOf('/xrpl/') === 0){
     const OLD = [
       ['/xrpl/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
-      ['/xrpl/list-your-token', '/list-your-token'], ['/xrpl/launchpad', '/launchpad'],
+      // /xrpl/launchpad now lands on /launchpad/xrpl, not the bare /launchpad. The old target became
+      // the network CHOOSER on 2026-10-10, so sending an XRPL-scheme url there would answer "which
+      // chain?" to a link that already said xrpl. The other entries here keep their bare targets
+      // because those pages really are one url for both chains.
+      ['/xrpl/list-your-token', '/list-your-token'], ['/xrpl/launchpad', '/launchpad/xrpl'],
       ['/xrpl/dashboard', '/dashboard'], ['/xrpl/account', '/account/xrpl'],
       ['/xrpl/rewards', '/rewards'], ['/xrpl/bridge', '/bridge'], ['/xrpl/wallet', '/wallet'],
       ['/xrpl/trade', '/trade/xrpl'], ['/xrpl/pools', '/pools/xrpl'], ['/xrpl/lumos', '/lumos/xrpl'],

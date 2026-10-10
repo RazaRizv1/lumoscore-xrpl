@@ -3,8 +3,8 @@
 <head><link rel="preconnect" href="https://xrplcluster.com" crossorigin><link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/hankengrotesk-latin.woff2"><script>window.__lxTokenRegistry={};(function(){try{var R=window.__lxTokenRegistry,L=(window.__lxLogos=window.__lxLogos||{});for(var k in R){if(!Object.prototype.hasOwnProperty.call(R,k))continue;var d=k.indexOf("-");if(d<1)continue;var c=k.slice(0,d),u=R[k]&&R[k].image;if(typeof u==="string"&&u.charAt(0)==="/"&&u.indexOf("//")!==0&&!L[c])L[c]=u;}}catch(e){}})();(function(){if(document.__lxRowNav)return;document.__lxRowNav=1;function go(c,i){if(!c)return;window.location.href=(c==="XLM")?"lumoscore-dex.html":("lumoscore-dex-asset.html?asset="+encodeURIComponent(c)+(i?("-"+i):""));}document.addEventListener("click",function(e){if(!e.target||!e.target.closest)return;var mb=e.target.closest(".row-menu button");if(mb&&/view/i.test(mb.textContent||"")){var a=window.__lxActiveAsset||{};if(a.code){e.preventDefault();e.stopPropagation();go(a.code,a.iss);}return;}if(e.target.closest("button,a,input,select,[class*=copy],[data-copy]"))return;var row=e.target.closest("#assetsTable tbody tr");if(!row)return;var ico=row.querySelector(".lx-aico");if(!ico)return;go(ico.getAttribute("data-lxc")||"",ico.getAttribute("data-lxi")||"");},true);})();</script><style>#assetsTable tbody tr{cursor:pointer}</style><link rel="icon" type="image/png" href="/assets/favicon.png"><link rel="apple-touch-icon" href="/assets/favicon.png"><script id="lx-nonav">(function(){var armed=0;function isSearch(t){try{return !!(t&&t.closest&&t.closest(".hero-search,.hero-search-wrap,.search-box"));}catch(e){return false;}}function arm(e){if(isSearch(e.target))armed=Date.now();}document.addEventListener("mousedown",arm,true);document.addEventListener("touchstart",arm,true);document.addEventListener("click",function(e){if(!armed)return;var dt=Date.now()-armed;armed=0;if(dt>800)return;e.stopImmediatePropagation();e.preventDefault();},true);})();</script><script>/* lxtheme */(function(){var r=document.documentElement;function top(){try{return window.top||window;}catch(e){return window;}}function rd(){var v=null;try{v=top().__lumosTheme||null;}catch(e){}if(v!=='light'&&v!=='dark'){try{var l=localStorage.getItem('lumos.theme');if(l)v=l;}catch(e){}}return v;}function wr(t){try{top().__lumosTheme=t;}catch(e){}try{localStorage.setItem('lumos.theme',t);}catch(e){}}try{var t=rd();if(t==='light'||t==='dark'){if(r.getAttribute('data-theme')!==t)r.setAttribute('data-theme',t);}else{wr(r.getAttribute('data-theme')||'dark');}}catch(e){}try{new MutationObserver(function(){var c=r.getAttribute('data-theme');if(c==='light'||c==='dark')wr(c);}).observe(r,{attributes:true,attributeFilter:['data-theme']});}catch(e){}})();</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-<title>LUMOS on the XRP Ledger — Price, Supply and Holders | LumosCore</title>
-  <meta name="description" content="Live price, fixed supply, holders and pools for LUMOS on the XRP Ledger.">
+<title>LUMOS on XRP Ledger — Price, Pools and Holders | LumosCore</title>
+  <meta name="description" content="LUMOS is the LumosCore platform token on the XRP Ledger. See price, supply, holders and liquidity, and how holding 250,000+ LUMOS halves your trading fee.">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 
 
@@ -2823,7 +2823,30 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
 .ad-meta{flex: 1; display: flex; flex-direction: column; gap:1.1px; min-width: 0;}
 .ad-tk{font-weight: 700; font-size:14.9px; letter-spacing: -0.1px;}
 .ad-nm{font-size:12.7px; color: var(--text-soft);}
-.ad-bal{font-family: 'JetBrains Mono', monospace; font-size:12.7px; color: var(--text-muted);}</style><style id="lx-faqcard">section.lx-faq h2{text-align:center;font-size:36px;font-weight:800;margin-bottom:26px}section.lx-faq .lx-faq-grid{gap:18px}.lx-faq-grid>div{border:1px solid var(--border,#26262c);border-radius:16px;padding:22px 22px 24px}.lx-faq-grid>div>.lx-faq-q{font-size:16.5px;font-weight:700;margin:0 0 9px}.lx-faq-grid>div>.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted,#a5a4ac);margin:0}</style><style id="lxmc-css">.lxmc-row{display:flex;align-items:center;gap:11px;width:100%;margin-top:auto;padding:13.2px;background:var(--surface-2);border:0;border-radius:10px;color:var(--text);cursor:pointer;font:600 14.3px/1.2 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-row+.menu-theme-row{margin-top:8px}.lxmc-row .lxmc-rl{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-row .lxmc-rl img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-row .lxmc-rt{flex:1 1 auto}.lxmc-row svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft)}</style></head>
+.ad-bal{font-family: 'JetBrains Mono', monospace; font-size:12.7px; color: var(--text-muted);}</style><style id="lx-faq-css">.lx-faq{max-width:1180px;margin:8px auto 0;padding:52px 24px 60px;border-top:1px solid var(--border)}
+.lx-faq h2{font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.02em;color:var(--text);
+ text-align:center;text-wrap:balance;margin:0 0 26px}
+.lx-faq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.lx-faq-item{position:relative;padding:22px 22px 24px;border-radius:16px;
+ border:1px solid var(--border);background:linear-gradient(180deg,var(--surface),var(--bg));
+ transform-origin:center bottom;
+ transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.lx-faq-item:hover{transform:scale(1.012);border-color:rgba(234,106,44,.42);
+ box-shadow:0 16px 36px -26px rgba(234,106,44,.7)}
+.lx-faq-q{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;
+ font-size:16.5px;font-weight:700;line-height:1.38;color:var(--text);margin:0 0 9px}
+.lx-faq-q::before{content:"?";display:flex;align-items:center;justify-content:center;
+ width:24px;height:24px;border-radius:8px;font-size:14px;font-weight:800;line-height:1;
+ color:var(--accent);background:rgba(234,106,44,.14);border:1px solid rgba(234,106,44,.26)}
+.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0;padding-left:35px}
+.lx-faq .lx-faqtabs{gap:10px}
+.lx-faq .lx-faqtab{padding:13px 19px}
+@media(max-width:900px){.lx-faq .lx-faqtab{padding:11px 16px}}
+@media(max-width:640px){.lx-faq .lx-faqtab{padding:9px 14px}}
+@media(prefers-reduced-motion:reduce){.lx-faq-item,.lx-faq-item:hover{transition:none;transform:none}}
+@media(max-width:640px){.lx-faq{padding:34px 16px 40px}.lx-faq h2{font-size:22px;margin-bottom:20px}
+.lx-faq-grid{gap:14px}.lx-faq-item{padding:18px 17px 19px;border-radius:14px}
+.lx-faq-a{padding-left:0}}</style><style id="lxmc-css">.lxmc-row{display:flex;align-items:center;gap:11px;width:100%;margin-top:auto;padding:13.2px;background:var(--surface-2);border:0;border-radius:10px;color:var(--text);cursor:pointer;font:600 14.3px/1.2 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-row+.menu-theme-row{margin-top:8px}.lxmc-row .lxmc-rl{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-row .lxmc-rl img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-row .lxmc-rt{flex:1 1 auto}.lxmc-row svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft)}</style><style id="lx-zoomfloor-css">#poolSearch:not([type=file]),#mdxMkSearch:not([type=file]),#roundSel:not([type=file]),#lcWalletSearch:not([type=file]),input.ad-search-input:not([type=file]),input.brd-q:not([type=file]),input.br-addr-in:not([type=file]),.search-box input:not([type=file]){font-size:16px!important}#mdxMkSearch{min-width:0!important}</style></head>
 <body><!--lx-menu--><div class="menu-overlay" id="menuOverlay"></div>
   <aside class="slide-menu" id="slideMenu">
     <div class="menu-head">
@@ -2884,7 +2907,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
   </div>
 
 
-  <div class="container"><section class="lx-lp" hidden><h1 class="lx-lp-h">LUMOS</h1><p class="lx-lp-sub">LumosCore&rsquo;s native token. Choose a network to see its price, pools and holders there.</p><div class="lx-lp-grid"><a class="lx-lp-card" href="https://lumoscore.com/lumos/stellar" data-lxnet="stellar"><span class="lx-lp-ico" data-lxc="" data-logoed="1" style="background-image:url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+')"><svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg></span><span class="lx-lp-main"><span class="lx-lp-net">Stellar</span><span class="lx-lp-meta">LUMOS · 1B supply</span></span><span class="lx-lp-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></a><div class="lx-lp-card soon" data-lxnet="xrpl"><span class="lx-lp-ico" data-lxc="" data-logoed="1" style="background-image:url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+')"><svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg></span><span class="lx-lp-main"><span class="lx-lp-net">XRP Ledger</span><span class="lx-lp-meta">Planned</span></span><span class="lx-lp-soon" data-lxc="" data-logoed="1"><svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg>Upcoming</span></div></div></section>
+  <div class="container"><section class="lx-lp" hidden><h2 class="lx-lp-h">LUMOS</h2><p class="lx-lp-sub">LumosCore&rsquo;s native token. Choose a network to see its price, pools and holders there.</p><div class="lx-lp-grid"><a class="lx-lp-card" href="https://lumoscore.com/lumos/stellar" data-lxnet="stellar"><span class="lx-lp-ico" data-lxc="" data-logoed="1" style="background-image:url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+')"><svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg></span><span class="lx-lp-main"><span class="lx-lp-net">Stellar</span><span class="lx-lp-meta">LUMOS · 1B supply</span></span><span class="lx-lp-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span></a><div class="lx-lp-card soon" data-lxnet="xrpl"><span class="lx-lp-ico" data-lxc="" data-logoed="1" style="background-image:url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+')"><svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg></span><span class="lx-lp-main"><span class="lx-lp-net">XRP Ledger</span><span class="lx-lp-meta">Planned</span></span><span class="lx-lp-soon" data-lxc="" data-logoed="1"><svg width="0" height="0" aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden"></svg>Upcoming</span></div></div></section>
     <div class="crumb"><a href="/dashboard" data-lxback="1" data-lxdash="1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg> Back to dashboard</a></div>
 
     <style id="lt-redesign">/*lxts:1.1*/
@@ -2932,7 +2955,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
             <span class="b-ico" style="background:var(--xlm-icon-bg)">
               <span style="display:inline-flex;width:7px;height:7px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,UklGRgwJAABXRUJQVlA4WAoAAAAQAAAAXwAAXwAAQUxQSGMDAAABoOxQsGnbqnV8Dxr32bZt27Zt22wZXdu2bds2rrFTqVQqo7G9Vn1AREyAlLQYXHSjPc++/tVPvvnmk1evP3vPjRYZLCTNYpYNzv14Am1P+PjsDcYXCRQLHPYV9WFmHg3dzIL6Lw5boKjW6E4fAqhF0HaEKcBne4xWZ84LHFyDzkeog186VzVmvwzQoOuhwHVzlG/4bAgLShkWcMFwyTaaRhgl9mDa5mUavQOMkhvcMVaaVWdgQelDqa1ejuJ4MCppcGJRgv5b0aCiodze37Xht1AqrLwx3KW+r1AqrXzX15XieoyKGzcUXSiuwKi8cXUXTkNJUDm9YzuhpKjs1KEl0MghlCU6MjzBgyTD/xvuxL04aTr3dmAHlESV7doaU4tMwmpj7dyKk6pxcxtLYyRrLNlS8W54Nh7vFK2shZGusUYLQz965BP+41CzgzESNg5s0vtnREYRf/Y0WhMjZWONRnfjOTl3NRi2IOnw4bpN0ayUTepux7IybhWR3mlEVsG0XpFFMdJ2FhbZgVpeNbYTuQ7Py7laii+IvILPioEJuU0YyO6//vGWm41fiCDxYKEV8cycFdbHMjPW2wzNTNl0m+y22Tq7rTfBctt4rdyMtZbBMwuWno/k5xuZQeQVzBgZnJDbhMHeP3P7s1dezu1FkZPRvJSTRNbPrMZ6IrNE5BUxXkR+JLIKvhcRORvNSjmrbmksK2Opup5/iZyCv3vq5KywnDROl4Zz4zk5czeSZ8Iz8nhGmq6CZWSs0qy4Kzwfi9uLZjInCTmzS6vXYdkY10nLY+aRS7iNtiYHo7koB0qbPZ+EZ+LxcU87sgAaeYQyn7R/CJaHcrB0sHgEz8J5qOiEDP0ZnoPH70PS2XnCIoOwmEc6vSIW1QtjRen8Bmj1lA2km3tSq1qNXaS7p2NRqRo3F12SQ3CvTihXFtL1dUGr4sGRUsZ5vseiEgrrSjkHrwYrnzuvzSalXW8K7uUKg+N6pcTDl4F5eULhybml5PM/CeblcIUf1y+k/Ms/D2h0K8zh1x36pJpL3Ay4enQqwgx4dYM+qe74/b8AMPWI1iJcFeDf0xeUihfz7/2G0dBN1UzVnMafHLtUr6Q4boU9rv9mAi1P+u72A1YZk1SLgTlXWG+LHfbYY8ct1l9xrsFCSgsAVlA4IIIFAACQIACdASpgAGAAPjEYikQiIaERWqycIAMEtIZRKIZAel/1Ltz/rf4t/uB1HXsLkvnt3aAebe8I/hf96/mH7Q/k7yOmLP8npof5N/pPyv5gbvL1Kv61/yftu+ND+a+433K/lv90/y/uDfx/+Tf5H+5f3f/r/4L//+Iv0HP03TyPR2auXsNwzDTy+8iCkP0aknDWv3AVJRm1nnWPPvfBhcvMn08ldB00IwupCWJXy/UCMaiKRDcqpkiKTTY/cJWR9DT6vcg9UCCsXrF+6aVnaVkFYnb/OY/VKpAr5/KVN3RjWaOGNvlDmYOrXF+3PPQADTpZ0j7oVPD5RUAE+w7vsyAOZTV5X7DjADYiPzPRoAD+/9Buy//MQlL/3Xje0DWmMyozNufNaO0vGrwehb2z+fyAX1MjmUrOJ8r3aKiDo9N9ux+NwoL1fjBEo5Zi41ky1qboN8pxKt2lo3SvAqvViSv/STf2fFCpf9dPBlwJB5mGjjlz4P/3lOSJV7RU7D5veghLq+X/1rmwbgFJomYgDpTnH7ui01qCHCW4mhlYMp88lHI7wSXXGrzcD67dUuFqvqPVfTTOjkT6nrUfIfimeS3S2+n1UC/2PO4JcmQ6qYbhyo3X/lDrpbXA7GfJxrC32H8UK0aQVdz8CFEP7zaHYODd6/Z1LfqzOMQHEJm1CrP2/1XLJq1B9iG6VRi1kCMz3G1g6tXlN2FZKA9jP3XHREm/1bUgTgs2QZfdg3oDZu5DmeSr+DHpobM/+tBhHhppdeg9ghTiggIs42BW+vNUhbAjotUFGeo7v+2AiwCDy2NTeP+BPpo3AL9Np1TSZCIGR4Un8pZU0Epl11QHaC8dwK0WeVdzgX1DbDoSZv/3EMdIUf95rWWZ16P7upF+CxUkXa20J8NNIYkD5JPXht5qg1+Ifftv4P7o97vW+/2ZNws0xeqtcFIuZhN4vCCkNXbrnBqAab+ykP3jOoN2Roh2B05jGiYzroVAyiCCfzPfU8R6ip9MhdTmYz5qwb9lFuKY+HsLucBuDtSptyWCob79PDsZrKRhZyurzj8k5lXtVIdCusTYLz+/m5LXqTiEF7wdMr//T99JmI56t9oopX7yIjPuBhzF+oYyzn3VYK/1otvSS7Icv58UkFKmWjSPeQcnbANQub4+ht+0GxXr+mRFQpgAOppruC2BYaEJn9Ehu9dhzZk7fa07W/vML8blzKQLzeH7FX7kW9XAKM5nnfirkqKYHuefP8mtASQf3YkON6+XURZXBd86TtNuF3mR2dDQxIru/j/jfgRXCqCRUj1u7Dx93M+TMU0ndaPF8jQWVYkd7Uct5tp+O8otL4bYnUU9d1VWyksCEEGICyoBTkwK0eRbu+0EVbA8GJ56X6/js2Bv6/KA6zQXJzh9xgUIter1+FLhrHcKsM35CG5yjNAPepz/4YJp0qPHAUW5E2X2xXfVgDlMB0v+oE+QeG6T0Zd51+UE0AttLJFw5VwgBvK8hZJFv072hkqzqPnjnJOBNQfbwRu4HIVZkueduJzf150gk7hyt/ki0BJt10xPxpJGT6QXfDXvgd8R9rr74h4TVWe2j9MI9S8NI0Esf9WMhsIARbxSrryW7J3KZKKJ/sWYiB1LWUdWndcTGei0Lt++vhfD/8wc8JcM3BAHu37VGkYVpuqYdApfbZTH62/dPtnTlXna1oxZjP4QFtJ08VZTj1vERqYK/RGRKB+SwokVBhFfA1Ux/UbRgbQGyplgkY1gITEJBzxRcBTTmaf+qCnq9D3bd4+STO2+hye12wAXK8Inakb6adEiIezM6awZ1ydppT0NHjLud9zkOV9RM12/fSv/+xg//2J7//7DlC//sOvvXYUvP+lkV9MXX+jiYqBbCwCQAAA=" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span>
             </span>
-            Aptos
+            XRP Ledger
           </span>
           <span class="addr-value">0x05b6…3093</span>
           <span class="lock-pill" title="Issuer key locked — supply is fixed">
@@ -2942,7 +2965,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
             <button class="addr-btn" data-copy="0x0364a66fb1b337fb21ead7b5ccd7ff80168e832deac34bc436a4d189c0be4779" aria-label="Copy issuer">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
-            <a class="addr-btn" href="#" aria-label="View on Aptos Explorer">
+            <a class="addr-btn" href="#" aria-label="View on Explorer">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </a>
           </span>
@@ -3009,8 +3032,8 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
       <div class="chart-head">
         <h3>LUMOS price</h3>
         <div class="chart-legend">
-          <span class="lg-item"><span class="dot stellar"></span>Aptos</span>
-          <span class="lg-item"><span class="dot xrpl"></span>Aptos</span>
+          <span class="lg-item"><span class="dot stellar"></span>Stellar</span>
+          <span class="lg-item"><span class="dot xrpl"></span>XRP Ledger</span>
         </div>
       </div>
       <div class="tf-strip">
@@ -3026,7 +3049,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
 
     <!-- ===== ANALYTICS TABS ===== -->
     <div class="lt-tabs" role="tablist"><button class="lt-tab active" data-t="ov">Overview</button><button class="lt-tab" data-t="pl">Pools</button><button class="lt-tab" data-t="hl">Holders</button></div>
-    <div class="lt-panel" data-p="ov"><div class="lt-cmp"><div class="lt-cmp-row lt-cmp-head"><div class="lt-cmp-l">Per network</div><div class="lt-cmp-chain"><span class="lt-cmp-ico" style="background:#000000"><span style="display:inline-flex;width:12px;height:12px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,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" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span></span> Aptos</div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Price</div><div class="lt-cmp-v">$0.00322<span class="chg">+5.8%</span></div></div><div class="lt-cmp-row"><div class="lt-cmp-l">24h volume</div><div class="lt-cmp-v">$5.4K<span class="sub">11 pools</span></div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Circulating</div><div class="lt-cmp-v">1,000,000,000<span class="u">LUMOS</span></div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Holders</div><div class="lt-cmp-v">953</div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Active pools</div><div class="lt-cmp-v">11</div></div></div><div class="lt-cmp-foot"><button data-goto="pl">View all 14 pools →</button></div></div>
+    <div class="lt-panel" data-p="ov"><div class="lt-cmp"><div class="lt-cmp-row lt-cmp-head"><div class="lt-cmp-l">Per network</div><div class="lt-cmp-chain"><span class="lt-cmp-ico" style="background:#000000"><span style="display:inline-flex;width:12px;height:12px;align-items:center;justify-content:center;overflow:hidden;border-radius:50%"><img src="data:image/webp;base64,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" style="width:100%;height:100%;object-fit:cover;display:block" alt=""></span></span> XRP Ledger</div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Price</div><div class="lt-cmp-v">$0.00322<span class="chg">+5.8%</span></div></div><div class="lt-cmp-row"><div class="lt-cmp-l">24h volume</div><div class="lt-cmp-v">$5.4K<span class="sub">11 pools</span></div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Circulating</div><div class="lt-cmp-v">1,000,000,000<span class="u">LUMOS</span></div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Holders</div><div class="lt-cmp-v">953</div></div><div class="lt-cmp-row"><div class="lt-cmp-l">Active pools</div><div class="lt-cmp-v">11</div></div></div><div class="lt-cmp-foot"><button data-goto="pl">View all 14 pools →</button></div></div>
     <div class="lt-panel" data-p="pl" hidden><!-- ===== ALL POOLS ===== -->
     <div class="sect-head">
       <h2>
@@ -3046,7 +3069,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / APT</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill native">Native LP</span>
             </div>
             <div class="stats-row">
@@ -3066,7 +3089,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / USDC</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill eco">Ecosystem</span>
             </div>
             <div class="stats-row">
@@ -3086,7 +3109,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / aBTC</div>
             <div class="meta-row">
-              <span class="chain-pill xrpl">Aptos</span>
+              <span class="chain-pill xrpl">XRP Ledger</span>
               <span class="incent-pill native">Native LP</span>
             </div>
             <div class="stats-row">
@@ -3106,7 +3129,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / CELL</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill eco">Ecosystem</span>
             </div>
             <div class="stats-row">
@@ -3126,7 +3149,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / AMI</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill eco">Ecosystem</span>
             </div>
             <div class="stats-row">
@@ -3146,7 +3169,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / GUI</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill eco">Ecosystem</span>
             </div>
             <div class="stats-row">
@@ -3166,7 +3189,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / MESO</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill eco">Ecosystem</span>
             </div>
             <div class="stats-row">
@@ -3186,7 +3209,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / USDC</div>
             <div class="meta-row">
-              <span class="chain-pill xrpl">Aptos</span>
+              <span class="chain-pill xrpl">XRP Ledger</span>
               <span class="incent-pill eco">Ecosystem</span>
             </div>
             <div class="stats-row">
@@ -3206,7 +3229,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / DROP</div>
             <div class="meta-row">
-              <span class="chain-pill xrpl">Aptos</span>
+              <span class="chain-pill xrpl">XRP Ledger</span>
               <span class="incent-pill none">—</span>
             </div>
             <div class="stats-row">
@@ -3226,7 +3249,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <div class="info">
             <div class="pair-name">LUMOS / USDT</div>
             <div class="meta-row">
-              <span class="chain-pill stellar">Aptos</span>
+              <span class="chain-pill stellar">Stellar</span>
               <span class="incent-pill none">—</span>
             </div>
             <div class="stats-row">
@@ -3290,7 +3313,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         <div class="av" style="background:linear-gradient(135deg,#a855f7,#6d28d9)">G</div>
         <div class="info">
           <div class="addr">0x0b58…ede0</div>
-          <div class="chain"><span class="b-ico" style="background:var(--xlm-icon-bg)"></span> Aptos · 1.48%</div>
+          <div class="chain"><span class="b-ico" style="background:var(--xlm-icon-bg)"></span> XRP Ledger · 1.48%</div>
         </div>
         <div class="holdings">
           <div class="v">29.6M</div>
@@ -3302,7 +3325,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         <div class="av" style="background:var(--xrpl)">R</div>
         <div class="info">
           <div class="addr">rXY7Kg…8mQR</div>
-          <div class="chain"><span class="b-ico" style="background:var(--xrpl)"></span> Aptos · 1.12%</div>
+          <div class="chain"><span class="b-ico" style="background:var(--xrpl)"></span> XRP Ledger · 1.12%</div>
         </div>
         <div class="holdings">
           <div class="v">22.4M</div>
@@ -3314,7 +3337,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         <div class="av" style="background:linear-gradient(135deg,#35c07f,#16a34a)">G</div>
         <div class="info">
           <div class="addr">0x0777…a44b</div>
-          <div class="chain"><span class="b-ico" style="background:var(--xlm-icon-bg)"></span> Aptos · 0.94%</div>
+          <div class="chain"><span class="b-ico" style="background:var(--xlm-icon-bg)"></span> XRP Ledger · 0.94%</div>
         </div>
         <div class="holdings">
           <div class="v">18.8M</div>
@@ -3326,7 +3349,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         <div class="av" style="background:linear-gradient(135deg,#fbbf24,#d97706)">G</div>
         <div class="info">
           <div class="addr">0x0a87…3091</div>
-          <div class="chain"><span class="b-ico" style="background:var(--xlm-icon-bg)"></span> Aptos · 0.76%</div>
+          <div class="chain"><span class="b-ico" style="background:var(--xlm-icon-bg)"></span> XRP Ledger · 0.76%</div>
         </div>
         <div class="holdings">
           <div class="v">15.2M</div>
@@ -3338,7 +3361,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         <div class="av" style="background:linear-gradient(135deg,#6f5ded,#1e40af)">R</div>
         <div class="info">
           <div class="addr">rNQ4Pt…k7Hj</div>
-          <div class="chain"><span class="b-ico" style="background:var(--xrpl)"></span> Aptos · 0.62%</div>
+          <div class="chain"><span class="b-ico" style="background:var(--xrpl)"></span> XRP Ledger · 0.62%</div>
         </div>
         <div class="holdings">
           <div class="v">12.4M</div>
@@ -3439,7 +3462,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="14.31" y1="8" x2="20.05" y2="17.94"/><line x1="9.69" y1="8" x2="21.17" y2="8"/><line x1="7.38" y1="12" x2="13.12" y2="2.06"/><line x1="9.69" y1="16" x2="3.95" y2="6.06"/><line x1="14.31" y1="16" x2="2.83" y2="16"/><line x1="16.62" y1="12" x2="10.88" y2="21.94"/></svg>
         </div>
         <h4>Trading fee waivers <span class="threshold">Hold 250K+</span></h4>
-        <p>Hold <strong>250,000 LUMOS</strong> or more and pay <strong>0.1%</strong> instead of 0.2% on every trade — half the platform fee.</p><div class="lxu-figure" aria-hidden="true"><span class="lxu-rate"><span class="lxu-from">0.2%</span><span class="lxu-arrow">→</span><span class="lxu-to">0.1%</span></span><span class="lxu-off">50% off</span></div><a class="u-link" href="#">Learn how it works →</a>
+        <p>Hold <strong>250,000 LUMOS</strong> or more and pay <strong>0.1%</strong> instead of 0.2% on every trade — half the platform fee.</p><div class="lxu-figure" aria-hidden="true"><span class="lxu-rate"><span class="lxu-from">0.2%</span><span class="lxu-arrow">→</span><span class="lxu-to">0.1%</span></span><span class="lxu-off">50% off</span></div><a class="u-link" href="https://lumoscore.com/docs/fees">Learn how it works →</a>
       </div>
       <div class="util-card native">
         <span class="u-tag live">Live</span>
@@ -3448,7 +3471,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         </div>
         <h4>Native LP Rewards</h4>
         <p>Provide liquidity to LUMOS-paired pools and earn from the 240M LUMOS Native LP Rewards pool, distributed over 10 years.</p>
-        <a class="u-link" href="#">View reward programs →</a>
+        <a class="u-link" href="/rewards/xrpl">View reward programs →</a>
       </div>
       <div class="util-card eco">
         <span class="u-tag live">Live</span>
@@ -3457,7 +3480,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         </div>
         <h4>Ecosystem LP Rewards</h4>
         <p>Pair any partner token with LUMOS in a curated pool and earn boosted rewards from the 240M Ecosystem LP pool.</p>
-        <a class="u-link" href="#">View partner pools →</a>
+        <a class="u-link" href="/pools/xrpl">View partner pools →</a>
       </div>
       
       <div class="util-card whale">
@@ -3467,7 +3490,7 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
         </div>
         <h4>Whale Holder Rewards <span class="threshold">Hold 5M+</span></h4>
         <p>Wallets holding 5M+ LUMOS earn from a dedicated 50M LUMOS pool, distributed over 2 years. Designed to reward long-term conviction.</p>
-        <a class="u-link" href="#">Eligibility & schedule →</a>
+        <a class="u-link" href="/rewards/xrpl">Eligibility & schedule →</a>
       </div>
       <div class="util-card pairing">
         <span class="u-tag soon">Soon</span>
@@ -3725,14 +3748,14 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
           '<div class="ct-date" id="ctDate">—</div>' +
           '<div class="ct-row">' +
             '<span class="ct-dot" style="background:' + accent + '"></span>' +
-            '<span class="ct-name">Aptos</span>' +
+            '<span class="ct-name">Stellar</span>' +
             '<span class="ct-spacer"></span>' +
             '<span class="ct-price" id="ctPriceAptos">—</span>' +
           '</div>' +
           '<div class="ct-sub" id="ctMcAptos">MC —</div>' +
           '<div class="ct-row" style="display:none">' +
             '<span class="ct-dot" style="background:' + xrplColor + '"></span>' +
-            '<span class="ct-name">Aptos</span>' +
+            '<span class="ct-name">XRP Ledger</span>' +
             '<span class="ct-spacer"></span>' +
             '<span class="ct-price" id="ctPriceXrpl">—</span>' +
           '</div>' +
@@ -4138,13 +4161,18 @@ html[data-theme="dark"] .lx-supinfo:hover::after{background:#f7f7f9!important;co
     refreshUI();
   });
 })();
-</script><section class="lx-faq" id="faq"><h2>Frequently asked questions</h2><div class="lx-faq-grid"><div><h3 class="lx-faq-q">What is LUMOS?</h3><p class="lx-faq-a">LUMOS is the platform token of LumosCore, issued on the XRP Ledger. It is used to reduce trading fees and to distribute liquidity and holder incentives.</p></div><div><h3 class="lx-faq-q">What does holding LUMOS do?</h3><p class="lx-faq-a">Holding at least 250,000 LUMOS halves your LumosCore trading fee from 0.2% to 0.1%. The balance is checked on-chain when you trade.</p></div><div><h3 class="lx-faq-q">How do I buy LUMOS?</h3><p class="lx-faq-a">LUMOS trades on the XRP Ledger. You can swap into it from XRP or another token on the Trade page, using the same routing as any other XRP Ledger token.</p></div></div></section><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is LUMOS?","acceptedAnswer":{"@type":"Answer","text":"LUMOS is the platform token of LumosCore, issued on the XRP Ledger. It is used to reduce trading fees and to distribute liquidity and holder incentives."}},{"@type":"Question","name":"What does holding LUMOS do?","acceptedAnswer":{"@type":"Answer","text":"Holding at least 250,000 LUMOS halves your LumosCore trading fee from 0.2% to 0.1%. The balance is checked on-chain when you trade."}},{"@type":"Question","name":"How do I buy LUMOS?","acceptedAnswer":{"@type":"Answer","text":"LUMOS trades on the XRP Ledger. You can swap into it from XRP or another token on the Trade page, using the same routing as any other XRP Ledger token."}}]}</script><footer class="site-footer">
+</script><section class="lx-faq" id="faq"><h2>Frequently asked questions</h2><div class="lx-faq-grid"><div class="lx-faq-item"><h3 class="lx-faq-q">What is LUMOS?</h3><p class="lx-faq-a">LUMOS is the platform token of LumosCore, issued on the XRP Ledger. It is used to reduce trading fees and to distribute liquidity and holder incentives.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">What does holding LUMOS do?</h3><p class="lx-faq-a">Holding at least 250,000 LUMOS halves your LumosCore trading fee from 0.2% to 0.1%. The balance is checked on-chain when you trade.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">How do I buy LUMOS?</h3><p class="lx-faq-a">LUMOS trades on the XRP Ledger. You can swap into it from XRP or another token on the Trade page, using the same routing as any other XRP Ledger token.</p></div></div></section><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is LUMOS?","acceptedAnswer":{"@type":"Answer","text":"LUMOS is the platform token of LumosCore, issued on the XRP Ledger. It is used to reduce trading fees and to distribute liquidity and holder incentives."}},{"@type":"Question","name":"What does holding LUMOS do?","acceptedAnswer":{"@type":"Answer","text":"Holding at least 250,000 LUMOS halves your LumosCore trading fee from 0.2% to 0.1%. The balance is checked on-chain when you trade."}},{"@type":"Question","name":"How do I buy LUMOS?","acceptedAnswer":{"@type":"Answer","text":"LUMOS trades on the XRP Ledger. You can swap into it from XRP or another token on the Trade page, using the same routing as any other XRP Ledger token."}}]}</script><footer class="site-footer">
     <div class="ft-cols-2">
       <div class="ft-col">
         <h4>Menu</h4>
-        <a href="/dashboard">Home</a>
-        <a href="/pools/xrpl">AMM Pools</a>
-        <a href="/lumos/xrpl">LUMOS Token</a>
+        <a href="/">Home</a>
+          <a href="/trade/xrpl">Trade</a>
+          <a href="/pools/xrpl">Pools</a>
+          <a href="/bridge/xrpl">Cross-Chain</a>
+          <a href="/launchpad/xrpl">Launchpad</a>
+          <a href="/lumos/xrpl">LUMOS Token</a>
+          <a href="/blog">Blogs</a>
+          <a href="/about">About</a>
       </div>
       <div class="ft-col">
         <h4>Resources</h4>
@@ -5075,14 +5103,7 @@ function ping(){
 if(document.readyState!=="loading")ping(); else document.addEventListener("DOMContentLoaded",ping);
 setInterval(ping,5000);
 window.addEventListener("storage",ping);
-})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"/dashboard"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><style id="lx-faq-css">
-.lx-faq{max-width:1180px;margin:8px auto 0;padding:38px 24px 46px;border-top:1px solid var(--border)}
-.lx-faq h2{font-size:26px;font-weight:800;letter-spacing:-.01em;color:var(--text);margin:0 0 22px}
-.lx-faq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px 34px}
-.lx-faq-q{font-size:16px;font-weight:700;color:var(--text);margin:0 0 7px}
-.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0}
-@media(max-width:640px){.lx-faq{padding:28px 16px 34px}.lx-faq h2{font-size:21px}}
-</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><style id="lx-swapcalc-css">.lx-swapd{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:8px 13px;margin:0 0 13px;font-size:13.5px}.lx-swapd .r{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:4px 0;color:var(--text-soft)}.lx-swapd .r strong{color:var(--text);font-weight:600;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px}.lx-swapd .rtot{border-top:1px solid var(--border);margin-top:4px;padding-top:8px}.lx-swapd .rtot strong{color:var(--accent,#ea6a2c)}.lx-swapd .lx-feenote{margin-top:10px;padding-top:11px;border-top:1px dashed var(--border)}.lx-fee-banner{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.35;text-align:left}.lx-fee-banner.holder{background:linear-gradient(135deg,rgba(53,192,127,.16),rgba(53,192,127,.05));border:1px solid rgba(53,192,127,.34)}.lx-fee-banner.nudge{background:linear-gradient(135deg,rgba(234,106,44,.16),rgba(234,106,44,.05));border:1px solid var(--accent-soft,rgba(234,106,44,.34))}.lx-fee-banner .lx-fee-ic{flex:0 0 auto;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:9px}.lx-fee-banner.holder .lx-fee-ic{background:rgba(53,192,127,.2);color:var(--green,#35c07f)}.lx-fee-banner.nudge .lx-fee-ic{background:rgba(234,106,44,.2);color:var(--accent,#ea6a2c)}.lx-fee-banner .lx-fee-ic svg{width:16px;height:16px}.lx-fee-banner .txt{flex:1;min-width:0;color:var(--text)}.lx-fee-banner .txt b{font-weight:700}.lx-fee-banner.holder .txt b{color:var(--green,#35c07f)}.lx-fee-banner.nudge .txt b{color:var(--accent,#ea6a2c)}.lx-fee-buy{color:inherit;text-decoration:none;border-bottom:1px solid currentColor;font-weight:700}.lx-fee-buy:hover{filter:brightness(1.09)}#modalSwap .modal{max-height:96vh}#modalSwap .modal-body{padding-top:8px!important;padding-bottom:8px!important}#modalSwap .swap-pair{margin-bottom:4px!important}#modalSwap .swap-pair .field{padding:9px 14px!important}#modalSwap .field-label{display:flex;align-items:center;gap:8px}#modalSwap .field-label .meta{margin-left:auto}.lx-wsmax{flex:0 0 auto;padding:3px 9px;border-radius:7px;cursor:pointer;font-weight:800;font-size:10.5px;line-height:1.5;letter-spacing:.03em;color:var(--accent,#ea6a2c);background:var(--accent-soft,rgba(234,106,44,.14));border:1px solid var(--accent-soft,rgba(234,106,44,.32))}.lx-wsmax:hover{filter:brightness(1.08)}#modalSwap .swap-pair .field input{font-size:20px!important;padding-top:2px!important;padding-bottom:2px!important;padding-left:14px!important}#modalSwap .swap-pair .field-label,#modalSwap .swap-pair .field>label{margin-bottom:2px!important}#modalSwap .swap-pair .lx-swap-pick{margin-top:4px!important;padding:5px 9px!important}#modalSwap .swap-pair .lx-ap-ico{width:28px!important;height:28px!important}#modalSwap .swap-arrow{margin:1px auto!important;width:34px!important;height:34px!important}#modalSwap .lx-swapd{padding:6px 12px!important;margin:0!important;font-size:12.5px!important}#modalSwap .lx-swapd .r{padding:2.5px 0!important}#modalSwap .lx-swapd .r strong{font-size:12.5px!important}#modalSwap .lx-swapd .rtot{margin-top:2px!important;padding-top:6px!important}#modalSwap .lx-swapd .lx-feenote{margin-top:6px!important;padding-top:6px!important}#modalSwap .lx-swapd .r{padding:2px 0!important}#modalSwap .lx-fee-banner{padding:8px 10px!important;gap:9px!important;font-size:11.6px!important}#modalSwap .lx-fee-banner .lx-fee-ic{width:24px!important;height:24px!important}#modalSwap .lx-fee-banner .lx-fee-ic svg{width:14px;height:14px}#modalSwap.lx-on-step2 .lx-fee-banner{padding:14px 15px!important;gap:12px!important;font-size:13px!important;line-height:1.42!important;border-radius:13px!important}#modalSwap.lx-on-step2 .lx-fee-banner .lx-fee-ic{width:36px!important;height:36px!important;border-radius:11px!important}#modalSwap.lx-on-step2 .lx-fee-banner .lx-fee-ic svg{width:19px;height:19px}#modalSwap.lx-on-step2 .lx-fee-buy{padding:10px 16px!important;font-size:12.5px!important;border-radius:10px!important}#modalSwap .lx-fee-buy{padding:7px 11px!important;font-size:11px!important}#modalSwap .lx-swap-err{margin:0 2px 5px!important}#modalSwap .modal-foot{padding-top:10px!important;padding-bottom:12px!important}.lx-swapmax{margin-left:8px;background:var(--accent-soft,rgba(234,106,44,.14));color:var(--accent,#ea6a2c);border:1px solid var(--accent-soft,rgba(234,106,44,.32));border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;line-height:1.35}.lx-swapmax:hover{filter:brightness(1.08)}.swap-pair .field .field-label{display:flex;align-items:center}.swap-pair .field .field-label .meta{margin-left:auto;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.swap-pair .field .field-amt input{width:100%}.swap-pair>.field{padding-bottom:2px}.lx-swap-menu{display:flex!important;flex-direction:column;overflow:visible!important;max-height:360px!important;width:250px!important}.lx-swap-menu .lx-am-list{flex:1 1 auto;overflow-y:auto;min-height:0;max-height:210px}.lx-am-more{padding:8px 10px;font:600 11px/1.35 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-muted,#8a8fa3);text-align:center;border-top:1px solid var(--border,#ececef)}.lx-am-search,.lx-am-custin{width:100%;box-sizing:border-box;background:var(--bg,rgba(0,0,0,.2));border:1px solid var(--border,rgba(255,255,255,.16));border-radius:8px;padding:8px 10px;font-size:13px;color:var(--text,#fff);outline:none}.lx-am-searchwrap{position:relative;margin-bottom:6px}.lx-am-searchic{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--text-muted);pointer-events:none}.lx-am-search{padding-left:34px!important}.lx-am-search:focus,.lx-am-custin:focus{border-color:var(--accent-soft,rgba(234,106,44,.5))}.lx-am-iss{color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:10.5px}.lx-am-meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.25;min-width:0}.lx-am-meta .lx-am-bal{margin-left:0}.lx-am-empty{padding:14px;text-align:center;color:var(--text-muted);font-size:12px}.lx-am-custom{display:flex;gap:6px;margin-top:6px;padding-top:8px;border-top:1px solid var(--border,rgba(255,255,255,.14))}.lx-am-custin{flex:1 1 auto;font-family:'JetBrains Mono',monospace;font-size:11px}.lx-am-custgo{flex:0 0 auto;background:var(--accent,#ea6a2c);color:#fff;border:none;border-radius:8px;padding:0 13px;font-size:12px;font-weight:700;cursor:pointer}.lx-am-customitem .lx-am-ic{font-size:16px}.lx-custom-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px}.lx-cm-box{background:var(--surface,#171922);border:1px solid var(--border);border-radius:16px;padding:20px 20px 18px;width:350px;max-width:100%;box-shadow:0 24px 70px rgba(0,0,0,.55)}.lx-cm-title{font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px}.lx-cm-lbl{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:700;margin:12px 0 5px}.lx-cm-code,.lx-cm-iss{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace;outline:none}.lx-cm-code:focus,.lx-cm-iss:focus{border-color:var(--accent-soft,rgba(234,106,44,.55))}.lx-cm-err{color:var(--red,#ff5b5b);font-size:12px;min-height:15px;margin-top:9px;line-height:1.35}.lx-cm-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}.lx-cm-cancel{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:9px 16px;font-weight:600;cursor:pointer}.lx-cm-confirm{background:var(--accent,#ea6a2c);border:none;color:#fff;border-radius:10px;padding:9px 18px;font-weight:700;cursor:pointer}.lx-swap-err{color:var(--red,#ff5b5b);font-size:12.5px;font-weight:600;line-height:1.4;margin:2px 2px 8px}.lx-smart-badge{display:flex;align-items:center;gap:12px;margin:12px 2px 6px;padding:12px 13px;border-radius:14px;background:var(--accent-pale,rgba(234,106,44,.08));border:1px solid var(--accent-soft,rgba(234,106,44,.28))}.lx-smart-badge .lx-sb-ic{flex:0 0 auto;width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--accent,#ea6a2c),#c1440a);display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(234,106,44,.32)}.lx-smart-badge .lx-sb-ic svg{width:19px;height:19px;fill:#fff;display:block}.lx-smart-badge .lx-sb-mid{flex:1;min-width:0}.lx-smart-badge .lx-sb-ttl{font-weight:800;font-size:14.5px;color:var(--text);letter-spacing:-.01em;line-height:1.2}.lx-smart-badge .lx-sb-sub{font-size:12.3px;color:var(--text-soft);margin-top:2px;line-height:1.3}.lx-smart-badge .lx-sb-sub b{font-weight:700;color:var(--text)}.lx-smart-badge .lx-sb-learn{color:var(--accent,#ea6a2c);font-weight:700;text-decoration:none;cursor:pointer;white-space:nowrap}.lx-smart-badge .lx-sb-learn:hover{text-decoration:underline}.lx-smart-badge .lx-sb-best{flex:0 0 auto;font-weight:800;font-size:12px;color:var(--green,#2f9e6b);background:var(--green-soft,rgba(53,192,127,.13));border:1px solid rgba(53,192,127,.34);padding:6px 11px;border-radius:10px;white-space:nowrap}.lx-smart-info{position:fixed;z-index:100002;max-width:290px;background:var(--surface,#171922);border:1px solid var(--border,rgba(255,255,255,.16));border-radius:14px;padding:14px 16px;box-shadow:0 22px 64px rgba(0,0,0,.5)}.lx-smart-info h5{margin:0 0 6px;font-size:13.5px;font-weight:800;color:var(--text)}.lx-smart-info p{margin:0;font-size:12.8px;line-height:1.5;color:var(--text-soft)}#modalSwap:not(.lx-on-step2) .lx-swapd,#modalSwap:not(.lx-on-step2) .lx-step2-only{display:none!important}#modalSwap.lx-on-step2 .lx-step1-only{display:none!important}#modalSwap.lx-on-step2 .swap-pair{display:none!important}.lx-swap-summary{display:none}#modalSwap.lx-on-step2 .lx-swap-summary{display:flex;align-items:stretch;position:relative;margin:2px 0 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface,#fff)}.lx-swap-summary .lx-ss-row{flex:1 1 0;min-width:0;padding:12px 14px}.lx-swap-summary .lx-ss-row:first-child{border-right:1px solid var(--border);padding-right:26px}.lx-swap-summary .lx-ss-row:last-child{padding-left:26px}.lx-swap-summary .lx-ss-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}.lx-swap-summary .lx-ss-ico{width:24px;height:24px;border-radius:50%;flex:0 0 auto;position:relative;background:var(--al,#333)!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;overflow:hidden;color:#fff;font-weight:800;font-size:10px}.lx-swap-summary .lx-ss-ico::after{content:attr(data-l);position:absolute;inset:0;display:flex;align-items:center;justify-content:center}.lx-swap-summary .lx-ss-ico img,.lx-ss-ico svg{display:none!important}.lx-swap-summary .lx-ss-lbl{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}.lx-swap-summary .lx-ss-val{font-size:17px;font-weight:800;color:var(--text);font-family:'JetBrains Mono',monospace;line-height:1.2;word-break:break-all}.lx-swap-summary .lx-ss-val .lx-ss-code{display:block;font-size:12px;font-weight:700;color:var(--text-soft);margin-top:3px;font-family:inherit}.lx-swap-summary .lx-ss-arrow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent,#ea6a2c),#c1440a);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px var(--surface,#fff),0 4px 10px rgba(234,106,44,.28);z-index:2}.lx-swap-summary .lx-ss-arrow svg{width:14px;height:14px;fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}#modalSwap.lx-on-step2 .lx-swapd{font-size:13.5px!important;border-radius:14px!important;padding:9px 14px!important}#modalSwap.lx-on-step2 .lx-swapd .r{padding:4px 0!important}#modalSwap.lx-on-step2 .lx-swapd .r strong{font-size:13.5px!important}#modalSwap .lx-review-btn:disabled{opacity:.55;cursor:not-allowed}#modalSwap .modal-foot{display:flex;gap:10px}.lx-smart-badge{animation:lxsbGlow 3.2s ease-in-out infinite}@keyframes lxsbGlow{0%,100%{box-shadow:0 0 0 0 rgba(234,106,44,0)}50%{box-shadow:0 0 0 3px rgba(234,106,44,.10)}}.lx-smart-badge .lx-sb-ic{animation:lxsbFloat 3.2s ease-in-out infinite}@keyframes lxsbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}.lx-smart-badge .lx-sb-best{position:relative;overflow:hidden}.lx-smart-badge .lx-sb-best::after{content:"";position:absolute;top:0;bottom:0;left:0;width:45%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.55),transparent);transform:translateX(-220%);animation:lxsbShine 2.9s ease-in-out infinite;pointer-events:none}@keyframes lxsbShine{0%,52%{transform:translateX(-220%)}100%{transform:translateX(430%)}}#modalSwap .swap-pair .field{transition:border-color .16s ease,box-shadow .16s ease}#modalSwap .swap-pair .field:focus-within{border-color:rgba(127,127,140,.28)!important;box-shadow:none!important}.lx-fee-buy{background:none!important;background-image:none!important;border-radius:0!important;width:auto!important;height:auto!important;min-width:0!important;display:inline!important;box-shadow:none!important;padding:0!important;font-size:inherit!important;color:var(--accent,#ea6a2c)!important;text-decoration:none;border-bottom:1px solid rgba(234,106,44,.35)}.lx-fee-buy:hover{border-bottom-color:var(--accent,#ea6a2c)}.lx-fee-buy svg{width:0!important;height:0!important;position:absolute!important}#modalSwap .swap-arrow:hover{background:var(--surface-2)!important;box-shadow:none!important;transform:translate(-50%,-50%)!important;filter:none!important}#modalSwap .modal-foot .btn-primary{transition:filter .15s ease,box-shadow .2s ease,transform .08s ease}#modalSwap .modal-foot .btn-primary:not(:disabled):hover{filter:brightness(1.07);box-shadow:0 9px 24px rgba(234,106,44,.36)}#modalSwap .modal-foot .btn-primary:not(:disabled):active{transform:translateY(1px)}.lx-asset-menu{background:var(--surface,#171922);border:1px solid var(--border,rgba(255,255,255,.14));border-radius:12px;padding:6px;box-shadow:0 14px 44px rgba(0,0,0,.55);width:230px;max-height:290px;overflow-y:auto}.lx-am-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;background:none;border:none;border-radius:8px;cursor:pointer;color:var(--text,#fff);font-size:13.5px;text-align:left}.lx-am-item:hover{background:rgba(255,255,255,.06)}.lx-am-ic{width:25px;height:25px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;flex:0 0 auto;overflow:hidden}.lx-am-ic img{width:100%;height:100%;object-fit:cover;display:block}.lx-am-code{font-weight:600}.lx-am-txt{display:flex;flex-direction:column;gap:1px;min-width:0;overflow:hidden}.lx-am-sub{font-size:10.5px;line-height:1.25;color:var(--text-muted,#8b90a0);font-family:JetBrains Mono,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}#swapModal .lx-dchip{cursor:pointer;border-radius:10px;padding:2px 4px;margin:-2px -4px;transition:background .12s}#swapModal .lx-dchip:hover{background:var(--surface-2,rgba(255,255,255,.06))}#swapModal .lx-dcaret{display:inline-flex;margin-left:1px;opacity:.55}#swapModal .lx-dcaret svg{display:block}#swapModal .lx-swap-err{margin:2px 2px 10px}#swapModal [id="swapGo"][data-lxdis="1"]{opacity:.55;cursor:not-allowed}</style><style id="lx-qorders-css">.lxo-tabs{display:flex;gap:3px;margin:0 0 14px;padding:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}.lxo-tabs button{flex:1 1 0;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--text-soft);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background .12s ease,color .12s ease}.lxo-tabs button:hover{color:var(--text)}.lxo-tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.18)}.lxo-pane[hidden]{display:none!important}.lxq-f{display:flex;flex-direction:column;position:relative}.lxq-fld{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:10px}.lxq-lab{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--text-soft);margin-bottom:7px}.lxq-lab .bal{font-size:12.5px;color:var(--text-muted)}.lxq-max,.lxq-mkt{background:var(--accent-soft,rgba(234,106,44,.14));color:var(--accent,#ea6a2c);border:1px solid var(--accent-soft,rgba(234,106,44,.22));border-radius:7px;font:inherit;font-size:11px;font-weight:800;padding:3px 8px;cursor:pointer;letter-spacing:.02em}.lxq-max:hover,.lxq-mkt:hover{filter:brightness(1.12)}.lxq-mkt{margin-left:10px}.lxq-recv{text-align:right;color:var(--text-soft);pointer-events:none}.lxq-usd{margin-top:5px;text-align:right;font-size:12px;color:var(--text-muted);min-height:15px;font-family:'JetBrains Mono',monospace}.lxq-ic[data-art]{background-image:var(--lxa)!important;background-size:cover!important;background-position:center!important;color:transparent!important;font-size:0!important}.lxq-lin{display:flex;align-items:center;justify-content:space-between;gap:10px}.lxq-pick{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:16px;color:var(--text);cursor:pointer;min-width:0}.lxq-pick .lxq-ic{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#2a2a35,#1a1a23);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}.lxq-pick .cv{color:var(--text-muted);font-weight:600;font-size:15px}.lxq-pick .car{color:var(--text-muted);font-size:11px;flex:0 0 auto}.lxq-in{flex:1;min-width:0;border:none;outline:none;background:transparent;text-align:right;font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:var(--text)}.lxq-unit{font-size:12.5px;color:var(--text-muted);white-space:nowrap;flex:0 0 auto}.lxq-meta{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--text-soft);margin:1px 2px 12px}.lxq-meta b{color:var(--text);font-family:'JetBrains Mono',monospace;font-weight:700}.lxq-note{font-size:12.5px;line-height:1.5;color:var(--text-muted);margin:0 2px 12px}.lxq-err{color:var(--red,#ff5b5b);font-size:12.5px;font-weight:600;margin:0 2px 10px}.lxq-go{width:100%;height:46px;border-radius:12px;border:none;background:var(--accent);color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}.lxq-go[disabled]{opacity:.45;cursor:not-allowed}.lxq-menu{position:absolute;z-index:60;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 24px 60px rgba(0,0,0,.4);max-height:264px;overflow:auto}.lxq-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;border:0;border-radius:10px;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}.lxq-menu button:hover{background:var(--bg)}.lxq-menu button .lxq-ic{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#2a2a35,#1a1a23);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}.lxq-menu button .tx{min-width:0;flex:1 1 auto}.lxq-menu button .cd{font-size:14px;font-weight:700;line-height:1.2}.lxq-menu button .s{display:block;font-size:11.5px;font-weight:500;color:var(--text-muted);line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lxq-menu button .rt{flex:0 0 auto;font-size:11.5px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}.lxq-menu input{width:100%;padding:9px 10px;margin:2px 0 4px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font:inherit;font-size:13.5px;color:var(--text);outline:none}.lxq-menu input:focus{border-color:var(--accent)}.lxq-menu .h{padding:7px 9px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}.cd[data-v]{display:inline-flex;align-items:center;gap:5px}.cd[data-v]::after{content:"\2713";display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:#35c07f;color:#fff;font-size:8px;font-weight:900;flex:0 0 auto}.lxo-list{display:flex;flex-direction:column;min-height:70px;max-height:62vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}.lxo-list::-webkit-scrollbar{width:8px}.lxo-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}.lxo-list::-webkit-scrollbar-track{background:transparent}.lxo-o{background:var(--bg);border:1px solid var(--border);border-radius:13px;padding:11px 12px;margin-bottom:8px;transition:border-color .14s ease}.lxo-o:hover{border-color:var(--text-muted)}.lxo-top{display:flex;flex-direction:column;gap:8px}.lxo-col{display:flex;align-items:center;gap:10px;min-width:0}.lxo-cap{flex:0 0 52px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);line-height:1.25}.lxo-side{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto}.lxo-tx{min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.lxo-tx .q{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--text);white-space:nowrap}.lxo-tx .c{font-size:12px;font-weight:700;color:var(--text-soft)}.lxo-side .lxq-ic{width:32px;height:32px;border-radius:50%;background:var(--lxfb,linear-gradient(135deg,#2a2a35,#1a1a23));color:#fff;font-size:11px;font-weight:800;letter-spacing:.02em;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:0 0 0 1px var(--border)}.lxo-ft{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border)}.lxo-pw{display:flex;align-items:baseline;gap:8px;min-width:0}.lxo-k{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);flex:0 0 auto}.lxo-px{font-size:12px;color:var(--text-soft);font-family:'JetBrains Mono',monospace;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lxo-o button{flex:0 0 auto;height:28px;padding:0 13px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-soft);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:color .12s ease,border-color .12s ease,background .12s ease}.lxo-o button:hover:not([disabled]){color:var(--red,#ff5b5b);border-color:var(--red,#ff5b5b);background:rgba(255,91,91,.08)}.lxo-o button[disabled]{opacity:.5;cursor:default}.lxo-empty{padding:30px 10px;text-align:center;color:var(--text-soft);font-size:13.5px;line-height:1.6}.lxo-empty .sub{display:block;margin-top:5px;font-size:12.5px;color:var(--text-muted)}</style><script id="lx-xrplconnect">
+})();</script><script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"/dashboard"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style><style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><style id="lx-swapcalc-css">.lx-swapd{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:8px 13px;margin:0 0 13px;font-size:13.5px}.lx-swapd .r{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:4px 0;color:var(--text-soft)}.lx-swapd .r strong{color:var(--text);font-weight:600;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px}.lx-swapd .rtot{border-top:1px solid var(--border);margin-top:4px;padding-top:8px}.lx-swapd .rtot strong{color:var(--accent,#ea6a2c)}.lx-swapd .lx-feenote{margin-top:10px;padding-top:11px;border-top:1px dashed var(--border)}.lx-fee-banner{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;font-size:12.5px;line-height:1.35;text-align:left}.lx-fee-banner.holder{background:linear-gradient(135deg,rgba(53,192,127,.16),rgba(53,192,127,.05));border:1px solid rgba(53,192,127,.34)}.lx-fee-banner.nudge{background:linear-gradient(135deg,rgba(234,106,44,.16),rgba(234,106,44,.05));border:1px solid var(--accent-soft,rgba(234,106,44,.34))}.lx-fee-banner .lx-fee-ic{flex:0 0 auto;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:9px}.lx-fee-banner.holder .lx-fee-ic{background:rgba(53,192,127,.2);color:var(--green,#35c07f)}.lx-fee-banner.nudge .lx-fee-ic{background:rgba(234,106,44,.2);color:var(--accent,#ea6a2c)}.lx-fee-banner .lx-fee-ic svg{width:16px;height:16px}.lx-fee-banner .txt{flex:1;min-width:0;color:var(--text)}.lx-fee-banner .txt b{font-weight:700}.lx-fee-banner.holder .txt b{color:var(--green,#35c07f)}.lx-fee-banner.nudge .txt b{color:var(--accent,#ea6a2c)}.lx-fee-buy{color:inherit;text-decoration:none;border-bottom:1px solid currentColor;font-weight:700}.lx-fee-buy:hover{filter:brightness(1.09)}#modalSwap .modal{max-height:96vh}#modalSwap .modal-body{padding-top:8px!important;padding-bottom:8px!important}#modalSwap .swap-pair{margin-bottom:4px!important}#modalSwap .swap-pair .field{padding:9px 14px!important}#modalSwap .field-label{display:flex;align-items:center;gap:8px}#modalSwap .field-label .meta{margin-left:auto}.lx-wsmax{flex:0 0 auto;padding:3px 9px;border-radius:7px;cursor:pointer;font-weight:800;font-size:10.5px;line-height:1.5;letter-spacing:.03em;color:var(--accent,#ea6a2c);background:var(--accent-soft,rgba(234,106,44,.14));border:1px solid var(--accent-soft,rgba(234,106,44,.32))}.lx-wsmax:hover{filter:brightness(1.08)}#modalSwap .swap-pair .field input{font-size:20px!important;padding-top:2px!important;padding-bottom:2px!important;padding-left:14px!important}#modalSwap .swap-pair .field-label,#modalSwap .swap-pair .field>label{margin-bottom:2px!important}#modalSwap .swap-pair .lx-swap-pick{margin-top:4px!important;padding:5px 9px!important}#modalSwap .swap-pair .lx-ap-ico{width:28px!important;height:28px!important}#modalSwap .swap-arrow{margin:1px auto!important;width:34px!important;height:34px!important}#modalSwap .lx-swapd{padding:6px 12px!important;margin:0!important;font-size:12.5px!important}#modalSwap .lx-swapd .r{padding:2.5px 0!important}#modalSwap .lx-swapd .r strong{font-size:12.5px!important}#modalSwap .lx-swapd .rtot{margin-top:2px!important;padding-top:6px!important}#modalSwap .lx-swapd .lx-feenote{margin-top:6px!important;padding-top:6px!important}#modalSwap .lx-swapd .r{padding:2px 0!important}#modalSwap .lx-fee-banner{padding:8px 10px!important;gap:9px!important;font-size:11.6px!important}#modalSwap .lx-fee-banner .lx-fee-ic{width:24px!important;height:24px!important}#modalSwap .lx-fee-banner .lx-fee-ic svg{width:14px;height:14px}#modalSwap.lx-on-step2 .lx-fee-banner{padding:14px 15px!important;gap:12px!important;font-size:13px!important;line-height:1.42!important;border-radius:13px!important}#modalSwap.lx-on-step2 .lx-fee-banner .lx-fee-ic{width:36px!important;height:36px!important;border-radius:11px!important}#modalSwap.lx-on-step2 .lx-fee-banner .lx-fee-ic svg{width:19px;height:19px}#modalSwap.lx-on-step2 .lx-fee-buy{padding:10px 16px!important;font-size:12.5px!important;border-radius:10px!important}#modalSwap .lx-fee-buy{padding:7px 11px!important;font-size:11px!important}#modalSwap .lx-swap-err{margin:0 2px 5px!important}#modalSwap .modal-foot{padding-top:10px!important;padding-bottom:12px!important}.lx-swapmax{margin-left:8px;background:var(--accent-soft,rgba(234,106,44,.14));color:var(--accent,#ea6a2c);border:1px solid var(--accent-soft,rgba(234,106,44,.32));border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;line-height:1.35}.lx-swapmax:hover{filter:brightness(1.08)}.swap-pair .field .field-label{display:flex;align-items:center}.swap-pair .field .field-label .meta{margin-left:auto;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.swap-pair .field .field-amt input{width:100%}.swap-pair>.field{padding-bottom:2px}.lx-swap-menu{display:flex!important;flex-direction:column;overflow:visible!important;max-height:360px!important;width:250px!important}.lx-swap-menu .lx-am-list{flex:1 1 auto;overflow-y:auto;min-height:0;max-height:210px}.lx-am-more{padding:8px 10px;font:600 11px/1.35 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-muted,#8a8fa3);text-align:center;border-top:1px solid var(--border,#ececef)}.lx-am-search,.lx-am-custin{width:100%;box-sizing:border-box;background:var(--bg,rgba(0,0,0,.2));border:1px solid var(--border,rgba(255,255,255,.16));border-radius:8px;padding:8px 10px;font-size:13px;color:var(--text,#fff);outline:none}.lx-am-searchwrap{position:relative;margin-bottom:6px}.lx-am-searchic{position:absolute;left:11px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--text-muted);pointer-events:none}.lx-am-search{padding-left:34px!important}.lx-am-search:focus,.lx-am-custin:focus{border-color:var(--accent-soft,rgba(234,106,44,.5))}.lx-am-iss{color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:10.5px}.lx-am-meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.25;min-width:0}.lx-am-meta .lx-am-bal{margin-left:0}.lx-am-empty{padding:14px;text-align:center;color:var(--text-muted);font-size:12px}.lx-am-custom{display:flex;gap:6px;margin-top:6px;padding-top:8px;border-top:1px solid var(--border,rgba(255,255,255,.14))}.lx-am-custin{flex:1 1 auto;font-family:'JetBrains Mono',monospace;font-size:11px}.lx-am-custgo{flex:0 0 auto;background:var(--accent,#ea6a2c);color:#fff;border:none;border-radius:8px;padding:0 13px;font-size:12px;font-weight:700;cursor:pointer}.lx-am-customitem .lx-am-ic{font-size:16px}.lx-custom-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100001;display:flex;align-items:center;justify-content:center;padding:20px}.lx-cm-box{background:var(--surface,#171922);border:1px solid var(--border);border-radius:16px;padding:20px 20px 18px;width:350px;max-width:100%;box-shadow:0 24px 70px rgba(0,0,0,.55)}.lx-cm-title{font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px}.lx-cm-lbl{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:700;margin:12px 0 5px}.lx-cm-code,.lx-cm-iss{width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace;outline:none}.lx-cm-code:focus,.lx-cm-iss:focus{border-color:var(--accent-soft,rgba(234,106,44,.55))}.lx-cm-err{color:var(--red,#ff5b5b);font-size:12px;min-height:15px;margin-top:9px;line-height:1.35}.lx-cm-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}.lx-cm-cancel{background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:9px 16px;font-weight:600;cursor:pointer}.lx-cm-confirm{background:var(--accent,#ea6a2c);border:none;color:#fff;border-radius:10px;padding:9px 18px;font-weight:700;cursor:pointer}.lx-swap-err{color:var(--red,#ff5b5b);font-size:12.5px;font-weight:600;line-height:1.4;margin:2px 2px 8px}.lx-smart-badge{display:flex;align-items:center;gap:12px;margin:12px 2px 6px;padding:12px 13px;border-radius:14px;background:var(--accent-pale,rgba(234,106,44,.08));border:1px solid var(--accent-soft,rgba(234,106,44,.28))}.lx-smart-badge .lx-sb-ic{flex:0 0 auto;width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--accent,#ea6a2c),#c1440a);display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(234,106,44,.32)}.lx-smart-badge .lx-sb-ic svg{width:19px;height:19px;fill:#fff;display:block}.lx-smart-badge .lx-sb-mid{flex:1;min-width:0}.lx-smart-badge .lx-sb-ttl{font-weight:800;font-size:14.5px;color:var(--text);letter-spacing:-.01em;line-height:1.2}.lx-smart-badge .lx-sb-sub{font-size:12.3px;color:var(--text-soft);margin-top:2px;line-height:1.3}.lx-smart-badge .lx-sb-sub b{font-weight:700;color:var(--text)}.lx-smart-badge .lx-sb-learn{color:var(--accent,#ea6a2c);font-weight:700;text-decoration:none;cursor:pointer;white-space:nowrap}.lx-smart-badge .lx-sb-learn:hover{text-decoration:underline}.lx-smart-badge .lx-sb-best{flex:0 0 auto;font-weight:800;font-size:12px;color:var(--green,#2f9e6b);background:var(--green-soft,rgba(53,192,127,.13));border:1px solid rgba(53,192,127,.34);padding:6px 11px;border-radius:10px;white-space:nowrap}.lx-smart-info{position:fixed;z-index:100002;max-width:290px;background:var(--surface,#171922);border:1px solid var(--border,rgba(255,255,255,.16));border-radius:14px;padding:14px 16px;box-shadow:0 22px 64px rgba(0,0,0,.5)}.lx-smart-info h5{margin:0 0 6px;font-size:13.5px;font-weight:800;color:var(--text)}.lx-smart-info p{margin:0;font-size:12.8px;line-height:1.5;color:var(--text-soft)}#modalSwap:not(.lx-on-step2) .lx-swapd,#modalSwap:not(.lx-on-step2) .lx-step2-only{display:none!important}#modalSwap.lx-on-step2 .lx-step1-only{display:none!important}#modalSwap.lx-on-step2 .swap-pair{display:none!important}.lx-swap-summary{display:none}#modalSwap.lx-on-step2 .lx-swap-summary{display:flex;align-items:stretch;position:relative;margin:2px 0 12px;border:1px solid var(--border);border-radius:14px;background:var(--surface,#fff)}.lx-swap-summary .lx-ss-row{flex:1 1 0;min-width:0;padding:12px 14px}.lx-swap-summary .lx-ss-row:first-child{border-right:1px solid var(--border);padding-right:26px}.lx-swap-summary .lx-ss-row:last-child{padding-left:26px}.lx-swap-summary .lx-ss-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}.lx-swap-summary .lx-ss-ico{width:24px;height:24px;border-radius:50%;flex:0 0 auto;position:relative;background:var(--al,#333)!important;background-size:cover!important;background-position:center!important;background-repeat:no-repeat!important;overflow:hidden;color:#fff;font-weight:800;font-size:10px}.lx-swap-summary .lx-ss-ico::after{content:attr(data-l);position:absolute;inset:0;display:flex;align-items:center;justify-content:center}.lx-swap-summary .lx-ss-ico img,.lx-ss-ico svg{display:none!important}.lx-swap-summary .lx-ss-lbl{font-size:11px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}.lx-swap-summary .lx-ss-val{font-size:17px;font-weight:800;color:var(--text);font-family:'JetBrains Mono',monospace;line-height:1.2;word-break:break-all}.lx-swap-summary .lx-ss-val .lx-ss-code{display:block;font-size:12px;font-weight:700;color:var(--text-soft);margin-top:3px;font-family:inherit}.lx-swap-summary .lx-ss-arrow{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent,#ea6a2c),#c1440a);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px var(--surface,#fff),0 4px 10px rgba(234,106,44,.28);z-index:2}.lx-swap-summary .lx-ss-arrow svg{width:14px;height:14px;fill:none;stroke:#fff;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}#modalSwap.lx-on-step2 .lx-swapd{font-size:13.5px!important;border-radius:14px!important;padding:9px 14px!important}#modalSwap.lx-on-step2 .lx-swapd .r{padding:4px 0!important}#modalSwap.lx-on-step2 .lx-swapd .r strong{font-size:13.5px!important}#modalSwap .lx-review-btn:disabled{opacity:.55;cursor:not-allowed}#modalSwap .modal-foot{display:flex;gap:10px}.lx-smart-badge{animation:lxsbGlow 3.2s ease-in-out infinite}@keyframes lxsbGlow{0%,100%{box-shadow:0 0 0 0 rgba(234,106,44,0)}50%{box-shadow:0 0 0 3px rgba(234,106,44,.10)}}.lx-smart-badge .lx-sb-ic{animation:lxsbFloat 3.2s ease-in-out infinite}@keyframes lxsbFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}.lx-smart-badge .lx-sb-best{position:relative;overflow:hidden}.lx-smart-badge .lx-sb-best::after{content:"";position:absolute;top:0;bottom:0;left:0;width:45%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.55),transparent);transform:translateX(-220%);animation:lxsbShine 2.9s ease-in-out infinite;pointer-events:none}@keyframes lxsbShine{0%,52%{transform:translateX(-220%)}100%{transform:translateX(430%)}}#modalSwap .swap-pair .field{transition:border-color .16s ease,box-shadow .16s ease}#modalSwap .swap-pair .field:focus-within{border-color:rgba(127,127,140,.28)!important;box-shadow:none!important}.lx-fee-buy{background:none!important;background-image:none!important;border-radius:0!important;width:auto!important;height:auto!important;min-width:0!important;display:inline!important;box-shadow:none!important;padding:0!important;font-size:inherit!important;color:var(--accent,#ea6a2c)!important;text-decoration:none;border-bottom:1px solid rgba(234,106,44,.35)}.lx-fee-buy:hover{border-bottom-color:var(--accent,#ea6a2c)}.lx-fee-buy svg{width:0!important;height:0!important;position:absolute!important}#modalSwap .swap-arrow:hover{background:var(--surface-2)!important;box-shadow:none!important;transform:translate(-50%,-50%)!important;filter:none!important}#modalSwap .modal-foot .btn-primary{transition:filter .15s ease,box-shadow .2s ease,transform .08s ease}#modalSwap .modal-foot .btn-primary:not(:disabled):hover{filter:brightness(1.07);box-shadow:0 9px 24px rgba(234,106,44,.36)}#modalSwap .modal-foot .btn-primary:not(:disabled):active{transform:translateY(1px)}.lx-asset-menu{background:var(--surface,#171922);border:1px solid var(--border,rgba(255,255,255,.14));border-radius:12px;padding:6px;box-shadow:0 14px 44px rgba(0,0,0,.55);width:230px;max-height:290px;overflow-y:auto}.lx-am-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;background:none;border:none;border-radius:8px;cursor:pointer;color:var(--text,#fff);font-size:13.5px;text-align:left}.lx-am-item:hover{background:rgba(255,255,255,.06)}.lx-am-ic{width:25px;height:25px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;flex:0 0 auto;overflow:hidden}.lx-am-ic img{width:100%;height:100%;object-fit:cover;display:block}.lx-am-code{font-weight:600}.lx-am-txt{display:flex;flex-direction:column;gap:1px;min-width:0;overflow:hidden}.lx-am-sub{font-size:10.5px;line-height:1.25;color:var(--text-muted,#8b90a0);font-family:JetBrains Mono,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}#swapModal .lx-dchip{cursor:pointer;border-radius:10px;padding:2px 4px;margin:-2px -4px;transition:background .12s}#swapModal .lx-dchip:hover{background:var(--surface-2,rgba(255,255,255,.06))}#swapModal .lx-dcaret{display:inline-flex;margin-left:1px;opacity:.55}#swapModal .lx-dcaret svg{display:block}#swapModal .lx-swap-err{margin:2px 2px 10px}#swapModal [id="swapGo"][data-lxdis="1"]{opacity:.55;cursor:not-allowed}</style><style id="lx-qorders-css">.lxo-tabs{display:flex;gap:3px;margin:0 0 14px;padding:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px}.lxo-tabs button{flex:1 1 0;padding:7px 10px;border:0;border-radius:8px;background:transparent;color:var(--text-soft);font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background .12s ease,color .12s ease}.lxo-tabs button:hover{color:var(--text)}.lxo-tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.18)}.lxo-pane[hidden]{display:none!important}.lxq-f{display:flex;flex-direction:column;position:relative}.lxq-fld{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:10px}.lxq-lab{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--text-soft);margin-bottom:7px}.lxq-lab .bal{font-size:12.5px;color:var(--text-muted)}.lxq-max,.lxq-mkt{background:var(--accent-soft,rgba(234,106,44,.14));color:var(--accent,#ea6a2c);border:1px solid var(--accent-soft,rgba(234,106,44,.22));border-radius:7px;font:inherit;font-size:11px;font-weight:800;padding:3px 8px;cursor:pointer;letter-spacing:.02em}.lxq-max:hover,.lxq-mkt:hover{filter:brightness(1.12)}.lxq-mkt{margin-left:10px}.lxq-recv{text-align:right;color:var(--text-soft);pointer-events:none}.lxq-usd{margin-top:5px;text-align:right;font-size:12px;color:var(--text-muted);min-height:15px;font-family:'JetBrains Mono',monospace}.lxq-ic[data-art]{background-image:var(--lxa)!important;background-size:cover!important;background-position:center!important;color:transparent!important;font-size:0!important}.lxq-lin{display:flex;align-items:center;justify-content:space-between;gap:10px}.lxq-pick{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:16px;color:var(--text);cursor:pointer;min-width:0}.lxq-pick .lxq-ic{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#2a2a35,#1a1a23);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}.lxq-pick .cv{color:var(--text-muted);font-weight:600;font-size:15px}.lxq-pick .car{color:var(--text-muted);font-size:11px;flex:0 0 auto}.lxq-in{flex:1;min-width:0;border:none;outline:none;background:transparent;text-align:right;font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:var(--text)}.lxq-unit{font-size:12.5px;color:var(--text-muted);white-space:nowrap;flex:0 0 auto}.lxq-meta{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--text-soft);margin:1px 2px 12px}.lxq-meta b{color:var(--text);font-family:'JetBrains Mono',monospace;font-weight:700}.lxq-note{font-size:12.5px;line-height:1.5;color:var(--text-muted);margin:0 2px 12px}.lxq-err{color:var(--red,#ff5b5b);font-size:12.5px;font-weight:600;margin:0 2px 10px}.lxq-go{width:100%;height:46px;border-radius:12px;border:none;background:var(--accent);color:#fff;font:inherit;font-size:16px;font-weight:700;cursor:pointer}.lxq-go[disabled]{opacity:.45;cursor:not-allowed}.lxq-menu{position:absolute;z-index:60;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;box-shadow:0 24px 60px rgba(0,0,0,.4);max-height:264px;overflow:auto}.lxq-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:8px 9px;border:0;border-radius:10px;background:transparent;color:var(--text);font:inherit;text-align:left;cursor:pointer}.lxq-menu button:hover{background:var(--bg)}.lxq-menu button .lxq-ic{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#2a2a35,#1a1a23);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}.lxq-menu button .tx{min-width:0;flex:1 1 auto}.lxq-menu button .cd{font-size:14px;font-weight:700;line-height:1.2}.lxq-menu button .s{display:block;font-size:11.5px;font-weight:500;color:var(--text-muted);line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lxq-menu button .rt{flex:0 0 auto;font-size:11.5px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}.lxq-menu input{width:100%;padding:9px 10px;margin:2px 0 4px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font:inherit;font-size:13.5px;color:var(--text);outline:none}.lxq-menu input:focus{border-color:var(--accent)}.lxq-menu .h{padding:7px 9px 4px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}.cd[data-v]{display:inline-flex;align-items:center;gap:5px}.cd[data-v]::after{content:"\2713";display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;background:#35c07f;color:#fff;font-size:8px;font-weight:900;flex:0 0 auto}.lxo-list{display:flex;flex-direction:column;min-height:70px;max-height:62vh;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}.lxo-list::-webkit-scrollbar{width:8px}.lxo-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px}.lxo-list::-webkit-scrollbar-track{background:transparent}.lxo-o{background:var(--bg);border:1px solid var(--border);border-radius:13px;padding:11px 12px;margin-bottom:8px;transition:border-color .14s ease}.lxo-o:hover{border-color:var(--text-muted)}.lxo-top{display:flex;flex-direction:column;gap:8px}.lxo-col{display:flex;align-items:center;gap:10px;min-width:0}.lxo-cap{flex:0 0 52px;font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);line-height:1.25}.lxo-side{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto}.lxo-tx{min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.lxo-tx .q{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700;color:var(--text);white-space:nowrap}.lxo-tx .c{font-size:12px;font-weight:700;color:var(--text-soft)}.lxo-side .lxq-ic{width:32px;height:32px;border-radius:50%;background:var(--lxfb,linear-gradient(135deg,#2a2a35,#1a1a23));color:#fff;font-size:11px;font-weight:800;letter-spacing:.02em;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;box-shadow:0 0 0 1px var(--border)}.lxo-ft{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding-top:9px;border-top:1px solid var(--border)}.lxo-pw{display:flex;align-items:baseline;gap:8px;min-width:0}.lxo-k{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-muted);flex:0 0 auto}.lxo-px{font-size:12px;color:var(--text-soft);font-family:'JetBrains Mono',monospace;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lxo-o button{flex:0 0 auto;height:28px;padding:0 13px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-soft);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:color .12s ease,border-color .12s ease,background .12s ease}.lxo-o button:hover:not([disabled]){color:var(--red,#ff5b5b);border-color:var(--red,#ff5b5b);background:rgba(255,91,91,.08)}.lxo-o button[disabled]{opacity:.5;cursor:default}.lxo-empty{padding:30px 10px;text-align:center;color:var(--text-soft);font-size:13.5px;line-height:1.6}.lxo-empty .sub{display:block;margin-top:5px;font-size:12.5px;color:var(--text-muted)}</style><script id="lx-xrplconnect">
 // XRPL primitives, kept in one place and testable in node.
 //
 // Every rule here was checked against mainnet on 2026-09-06, not taken from documentation, because
@@ -5317,14 +5338,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -5598,6 +5619,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // ---------------------------------------------------------------------------------------------
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
+
+  // WHERE XAMAN SENDS THE USER BACK. It must be a page that runs THIS file: the library finishes a
+  // sign-in only on the page it returns to -- in the desktop popup it posts the result to the opener,
+  // on a phone it picks the session up after the app hands back. It used to be origin + '/', which on
+  // the combined site is STELLAR's landing page and carries no Xaman code at all, so the popup sat
+  // there and a phone came back signed out. /trade/xrpl is an XRPL page on both the combined and the
+  // standalone builds and is not behind the authgate. Every origin + this path must be listed as a
+  // redirect URL at apps.xaman.dev, or the gateway answers "Invalid client/redirect URL".
+  var XAMAN_RETURN = '/trade/xrpl';
+  // The page the sign-in started from, so a phone returning to XAMAN_RETURN is taken back to it.
+  var XAMAN_BACK = 'lumos.xamanBack';
   var RPC = 'https://xrplcluster.com/';
 
   var K = {
@@ -5841,7 +5873,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
       if (!window.XummPkce) throw new Error('The Xaman library did not load.');
       // One fixed return address, the site's root, whichever page sign-in starts from — the address that must be listed in the Xaman app.
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: window.location.origin + '/' });
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: xamanRedirect() });
 
       // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
       // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
@@ -5863,6 +5895,27 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return xummReady;
   }
 
+  function xamanRedirect() { return window.location.origin + XAMAN_RETURN; }
+
+  // localStorage, not sessionStorage: on a phone the return can arrive in a different tab than the
+  // one that left for the app. Stamped, so a stale entry from an abandoned sign-in is ignored.
+  function rememberBack() {
+    try {
+      localStorage.setItem(XAMAN_BACK, JSON.stringify({
+        u: window.location.pathname + window.location.search + window.location.hash, t: Date.now() }));
+    } catch (e) {}
+  }
+  function goBack() {
+    var b = null;
+    try { b = JSON.parse(localStorage.getItem(XAMAN_BACK) || 'null'); localStorage.removeItem(XAMAN_BACK); } catch (e) {}
+    // Never inside the desktop popup -- the library closes that itself once it has posted.
+    if (window.opener) return;
+    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return;
+    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return;
+    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return;
+    window.location.replace(b.u);
+  }
+
   function adoptXumm(x) {
     try {
       var p = x.state();
@@ -5870,7 +5923,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       p.then(function (state) {
         if (!state || !state.me || !state.me.account) return;
         if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
+        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) { return; }
+        goBack();
       }).catch(noop);
     } catch (e) {}
   }
@@ -5901,24 +5955,64 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // so the wording has to carry both without asserting either.
     if (/popup-closed/.test(m)) {
       return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
-        + 'client/redirect URL", then ' + window.location.origin + ' is not a registered redirect '
+        + 'client/redirect URL", then ' + xamanRedirect() + ' is not a registered redirect '
         + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
     }
     if (/invalid client|redirect|access_denied/i.test(m)) {
-      return new Error('Xaman would not accept a sign-in from ' + window.location.origin
+      return new Error('Xaman would not accept a sign-in returning to ' + xamanRedirect()
         + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
         + 'redirect URL at apps.xaman.dev; otherwise open LumosCore from its main address.');
     }
     return new Error(m || 'Xaman sign-in failed.');
   }
 
+  // THE SIGN-IN WINDOW HAS TO BE OPENED INSIDE THE TAP, AND THE SDK CANNOT DO THAT.
+  //
+  // This is why Xaman never worked on a phone. The SDK's authorize() is:
+  //     yield this.ping ... window.open(authorizeUrl, "XummPkceLogin", ...)
+  // so the open happens AFTER an await. Measured on the deployed XRPL build 2026-10-11: the tap lands,
+  // and window.open is called 108ms later. Desktop browsers tolerate that; iOS Safari does not -- it
+  // only allows a window to be created while a user gesture is active, so the call returns null.
+  //
+  // Nothing then reports it. The SDK stores the null on x.popup, so the watcher below (which asks
+  // whether x.popup has CLOSED) never fires, authorize() stays pending forever, and the dialog sits on
+  // "Waiting for Xaman" with a Cancel button. Reproduced exactly by stubbing window.open to return
+  // null: that is the screen RAZA has been getting on iPhone Safari every time.
+  //
+  // A window opened in the gesture under the SDK's own window NAME fixes it: when authorize() later
+  // calls window.open(url, "XummPkceLogin"), the browser retargets the window that already exists
+  // rather than creating one, which is allowed after the gesture has expired. Same name, or this does
+  // nothing. The SDK's feature string is copied so desktop keeps the sized popup it had.
+  var xamanWin = null;
+  function xamanPreopen() {
+    try {
+      xamanWin = window.open('about:blank', 'XummPkceLogin',
+        'directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=no,width=600,height=790');
+    } catch (e) { xamanWin = null; }
+    return xamanWin;
+  }
+  function xamanDropWin() {
+    try { if (xamanWin && !xamanWin.closed) xamanWin.close(); } catch (e) {}
+    xamanWin = null;
+  }
+
   function xamanConnect() {
+    // SYNCHRONOUS, BEFORE ANY PROMISE. run() calls this straight out of the row's click handler, so the
+    // gesture is still live here -- one await later it is not, which is the whole bug.
+    var pre = xamanPreopen();
+    if (!pre) {
+      // Blocked even inside the gesture: pop-ups are switched off for this site. Say so, rather than
+      // opening a dialog that waits for a window that will never exist.
+      return Promise.reject(new Error('Your browser blocked the Xaman sign-in window. Allow pop-ups '
+        + 'for this site, then try again.'));
+    }
     return xumm().then(function (x) {
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
+      rememberBack();
       var p = x.authorize();
-      if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+      if (!p || !p.then) { xamanPending = null; xamanDropWin(); return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
       // WATCH THE WINDOW, because the SDK's events do not cover this. It settles only when the popup
       // POSTS a message back -- 'xumm_sign_request_rejected' or 'xumm_sign_request_popup_closed' --
@@ -5926,18 +6020,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // just renders. So authorize() stays pending, 'error' never fires, and even closing the window
       // by hand leaves this dialog spinning; RAZA hit that twice on 2026-10-01. The SDK does keep the
       // handle on x.popup, so the window going away is a signal we can read ourselves.
-      // Null on mobile, where the flow is a full-page redirect rather than a popup — the timer simply
-      // never fires there, which is correct.
+      // FALL BACK TO OUR OWN HANDLE. x.popup is whatever the SDK's window.open returned, so when that
+      // call was the one iOS refused it is null and this watcher watched nothing -- the silent half of
+      // the bug above. The window we opened in the gesture is the same window once authorize()
+      // retargets it, so it answers "did the user close it" just as well, and it answers even when the
+      // SDK never got a handle at all.
       var watch = setInterval(function () {
-        var w = x && x.popup;
+        var w = (x && x.popup) || xamanWin;
         if (w && w.closed) { clearInterval(watch); failXaman(new Error('popup-closed')); }
       }, 800);
 
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { clearInterval(watch); xamanPending = null; return v; },
-        function (e) { clearInterval(watch); xamanPending = null; throw e; });
+        function (v) { clearInterval(watch); xamanPending = null; xamanWin = null; return v; },
+        function (e) { clearInterval(watch); xamanPending = null; xamanDropWin(); throw e; });
     }).then(function (state) {
       xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
@@ -5945,6 +6042,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
       }
       return accept(state.me.account, 'Xaman', 'xaman');
+    }).catch(function (e) {
+      // Anything that fails BEFORE authorize() retargets it -- a missing key, the library not
+      // loading, a refusal -- would otherwise leave the blank window we opened sitting there for the
+      // user to close by hand.
+      xamanDropWin();
+      throw e;
     });
   }
 
@@ -6289,6 +6392,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     function pick() {
       build();
+      // WARM THE XAMAN SDK WHILE THE USER IS READING THE LIST. The script is 89KB and was fetched
+      // inside the tap, which is dead time with a blank sign-in window already on screen. Loading it
+      // here does not make the tap synchronous -- authorize() still awaits its own ping, which is why
+      // the window is pre-opened -- it just stops the wait being longer than it needs to be.
+      // Fire and forget: a failure here is reported properly when the row is actually tapped.
+      try { if (XAMAN_KEY) xumm().catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
       var list = document.createElement('div');
@@ -6782,7 +6891,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
-  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
+  // Ledger a pool position is an LP token -- a trustline whose 40-char currency starts with 03 --
   // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
   function poolLumos(rows, cb) {
     var lps = [];
@@ -7099,14 +7208,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -7345,7 +7454,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 // "Trading fee 0.5%" row that Stellar does not show, and a "Select asset" that read dimmer than Stellar's.
 // All three came from the same place: this dialog was deliberately disabled while nothing on the build
 // could sign, and the disabling faded the pickers, relabelled the button and left the design's fee row up.
-// Every other write path (send, swap, trust lines, LP deposit, limit orders) signs through window.lxc now,
+// Every other write path (send, swap, trustlines, LP deposit, limit orders) signs through window.lxc now,
 // so this one does too.
 //
 // NO NEW UI. The asset pickers, dropdowns, balance lines, MAX, summary rows and buttons are the design's.
@@ -7362,7 +7471,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 //   * Its transaction cost is SPECIAL: it destroys one owner-reserve increment (0.2 XRP today), not the
 //     usual ~0.00001. The Network fee row states that figure, read from the ledger, and Fee is set to it
 //     explicitly so no wallet autofill can under-pay and have the transaction rejected.
-//   * The creator receives LP tokens on a new trust line, which reserves one more increment.
+//   * The creator receives LP tokens on a new trustline, which reserves one more increment.
 //   * One pool per pair: if amm_info finds one, the same two amounts are DEPOSITED into it (AMMDeposit,
 //     tfTwoAsset) rather than refused — RAZA 2026-09-15.
 //   * An issued token can only enter a pool if its issuer has Default Ripple enabled (else terNO_RIPPLE).
@@ -7400,6 +7509,29 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function $$(s, r) { return [].slice.call((r || document).querySelectorAll(s)); }
   function modal() { return document.getElementById('createPoolModal'); }
   function lxx() { return window.lxx; }
+
+  // LUMOSCORE'S OWN MARK ON A POOL TRANSACTION (RAZA 2026-10-07: "on XRPL i cant see all types of
+  // activities. I mean, ive been doing so many things like creating pools, withdrawing, swapping").
+  //
+  // A swap is attributable because it pays a platform fee, and the dashboard feed finds swaps by
+  // pairing each fee with the self-payment beside it. **Pool operations pay no fee**, so until now
+  // nothing on the ledger distinguished an AMMCreate made here from one made on xrpl.to, Sologenic or
+  // First Ledger — and the feed cannot honestly list what it cannot attribute. That is the same
+  // objection RAZA raised on 2026-09-17 about rows that were not his.
+  //
+  // This memo is the attribution. It costs a few bytes, it is visible to anyone reading the ledger,
+  // and it says only what is true: this transaction was built by LumosCore.
+  //
+  // Only transactions signed from today forward carry it, so pool actions taken before this ships
+  // stay unattributable and will not appear.
+  function lxMemo(text) {
+    var hex = function (s) {
+      var h = '';
+      for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+      return h.toUpperCase();
+    };
+    return { Memo: { MemoType: hex('LumosCore'), MemoFormat: hex('text/plain'), MemoData: hex(text) } };
+  }
 
   function addr() {
     try { return (window.lxc && window.lxc.address && window.lxc.address()) || localStorage.getItem('lumos.address') || ''; }
@@ -7824,8 +7956,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     tecAMM_FAILED: 'The pool could not take those amounts at its current ratio. Try smaller amounts.',
     tecINSUF_RESERVE_LINE: 'Not enough XRP to cover the reserve for the pool’s LP token line.',
     tecFROZEN: 'One of these assets is frozen by its issuer, so it cannot enter a pool.',
-    tecNO_AUTH: 'One of these assets needs its issuer to authorise your trust line first.',
-    tecNO_LINE: 'You do not have a trust line for one of these assets.',
+    tecNO_AUTH: 'One of these assets needs its issuer to authorise your trustline first.',
+    tecNO_LINE: 'You do not have a trustline for one of these assets.',
     tecAMM_INVALID_TOKENS: 'One of these assets cannot be used in a pool.',
     terNO_RIPPLE: 'An issuer of one of these assets has not enabled rippling, so the XRP Ledger will not accept it in a pool.',
     temBAD_AMM_TOKENS: 'Pick two different assets.',
@@ -7885,7 +8017,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           TransactionType: 'AMMDeposit', Account: who,
           Asset: specOf(a), Asset2: specOf(b),
           Amount: A, Amount2: B,
-          Flags: 0x00100000                                    // tfTwoAsset
+          Flags: 0x00100000,                                   // tfTwoAsset
+          Memos: [lxMemo('LumosCore: add liquidity to the ' + (a.code || '?') + '/' + (b.code || '?') + ' pool')]
         };
         say('This pair already has a pool, so your liquidity goes into it.');
         if (go) setLabel(go, 'Confirm in wallet…');
@@ -7934,7 +8067,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           Amount: A, Amount2: B,
           TradingFee: TRADING_FEE,
           // The special cost, set rather than left to autofill: under-paying it is a rejection.
-          Fee: lxx().toDrops(inc)
+          Fee: lxx().toDrops(inc),
+          Memos: [lxMemo('LumosCore: create the ' + (a.code || '?') + '/' + (b.code || '?') + ' pool')]
         };
         if (go) setLabel(go, 'Confirm in wallet…');
         return window.lxc.submit(tx).then(function (hash) {
@@ -8351,14 +8485,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -8811,7 +8945,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // keeps about six connections to a host, so the rest queue — and a timeout meant to measure "is
   // there a logo?" ends up measuring "how long did this wait behind 300 other requests?".
   //
-  // Measured on an account with 349 trust lines: 310 of 350 rows fell back to a letter. Four of
+  // Measured on an account with 349 trustlines: 310 of 350 rows fell back to a letter. Four of
   // them were then requested directly — STX, LAWAS, PEPE, WIND — and all four answered 200. Every
   // one of those marks existed. Nothing was missing; they had simply timed out in the queue, which
   // would have shipped as "the logos are still missing".
@@ -9121,7 +9255,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     // A HOLDING OF NOTHING OFFERS THE TRUST LINE BACK (RAZA 2026-09-16: "If i have 0 of any asset, then there should be
     // remove trustline button just like on Stellar"). Stellar puts it where Send sits, and Send on an empty holding has
-    // nothing to send anyway. Each trust line reserves 0.2 XRP, so removing one hands that back.
+    // nothing to send anyway. Each trustline reserves 0.2 XRP, so removing one hands that back.
     if (tok && !(tok.balance > 0) && !tok.frozen) {
       // STELLAR'S EXACT BUTTON (RAZA 2026-09-17: "the remove trustline button is not the same as on Stellar"): class
       // `qa-row-btn lx-rmtrust` with a trash glyph — and this build already carries the rule that paints that icon red
@@ -9129,7 +9263,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       var tl = el('button', 'qa-row-btn lx-rmtrust');
       tl.innerHTML = ICON_TRUSTLINE + ' Trustline';
       tl.type = 'button';
-      tl.title = 'Remove this trust line and free its 0.2 XRP reserve';
+      tl.title = 'Remove this trustline and free its 0.2 XRP reserve';
       tl.setAttribute('data-lxrmtl', (tok.currency || '') + '|' + tok.issuer + '|' + name);
       wrap.appendChild(tl);
     } else {
@@ -9154,7 +9288,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return wrap;
   }
 
-  // Setting the limit to zero on a holding of nothing is what closes a trust line: the ledger deletes the line and gives
+  // Setting the limit to zero on a holding of nothing is what closes a trustline: the ledger deletes the line and gives
   // the 0.2 XRP reserve back. It is refused while any balance remains, which is why the button only appears on an empty
   // row. Signed with the same wallet path as every other write on this site.
   function removeTrustline(btn) {
@@ -9171,14 +9305,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       LimitAmount: { currency: cur, issuer: iss, value: '0' }
     }).then(function () {
       btn.textContent = 'Removing…';
-      toast(code + ' trust line removed');
+      toast(code + ' trustline removed');
       // The ledger validates in a few seconds; the list is read again rather than edited in place.
       setTimeout(function () { btn.removeAttribute('data-busy'); btn.innerHTML = label; load(); }, 5000);
     }, function (err) {
       btn.removeAttribute('data-busy');
       btn.innerHTML = label;
       var m = (err && err.message) || '';
-      toast(/reject|denied|cancel/i.test(m) ? 'Cancelled' : 'The trust line could not be removed.');
+      toast(/reject|denied|cancel/i.test(m) ? 'Cancelled' : 'The trustline could not be removed.');
     });
   }
 
@@ -10249,6 +10383,52 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
   // An Asset / Asset2 on an AMM transaction is a SPEC, not an amount: {currency, issuer} with no value,
   // so amt() cannot read it. Same decoder as everywhere else, so a 40-char hex renders as its name.
+  // The two reserves a pool action actually moved, as {value, code, currency, issuer}.
+  //
+  // Prefers the transaction's own Amount/Amount2 when it has them, because that is the exact request
+  // and needs no interpretation. Falls back to the account's balance changes in the metadata, which is
+  // the only place a tfWithdrawAll records what came back.
+  //
+  // The three traps in reading those changes, each checked against real transactions:
+  //   * add the network Fee back to the AccountRoot delta, or a 1 XRP deposit reads as 1.000012
+  //   * skip the pool's own LP token, whose currency code begins 03, or it appears as a third asset
+  //   * a RippleState Balance is signed from the LOW account's side, so negate it when this account
+  //     is the high one
+  // Magnitudes only: the row's verb already says which direction it went.
+  function lpMoved(tx, meta) {
+    var a1 = amt(tx.Amount), a2 = amt(tx.Amount2);
+    if (a1 && a2) return [a1, a2];
+    if (a1) return [a1];
+
+    var me = tx.Account, out = [];
+    var nodes = (meta && meta.AffectedNodes) || [];
+    for (var i = 0; i < nodes.length && out.length < 2; i++) {
+      var w = nodes[i].ModifiedNode || nodes[i].DeletedNode || nodes[i].CreatedNode;
+      if (!w) continue;
+      var f = w.FinalFields || w.NewFields || {}, pv = w.PreviousFields || {};
+      if (w.LedgerEntryType === 'AccountRoot') {
+        if (f.Account !== me || pv.Balance === undefined) continue;
+        var d = (Number(f.Balance) - Number(pv.Balance)) / 1e6 + (Number(tx.Fee || 0) / 1e6);
+        if (Math.abs(d) > 1e-9) out.push({ value: Math.abs(d), code: 'XRP', currency: 'XRP' });
+      } else if (w.LedgerEntryType === 'RippleState') {
+        var bal = f.Balance || {}, pb = pv.Balance;
+        if (pb === undefined || !bal.currency) continue;
+        if (/^03/.test(String(bal.currency))) continue;              // the pool's own LP token
+        var hi = (f.HighLimit || {}).issuer, lo = (f.LowLimit || {}).issuer;
+        if (hi !== me && lo !== me) continue;
+        var dv = (Number(bal.value) - Number(pb.value)) * (lo === me ? 1 : -1);
+        if (Math.abs(dv) > 1e-12) {
+          var dec = window.lxx.decodeCurrency(bal.currency);
+          out.push({
+            value: Math.abs(dv), code: (dec && dec.display) || bal.currency,
+            currency: bal.currency, issuer: (lo === me ? hi : lo),
+          });
+        }
+      }
+    }
+    return out;
+  }
+
   function assetCode(spec) {
     if (!spec) return null;
     if (typeof spec === 'string' || spec.currency === 'XRP' || (!spec.currency && !spec.issuer)) {
@@ -10259,7 +10439,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // WHAT A SWAP ACTUALLY COST: SendMax is only a ceiling, so the spend is read from the ledger's own balance changes — the account's XRP
-  // (less the network fee) or its trust line for the token given.
+  // (less the network fee) or its trustline for the token given.
   function ownDelta(meta, me, give, tx) {
     var nodes = (meta && meta.AffectedNodes) || [];
     for (var i = 0; i < nodes.length; i++) {
@@ -10355,7 +10535,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           // account did not make, named the actual sender as the recipient, and signed the amount
           // as if it had left this wallet.
           //
-          // An AMM or issuer account does this constantly, and any account whose trust line is used
+          // An AMM or issuer account does this constantly, and any account whose trustline is used
           // as a path hop does it occasionally — so it is uncommon rather than rare, and "you sent
           // money" is not a thing to be casually wrong about on a wallet page.
           //
@@ -10385,8 +10565,31 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           var tt = tx.TransactionType;
           var isLp = tt === 'AMMDeposit' || tt === 'AMMCreate' || tt === 'AMMWithdraw' || tt === 'AMMDelete';
           var lpOut = tt === 'AMMWithdraw' || tt === 'AMMDelete';
-          var lpA = isLp ? assetCode(tx.Asset) : null;
-          var lpB = isLp ? assetCode(tx.Asset2) : null;
+          // BOTH HALVES OF AN LP ROW, WHICHEVER FIELDS THE TRANSACTION HAPPENS TO CARRY (RAZA
+          // 2026-10-07: "now show the recent activity on wallet page like stellar").
+          //
+          // The two AMM shapes carry different fields, and this row was reading one of each, so every
+          // pool action was missing half of what Stellar shows:
+          //
+          //   AMMCreate    Amount + Amount2, NO Asset/Asset2  -> amounts shown, pair missing from label
+          //   AMMWithdraw  Asset + Asset2, NO Amount/Amount2  -> pair shown, amounts missing entirely
+          //                (tfWithdrawAll, Flags 131072 — measured on RAZA's own withdrawals)
+          //
+          // lumoscore.com shows both on every pool row: the verb with both asset marks, over
+          // "107.33 HOLA + 51,572 CANNACOIN". So the amounts come from the metadata when the request
+          // does not carry them — which is also the figure that actually moved — and the pair falls
+          // back to those amounts when Asset/Asset2 are absent.
+          var lpAmts = isLp ? lpMoved(tx, meta) : null;
+          var lpA = isLp ? (assetCode(tx.Asset) || (lpAmts && lpAmts[0])) : null;
+          var lpB = isLp ? (assetCode(tx.Asset2) || (lpAmts && lpAmts[1])) : null;
+          // The two lines of one row must name the pair in the SAME order. The label follows
+          // Asset/Asset2 and the amounts come back in whatever order the metadata nodes appear, so a
+          // row could read "ARMY + PHNIX" over "71.71 PHNIX + 0.09 ARMY" — both true, and
+          // momentarily unreadable. The amounts are ordered to the label.
+          if (lpAmts && lpAmts.length === 2 && lpA && lpB && lpAmts[0].code !== lpA.code
+              && lpAmts[1].code === lpA.code) {
+            lpAmts = [lpAmts[1], lpAmts[0]];
+          }
 
           // The kind drives both the disc colour and the glyph, as it does on Stellar. A pass-through
           // is neither sent nor received, so it takes the neutral swap colour rather than the green of
@@ -10477,13 +10680,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
               addrEl.textContent = short(other);
               addrEl.setAttribute('data-logoed', '1');     // the logo engine repaints short-text elements
             }
-            // The two reserves that moved, as Stellar prints them: "107.33 HOLA + 51,572 CANNACOIN". A
-            // tfWithdrawAll carries no Amount fields, so that row keeps the pair in its label and says
-            // nothing here rather than inventing a figure.
-            if (isLp) {
-              var d1 = amt(tx.Amount), d2 = amt(tx.Amount2);
-              if (d1 && d2) who = fmt(d1.value, 6) + ' ' + d1.code + ' + ' + fmt(d2.value, 6) + ' ' + d2.code;
-              else if (d1) who = fmt(d1.value, 6) + ' ' + d1.code;
+            // The two reserves that moved, as Stellar prints them: "107.33 HOLA + 51,572 CANNACOIN".
+            // The note that used to sit here said a tfWithdrawAll "says nothing rather than inventing a
+            // figure" — right not to invent one, wrong that there was none to find. The metadata has it;
+            // lpMoved() reads it, so a withdrawal now prints the same line a deposit does.
+            if (isLp && lpAmts && lpAmts.length) {
+              who = lpAmts.map(function (x) { return fmt(x.value, 6) + ' ' + x.code; }).join(' + ');
             }
             // AN ORDER IS NOT A PAYMENT, AND HAD NOTHING TO SAY (RAZA 2026-10-02: "WTF is this blank trx").
             //
@@ -10582,7 +10784,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // RAZA 2026-09-15: "Whys it showing 2 pools when the count says 0. Also where did this APT come from."
   // The panel was the design's mock rows — APT / USDC, LUMOS / APT — and nothing ever replaced them.
   //
-  // Each LP-token trust line IS a position, and its issuer is the pool's AMM account, so amm_info on it
+  // Each LP-token trustline IS a position, and its issuer is the pool's AMM account, so amm_info on it
   // gives the pair, the reserves and the LP supply; the account's share is its balance over that supply.
   // The design's own row is the template. APR and rewards have no ledger source and say so.
   function paintLpPositions(data) {
@@ -12074,7 +12276,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         if (!ad) {
           // An account does not exist until it holds the base reserve. Sending less than that to an
           // unfunded address fails with tecNO_DST_INSUF_XRP, and sending a TOKEN to one cannot work
-          // at all — there is no account to hold a trust line.
+          // at all — there is no account to hold a trustline.
           if (a.code !== 'XRP') {
             return { err: 'That account is not activated yet. It must be funded with XRP before it can receive tokens.' };
           }
@@ -12100,9 +12302,9 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         }
         if (a.code === 'XRP') return {};
 
-        // PAYING A TOKEN BACK TO ITS OWN ISSUER IS A REDEMPTION, and it needs no trust line — the
+        // PAYING A TOKEN BACK TO ITS OWN ISSUER IS A REDEMPTION, and it needs no trustline — the
         // issuer is not "holding" its own obligation, it is retiring it. The check below refused it
-        // with "That account has no trust line for ARMY, so it cannot receive it", which is not just
+        // with "That account has no trustline for ARMY, so it cannot receive it", which is not just
         // unhelpful but false: that account is the one account that can always receive ARMY.
         //
         // Found by driving the real Send flow with the ARMY issuer as the destination. The refusal
@@ -12117,7 +12319,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
             var ok = (r.lines || []).some(function (l) {
               return l.currency === a.currency && (+l.limit > 0 || +l.balance !== 0);
             });
-            return ok ? {} : { err: 'That account has no trust line for ' + a.code + ', so it cannot receive it.' };
+            return ok ? {} : { err: 'That account has no trustline for ' + a.code + ', so it cannot receive it.' };
           });
       });
   }
@@ -12604,7 +12806,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // You can only RECEIVE a token you already trust, so the destination list is the same list as the
-  // source: XRP plus whatever this account has a trust line for. Offering the whole ledger here would
+  // source: XRP plus whatever this account has a trustline for. Offering the whole ledger here would
   // let someone build a swap that always fails with tecPATH_DRY.
   function swapMenu(btn, which) {
     var m = btn.closest('#modalSwap');
@@ -12866,7 +13068,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var first = Promise.resolve();
     swapSteps = needLine ? 3 : 2;                         // what every label and memo below counts against
     if (needLine) {
-      swapSay('Approve the ' + swapTo.code + ' trust line (1 of 3) in your wallet…');
+      swapSay('Approve the ' + swapTo.code + ' trustline (1 of 3) in your wallet…');
       first = window.lxc.submit({
         TransactionType: 'TrustSet', Account: me,
         LimitAmount: { currency: swapTo.currency, issuer: swapTo.issuer, value: '1000000000' },
@@ -12874,7 +13076,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         Memos: [{ Memo: {
           MemoType: hexAscii('LumosCore'),
           MemoFormat: hexAscii('text/plain'),
-          MemoData: hexAscii('LumosCore: trust line for ' + swapTo.code + ', required before this account can receive it '
+          MemoData: hexAscii('LumosCore: trustline for ' + swapTo.code + ', required before this account can receive it '
             + '- transaction 1 of 3. The platform fee and the swap follow.')
         } }]
       }).then(function () {
@@ -12898,7 +13100,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // THE FEE IS A SECOND TRANSACTION, and it has to be, which is worth stating plainly rather than
-  // hiding. The collector holds no trust lines, so it can only receive XRP; and an XRPL transaction
+  // hiding. The collector holds no trustlines, so it can only receive XRP; and an XRPL transaction
   // carries exactly one operation, so the fee cannot ride along inside the swap. Two approvals is the
   // honest shape of this on this ledger.
   //
@@ -12935,7 +13137,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     }
     return out;
   }
-  var swapSteps = 2;                                     // 3 when this swap also has to add a trust line
+  var swapSteps = 2;                                     // 3 when this swap also has to add a trustline
   function feeMemo(payCode, getCode, n, of) {
     var rate = typeof window.__lxFeeRate === 'number' ? window.__lxFeeRate : 0.002;
     return {
@@ -12948,7 +13150,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     };
   }
 
-  // The fee is a percentage of the trade, charged in XRP because the collector holds no trust lines
+  // The fee is a percentage of the trade, charged in XRP because the collector holds no trustlines
   // and so can receive nothing else.
   //
   // When one side of the swap IS XRP the value is already known. When neither side is, the fee is
@@ -13074,7 +13276,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     });
 
     // XRP → RLUSD BY DEFAULT (RAZA 2026-09-15: "make XRP and RLUSD as the default choice instead of LUMOS"). RLUSD is
-    // offered even without a trust line; the quote says so if this account cannot receive it yet.
+    // offered even without a trustline; the quote says so if this account cannot receive it yet.
     //
     // ON THE $LUMOS PAGE THE DEFAULT IS LUMOS (RAZA 2026-09-16: "On LUMOS token page, if we click swap, it needs to be like it
     // is on Stellar" — where that button opens XLM → LUMOS). Swapping to RLUSD from a page about LUMOS is not what the button
@@ -13105,11 +13307,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // ---- Trustlines ------------------------------------------------------------------------------------
-  // A trust line is what lets an account hold an issued token at all, so this is the gate in front of
+  // A trustline is what lets an account hold an issued token at all, so this is the gate in front of
   // every other token feature: without one, a payment of that token to you fails outright.
   //
   // The design's modal shipped describing the wrong ledger AND the wrong number — "hold non-native
-  // assets on Aptos. Each trustline reserves 0.5 APT". On the XRP Ledger a trust line is an owner
+  // assets on Aptos. Each trustline reserves 0.5 APT". On the XRP Ledger a trustline is an owner
   // object and reserves the owner increment, which is 0.2 XRP today. That figure is READ FROM THE
   // LEDGER rather than written here: both reserve numbers were ten times higher before 2024 and can
   // change again by amendment, so a hardcoded value would quietly misstate what an account is giving
@@ -13663,14 +13865,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -14097,9 +14299,22 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     $$('.addr-row').forEach(function (row) {
       row.classList.add('lxlt');
       var tag = row.querySelector('.net-tag');
-      if (tag && !tag.querySelector('.b-ico')) {
+      // REBUILT EVEN WHEN A .b-ico IS ALREADY THERE (RAZA 2026-10-09: "Aptos logo showing up on Lumos
+      // token page on XRPL"). The guard used to be `!tag.querySelector('.b-ico')` — build the mark
+      // only if the tag has none — and the design ships one, holding APTOS's logo as a 96x96 base64
+      // webp. So the condition was false, this block never ran, and the row read "XRP Ledger" beside
+      // Aptos's mark. Confirmed by blowing the image up on the deployed page rather than inferring it
+      // from the filename: there is no filename, which is also why every Aptos sweep misses it — they
+      // match text, and this is pixels.
+      //
+      // The whole tag is rewritten rather than the nested <img> repointed, because the shipped
+      // structure nests the image inside a 7px span and repointing it would leave an XRP mark at 7px
+      // in a larger circle. data-lxnet marks it done, so a second call is a no-op instead of
+      // rebuilding on every paint.
+      if (tag && tag.getAttribute('data-lxnet') !== 'xrpl') {
         tag.textContent = '';
         tag.setAttribute('data-logoed', '1');
+        tag.setAttribute('data-lxnet', 'xrpl');
         var bi = el('span', 'b-ico');
         var im = document.createElement('img');
         im.src = XRP_LOGO;
@@ -14125,6 +14340,25 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         dom.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>lumoscore.com</span>';
         row.appendChild(dom);
       }
+    });
+    // THE SECOND COPY OF THE SAME INHERITED MARK. The comparison row carries its own wrapper —
+    // .lt-cmp-chain > .lt-cmp-ico — holding Aptos's base64 webp nested inside a 14px span, beside the
+    // words "XRP Ledger". Found by sweeping the page for that image after fixing the .net-tag one and
+    // discovering a second still rendering, which is the only reason it is here: the text pass in
+    // paintChainLabels() cannot reach it (it matches text, and this is pixels) and the .addr-row
+    // rebuild above is scoped to .net-tag.
+    //
+    // The ICON is emptied rather than the whole chain element, because .lt-cmp-chain also holds the
+    // label and the row's own structure. data-lxnet makes a second call a no-op.
+    $$('.lt-cmp-ico').forEach(function (ic) {
+      if (ic.getAttribute('data-lxnet') === 'xrpl') return;
+      ic.setAttribute('data-lxnet', 'xrpl');
+      ic.textContent = '';
+      var cim = document.createElement('img');
+      cim.src = XRP_LOGO;
+      cim.alt = '';
+      cim.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%';
+      ic.appendChild(cim);
     });
     // The XRP price and the 24h change share one line under the dollar price, as on lumoscore.com.
     $$('.hero-price-block').forEach(function (hb) {
@@ -14547,7 +14781,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   //     card two panels up says 1,200;
   //   * five top holders, each an 0x address tagged "Aptos · 1.48% of supply".
   //
-  // ALL OF IT IS COMPUTABLE, exactly, from one place: the issuer's own trust lines. A trust line to
+  // ALL OF IT IS COMPUTABLE, exactly, from one place: the issuer's own trustlines. A trustline to
   // the issuer IS a holding, so account_lines on ISS enumerates every holder with their balance —
   // seen from the issuer, which owes them, so the balances come back negative. Paged, because there
   // are more than one page of them.
@@ -15321,14 +15555,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -16051,7 +16285,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       list.appendChild(poolRow({ acct: q, a1: side(r.amm.amount), a2: side(r.amm.amount2) }));
     });
   }
-  // The connected wallet's own trust lines, read once per page: a token the index has never heard of is still one
+  // The connected wallet's own trustlines, read once per page: a token the index has never heard of is still one
   // the user holds (RAZA 2026-09-15: "WHy cant i search this asset. I even have this asset in my wallet" — XYIELD,
   // absent from xrpl.to's index entirely).
   var LINES = null;
@@ -16076,9 +16310,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }).slice(0, 5);
       if (!hits.length) return;
       dropNote(list);
+      // PRESENTED AS AN ORDINARY ASSET, not as a section of its own (RAZA 2026-10-08, comparing the
+      // two chains: "it also shows 'in your wallet' ... we dont have that on Stellar. so please
+      // remove it from xrpl as well").
+      //
+      // The LOOKUP stays — it is the only reason XYIELD is findable at all, since xrpl.to's index
+      // has never heard of it, which is what the "(0)" in that screenshot is saying. Only the
+      // labelling goes: no group heading, and no "· in your wallet" under the name. Stellar needs no
+      // equivalent because its assets come back from its own index with a holder count, so a row
+      // there already looks like this.
       var anchor = list.querySelector('.lx-recgrp');                // before any pool group
-      var grp = el('div', 'lx-recgrp', 'In your wallet');
-      list.insertBefore(grp, anchor);
       hits.forEach(function (l) {
         var code = codeOf(l.currency) || l.currency;
         var r = rowFor({ n: code, u: '', i: l.account, c: l.currency, h: null, vf: 0, m: '', d: '' });
@@ -16091,10 +16332,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
           ico.appendChild(im);
         }
-        var sub = r.querySelector('.sp-sub');
-        if (sub) sub.textContent = code + ' · in your wallet';
+        // No subtitle override: rowFor already writes the code alone when there is no holder count,
+        // which is exactly how an indexed row reads minus the figure we genuinely do not have.
         list.insertBefore(r, anchor);
       });
+      // COUNTED, because these rows ARE assets on the ledger. render() set the heading from the
+      // index alone, so a token only the wallet knows about left it reading "(0)" above a visible
+      // result — the contradiction in the screenshot.
+      setCount(((d && d.rows) ? d.rows.length : 0) + hits.length);
     });
     var issuers = [];
     (d.rows || []).forEach(function (t) { if (issuers.indexOf(t.i) < 0 && issuers.length < 2) issuers.push(t.i); });
@@ -16267,7 +16512,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   window.__lxxSearchRun = run;
 })();
 
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","launchpad":"launchpad/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
   var KEEP=[];
   function own(h){
     if(!h)return true;
@@ -16323,5 +16568,5 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
   else boot();
-})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad/xrpl","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>

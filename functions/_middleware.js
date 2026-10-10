@@ -49,7 +49,7 @@ const ROUTES = [
     null
   ],
   [
-    "/launchpad",
+    "/launchpad/xrpl",
     "/xrpl/lumoscore-launch-token",
     null
   ],
@@ -560,7 +560,11 @@ export async function onRequest(context){
   if (url.pathname === '/xrpl' || url.pathname.indexOf('/xrpl/') === 0){
     const OLD = [
       ['/xrpl/lumos/stellar', 'https://lumoscore.com/lumos/stellar'],
-      ['/xrpl/list-your-token', '/list-your-token'], ['/xrpl/launchpad', '/launchpad'],
+      // /xrpl/launchpad now lands on /launchpad/xrpl, not the bare /launchpad. The old target became
+      // the network CHOOSER on 2026-10-10, so sending an XRPL-scheme url there would answer "which
+      // chain?" to a link that already said xrpl. The other entries here keep their bare targets
+      // because those pages really are one url for both chains.
+      ['/xrpl/list-your-token', '/list-your-token'], ['/xrpl/launchpad', '/launchpad/xrpl'],
       ['/xrpl/dashboard', '/dashboard'], ['/xrpl/account', '/account/xrpl'],
       ['/xrpl/rewards', '/rewards'], ['/xrpl/bridge', '/bridge'], ['/xrpl/wallet', '/wallet'],
       ['/xrpl/trade', '/trade/xrpl'], ['/xrpl/pools', '/pools/xrpl'], ['/xrpl/lumos', '/lumos/xrpl'],

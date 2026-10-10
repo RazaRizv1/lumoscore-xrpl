@@ -210,6 +210,37 @@ for (const dev of ['desktop', 'mobile']) {
       if (done) h = out + rest;
     }
 
+    // ---- the one question this page never had --------------------------------------------------
+    //
+    // Audit item 38: Stellar's bridge FAQ has nine entries and this one had seven. Six map across
+    // directly and this build's "Which bridges does LumosCore use here?" deliberately consolidates
+    // Stellar's two route-specific ones ("What is Circle CCTP?", "What are LayerZero and USDT0?"),
+    // which is correct — those are Stellar's routes. That leaves exactly ONE topic genuinely absent,
+    // and it is the first thing anyone asks of a bridge: how long it takes.
+    //
+    // THE ANSWER INVENTS NO DURATIONS. Every figure in it is one this build already displays:
+    // nibridge.js writes an "Estimated time" review row per route — literally 'a few minutes' for
+    // Axelar, and the quote's own estimate for THORChain and NEAR Intents. Stellar's equivalent
+    // answer quotes CCTP and LayerZero timings, neither of which exists on this chain, so it could
+    // not be ported.
+    //
+    // INSERTED BEFORE the structured-data block below, so the scrape that regenerates the schema
+    // from the visible pairs picks this up with the rest. Inserted before the fees entry, which is
+    // where Stellar keeps it. Idempotent: it is skipped once the question is present.
+    if (h.indexOf('lx-faq-q') >= 0 && !/How long does a transfer take/i.test(h)) {
+      const FEES_ANCHOR = '<div class="lx-faq-item"><h3 class="lx-faq-q">What are the cross-chain fees?</h3>';
+      if (h.indexOf(FEES_ANCHOR) >= 0) {
+        const item = '<div class="lx-faq-item"><h3 class="lx-faq-q">How long does a transfer take?</h3>'
+          + '<p class="lx-faq-a">' + esc('It depends on which route carries it, so the review step '
+            + 'shows an Estimated time beside the route’s name before you sign. NEAR Intents and '
+            + 'THORChain each return their own estimate with the quote; Axelar is quoted as a few '
+            + 'minutes. Nothing needs claiming on the other side, so once you have signed you can '
+            + 'close the tab.') + '</p></div>';
+        h = h.split(FEES_ANCHOR).join(item + FEES_ANCHOR);
+        qas++; touched++;
+      }
+    }
+
     // ---- the structured data, regenerated from what the page now SAYS --------------------------
     const pairs = [];
     const pre = /<h3 class="lx-faq-q"[^>]*>([\s\S]{0,300}?)<\/h3>[\s\S]{0,300}?<p class="lx-faq-a"[^>]*>([\s\S]*?)<\/p>/g;

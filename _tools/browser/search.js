@@ -513,9 +513,16 @@
       }).slice(0, 5);
       if (!hits.length) return;
       dropNote(list);
+      // PRESENTED AS AN ORDINARY ASSET, not as a section of its own (RAZA 2026-10-08, comparing the
+      // two chains: "it also shows 'in your wallet' ... we dont have that on Stellar. so please
+      // remove it from xrpl as well").
+      //
+      // The LOOKUP stays — it is the only reason XYIELD is findable at all, since xrpl.to's index
+      // has never heard of it, which is what the "(0)" in that screenshot is saying. Only the
+      // labelling goes: no group heading, and no "· in your wallet" under the name. Stellar needs no
+      // equivalent because its assets come back from its own index with a holder count, so a row
+      // there already looks like this.
       var anchor = list.querySelector('.lx-recgrp');                // before any pool group
-      var grp = el('div', 'lx-recgrp', 'In your wallet');
-      list.insertBefore(grp, anchor);
       hits.forEach(function (l) {
         var code = codeOf(l.currency) || l.currency;
         var r = rowFor({ n: code, u: '', i: l.account, c: l.currency, h: null, vf: 0, m: '', d: '' });
@@ -528,10 +535,14 @@
           im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
           ico.appendChild(im);
         }
-        var sub = r.querySelector('.sp-sub');
-        if (sub) sub.textContent = code + ' · in your wallet';
+        // No subtitle override: rowFor already writes the code alone when there is no holder count,
+        // which is exactly how an indexed row reads minus the figure we genuinely do not have.
         list.insertBefore(r, anchor);
       });
+      // COUNTED, because these rows ARE assets on the ledger. render() set the heading from the
+      // index alone, so a token only the wallet knows about left it reading "(0)" above a visible
+      // result — the contradiction in the screenshot.
+      setCount(((d && d.rows) ? d.rows.length : 0) + hits.length);
     });
     var issuers = [];
     (d.rows || []).forEach(function (t) { if (issuers.indexOf(t.i) < 0 && issuers.length < 2) issuers.push(t.i); });

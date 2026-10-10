@@ -255,16 +255,25 @@ const sPaths = new Set(sRed.split('\n').map((l) => l.trim().split(/\s+/)[0]).fil
 
 // A PATH BOTH BUILDS CLAIM IS A SHARED PAGE, not a collision.
 //
-// The authgated surfaces — /dashboard, /wallet, /launchpad and the two launchpad steps — are one url
-// each, because the gate bounces anyone without a wallet: they are never indexed and never shared, so a
+// The authgated surfaces — /dashboard, /wallet and the two launchpad steps — are one url each, because
+// the gate bounces anyone without a wallet: they are never indexed and never shared, so a
 // per-chain url would only ever be a second private link to the same screen. Stellar's route stays and
 // serves the url; the middleware swaps in this build's file when the lx_chain cookie says xrpl. So the
 // XRPL line is dropped rather than appended, and the pair is recorded in CHAIN_ALT below.
 //
+// /launchpad LEFT THIS SET ON 2026-10-10 and the reason is worth keeping, because the cookie mechanism
+// is sound and it was the LAUNCHPAD that stopped fitting it. Sharing one url works only while a page is
+// private: there is then no chooser to reach and no second url worth having. The launchpad is now
+// public, indexed, and fronted by a network chooser at the bare /launchpad — and a url cannot be both
+// the chooser and one of the choices. With lx_chain=xrpl the middleware served the XRPL file, which has
+// no chooser markup at all, so the hub silently ceased to exist for anyone who had ever picked XRPL.
+// Measured: /launchpad served the chooser and 2 cards with no cookie, 0 and 0 with the cookie.
+// The XRPL build now claims /launchpad/xrpl instead, like every other section.
+//
 // Anything else both builds claim IS a collision and still aborts: Pages applies the first match, so a
 // genuine duplicate would silently serve Stellar's page under an XRPL url forever.
 const sharedPaths = xRoutes.map((l) => l.trim().split(/\s+/)[0]).filter((p) => sPaths.has(p));
-const GATED = new Set(['/dashboard', '/wallet', '/launchpad', '/launchpad/review', '/launchpad/confirm']);
+const GATED = new Set(['/dashboard', '/wallet', '/launchpad/review', '/launchpad/confirm']);
 const badShadow = sharedPaths.filter((p) => !GATED.has(p));
 if (badShadow.length) die('these XRPL routes collide with Stellar: ' + badShadow.join(', '));
 // Every gated path must actually be claimed by both, or one chain has silently lost its page.
@@ -426,6 +435,43 @@ if (WRITE) {
   if (smSrc.indexOf('export async function xrplSitemapUrls') < 0) {
     die('_xrplsitemap.js does not export xrplSitemapUrls — the module and the sitemap patch are out of step');
   }
+
+  // llms.txt GETS THE XRPL ROUTES, AND ONLY IN A COMBINED DEPLOY — same reasoning as the sitemap patch
+  // directly above, and the reason this is done here rather than in Stellar's own file.
+  //
+  // That file listed Stellar routes only. llms.txt exists to be read and quoted by answer engines, so
+  // an assistant asked "does LumosCore support the XRP Ledger" was reading a document that says no.
+  // But adding the routes to the Stellar repo would publish them on lumoscore.com, where XRPL does not
+  // exist yet: llms.txt would then advertise urls that 404, which is worse than omitting them. Patching
+  // the OUTPUT ties the claim to the build that can actually serve it.
+  //
+  // /launchpad/xrpl is described WITHOUT A PRICE on purpose. The Stellar line can say "flat $25"; the
+  // XRPL launchpad is on reduced test pricing (~3.18 XRP, see _xrplaunchpad.js), so naming a figure
+  // here would publish a price we do not charge into the one file built for verbatim quotation.
+  const LL = FN_OUT + '/llms.txt.js';
+  let ll = fs.readFileSync(LL, 'utf8');
+  const llAnchor = "  '/terms': 'Terms governing use of the platform.',";
+  const llGroup = "    '/lumos', '/launchpad', '/dashboard'].indexOf(p) >= 0],";
+  if (ll.indexOf(llAnchor) < 0) die('llms.txt.js: PAGES anchor missing — did Stellar rewrite it?');
+  if (ll.indexOf(llGroup) < 0) die('llms.txt.js: Product group anchor missing — did Stellar rewrite it?');
+  const XR = [
+    ["/trade/xrpl", "Live XRP Ledger markets: pairs, movers and recently issued tokens."],
+    ["/pools/xrpl", "XRP Ledger AMM pools with reserves, TVL and volume."],
+    ["/bridge/xrpl", "Cross-chain transfers from the XRP Ledger via NEAR Intents, Axelar and THORChain."],
+    ["/rewards/xrpl", "LUMOS reward programmes on the XRP Ledger, and current eligibility."],
+    ["/lumos/xrpl", "LUMOS on the XRP Ledger: price, pools and holders."],
+    ["/launchpad/xrpl", "Issue a token on the XRP Ledger and open its first AMM pool."],
+    ["/list-your-token/xrpl", "Apply for a curated listing of an XRP Ledger token."],
+    // Already reached the output through the route list, but with no description — rendering as a bare
+    // link in a file whose whole purpose is to be quoted. A line with nothing to quote is wasted.
+    ["/mcp/xrpl", "MCP server for the XRP Ledger: live prices, pools and routes for an AI agent."],
+  ];
+  ll = ll.replace(llAnchor, llAnchor + '\n'
+    + XR.map(([p, d]) => "  '" + p + "': '" + d.split("'").join("\\'") + "',").join('\n'));
+  ll = ll.replace(llGroup,
+    "    '/lumos', '/launchpad', '/dashboard',\n"
+    + "    " + XR.map(([p]) => "'" + p + "'").join(', ') + "].indexOf(p) >= 0],");
+  fs.writeFileSync(LL, ll, 'utf8');
 
   // ---- the sitemap's baked floor ----------------------------------------------------------------
   // The live fetch inside that module returns [] on any failure, and a sitemap with no XRPL urls at

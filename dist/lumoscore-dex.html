@@ -3,7 +3,7 @@
 <head><link rel="preconnect" href="https://xrplcluster.com" crossorigin><link rel="preload" as="font" type="font/woff2" crossorigin href="/assets/fonts/hankengrotesk-latin.woff2"><script>window.__lxTokenRegistry={};(function(){try{var R=window.__lxTokenRegistry,L=(window.__lxLogos=window.__lxLogos||{});for(var k in R){if(!Object.prototype.hasOwnProperty.call(R,k))continue;var d=k.indexOf("-");if(d<1)continue;var c=k.slice(0,d),u=R[k]&&R[k].image;if(typeof u==="string"&&u.charAt(0)==="/"&&u.indexOf("//")!==0&&!L[c])L[c]=u;}}catch(e){}})();(function(){if(document.__lxRowNav)return;document.__lxRowNav=1;function go(c,i){if(!c)return;window.location.href=(c==="XLM")?"lumoscore-dex.html":("lumoscore-dex-asset.html?asset="+encodeURIComponent(c)+(i?("-"+i):""));}document.addEventListener("click",function(e){if(!e.target||!e.target.closest)return;var mb=e.target.closest(".row-menu button");if(mb&&/view/i.test(mb.textContent||"")){var a=window.__lxActiveAsset||{};if(a.code){e.preventDefault();e.stopPropagation();go(a.code,a.iss);}return;}if(e.target.closest("button,a,input,select,[class*=copy],[data-copy]"))return;var row=e.target.closest("#assetsTable tbody tr");if(!row)return;var ico=row.querySelector(".lx-aico");if(!ico)return;go(ico.getAttribute("data-lxc")||"",ico.getAttribute("data-lxi")||"");},true);})();</script><style>#assetsTable tbody tr{cursor:pointer}</style><link rel="icon" type="image/png" href="/assets/favicon.png"><link rel="apple-touch-icon" href="/assets/favicon.png"><script id="lx-nonav">(function(){var armed=0;function isSearch(t){try{return !!(t&&t.closest&&t.closest(".hero-search,.hero-search-wrap,.search-box"));}catch(e){return false;}}function arm(e){if(isSearch(e.target))armed=Date.now();}document.addEventListener("mousedown",arm,true);document.addEventListener("touchstart",arm,true);document.addEventListener("click",function(e){if(!armed)return;var dt=Date.now()-armed;armed=0;if(dt>800)return;e.stopImmediatePropagation();e.preventDefault();},true);})();</script><script>/* lxtheme */(function(){var r=document.documentElement;function top(){try{return window.top||window;}catch(e){return window;}}function rd(){var v=null;try{v=top().__lumosTheme||null;}catch(e){}if(v!=='light'&&v!=='dark'){try{var l=localStorage.getItem('lumos.theme');if(l)v=l;}catch(e){}}return v;}function wr(t){try{top().__lumosTheme=t;}catch(e){}try{localStorage.setItem('lumos.theme',t);}catch(e){}}try{var t=rd();if(t==='light'||t==='dark'){if(r.getAttribute('data-theme')!==t)r.setAttribute('data-theme',t);}else{wr(r.getAttribute('data-theme')||'dark');}}catch(e){}try{new MutationObserver(function(){var c=r.getAttribute('data-theme');if(c==='light'||c==='dark')wr(c);}).observe(r,{attributes:true,attributeFilter:['data-theme']});}catch(e){}})();</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Trade on the XRP Ledger DEX — Swap and Limit Orders | LumosCore</title>
+<title>Trade on XRP Ledger DEX — Swap and Limit Orders | LumosCore</title>
   <meta name="description" content="Swap tokens and place limit orders on the XRP Ledger’s native order book, with live prices read straight from the ledger.">
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 
@@ -3356,7 +3356,30 @@ html[data-theme="light"] .lm-pools .lx-hstat[data-k=top] .pair-icons .lx-ico,htm
    card, which is the point -- the eye goes to the action. */
 .lx-dctas .dex-hero-btn.ghost,.lm-pools .lx-dctas .dex-hero-btn.ghost{color:rgba(255,255,255,.80)!important}
 html[data-theme="light"] .lx-dctas .dex-hero-btn.ghost,html[data-theme="light"] .lm-pools .lx-dctas .dex-hero-btn.ghost{color:#2b2b33!important}
-</style><style id="lx-xrplto-css">.lx-xrplto{margin-top:10px;font:400 12px/1.5 "Hanken Grotesk",system-ui,sans-serif}.lx-xrplto a{color:var(--text-muted,#8a8a93);text-decoration:none;border-bottom:1px solid transparent}.lx-xrplto a:hover{color:var(--text,#f6f5f3);border-bottom-color:currentColor}</style><style id="lx-faqcard">section.lx-faq h2{text-align:center;font-size:36px;font-weight:800;margin-bottom:26px}section.lx-faq .lx-faq-grid{gap:18px}.lx-faq-grid>div{border:1px solid var(--border,#26262c);border-radius:16px;padding:22px 22px 24px}.lx-faq-grid>div>.lx-faq-q{font-size:16.5px;font-weight:700;margin:0 0 9px}.lx-faq-grid>div>.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted,#a5a4ac);margin:0}</style><style id="lxmc-css">.lxmc-row{display:flex;align-items:center;gap:11px;width:100%;margin-top:auto;padding:13.2px;background:var(--surface-2);border:0;border-radius:10px;color:var(--text);cursor:pointer;font:600 14.3px/1.2 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-row+.menu-theme-row{margin-top:8px}.lxmc-row .lxmc-rl{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-row .lxmc-rl img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-row .lxmc-rt{flex:1 1 auto}.lxmc-row svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft)}</style></head>
+</style><style id="lx-xrplto-css">.lx-xrplto{margin-top:10px;font:400 12px/1.5 "Hanken Grotesk",system-ui,sans-serif}.lx-xrplto a{color:var(--text-muted,#8a8a93);text-decoration:none;border-bottom:1px solid transparent}.lx-xrplto a:hover{color:var(--text,#f6f5f3);border-bottom-color:currentColor}</style><style id="lx-faq-css">.lx-faq{max-width:1180px;margin:8px auto 0;padding:52px 24px 60px;border-top:1px solid var(--border)}
+.lx-faq h2{font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.02em;color:var(--text);
+ text-align:center;text-wrap:balance;margin:0 0 26px}
+.lx-faq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+.lx-faq-item{position:relative;padding:22px 22px 24px;border-radius:16px;
+ border:1px solid var(--border);background:linear-gradient(180deg,var(--surface),var(--bg));
+ transform-origin:center bottom;
+ transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.lx-faq-item:hover{transform:scale(1.012);border-color:rgba(234,106,44,.42);
+ box-shadow:0 16px 36px -26px rgba(234,106,44,.7)}
+.lx-faq-q{display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:start;
+ font-size:16.5px;font-weight:700;line-height:1.38;color:var(--text);margin:0 0 9px}
+.lx-faq-q::before{content:"?";display:flex;align-items:center;justify-content:center;
+ width:24px;height:24px;border-radius:8px;font-size:14px;font-weight:800;line-height:1;
+ color:var(--accent);background:rgba(234,106,44,.14);border:1px solid rgba(234,106,44,.26)}
+.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0;padding-left:35px}
+.lx-faq .lx-faqtabs{gap:10px}
+.lx-faq .lx-faqtab{padding:13px 19px}
+@media(max-width:900px){.lx-faq .lx-faqtab{padding:11px 16px}}
+@media(max-width:640px){.lx-faq .lx-faqtab{padding:9px 14px}}
+@media(prefers-reduced-motion:reduce){.lx-faq-item,.lx-faq-item:hover{transition:none;transform:none}}
+@media(max-width:640px){.lx-faq{padding:34px 16px 40px}.lx-faq h2{font-size:22px;margin-bottom:20px}
+.lx-faq-grid{gap:14px}.lx-faq-item{padding:18px 17px 19px;border-radius:14px}
+.lx-faq-a{padding-left:0}}</style><style id="lxmc-css">.lxmc-row{display:flex;align-items:center;gap:11px;width:100%;margin-top:auto;padding:13.2px;background:var(--surface-2);border:0;border-radius:10px;color:var(--text);cursor:pointer;font:600 14.3px/1.2 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-row+.menu-theme-row{margin-top:8px}.lxmc-row .lxmc-rl{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-row .lxmc-rl img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-row .lxmc-rt{flex:1 1 auto}.lxmc-row svg{width:16px;height:16px;flex-shrink:0;color:var(--text-soft)}</style></head>
 <body>
 <div class="app">
   <aside class="nx-side"><div class="nx-brand"><div class="logo"><div class="logo-mark"></div><div class="logo-text">LUMOSCORE</div></div><button class="nx-collapse" aria-label="Collapse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button></div><span class="nx-rail"></span><nav class="nx-nav"><a class="nx-item" data-id="dashboard" href="/dashboard" title="Dashboard"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.6"/><rect x="13" y="3" width="8" height="5" rx="1.6"/><rect x="13" y="11" width="8" height="10" rx="1.6"/><rect x="3" y="14" width="8" height="7" rx="1.6"/></svg></span><span class="nx-lab">Dashboard</span></a><a class="nx-item active" data-id="trade" href="/trade/xrpl" title="Trade"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 6v3"/><rect x="6" y="9" width="4" height="6" rx="1"/><path d="M8 15v3"/><path d="M16 4v2"/><rect x="14" y="6" width="4" height="9" rx="1"/><path d="M16 15v3"/></svg></span><span class="nx-lab">Trade</span></a><a class="nx-item" data-id="pools" href="/pools/xrpl" title="Pools"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A11 11 0 0 0 14 3c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a7 7 0 0 1-11.9 5"/></svg></span><span class="nx-lab">Pools</span></a><a class="nx-item" data-id="bridge" href="/bridge/xrpl" title="Bridge"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9 1.5 12 4 15"/><path d="M20 9l2.5 3L20 15"/><path d="M2.5 12h19"/></svg></span><span class="nx-lab">Bridge</span></a><a class="nx-item" data-id="launchpad" href="/launchpad" title="Launchpad"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.9 12.9 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg></span><span class="nx-lab">Launchpad</span></a><a class="nx-item" data-id="lumos" href="/lumos/xrpl" title="$LUMOS"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg></span><span class="nx-lab">$LUMOS</span></a><a class="nx-item" data-id="wallet" href="/wallet" title="Wallet"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12V7H6a2 2 0 0 1 0-4h13v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M19 12a2 2 0 1 0 0 4h3v-4z"/></svg></span><span class="nx-lab">Wallet</span></a><a class="nx-item" data-id="rewards" href="/rewards/xrpl" title="Rewards"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12v9H4v-9"/><rect x="2" y="7" width="20" height="5" rx="1"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></span><span class="nx-lab">Rewards</span></a><a class="nx-item" data-id="mcp" href="/mcp/xrpl" title="MCP"><span class="nx-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.9 4.9l2.8 2.8"/><path d="M16.3 16.3l2.8 2.8"/><path d="M2 12h4"/><path d="M18 12h4"/><circle cx="12" cy="12" r="3"/></svg></span><span class="nx-lab">MCP</span></a></nav><div class="nx-foot"><button class="nx-logout" type="button" title="Disconnect wallet" onclick="event.stopPropagation();if(window.__lxNav)__lxNav('lumoscore-signin.html')"><span class="nx-lo-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span><span class="nx-lab">Disconnect</span></button></div></aside><script id="lx-sc-early">(function(){try{var s=document.querySelector(".nx-side");if(s&&localStorage.getItem("lumos.side")==="1")s.classList.add("nx-collapsed");}catch(e){}})();</script>
@@ -3374,8 +3397,8 @@ html[data-theme="light"] .lx-dctas .dex-hero-btn.ghost,html[data-theme="light"] 
       
       
       <div class="user-chip">
-        <div class="avatar">RR</div>
-        <div class="name">Raza Rizvi</div>
+        <div class="avatar"></div>
+        <div class="name"></div>
       </div>
     </header>
 
@@ -3396,7 +3419,7 @@ html[data-theme="light"] .lx-dctas .dex-hero-btn.ghost,html[data-theme="light"] 
   <!-- ===== Two stat cards: Trading Activity + New Mints ===== -->
   <section class="dex-overview">
 
-    <!-- Aptos — Trading Activity -->
+    <!-- XRP Ledger — Trading Activity -->
     <style id="lx-livemarket">/*lxts:1.1*/
 .lumos-promo.lm-on{background:radial-gradient(120% 95% at 88% 6%,var(--accent-pale),transparent 52%),var(--surface) !important;border:1px solid var(--border) !important;min-height:300px;padding:0 !important}
 .lm{position:relative;width:100%;height:100%;min-height:300px;border-radius:15px;overflow:hidden}
@@ -3466,7 +3489,7 @@ html[data-theme="light"] .lm-bg{opacity:.09}
 .lm-track b .dn{color:var(--red)}
 @keyframes lm-marq{to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion:reduce){.lm-bars i,.lm-rip,.lm-track,.lm-svg g *{animation:none !important}}
-</style><div class="lumos-promo lm-on" aria-label="Aptos DEX"><div class="lm"><svg class="lm-svg" viewBox="0 0 640 300" preserveAspectRatio="none"><defs><linearGradient id="lmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-640 0" dur="28s" repeatCount="indefinite"/><path class="lm-area" d="M0,300 L0,200 L40,175 L80,210 L120,160 L160,185 L200,140 L240,170 L280,120 L320,150 L360,105 L400,145 L440,115 L480,160 L520,130 L560,190 L600,165 L640,200 L680,175 L720,210 L760,160 L800,185 L840,140 L880,170 L920,120 L960,150 L1000,105 L1040,145 L1080,115 L1120,160 L1160,130 L1200,190 L1240,165 L1280,200 L1280,300 Z"/><path class="lm-line" d="M0,200 L40,175 L80,210 L120,160 L160,185 L200,140 L240,170 L280,120 L320,150 L360,105 L400,145 L440,115 L480,160 L520,130 L560,190 L600,165 L640,200 L680,175 L720,210 L760,160 L800,185 L840,140 L880,170 L920,120 L960,150 L1000,105 L1040,145 L1080,115 L1120,160 L1160,130 L1200,190 L1240,165 L1280,200"/></g></svg><div class="lm-bars"><i style="height:45%;animation-delay:0.00s"></i><i style="height:62%;animation-delay:-0.24s"></i><i style="height:50%;animation-delay:-0.48s"></i><i style="height:70%;animation-delay:-0.72s"></i><i style="height:58%;animation-delay:-0.96s"></i><i style="height:80%;animation-delay:-1.20s"></i><i style="height:66%;animation-delay:-1.44s"></i><i style="height:90%;animation-delay:-1.68s"></i><i style="height:72%;animation-delay:-1.92s"></i><i style="height:85%;animation-delay:-2.16s"></i><i style="height:60%;animation-delay:-2.40s"></i><i style="height:95%;animation-delay:-2.64s"></i><i style="height:78%;animation-delay:-2.88s"></i><i style="height:68%;animation-delay:-3.12s"></i><i style="height:88%;animation-delay:-3.36s"></i><i style="height:74%;animation-delay:-3.60s"></i><i style="height:92%;animation-delay:-3.84s"></i><i style="height:64%;animation-delay:-4.08s"></i><i style="height:82%;animation-delay:-4.32s"></i><i style="height:70%;animation-delay:-4.56s"></i><i style="height:96%;animation-delay:-4.80s"></i><i style="height:80%;animation-delay:-5.04s"></i><i style="height:88%;animation-delay:-5.28s"></i><i style="height:72%;animation-delay:-5.52s"></i></div><div class="lm-chip"><div class="p1">APT</div><div class="p2">$8.41</div><div class="p3"><span>&#9650;</span> 2.41%</div></div><div class="lm-c"><div class="dex-hero-r lx-dctas">
+</style><div class="lumos-promo lm-on" aria-label="XRP Ledger DEX"><div class="lm"><svg class="lm-svg" viewBox="0 0 640 300" preserveAspectRatio="none"><defs><linearGradient id="lmg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs><g><animateTransform attributeName="transform" type="translate" from="0 0" to="-640 0" dur="28s" repeatCount="indefinite"/><path class="lm-area" d="M0,300 L0,200 L40,175 L80,210 L120,160 L160,185 L200,140 L240,170 L280,120 L320,150 L360,105 L400,145 L440,115 L480,160 L520,130 L560,190 L600,165 L640,200 L680,175 L720,210 L760,160 L800,185 L840,140 L880,170 L920,120 L960,150 L1000,105 L1040,145 L1080,115 L1120,160 L1160,130 L1200,190 L1240,165 L1280,200 L1280,300 Z"/><path class="lm-line" d="M0,200 L40,175 L80,210 L120,160 L160,185 L200,140 L240,170 L280,120 L320,150 L360,105 L400,145 L440,115 L480,160 L520,130 L560,190 L600,165 L640,200 L680,175 L720,210 L760,160 L800,185 L840,140 L880,170 L920,120 L960,150 L1000,105 L1040,145 L1080,115 L1120,160 L1160,130 L1200,190 L1240,165 L1280,200"/></g></svg><div class="lm-bars"><i style="height:45%;animation-delay:0.00s"></i><i style="height:62%;animation-delay:-0.24s"></i><i style="height:50%;animation-delay:-0.48s"></i><i style="height:70%;animation-delay:-0.72s"></i><i style="height:58%;animation-delay:-0.96s"></i><i style="height:80%;animation-delay:-1.20s"></i><i style="height:66%;animation-delay:-1.44s"></i><i style="height:90%;animation-delay:-1.68s"></i><i style="height:72%;animation-delay:-1.92s"></i><i style="height:85%;animation-delay:-2.16s"></i><i style="height:60%;animation-delay:-2.40s"></i><i style="height:95%;animation-delay:-2.64s"></i><i style="height:78%;animation-delay:-2.88s"></i><i style="height:68%;animation-delay:-3.12s"></i><i style="height:88%;animation-delay:-3.36s"></i><i style="height:74%;animation-delay:-3.60s"></i><i style="height:92%;animation-delay:-3.84s"></i><i style="height:64%;animation-delay:-4.08s"></i><i style="height:82%;animation-delay:-4.32s"></i><i style="height:70%;animation-delay:-4.56s"></i><i style="height:96%;animation-delay:-4.80s"></i><i style="height:80%;animation-delay:-5.04s"></i><i style="height:88%;animation-delay:-5.28s"></i><i style="height:72%;animation-delay:-5.52s"></i></div><div class="lm-chip"><div class="p1">APT</div><div class="p2">$8.41</div><div class="p3"><span>&#9650;</span> 2.41%</div></div><div class="lm-c"><div class="dex-hero-r lx-dctas">
       <a class="dex-hero-btn ghost" href="#" id="dexHiwBtn">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         How it works?
@@ -3475,9 +3498,9 @@ html[data-theme="light"] .lm-bg{opacity:.09}
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.9 12.9 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
         Launch Token
       </a>
-    </div><span class="lx-heroico" aria-hidden="true"></span><h2 class="lm-h"><span class="lx-h1">The most advanced</span><span class="lx-h2"><em>DEX</em> on Stellar.</span></h2><p class="lm-sub">Pro order types, deep liquidity, and lightning-fast execution &mdash; built for serious traders.</p><a class="lm-cta" href="/trade/xrpl">Start Trading <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></a></div></div></div>
+    </div><span class="lx-heroico" aria-hidden="true"></span><h2 class="lm-h"><span class="lx-h1">The most advanced</span><span class="lx-h2"><em>DEX</em> on the XRP Ledger.</span></h2><p class="lm-sub">Pro order types, deep liquidity, and lightning-fast execution &mdash; built for serious traders.</p><a class="lm-cta" href="/trade/xrpl">Start Trading <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></a></div></div></div>
 
-    <!-- New Mints on Aptos -->
+    <!-- New Mints on the XRP Ledger -->
     <div class="dex-mints-card">
       <div class="dex-mints-head">
         <div class="dex-mints-title">
@@ -3575,7 +3598,7 @@ html[data-theme="light"] .lm-bg{opacity:.09}
   <!-- Footer -->
   
 
-</main><section class="lx-faq" id="faq"><h2>Frequently asked questions</h2><div class="lx-faq-grid"><div><h3 class="lx-faq-q">What does it cost to use LumosCore?</h3><p class="lx-faq-a">LumosCore charges 0.2% per trade, reduced to 0.1% if you hold at least 250,000 LUMOS. On top of that the XRP Ledger itself charges a network fee of about 0.00001 XRP, a small fraction of a cent.</p></div><div><h3 class="lx-faq-q">Do limit orders cost anything?</h3><p class="lx-faq-a">No. LumosCore takes no fee on a limit order, because a resting order may never fill and charging upfront would not be fair. You pay only the XRP Ledger network fee, about 0.00001 XRP, whether or not it fills.</p></div><div><h3 class="lx-faq-q">What is the Curated list?</h3><p class="lx-faq-a">Curated is the set of assets LumosCore has checked and chosen to list. Anyone can issue a token under any ticker on the XRP Ledger, so we verify which issuer an asset actually comes from before putting it in front of people.</p></div><div><h3 class="lx-faq-q">How do I get an asset onto the curated list?</h3><p class="lx-faq-a">Apply on the List your token page: pick the network, give the asset code, issuing account, description and logo, and pay $250 in XRP from your own wallet. We review it by hand and verify the issuer. Listing is not automatic, but if we say no you get the whole $250 back.</p></div><div><h3 class="lx-faq-q">What happens if my listing is rejected?</h3><p class="lx-faq-a">You are refunded in full — the same amount of XRP, sent back to the account that paid it — and told why. In effect you only pay if the asset is listed, and most declines are fixable, so reapplying afterwards is fine.</p></div><div><h3 class="lx-faq-q">How do I promote my token on LumosCore?</h3><p class="lx-faq-a">Getting curated puts a token into Trade, into search and onto its own asset page with a verified tick, and funding a pool makes it tradeable. Beyond that you can buy placement at $15 per 1,000 impressions, with a 5,000 minimum, paid in XRP or LUMOS.</p></div><div><h3 class="lx-faq-q">What does advertising on LumosCore cost?</h3><p class="lx-faq-a">$15 per 1,000 impressions, with a minimum buy of 5,000 impressions, so $75 to start. Pay in XRP or LUMOS. Your placement is shown to people already trading XRP Ledger tokens, so the impressions are an audience rather than traffic.</p></div><div><h3 class="lx-faq-q">How does holding 250,000 LUMOS halve my fees?</h3><p class="lx-faq-a">Hold 250,000 LUMOS or more and your fee drops from 0.2% to 0.1% across Trade, Pools and the bridge. There is nothing to stake, lock or claim, and LUMOS held in a liquidity pool counts towards the total too.</p></div></div></section><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What does it cost to use LumosCore?","acceptedAnswer":{"@type":"Answer","text":"LumosCore charges 0.2% per trade, reduced to 0.1% if you hold at least 250,000 LUMOS. On top of that the XRP Ledger itself charges a network fee of about 0.00001 XRP, a small fraction of a cent."}},{"@type":"Question","name":"Do limit orders cost anything?","acceptedAnswer":{"@type":"Answer","text":"No. LumosCore takes no fee on a limit order, because a resting order may never fill and charging upfront would not be fair. You pay only the XRP Ledger network fee, about 0.00001 XRP, whether or not it fills."}},{"@type":"Question","name":"What is the Curated list?","acceptedAnswer":{"@type":"Answer","text":"Curated is the set of assets LumosCore has checked and chosen to list. Anyone can issue a token under any ticker on the XRP Ledger, so we verify which issuer an asset actually comes from before putting it in front of people."}},{"@type":"Question","name":"How do I get an asset onto the curated list?","acceptedAnswer":{"@type":"Answer","text":"Apply on the List your token page: pick the network, give the asset code, issuing account, description and logo, and pay $250 in XRP from your own wallet. We review it by hand and verify the issuer. Listing is not automatic, but if we say no you get the whole $250 back."}},{"@type":"Question","name":"What happens if my listing is rejected?","acceptedAnswer":{"@type":"Answer","text":"You are refunded in full — the same amount of XRP, sent back to the account that paid it — and told why. In effect you only pay if the asset is listed, and most declines are fixable, so reapplying afterwards is fine."}},{"@type":"Question","name":"How do I promote my token on LumosCore?","acceptedAnswer":{"@type":"Answer","text":"Getting curated puts a token into Trade, into search and onto its own asset page with a verified tick, and funding a pool makes it tradeable. Beyond that you can buy placement at $15 per 1,000 impressions, with a 5,000 minimum, paid in XRP or LUMOS."}},{"@type":"Question","name":"What does advertising on LumosCore cost?","acceptedAnswer":{"@type":"Answer","text":"$15 per 1,000 impressions, with a minimum buy of 5,000 impressions, so $75 to start. Pay in XRP or LUMOS. Your placement is shown to people already trading XRP Ledger tokens, so the impressions are an audience rather than traffic."}},{"@type":"Question","name":"How does holding 250,000 LUMOS halve my fees?","acceptedAnswer":{"@type":"Answer","text":"Hold 250,000 LUMOS or more and your fee drops from 0.2% to 0.1% across Trade, Pools and the bridge. There is nothing to stake, lock or claim, and LUMOS held in a liquidity pool counts towards the total too."}}]}</script><footer>
+</main><section class="lx-faq" id="faq"><h2>Frequently asked questions</h2><div class="lx-faq-grid"><div class="lx-faq-item"><h3 class="lx-faq-q">What does it cost to use LumosCore?</h3><p class="lx-faq-a">LumosCore charges 0.2% per trade, reduced to 0.1% if you hold at least 250,000 LUMOS. On top of that the XRP Ledger itself charges a network fee of about 0.00001 XRP, a small fraction of a cent.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">Do limit orders cost anything?</h3><p class="lx-faq-a">No. LumosCore takes no fee on a limit order, because a resting order may never fill and charging upfront would not be fair. You pay only the XRP Ledger network fee, about 0.00001 XRP, whether or not it fills.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">What is the Curated list?</h3><p class="lx-faq-a">Curated is the set of assets LumosCore has checked and chosen to list. Anyone can issue a token under any ticker on the XRP Ledger, so we verify which issuer an asset actually comes from before putting it in front of people.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">How do I get an asset onto the curated list?</h3><p class="lx-faq-a">Apply on the List your token page: pick the network, give the asset code, issuing account, description and logo, and pay $250 in XRP from your own wallet. We review it by hand and verify the issuer. Listing is not automatic, but if we say no you get the whole $250 back.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">What happens if my listing is rejected?</h3><p class="lx-faq-a">You are refunded in full — the same amount of XRP, sent back to the account that paid it — and told why. In effect you only pay if the asset is listed, and most declines are fixable, so reapplying afterwards is fine.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">How do I promote my token on LumosCore?</h3><p class="lx-faq-a">Getting curated puts a token into Trade, into search and onto its own asset page with a verified tick, and funding a pool makes it tradeable. Beyond that you can buy placement at $15 per 1,000 impressions, with a 5,000 minimum, paid in XRP or LUMOS.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">What does advertising on LumosCore cost?</h3><p class="lx-faq-a">$15 per 1,000 impressions, with a minimum buy of 5,000 impressions, so $75 to start. Pay in XRP or LUMOS. Your placement is shown to people already trading XRP Ledger tokens, so the impressions are an audience rather than traffic.</p></div><div class="lx-faq-item"><h3 class="lx-faq-q">How does holding 250,000 LUMOS halve my fees?</h3><p class="lx-faq-a">Hold 250,000 LUMOS or more and your fee drops from 0.2% to 0.1% across Trade, Pools and the bridge. There is nothing to stake, lock or claim, and LUMOS held in a liquidity pool counts towards the total too.</p></div></div></section><script type="application/ld+json" id="lx-faq-ld">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What does it cost to use LumosCore?","acceptedAnswer":{"@type":"Answer","text":"LumosCore charges 0.2% per trade, reduced to 0.1% if you hold at least 250,000 LUMOS. On top of that the XRP Ledger itself charges a network fee of about 0.00001 XRP, a small fraction of a cent."}},{"@type":"Question","name":"Do limit orders cost anything?","acceptedAnswer":{"@type":"Answer","text":"No. LumosCore takes no fee on a limit order, because a resting order may never fill and charging upfront would not be fair. You pay only the XRP Ledger network fee, about 0.00001 XRP, whether or not it fills."}},{"@type":"Question","name":"What is the Curated list?","acceptedAnswer":{"@type":"Answer","text":"Curated is the set of assets LumosCore has checked and chosen to list. Anyone can issue a token under any ticker on the XRP Ledger, so we verify which issuer an asset actually comes from before putting it in front of people."}},{"@type":"Question","name":"How do I get an asset onto the curated list?","acceptedAnswer":{"@type":"Answer","text":"Apply on the List your token page: pick the network, give the asset code, issuing account, description and logo, and pay $250 in XRP from your own wallet. We review it by hand and verify the issuer. Listing is not automatic, but if we say no you get the whole $250 back."}},{"@type":"Question","name":"What happens if my listing is rejected?","acceptedAnswer":{"@type":"Answer","text":"You are refunded in full — the same amount of XRP, sent back to the account that paid it — and told why. In effect you only pay if the asset is listed, and most declines are fixable, so reapplying afterwards is fine."}},{"@type":"Question","name":"How do I promote my token on LumosCore?","acceptedAnswer":{"@type":"Answer","text":"Getting curated puts a token into Trade, into search and onto its own asset page with a verified tick, and funding a pool makes it tradeable. Beyond that you can buy placement at $15 per 1,000 impressions, with a 5,000 minimum, paid in XRP or LUMOS."}},{"@type":"Question","name":"What does advertising on LumosCore cost?","acceptedAnswer":{"@type":"Answer","text":"$15 per 1,000 impressions, with a minimum buy of 5,000 impressions, so $75 to start. Pay in XRP or LUMOS. Your placement is shown to people already trading XRP Ledger tokens, so the impressions are an audience rather than traffic."}},{"@type":"Question","name":"How does holding 250,000 LUMOS halve my fees?","acceptedAnswer":{"@type":"Answer","text":"Hold 250,000 LUMOS or more and your fee drops from 0.2% to 0.1% across Trade, Pools and the bridge. There is nothing to stake, lock or claim, and LUMOS held in a liquidity pool counts towards the total too."}}]}</script><footer>
       <div class="ft-grid"><div class="ft-col ft-brand"><div class="ft-mark"><span class="ft-logo"></span><span class="ft-name">LUMOSCORE</span></div><p>Multichain infrastructure for issuing and trading assets on multiple networks.</p><div class="lx-xrplto"><a rel="nofollow noopener" target="_blank" href="https://xrpl.to">Data by xrpl.to</a></div><div class="socials">
           <a href="https://x.com/LumosCore" target="_blank" rel="noopener nofollow" aria-label="X"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
           <a href="http://t.me/lumoscore" target="_blank" rel="noopener nofollow" aria-label="Telegram"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M22.05 1.577c-.393-.016-.784.08-1.117.235-.484.186-21.087 8.502-21.087 8.502s5.523 1.86 5.523 1.86 2.61 8.155 2.708 8.479c.108.357.42.768.793 1.052.473.288 1.214.336 1.86-.016.7-.382 2.166-1.255 2.166-1.255l4.13 3.046s.572.345 1.218.396c.323.025 1.082-.27 1.082-.27.371-.255.62-.7.74-1.211l3.32-16.65c.085-.382-.094-.59-.166-.66-.43-.404-1.038-.524-1.295-.522l-.012-.06z"/></svg></a>
@@ -3583,9 +3606,14 @@ html[data-theme="light"] .lm-bg{opacity:.09}
         </div></div>
         <div class="ft-col">
           <h4>Menu</h4>
-          <a href="#">Home</a>
-          <a href="https://lumoscore.com/blog">Blogs</a>
-          <a href="https://lumoscore.com/about">About</a>
+          <a href="/">Home</a>
+          <a href="/trade/xrpl">Trade</a>
+          <a href="/pools/xrpl">Pools</a>
+          <a href="/bridge/xrpl">Cross-Chain</a>
+          <a href="/launchpad/xrpl">Launchpad</a>
+          <a href="/lumos/xrpl">LUMOS Token</a>
+          <a href="/blog">Blogs</a>
+          <a href="/about">About</a>
         </div>
         <div class="ft-col">
           <h4>Resources</h4>
@@ -5151,14 +5179,7 @@ window.addEventListener("storage",ping);
 
 <script id="lx-footerlinks">(function(){if(window.__lxFtl)return;window.__lxFtl=1;var ROUTE={"home":"/dashboard"};function fix(){var scope=document.querySelectorAll("footer a[href=\u0022#\u0022], .footer a[href=\u0022#\u0022], [class*=footer] a[href=\u0022#\u0022]");[].forEach.call(scope,function(a){if(a.__lxf)return;a.__lxf=1;var key=(a.textContent||"").trim().toLowerCase();if(ROUTE[key]){a.setAttribute("href",ROUTE[key]);return;}a.style.cursor="default";a.addEventListener("click",function(e){e.preventDefault();});});}if(document.readyState!=="loading")fix();else document.addEventListener("DOMContentLoaded",fix);setTimeout(fix,1200);})();</script><style id="lx-mc-css">.lxmc{position:relative;flex-shrink:0}.lxmc-trig{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);cursor:pointer;font:600 14px/1 "Hanken Grotesk",system-ui,sans-serif;transition:.15s}.lxmc-trig:hover{border-color:var(--border-strong)}.lxmc-logo,.lxmc-ol{width:24px;height:24px;border-radius:50%;overflow:hidden;display:inline-flex;flex-shrink:0;background:var(--surface-3,#eee)}.lxmc-logo img,.lxmc-ol img{width:100%;height:100%;object-fit:cover;display:block}.lxmc-name{white-space:nowrap}.lxmc-trig svg{width:14px;height:14px;color:var(--text-soft)}.lxmc-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:200;min-width:216px;background:var(--surface);border:1px solid var(--border-strong);border-radius:14px;padding:6px;box-shadow:0 18px 50px rgba(0,0,0,.28)}.lxmc-menu[hidden]{display:none}.lxmc-opt{width:100%;display:flex;align-items:center;gap:11px;padding:9px 11px;border:none;background:transparent;color:var(--text);border-radius:10px;cursor:pointer;font:600 14.5px/1 "Hanken Grotesk",system-ui,sans-serif;text-align:left}.lxmc-opt:hover{background:var(--surface-2)}.lxmc-opt.active{background:var(--accent-soft);color:var(--accent)}@media(max-width:1080px){.lxmc-name{display:none}.lxmc-trig{padding:0 9px}}.lxw-neti{overflow:hidden;background:var(--surface-3,#eee)!important}.lxw-neti img{width:100%;height:100%;object-fit:cover;display:block;border-radius:inherit}</style>
 
-<style id="lx-faq-css">
-.lx-faq{max-width:1180px;margin:8px auto 0;padding:38px 24px 46px;border-top:1px solid var(--border)}
-.lx-faq h2{font-size:26px;font-weight:800;letter-spacing:-.01em;color:var(--text);margin:0 0 22px}
-.lx-faq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px 34px}
-.lx-faq-q{font-size:16px;font-weight:700;color:var(--text);margin:0 0 7px}
-.lx-faq-a{font-size:14.5px;line-height:1.7;color:var(--text-muted);margin:0}
-@media(max-width:640px){.lx-faq{padding:28px 16px 34px}.lx-faq h2{font-size:21px}}
-</style>
+
 <style id="lx-realconnect-css">.lxw-cwallet-ico,.lxw-acct-ico{position:relative;overflow:hidden}.lxw-cwallet-ico .lx-wimg,.lxw-acct-ico .lx-wimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:inherit}.lxw-step{transition:background .28s ease,border-color .28s ease,color .28s ease}.lxw-step.is-done{color:var(--text,#fff)!important;border-color:rgba(52,192,127,.55)!important;background:rgba(52,192,127,.13)!important}.lxw-step.is-done::after{content:"\2713";margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1}</style><style id="lx-hiw-css">
 .lx-hiw{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
 .lx-hiw[hidden]{display:none}
@@ -5483,14 +5504,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -5764,6 +5785,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // ---------------------------------------------------------------------------------------------
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
+
+  // WHERE XAMAN SENDS THE USER BACK. It must be a page that runs THIS file: the library finishes a
+  // sign-in only on the page it returns to -- in the desktop popup it posts the result to the opener,
+  // on a phone it picks the session up after the app hands back. It used to be origin + '/', which on
+  // the combined site is STELLAR's landing page and carries no Xaman code at all, so the popup sat
+  // there and a phone came back signed out. /trade/xrpl is an XRPL page on both the combined and the
+  // standalone builds and is not behind the authgate. Every origin + this path must be listed as a
+  // redirect URL at apps.xaman.dev, or the gateway answers "Invalid client/redirect URL".
+  var XAMAN_RETURN = '/trade/xrpl';
+  // The page the sign-in started from, so a phone returning to XAMAN_RETURN is taken back to it.
+  var XAMAN_BACK = 'lumos.xamanBack';
   var RPC = 'https://xrplcluster.com/';
 
   var K = {
@@ -6007,7 +6039,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
       if (!window.XummPkce) throw new Error('The Xaman library did not load.');
       // One fixed return address, the site's root, whichever page sign-in starts from — the address that must be listed in the Xaman app.
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: window.location.origin + '/' });
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: xamanRedirect() });
 
       // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
       // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
@@ -6029,6 +6061,27 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return xummReady;
   }
 
+  function xamanRedirect() { return window.location.origin + XAMAN_RETURN; }
+
+  // localStorage, not sessionStorage: on a phone the return can arrive in a different tab than the
+  // one that left for the app. Stamped, so a stale entry from an abandoned sign-in is ignored.
+  function rememberBack() {
+    try {
+      localStorage.setItem(XAMAN_BACK, JSON.stringify({
+        u: window.location.pathname + window.location.search + window.location.hash, t: Date.now() }));
+    } catch (e) {}
+  }
+  function goBack() {
+    var b = null;
+    try { b = JSON.parse(localStorage.getItem(XAMAN_BACK) || 'null'); localStorage.removeItem(XAMAN_BACK); } catch (e) {}
+    // Never inside the desktop popup -- the library closes that itself once it has posted.
+    if (window.opener) return;
+    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return;
+    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return;
+    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return;
+    window.location.replace(b.u);
+  }
+
   function adoptXumm(x) {
     try {
       var p = x.state();
@@ -6036,7 +6089,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       p.then(function (state) {
         if (!state || !state.me || !state.me.account) return;
         if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
+        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) { return; }
+        goBack();
       }).catch(noop);
     } catch (e) {}
   }
@@ -6067,24 +6121,64 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // so the wording has to carry both without asserting either.
     if (/popup-closed/.test(m)) {
       return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
-        + 'client/redirect URL", then ' + window.location.origin + ' is not a registered redirect '
+        + 'client/redirect URL", then ' + xamanRedirect() + ' is not a registered redirect '
         + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
     }
     if (/invalid client|redirect|access_denied/i.test(m)) {
-      return new Error('Xaman would not accept a sign-in from ' + window.location.origin
+      return new Error('Xaman would not accept a sign-in returning to ' + xamanRedirect()
         + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
         + 'redirect URL at apps.xaman.dev; otherwise open LumosCore from its main address.');
     }
     return new Error(m || 'Xaman sign-in failed.');
   }
 
+  // THE SIGN-IN WINDOW HAS TO BE OPENED INSIDE THE TAP, AND THE SDK CANNOT DO THAT.
+  //
+  // This is why Xaman never worked on a phone. The SDK's authorize() is:
+  //     yield this.ping ... window.open(authorizeUrl, "XummPkceLogin", ...)
+  // so the open happens AFTER an await. Measured on the deployed XRPL build 2026-10-11: the tap lands,
+  // and window.open is called 108ms later. Desktop browsers tolerate that; iOS Safari does not -- it
+  // only allows a window to be created while a user gesture is active, so the call returns null.
+  //
+  // Nothing then reports it. The SDK stores the null on x.popup, so the watcher below (which asks
+  // whether x.popup has CLOSED) never fires, authorize() stays pending forever, and the dialog sits on
+  // "Waiting for Xaman" with a Cancel button. Reproduced exactly by stubbing window.open to return
+  // null: that is the screen RAZA has been getting on iPhone Safari every time.
+  //
+  // A window opened in the gesture under the SDK's own window NAME fixes it: when authorize() later
+  // calls window.open(url, "XummPkceLogin"), the browser retargets the window that already exists
+  // rather than creating one, which is allowed after the gesture has expired. Same name, or this does
+  // nothing. The SDK's feature string is copied so desktop keeps the sized popup it had.
+  var xamanWin = null;
+  function xamanPreopen() {
+    try {
+      xamanWin = window.open('about:blank', 'XummPkceLogin',
+        'directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=no,width=600,height=790');
+    } catch (e) { xamanWin = null; }
+    return xamanWin;
+  }
+  function xamanDropWin() {
+    try { if (xamanWin && !xamanWin.closed) xamanWin.close(); } catch (e) {}
+    xamanWin = null;
+  }
+
   function xamanConnect() {
+    // SYNCHRONOUS, BEFORE ANY PROMISE. run() calls this straight out of the row's click handler, so the
+    // gesture is still live here -- one await later it is not, which is the whole bug.
+    var pre = xamanPreopen();
+    if (!pre) {
+      // Blocked even inside the gesture: pop-ups are switched off for this site. Say so, rather than
+      // opening a dialog that waits for a window that will never exist.
+      return Promise.reject(new Error('Your browser blocked the Xaman sign-in window. Allow pop-ups '
+        + 'for this site, then try again.'));
+    }
     return xumm().then(function (x) {
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
+      rememberBack();
       var p = x.authorize();
-      if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+      if (!p || !p.then) { xamanPending = null; xamanDropWin(); return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
       // WATCH THE WINDOW, because the SDK's events do not cover this. It settles only when the popup
       // POSTS a message back -- 'xumm_sign_request_rejected' or 'xumm_sign_request_popup_closed' --
@@ -6092,18 +6186,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // just renders. So authorize() stays pending, 'error' never fires, and even closing the window
       // by hand leaves this dialog spinning; RAZA hit that twice on 2026-10-01. The SDK does keep the
       // handle on x.popup, so the window going away is a signal we can read ourselves.
-      // Null on mobile, where the flow is a full-page redirect rather than a popup — the timer simply
-      // never fires there, which is correct.
+      // FALL BACK TO OUR OWN HANDLE. x.popup is whatever the SDK's window.open returned, so when that
+      // call was the one iOS refused it is null and this watcher watched nothing -- the silent half of
+      // the bug above. The window we opened in the gesture is the same window once authorize()
+      // retargets it, so it answers "did the user close it" just as well, and it answers even when the
+      // SDK never got a handle at all.
       var watch = setInterval(function () {
-        var w = x && x.popup;
+        var w = (x && x.popup) || xamanWin;
         if (w && w.closed) { clearInterval(watch); failXaman(new Error('popup-closed')); }
       }, 800);
 
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { clearInterval(watch); xamanPending = null; return v; },
-        function (e) { clearInterval(watch); xamanPending = null; throw e; });
+        function (v) { clearInterval(watch); xamanPending = null; xamanWin = null; return v; },
+        function (e) { clearInterval(watch); xamanPending = null; xamanDropWin(); throw e; });
     }).then(function (state) {
       xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
@@ -6111,6 +6208,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
       }
       return accept(state.me.account, 'Xaman', 'xaman');
+    }).catch(function (e) {
+      // Anything that fails BEFORE authorize() retargets it -- a missing key, the library not
+      // loading, a refusal -- would otherwise leave the blank window we opened sitting there for the
+      // user to close by hand.
+      xamanDropWin();
+      throw e;
     });
   }
 
@@ -6455,6 +6558,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     function pick() {
       build();
+      // WARM THE XAMAN SDK WHILE THE USER IS READING THE LIST. The script is 89KB and was fetched
+      // inside the tap, which is dead time with a blank sign-in window already on screen. Loading it
+      // here does not make the tap synchronous -- authorize() still awaits its own ping, which is why
+      // the window is pre-opened -- it just stops the wait being longer than it needs to be.
+      // Fire and forget: a failure here is reported properly when the row is actually tapped.
+      try { if (XAMAN_KEY) xumm().catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
       var list = document.createElement('div');
@@ -6948,7 +7057,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
-  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
+  // Ledger a pool position is an LP token -- a trustline whose 40-char currency starts with 03 --
   // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
   function poolLumos(rows, cb) {
     var lps = [];
@@ -7265,14 +7374,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -7707,9 +7816,11 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   function claimRowClicks() {
     if (window.__lxxTradeNav) return;
     window.__lxxTradeNav = 1;
-    window.addEventListener('click', function (e) {
+    function wantsTab(e) { return !!(e && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)); }
+    function nav(e) {
       var t = e.target;
       if (!t || !t.closest) return;
+      if (e.button != null && e.button !== 0 && e.button !== 1) return;   // right-click: leave it alone
 
       // SORTING HAS TO BE HANDLED HERE, not on the header itself. A listener bound to the `th` never
       // gets the chance: the design claims clicks anywhere in a list page on WINDOW CAPTURE and
@@ -7724,15 +7835,51 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         return;
       }
 
-      // The row's own Trade button and any real control keep their behaviour.
-      if (t.closest('button, a, input, select, [data-copy]')) return;
+      // A REAL LINK IS LET THROUGH, BUT THE DESIGN'S ROUTER IS NOT. Returning here is not enough on
+      // its own: this listener getting out of the way just hands the click to the design's own
+      // window-capture router, which cancels it and resolves its own route — which is why a plain
+      // <a href> did nothing on this build before. stopImmediatePropagation removes that router from
+      // the picture while leaving the DEFAULT intact, so the browser follows the href itself and
+      // ctrl/cmd/middle-click behave the way they should. Same fix, same reasoning, as lumoscore.com.
+      //
+      // ON A MODIFIER CLICK THE DEFAULT IS NOT ENOUGH EVEN HERE. lumoscore.com measured the anchor
+      // losing that race anyway ("the anchor was there, underlined on hover, and still refused to
+      // open a tab"), because whether stopImmediatePropagation reaches the router depends on which
+      // of the two window-capture listeners registered first — a race this code does not control.
+      // Opening it ourselves does not depend on that ordering.
+      var la = t.closest('a[href]');
+      if (la) {
+        e.stopImmediatePropagation();
+        if (wantsTab(e)) {
+          var lh = la.getAttribute('href');
+          if (lh && lh.charAt(0) !== '#') {
+            e.preventDefault();
+            try { window.open(la.href, '_blank', 'noopener'); } catch (_) { window.location.href = lh; }
+          }
+        }
+        return;
+      }
+
+      // The row's own Trade button and any other real control keep their behaviour.
+      if (t.closest('button, input, select, [data-copy]')) return;
       var el2 = t.closest('[data-lxgo]');
       if (!el2) return;
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      // THE ROWS ARE NOT LINKS (RAZA 2026-10-08: "many of the assets on trade main page not open in
+      // new tab when i try to by ctrl+click"). Measured on the deployed list: 60 rows carry data-lxgo
+      // and NOT ONE of them contains an <a href>, so there was no default for the browser to act on —
+      // returning here on a modifier click simply surrendered it to the design's router, which
+      // navigated in the same tab. Every one of the 60 behaved that way, which is the report.
       e.preventDefault();
       e.stopImmediatePropagation();
-      window.location.href = el2.getAttribute('data-lxgo');
-    }, true);
+      var go = el2.getAttribute('data-lxgo');
+      if (wantsTab(e)) {
+        try { window.open(go, '_blank', 'noopener'); return; } catch (_) {}
+      }
+      window.location.href = go;
+    }
+    // auxclick as well as click: the middle button fires no click event at all in Chrome.
+    window.addEventListener('click', nav, true);
+    window.addEventListener('auxclick', nav, true);
   }
 
   // THE VERIFIED TICK lumoscore.com draws beside a trusted issuer (RAZA 2026-09-15: "add verified tick on trusted
@@ -7758,7 +7905,27 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     var ic = logoEl(t.n, t.m, 32);
     cell.appendChild(ic);
     var nm = el('div', 'dex-mk-pair-name');
-    var head = el('div', 'dex-mk-pair-head', t.n);
+    // A REAL LINK, so a crawler can reach the asset page and a person can open it in a new tab
+    // (RAZA 2026-10-07). Measured on the live build first: `a[href*="/trade/xrpl/"]` found ZERO links
+    // on this page — every row navigated by script, which Google cannot click. lumoscore.com puts a
+    // real <a> in this same cell for exactly this reason.
+    //
+    // The href is the one the row already navigates to, built from the same code+issuer pair, so the
+    // link and the click can never disagree about where the row goes. An <a> also gives the browser
+    // back ctrl/cmd/middle-click, which script navigation had taken away.
+    //
+    // It needs claimRowClicks() to stand aside — see the note there; a plain href alone is not enough
+    // on this build, because the design's own router claims the click first and cancels it.
+    var head = el('a', 'dex-mk-pair-head');
+    head.href = '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i);
+    head.textContent = t.n;
+    // Colour and underline set explicitly rather than left to the cascade. `.dex-mk-pair-head` only
+    // carries layout (display:flex), and every anchor rule in this build is scoped to some other
+    // component — so what a bare <a> would inherit here is not knowable from the stylesheet. Stating
+    // it means this cell looks exactly as it did when it was a <div>, which is the point: this change
+    // is about what a crawler can follow, not about how the row reads.
+    head.style.color = 'inherit';
+    head.style.textDecoration = 'none';
     // EVERY ROW IN THIS TABLE IS TICKED (RAZA 2026-10-02: "Lets add verification tick to all XRPL assets
     // that we're showing on Trade page as curated assets", reaffirmed after I flagged what follows).
     //
@@ -8046,8 +8213,239 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     { th: 'th-tvl', key: 't' },
   ];
 
+  // ======================================================= THE CURATED DROPDOWN (RAZA 2026-10-07)
+  //
+  // "lets make it a drop down with 3 options (Curated - All, Curated - Stables, LumosCore Mints). By
+  // default it lands on Curated - All everytime the page is refreshed."
+  //
+  // MODE is a plain variable and is deliberately NOT persisted — a page load starts at 'all' because
+  // that is what he asked for, and because a filter remembered across visits is how someone ends up
+  // staring at an almost-empty table wondering where the market went.
+  //
+  // "Also know that LumosCore mints doesn't necessarily mean its curated." Kept apart: the mints view
+  // replaces the row set rather than filtering it, and its label says LumosCore Mints with no mention
+  // of curation. Nothing here marks a mint as verified.
+  var MODE = 'all';
+  var MODES = [
+    ['all', 'Curated — All'],
+    ['stables', 'Curated — Stables'],
+    ['mints', 'LumosCore Mints']
+  ];
+
+  // KEYED ON ISSUER, NOT ON TICKER, for the reason the whole site keys on issuer: this ledger carries
+  // several "USD"s and three "RLUSD"s, and a ticker match would list impostors beside Ripple's.
+  // Every pair below was read off the live roster with its domain — Ripple, Circle, GateHub, Bitstamp
+  // and RippleFox — rather than typed from memory. Fiat-backed gateway issuances count; an unknown
+  // gateway on the same ticker does not.
+  var STABLES = {};
+  [
+    ['rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', 'RLUSD'],   // Ripple
+    ['rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE', 'USDC'],    // Circle
+    ['rcEGREd8NmkKRE8GE424sksyt1tJVFZwu', 'USDC'],     // GateHub
+    ['rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq', 'USDT'],     // GateHub
+    ['rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B', 'USD'],      // Bitstamp
+    ['rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', 'USD'],     // GateHub
+    ['rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', 'EUR'],     // GateHub
+    ['rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y', 'USD'],     // RippleFox
+    ['rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y', 'CNY']      // RippleFox
+  ].forEach(function (p) { STABLES[p[0] + '|' + p[1]] = 1; });
+
+  function rowKey(t) { return String((t && t.i) || '') + '|' + String((t && t.n) || '').toUpperCase(); }
+
+  // The chip keeps the design's own class, border and icon — it gains a caret and a menu, nothing
+  // more. Styled from the theme's tokens (--surface, --border, --text, --accent) so it inherits light
+  // and dark without a second palette, and injected once by id so a re-run cannot stack copies.
+  function modeCss() {
+    if (document.getElementById('lx-modemenu-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-modemenu-css';
+    st.textContent = ''
+      + '.lx-modewrap{position:relative;display:inline-flex}'
+      + '.lx-modecaret{margin-left:6px;opacity:.75;font-size:10px;line-height:1}'
+      + '.lx-modemenu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:196px;'
+      + 'padding:6px;border:1px solid var(--border,#26262c);border-radius:12px;'
+      + 'background:var(--surface,#131317);box-shadow:0 18px 40px -22px rgba(0,0,0,.8)}'
+      + '.lx-modemenu button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;'
+      + 'border:0;border-radius:8px;background:transparent;color:var(--text,#f6f5f3);'
+      + 'font:inherit;font-size:13.5px;font-weight:600;text-align:left;cursor:pointer}'
+      + '.lx-modemenu button:hover{background:var(--surface-2,#1a1a1f)}'
+      + '.lx-modemenu button[aria-checked="true"]{color:var(--accent,#ea6a2c)}'
+      + '.lx-modetick{width:12px;flex:0 0 12px;opacity:0}'
+      + '.lx-modemenu button[aria-checked="true"] .lx-modetick{opacity:1}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function closeModeMenu() {
+    var m = document.querySelector('.lx-modemenu');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  // The label lives in the chip's own text node, beside the icon the design put there — rewriting the
+  // whole chip would throw that icon away.
+  function paintModeLabel() {
+    var label = (MODES.filter(function (p) { return p[0] === MODE; })[0] || MODES[0])[1];
+    [].slice.call(document.querySelectorAll('.dex-mk-filter[data-filter="all"], .mdx-mk-filter[data-filter="all"]'))
+      .forEach(function (chip) {
+        [].forEach.call(chip.childNodes, function (n) {
+          if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim() && !/^\s*$/.test(n.nodeValue)) {
+            n.nodeValue = label;
+          }
+        });
+      });
+  }
+
+  function applyMode(next) {
+    if (MODE === next) return;
+    MODE = next;
+    paintModeLabel();
+    var h = host(), d = window.__lxxTradeData;
+    if (!h || !d) return;
+    if (MODE === 'mints' && MINTS.state !== 'done') {
+      renderPage(h, d, 1);                               // paints "Loading LumosCore mints…"
+      loadMints(function () {
+        if (MODE !== 'mints') return;                    // moved on while it was in flight
+        var hh = host(), dd = window.__lxxTradeData;
+        if (hh && dd) renderPage(hh, dd, 1);
+      });
+      return;
+    }
+    renderPage(h, d, 1);                                 // page 1: page 3 of a 1-page view is nothing
+  }
+
+  function makeModeChip(chip) {
+    if (chip.__lxMode) return;
+    chip.__lxMode = 1;
+    modeCss();
+    if (!chip.parentNode) return;
+    var wrap = document.createElement('span');
+    wrap.className = 'lx-modewrap';
+    chip.parentNode.insertBefore(wrap, chip);
+    wrap.appendChild(chip);
+
+    var caret = document.createElement('span');
+    caret.className = 'lx-modecaret';
+    caret.setAttribute('data-logoed', '1');              // the ticker-logo healer repaints short text
+    caret.textContent = '▾';
+    chip.appendChild(caret);
+    chip.setAttribute('aria-haspopup', 'listbox');
+
+    chip.addEventListener('click', function (e) {
+      // This chip was a filter button; the design may still have its own handler bound. Taking the
+      // click outright is what stops a stale "all" filter racing the dropdown.
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (document.querySelector('.lx-modemenu')) { closeModeMenu(); return; }
+      var menu = document.createElement('div');
+      menu.className = 'lx-modemenu';
+      menu.setAttribute('role', 'listbox');
+      MODES.forEach(function (p) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-checked', p[0] === MODE ? 'true' : 'false');
+        var tick = document.createElement('span');
+        tick.className = 'lx-modetick';
+        tick.setAttribute('data-logoed', '1');
+        tick.textContent = '✓';
+        var txt = document.createElement('span');
+        txt.setAttribute('data-logoed', '1');
+        txt.textContent = p[1];
+        b.appendChild(tick); b.appendChild(txt);
+        b.addEventListener('click', function (ev) {
+          ev.preventDefault(); ev.stopPropagation();
+          closeModeMenu();
+          applyMode(p[0]);
+        });
+        menu.appendChild(b);
+      });
+      wrap.appendChild(menu);
+    }, true);
+
+    if (!window.__lxModeDocClose) {
+      window.__lxModeDocClose = 1;
+      document.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && (e.target.closest('.lx-modemenu') || e.target.closest('.lx-modewrap'))) return;
+        closeModeMenu();
+      }, true);
+    }
+  }
+
+  // THE MINTS COME FROM OUR OWN PUBLISHED TOML (RAZA: "we're supposed to maintain toml for all
+  // lumoscore minted assets on XRPL ... hosted and maintained here: lumoscore.com/.well-known/
+  // xrp-ledger.toml"). That file is the record, so this reads it rather than inventing a registry:
+  // six tokens today, and a seventh appears here the moment it is added there, with no deploy.
+  //
+  // None of them are in the top-100-by-volume roster the table otherwise draws — they are new and thin
+  // — so this view REPLACES the rows rather than filtering them, fetching each token's figures from
+  // the same endpoint the LUMOS row already uses, in the same shape, so they sort and price like any
+  // other row.
+  var MINTS = { state: 'idle', rows: [] };
+
+  // A currency is its own code up to three characters and 40 hex characters beyond that. The toml
+  // writes the human code; the ledger and the endpoint want the encoded one.
+  function curHex(code) {
+    var s = String(code || '');
+    if (s.length <= 3) return s;
+    var h = '';
+    for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+    return (h + '0000000000000000000000000000000000000000').slice(0, 40).toUpperCase();
+  }
+
+  // Enough TOML for this file's shape: [[TOKENS]] blocks with issuer and currency. Not a general
+  // parser, and it does not pretend to be — anything outside a [[TOKENS]] block is skipped, and a
+  // malformed entry is dropped rather than guessed at.
+  function parseTomlTokens(text) {
+    var out = [], cur = null;
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var s = line.trim();
+      if (s === '[[TOKENS]]') { cur = {}; out.push(cur); return; }
+      if (s.charAt(0) === '[') { cur = null; return; }
+      if (!cur) return;
+      var m = s.match(/^([A-Za-z_]+)\s*=\s*"([^"]*)"/);
+      if (m) cur[m[1]] = m[2];
+    });
+    return out.filter(function (t) { return t.issuer && t.currency; });
+  }
+
+  function loadMints(after) {
+    if (MINTS.state === 'loading' || MINTS.state === 'done') { after && after(); return; }
+    MINTS.state = 'loading';
+    fetch('/.well-known/xrp-ledger.toml')
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        var toks = parseTomlTokens(txt);
+        if (!toks.length) { MINTS.state = 'done'; after && after(); return; }
+        return Promise.all(toks.map(function (t) {
+          return fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(t.issuer + '-' + curHex(t.currency)))
+            .then(function (r) { return r.json(); })
+            .then(function (lt) {
+              if (!lt || !lt.ok) return null;
+              // The LUMOS row's shape, field for field, so every column and the sorter work unchanged.
+              return {
+                c: lt.currency, i: lt.issuer, n: lt.name || t.currency, u: lt.user || '',
+                p: lt.price, d: lt.p24, w: lt.p7, v: lt.vol24, t: lt.tvl, x: lt.trades24,
+                hi: lt.hi, lo: lt.lo, m: lt.md5 || '', h: lt.holders,
+                vf: 0,                       // a mint is NOT curated — RAZA was explicit about this
+                o: lt.origin || ''
+              };
+            })
+            .catch(function () { return null; });
+        })).then(function (rows) {
+          MINTS.rows = rows.filter(Boolean);
+          MINTS.state = 'done';
+          after && after();
+        });
+      })
+      .catch(function () { MINTS.state = 'done'; after && after(); });
+  }
+
+  function modeRows(d) {
+    if (MODE === 'mints') return MINTS.rows;
+    if (MODE === 'stables') return d.rows.filter(function (t) { return STABLES[rowKey(t)]; });
+    return d.rows;
+  }
+
   function visible(d) {
-    var rows = d.rows;
+    var rows = modeRows(d);
 
     if (QUERY) {
       var q = QUERY.toLowerCase();
@@ -8135,7 +8533,13 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // A filter that matches nothing is a real answer and needs to say so, rather than leaving the
     // last result on screen looking like a match.
     if (!total) {
-      note(h, 'No pair matches “' + QUERY + '”.');
+      // Mode-aware, because "No pair matches" is wrong for an empty view that has no query in it —
+      // and wrong again while the mints are still being fetched, which reads as "there are none".
+      note(h, MODE === 'mints' && MINTS.state !== 'done' ? 'Loading LumosCore mints…'
+        : MODE === 'mints' ? 'No LumosCore mints are listed yet.'
+        : QUERY ? ('No pair matches “' + QUERY + '”.')
+        : MODE === 'stables' ? 'No stablecoins in the current market data.'
+        : 'No pairs to show.');
       setPageInfo(0, 0, 0);
       buildPager(h, d, 1);
       return;
@@ -8340,12 +8744,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // "CURATED", AS ON STELLAR — RAZA 2026-09-15, reversing the earlier "All". The chip's text is the
     // text node after its icon, so only that node is rewritten and the icon stays.
     // (No $$ helper in this file — an undefined one threw here and stopped the whole table rendering.)
+    //
+    // Since 2026-10-07 that text is the dropdown's label rather than a fixed word, so it is written
+    // from MODES and kept in sync by paintModeLabel().
     [].slice.call(document.querySelectorAll('.dex-mk-filter, .mdx-mk-filter')).forEach(function (chip) {
       if ((chip.getAttribute('data-filter') || '').toLowerCase() !== 'all') return;
-      [].forEach.call(chip.childNodes, function (n) {
-        if (n.nodeType === 3 && /^\s*All\s*$/.test(n.nodeValue)) n.nodeValue = 'Curated';
-      });
+      makeModeChip(chip);
     });
+    paintModeLabel();
 
     var search = $('#dexMkSearch input') || $('#dexMkSearch');
     if (search && 'placeholder' in search) search.placeholder = 'Filter curated pairs';
@@ -8544,7 +8950,27 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // the load instead of flashing an empty list, and an error still ends up visible.
   function reveal() {
     try { document.body.classList.add('lxmd-ready'); } catch (e) {}
+    faqRelease();
   }
+
+  // THE TRADE PAGE'S FAQ WAS INVISIBLE, NOT MISSING (RAZA 2026-10-06: "XRPL is missing out FAQs on
+  // many pages like trade main page").
+  //
+  // The inherited stylesheet carries `html:not(.lx-dexlate) .lx-faq{visibility:hidden}` — Stellar's
+  // anti-flash gate, which stops the FAQ painting at the top of a page whose table has not arrived.
+  // Stellar's `_dexdata.js` opens it from its own render; this build's trade layer is ours and never
+  // added the class, so the gate stayed shut forever. `visibility`, not `display`, so the section
+  // kept its full 2252px of height: a tall band of nothing below the pager, which reads as a missing
+  // FAQ rather than a hidden one. Measured, not guessed — it is three page keys (dex, -dark,
+  // -mobile) and no others. [[lumoscore-stripped-layer-css]], [[lumoscore-xrpl-inherited-gates]]
+  //
+  // Released on reveal() so it follows the content, and unconditionally after two seconds so a page
+  // whose data never arrives still shows its FAQ — the same two triggers Stellar uses. Idempotent:
+  // the class is only ever added.
+  function faqRelease() {
+    try { document.documentElement.classList.add('lx-dexlate'); } catch (e) {}
+  }
+  try { setTimeout(faqRelease, 2000); } catch (e) {}
 
   // Whichever list this page has. Both are never present at once: they are different page builds,
   // not a media-query pair, so there is no hidden-container problem here the way there was on the
@@ -8903,14 +9329,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -9633,7 +10059,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       list.appendChild(poolRow({ acct: q, a1: side(r.amm.amount), a2: side(r.amm.amount2) }));
     });
   }
-  // The connected wallet's own trust lines, read once per page: a token the index has never heard of is still one
+  // The connected wallet's own trustlines, read once per page: a token the index has never heard of is still one
   // the user holds (RAZA 2026-09-15: "WHy cant i search this asset. I even have this asset in my wallet" — XYIELD,
   // absent from xrpl.to's index entirely).
   var LINES = null;
@@ -9658,9 +10084,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }).slice(0, 5);
       if (!hits.length) return;
       dropNote(list);
+      // PRESENTED AS AN ORDINARY ASSET, not as a section of its own (RAZA 2026-10-08, comparing the
+      // two chains: "it also shows 'in your wallet' ... we dont have that on Stellar. so please
+      // remove it from xrpl as well").
+      //
+      // The LOOKUP stays — it is the only reason XYIELD is findable at all, since xrpl.to's index
+      // has never heard of it, which is what the "(0)" in that screenshot is saying. Only the
+      // labelling goes: no group heading, and no "· in your wallet" under the name. Stellar needs no
+      // equivalent because its assets come back from its own index with a holder count, so a row
+      // there already looks like this.
       var anchor = list.querySelector('.lx-recgrp');                // before any pool group
-      var grp = el('div', 'lx-recgrp', 'In your wallet');
-      list.insertBefore(grp, anchor);
       hits.forEach(function (l) {
         var code = codeOf(l.currency) || l.currency;
         var r = rowFor({ n: code, u: '', i: l.account, c: l.currency, h: null, vf: 0, m: '', d: '' });
@@ -9673,10 +10106,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
           ico.appendChild(im);
         }
-        var sub = r.querySelector('.sp-sub');
-        if (sub) sub.textContent = code + ' · in your wallet';
+        // No subtitle override: rowFor already writes the code alone when there is no holder count,
+        // which is exactly how an indexed row reads minus the figure we genuinely do not have.
         list.insertBefore(r, anchor);
       });
+      // COUNTED, because these rows ARE assets on the ledger. render() set the heading from the
+      // index alone, so a token only the wallet knows about left it reading "(0)" above a visible
+      // result — the contradiction in the screenshot.
+      setCount(((d && d.rows) ? d.rows.length : 0) + hits.length);
     });
     var issuers = [];
     (d.rows || []).forEach(function (t) { if (issuers.indexOf(t.i) < 0 && issuers.length < 2) issuers.push(t.i); });
@@ -9849,7 +10286,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   window.__lxxSearchRun = run;
 })();
 
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","launchpad":"launchpad/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
   var KEEP=[];
   function own(h){
     if(!h)return true;
@@ -9905,5 +10342,5 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
   else boot();
-})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad/xrpl","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>

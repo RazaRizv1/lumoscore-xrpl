@@ -200,9 +200,11 @@
   function claimRowClicks() {
     if (window.__lxxTradeNav) return;
     window.__lxxTradeNav = 1;
-    window.addEventListener('click', function (e) {
+    function wantsTab(e) { return !!(e && (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1)); }
+    function nav(e) {
       var t = e.target;
       if (!t || !t.closest) return;
+      if (e.button != null && e.button !== 0 && e.button !== 1) return;   // right-click: leave it alone
 
       // SORTING HAS TO BE HANDLED HERE, not on the header itself. A listener bound to the `th` never
       // gets the chance: the design claims clicks anywhere in a list page on WINDOW CAPTURE and
@@ -217,15 +219,51 @@
         return;
       }
 
-      // The row's own Trade button and any real control keep their behaviour.
-      if (t.closest('button, a, input, select, [data-copy]')) return;
+      // A REAL LINK IS LET THROUGH, BUT THE DESIGN'S ROUTER IS NOT. Returning here is not enough on
+      // its own: this listener getting out of the way just hands the click to the design's own
+      // window-capture router, which cancels it and resolves its own route — which is why a plain
+      // <a href> did nothing on this build before. stopImmediatePropagation removes that router from
+      // the picture while leaving the DEFAULT intact, so the browser follows the href itself and
+      // ctrl/cmd/middle-click behave the way they should. Same fix, same reasoning, as lumoscore.com.
+      //
+      // ON A MODIFIER CLICK THE DEFAULT IS NOT ENOUGH EVEN HERE. lumoscore.com measured the anchor
+      // losing that race anyway ("the anchor was there, underlined on hover, and still refused to
+      // open a tab"), because whether stopImmediatePropagation reaches the router depends on which
+      // of the two window-capture listeners registered first — a race this code does not control.
+      // Opening it ourselves does not depend on that ordering.
+      var la = t.closest('a[href]');
+      if (la) {
+        e.stopImmediatePropagation();
+        if (wantsTab(e)) {
+          var lh = la.getAttribute('href');
+          if (lh && lh.charAt(0) !== '#') {
+            e.preventDefault();
+            try { window.open(la.href, '_blank', 'noopener'); } catch (_) { window.location.href = lh; }
+          }
+        }
+        return;
+      }
+
+      // The row's own Trade button and any other real control keep their behaviour.
+      if (t.closest('button, input, select, [data-copy]')) return;
       var el2 = t.closest('[data-lxgo]');
       if (!el2) return;
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+      // THE ROWS ARE NOT LINKS (RAZA 2026-10-08: "many of the assets on trade main page not open in
+      // new tab when i try to by ctrl+click"). Measured on the deployed list: 60 rows carry data-lxgo
+      // and NOT ONE of them contains an <a href>, so there was no default for the browser to act on —
+      // returning here on a modifier click simply surrendered it to the design's router, which
+      // navigated in the same tab. Every one of the 60 behaved that way, which is the report.
       e.preventDefault();
       e.stopImmediatePropagation();
-      window.location.href = el2.getAttribute('data-lxgo');
-    }, true);
+      var go = el2.getAttribute('data-lxgo');
+      if (wantsTab(e)) {
+        try { window.open(go, '_blank', 'noopener'); return; } catch (_) {}
+      }
+      window.location.href = go;
+    }
+    // auxclick as well as click: the middle button fires no click event at all in Chrome.
+    window.addEventListener('click', nav, true);
+    window.addEventListener('auxclick', nav, true);
   }
 
   // THE VERIFIED TICK lumoscore.com draws beside a trusted issuer (RAZA 2026-09-15: "add verified tick on trusted
@@ -251,7 +289,27 @@
     var ic = logoEl(t.n, t.m, 32);
     cell.appendChild(ic);
     var nm = el('div', 'dex-mk-pair-name');
-    var head = el('div', 'dex-mk-pair-head', t.n);
+    // A REAL LINK, so a crawler can reach the asset page and a person can open it in a new tab
+    // (RAZA 2026-10-07). Measured on the live build first: `a[href*="/trade/xrpl/"]` found ZERO links
+    // on this page — every row navigated by script, which Google cannot click. lumoscore.com puts a
+    // real <a> in this same cell for exactly this reason.
+    //
+    // The href is the one the row already navigates to, built from the same code+issuer pair, so the
+    // link and the click can never disagree about where the row goes. An <a> also gives the browser
+    // back ctrl/cmd/middle-click, which script navigation had taken away.
+    //
+    // It needs claimRowClicks() to stand aside — see the note there; a plain href alone is not enough
+    // on this build, because the design's own router claims the click first and cancels it.
+    var head = el('a', 'dex-mk-pair-head');
+    head.href = '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i);
+    head.textContent = t.n;
+    // Colour and underline set explicitly rather than left to the cascade. `.dex-mk-pair-head` only
+    // carries layout (display:flex), and every anchor rule in this build is scoped to some other
+    // component — so what a bare <a> would inherit here is not knowable from the stylesheet. Stating
+    // it means this cell looks exactly as it did when it was a <div>, which is the point: this change
+    // is about what a crawler can follow, not about how the row reads.
+    head.style.color = 'inherit';
+    head.style.textDecoration = 'none';
     // EVERY ROW IN THIS TABLE IS TICKED (RAZA 2026-10-02: "Lets add verification tick to all XRPL assets
     // that we're showing on Trade page as curated assets", reaffirmed after I flagged what follows).
     //
@@ -539,8 +597,239 @@
     { th: 'th-tvl', key: 't' },
   ];
 
+  // ======================================================= THE CURATED DROPDOWN (RAZA 2026-10-07)
+  //
+  // "lets make it a drop down with 3 options (Curated - All, Curated - Stables, LumosCore Mints). By
+  // default it lands on Curated - All everytime the page is refreshed."
+  //
+  // MODE is a plain variable and is deliberately NOT persisted — a page load starts at 'all' because
+  // that is what he asked for, and because a filter remembered across visits is how someone ends up
+  // staring at an almost-empty table wondering where the market went.
+  //
+  // "Also know that LumosCore mints doesn't necessarily mean its curated." Kept apart: the mints view
+  // replaces the row set rather than filtering it, and its label says LumosCore Mints with no mention
+  // of curation. Nothing here marks a mint as verified.
+  var MODE = 'all';
+  var MODES = [
+    ['all', 'Curated — All'],
+    ['stables', 'Curated — Stables'],
+    ['mints', 'LumosCore Mints']
+  ];
+
+  // KEYED ON ISSUER, NOT ON TICKER, for the reason the whole site keys on issuer: this ledger carries
+  // several "USD"s and three "RLUSD"s, and a ticker match would list impostors beside Ripple's.
+  // Every pair below was read off the live roster with its domain — Ripple, Circle, GateHub, Bitstamp
+  // and RippleFox — rather than typed from memory. Fiat-backed gateway issuances count; an unknown
+  // gateway on the same ticker does not.
+  var STABLES = {};
+  [
+    ['rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', 'RLUSD'],   // Ripple
+    ['rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE', 'USDC'],    // Circle
+    ['rcEGREd8NmkKRE8GE424sksyt1tJVFZwu', 'USDC'],     // GateHub
+    ['rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq', 'USDT'],     // GateHub
+    ['rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B', 'USD'],      // Bitstamp
+    ['rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', 'USD'],     // GateHub
+    ['rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', 'EUR'],     // GateHub
+    ['rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y', 'USD'],     // RippleFox
+    ['rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y', 'CNY']      // RippleFox
+  ].forEach(function (p) { STABLES[p[0] + '|' + p[1]] = 1; });
+
+  function rowKey(t) { return String((t && t.i) || '') + '|' + String((t && t.n) || '').toUpperCase(); }
+
+  // The chip keeps the design's own class, border and icon — it gains a caret and a menu, nothing
+  // more. Styled from the theme's tokens (--surface, --border, --text, --accent) so it inherits light
+  // and dark without a second palette, and injected once by id so a re-run cannot stack copies.
+  function modeCss() {
+    if (document.getElementById('lx-modemenu-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-modemenu-css';
+    st.textContent = ''
+      + '.lx-modewrap{position:relative;display:inline-flex}'
+      + '.lx-modecaret{margin-left:6px;opacity:.75;font-size:10px;line-height:1}'
+      + '.lx-modemenu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:196px;'
+      + 'padding:6px;border:1px solid var(--border,#26262c);border-radius:12px;'
+      + 'background:var(--surface,#131317);box-shadow:0 18px 40px -22px rgba(0,0,0,.8)}'
+      + '.lx-modemenu button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;'
+      + 'border:0;border-radius:8px;background:transparent;color:var(--text,#f6f5f3);'
+      + 'font:inherit;font-size:13.5px;font-weight:600;text-align:left;cursor:pointer}'
+      + '.lx-modemenu button:hover{background:var(--surface-2,#1a1a1f)}'
+      + '.lx-modemenu button[aria-checked="true"]{color:var(--accent,#ea6a2c)}'
+      + '.lx-modetick{width:12px;flex:0 0 12px;opacity:0}'
+      + '.lx-modemenu button[aria-checked="true"] .lx-modetick{opacity:1}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function closeModeMenu() {
+    var m = document.querySelector('.lx-modemenu');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  // The label lives in the chip's own text node, beside the icon the design put there — rewriting the
+  // whole chip would throw that icon away.
+  function paintModeLabel() {
+    var label = (MODES.filter(function (p) { return p[0] === MODE; })[0] || MODES[0])[1];
+    [].slice.call(document.querySelectorAll('.dex-mk-filter[data-filter="all"], .mdx-mk-filter[data-filter="all"]'))
+      .forEach(function (chip) {
+        [].forEach.call(chip.childNodes, function (n) {
+          if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim() && !/^\s*$/.test(n.nodeValue)) {
+            n.nodeValue = label;
+          }
+        });
+      });
+  }
+
+  function applyMode(next) {
+    if (MODE === next) return;
+    MODE = next;
+    paintModeLabel();
+    var h = host(), d = window.__lxxTradeData;
+    if (!h || !d) return;
+    if (MODE === 'mints' && MINTS.state !== 'done') {
+      renderPage(h, d, 1);                               // paints "Loading LumosCore mints…"
+      loadMints(function () {
+        if (MODE !== 'mints') return;                    // moved on while it was in flight
+        var hh = host(), dd = window.__lxxTradeData;
+        if (hh && dd) renderPage(hh, dd, 1);
+      });
+      return;
+    }
+    renderPage(h, d, 1);                                 // page 1: page 3 of a 1-page view is nothing
+  }
+
+  function makeModeChip(chip) {
+    if (chip.__lxMode) return;
+    chip.__lxMode = 1;
+    modeCss();
+    if (!chip.parentNode) return;
+    var wrap = document.createElement('span');
+    wrap.className = 'lx-modewrap';
+    chip.parentNode.insertBefore(wrap, chip);
+    wrap.appendChild(chip);
+
+    var caret = document.createElement('span');
+    caret.className = 'lx-modecaret';
+    caret.setAttribute('data-logoed', '1');              // the ticker-logo healer repaints short text
+    caret.textContent = '▾';
+    chip.appendChild(caret);
+    chip.setAttribute('aria-haspopup', 'listbox');
+
+    chip.addEventListener('click', function (e) {
+      // This chip was a filter button; the design may still have its own handler bound. Taking the
+      // click outright is what stops a stale "all" filter racing the dropdown.
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (document.querySelector('.lx-modemenu')) { closeModeMenu(); return; }
+      var menu = document.createElement('div');
+      menu.className = 'lx-modemenu';
+      menu.setAttribute('role', 'listbox');
+      MODES.forEach(function (p) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-checked', p[0] === MODE ? 'true' : 'false');
+        var tick = document.createElement('span');
+        tick.className = 'lx-modetick';
+        tick.setAttribute('data-logoed', '1');
+        tick.textContent = '✓';
+        var txt = document.createElement('span');
+        txt.setAttribute('data-logoed', '1');
+        txt.textContent = p[1];
+        b.appendChild(tick); b.appendChild(txt);
+        b.addEventListener('click', function (ev) {
+          ev.preventDefault(); ev.stopPropagation();
+          closeModeMenu();
+          applyMode(p[0]);
+        });
+        menu.appendChild(b);
+      });
+      wrap.appendChild(menu);
+    }, true);
+
+    if (!window.__lxModeDocClose) {
+      window.__lxModeDocClose = 1;
+      document.addEventListener('click', function (e) {
+        if (e.target && e.target.closest && (e.target.closest('.lx-modemenu') || e.target.closest('.lx-modewrap'))) return;
+        closeModeMenu();
+      }, true);
+    }
+  }
+
+  // THE MINTS COME FROM OUR OWN PUBLISHED TOML (RAZA: "we're supposed to maintain toml for all
+  // lumoscore minted assets on XRPL ... hosted and maintained here: lumoscore.com/.well-known/
+  // xrp-ledger.toml"). That file is the record, so this reads it rather than inventing a registry:
+  // six tokens today, and a seventh appears here the moment it is added there, with no deploy.
+  //
+  // None of them are in the top-100-by-volume roster the table otherwise draws — they are new and thin
+  // — so this view REPLACES the rows rather than filtering them, fetching each token's figures from
+  // the same endpoint the LUMOS row already uses, in the same shape, so they sort and price like any
+  // other row.
+  var MINTS = { state: 'idle', rows: [] };
+
+  // A currency is its own code up to three characters and 40 hex characters beyond that. The toml
+  // writes the human code; the ledger and the endpoint want the encoded one.
+  function curHex(code) {
+    var s = String(code || '');
+    if (s.length <= 3) return s;
+    var h = '';
+    for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+    return (h + '0000000000000000000000000000000000000000').slice(0, 40).toUpperCase();
+  }
+
+  // Enough TOML for this file's shape: [[TOKENS]] blocks with issuer and currency. Not a general
+  // parser, and it does not pretend to be — anything outside a [[TOKENS]] block is skipped, and a
+  // malformed entry is dropped rather than guessed at.
+  function parseTomlTokens(text) {
+    var out = [], cur = null;
+    String(text || '').split(/\r?\n/).forEach(function (line) {
+      var s = line.trim();
+      if (s === '[[TOKENS]]') { cur = {}; out.push(cur); return; }
+      if (s.charAt(0) === '[') { cur = null; return; }
+      if (!cur) return;
+      var m = s.match(/^([A-Za-z_]+)\s*=\s*"([^"]*)"/);
+      if (m) cur[m[1]] = m[2];
+    });
+    return out.filter(function (t) { return t.issuer && t.currency; });
+  }
+
+  function loadMints(after) {
+    if (MINTS.state === 'loading' || MINTS.state === 'done') { after && after(); return; }
+    MINTS.state = 'loading';
+    fetch('/.well-known/xrp-ledger.toml')
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (txt) {
+        var toks = parseTomlTokens(txt);
+        if (!toks.length) { MINTS.state = 'done'; after && after(); return; }
+        return Promise.all(toks.map(function (t) {
+          return fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(t.issuer + '-' + curHex(t.currency)))
+            .then(function (r) { return r.json(); })
+            .then(function (lt) {
+              if (!lt || !lt.ok) return null;
+              // The LUMOS row's shape, field for field, so every column and the sorter work unchanged.
+              return {
+                c: lt.currency, i: lt.issuer, n: lt.name || t.currency, u: lt.user || '',
+                p: lt.price, d: lt.p24, w: lt.p7, v: lt.vol24, t: lt.tvl, x: lt.trades24,
+                hi: lt.hi, lo: lt.lo, m: lt.md5 || '', h: lt.holders,
+                vf: 0,                       // a mint is NOT curated — RAZA was explicit about this
+                o: lt.origin || ''
+              };
+            })
+            .catch(function () { return null; });
+        })).then(function (rows) {
+          MINTS.rows = rows.filter(Boolean);
+          MINTS.state = 'done';
+          after && after();
+        });
+      })
+      .catch(function () { MINTS.state = 'done'; after && after(); });
+  }
+
+  function modeRows(d) {
+    if (MODE === 'mints') return MINTS.rows;
+    if (MODE === 'stables') return d.rows.filter(function (t) { return STABLES[rowKey(t)]; });
+    return d.rows;
+  }
+
   function visible(d) {
-    var rows = d.rows;
+    var rows = modeRows(d);
 
     if (QUERY) {
       var q = QUERY.toLowerCase();
@@ -628,7 +917,13 @@
     // A filter that matches nothing is a real answer and needs to say so, rather than leaving the
     // last result on screen looking like a match.
     if (!total) {
-      note(h, 'No pair matches “' + QUERY + '”.');
+      // Mode-aware, because "No pair matches" is wrong for an empty view that has no query in it —
+      // and wrong again while the mints are still being fetched, which reads as "there are none".
+      note(h, MODE === 'mints' && MINTS.state !== 'done' ? 'Loading LumosCore mints…'
+        : MODE === 'mints' ? 'No LumosCore mints are listed yet.'
+        : QUERY ? ('No pair matches “' + QUERY + '”.')
+        : MODE === 'stables' ? 'No stablecoins in the current market data.'
+        : 'No pairs to show.');
       setPageInfo(0, 0, 0);
       buildPager(h, d, 1);
       return;
@@ -833,12 +1128,14 @@
     // "CURATED", AS ON STELLAR — RAZA 2026-09-15, reversing the earlier "All". The chip's text is the
     // text node after its icon, so only that node is rewritten and the icon stays.
     // (No $$ helper in this file — an undefined one threw here and stopped the whole table rendering.)
+    //
+    // Since 2026-10-07 that text is the dropdown's label rather than a fixed word, so it is written
+    // from MODES and kept in sync by paintModeLabel().
     [].slice.call(document.querySelectorAll('.dex-mk-filter, .mdx-mk-filter')).forEach(function (chip) {
       if ((chip.getAttribute('data-filter') || '').toLowerCase() !== 'all') return;
-      [].forEach.call(chip.childNodes, function (n) {
-        if (n.nodeType === 3 && /^\s*All\s*$/.test(n.nodeValue)) n.nodeValue = 'Curated';
-      });
+      makeModeChip(chip);
     });
+    paintModeLabel();
 
     var search = $('#dexMkSearch input') || $('#dexMkSearch');
     if (search && 'placeholder' in search) search.placeholder = 'Filter curated pairs';
@@ -1037,7 +1334,27 @@
   // the load instead of flashing an empty list, and an error still ends up visible.
   function reveal() {
     try { document.body.classList.add('lxmd-ready'); } catch (e) {}
+    faqRelease();
   }
+
+  // THE TRADE PAGE'S FAQ WAS INVISIBLE, NOT MISSING (RAZA 2026-10-06: "XRPL is missing out FAQs on
+  // many pages like trade main page").
+  //
+  // The inherited stylesheet carries `html:not(.lx-dexlate) .lx-faq{visibility:hidden}` — Stellar's
+  // anti-flash gate, which stops the FAQ painting at the top of a page whose table has not arrived.
+  // Stellar's `_dexdata.js` opens it from its own render; this build's trade layer is ours and never
+  // added the class, so the gate stayed shut forever. `visibility`, not `display`, so the section
+  // kept its full 2252px of height: a tall band of nothing below the pager, which reads as a missing
+  // FAQ rather than a hidden one. Measured, not guessed — it is three page keys (dex, -dark,
+  // -mobile) and no others. [[lumoscore-stripped-layer-css]], [[lumoscore-xrpl-inherited-gates]]
+  //
+  // Released on reveal() so it follows the content, and unconditionally after two seconds so a page
+  // whose data never arrives still shows its FAQ — the same two triggers Stellar uses. Idempotent:
+  // the class is only ever added.
+  function faqRelease() {
+    try { document.documentElement.classList.add('lx-dexlate'); } catch (e) {}
+  }
+  try { setTimeout(faqRelease, 2000); } catch (e) {}
 
   // Whichever list this page has. Both are never present at once: they are different page builds,
   // not a media-query pair, so there is no hidden-container problem here the way there was on the

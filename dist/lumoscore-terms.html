@@ -2947,9 +2947,14 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
         </div></div>
         <div class="ft-col">
           <h4>Menu</h4>
-          <a href="#">Home</a>
-          <a href="https://lumoscore.com/blog">Blogs</a>
-          <a href="https://lumoscore.com/about">About</a>
+          <a href="/">Home</a>
+          <a href="/trade/xrpl">Trade</a>
+          <a href="/pools/xrpl">Pools</a>
+          <a href="/bridge/xrpl">Cross-Chain</a>
+          <a href="/launchpad/xrpl">Launchpad</a>
+          <a href="/lumos/xrpl">LUMOS Token</a>
+          <a href="/blog">Blogs</a>
+          <a href="/about">About</a>
         </div>
         <div class="ft-col">
           <h4>Resources</h4>
@@ -3539,7 +3544,7 @@ table.pools tbody tr.lx-ammrow td:last-child{font-weight:700}
           label: 'Copy issuer address' },
         { divider: true },
         { ic: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
-          label: 'View on Aptos Explorer' },
+          label: 'View on Explorer' },
       ],
       lp: [
         { ic: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
@@ -8245,14 +8250,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -8526,6 +8531,17 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   // ---------------------------------------------------------------------------------------------
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
+
+  // WHERE XAMAN SENDS THE USER BACK. It must be a page that runs THIS file: the library finishes a
+  // sign-in only on the page it returns to -- in the desktop popup it posts the result to the opener,
+  // on a phone it picks the session up after the app hands back. It used to be origin + '/', which on
+  // the combined site is STELLAR's landing page and carries no Xaman code at all, so the popup sat
+  // there and a phone came back signed out. /trade/xrpl is an XRPL page on both the combined and the
+  // standalone builds and is not behind the authgate. Every origin + this path must be listed as a
+  // redirect URL at apps.xaman.dev, or the gateway answers "Invalid client/redirect URL".
+  var XAMAN_RETURN = '/trade/xrpl';
+  // The page the sign-in started from, so a phone returning to XAMAN_RETURN is taken back to it.
+  var XAMAN_BACK = 'lumos.xamanBack';
   var RPC = 'https://xrplcluster.com/';
 
   var K = {
@@ -8769,7 +8785,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     xummReady = (window.XummPkce ? Promise.resolve() : loadScript(XUMM_SRC)).then(function () {
       if (!window.XummPkce) throw new Error('The Xaman library did not load.');
       // One fixed return address, the site's root, whichever page sign-in starts from — the address that must be listed in the Xaman app.
-      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: window.location.origin + '/' });
+      var x = new window.XummPkce(XAMAN_KEY, { rememberJwt: true, redirectUrl: xamanRedirect() });
 
       // THE MOBILE PATH DEPENDS ON THIS. Signing in on a phone leaves the browser for the Xaman app
       // and comes back as a FRESH PAGE LOAD via redirect -- the promise from authorize() died with
@@ -8791,6 +8807,27 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     return xummReady;
   }
 
+  function xamanRedirect() { return window.location.origin + XAMAN_RETURN; }
+
+  // localStorage, not sessionStorage: on a phone the return can arrive in a different tab than the
+  // one that left for the app. Stamped, so a stale entry from an abandoned sign-in is ignored.
+  function rememberBack() {
+    try {
+      localStorage.setItem(XAMAN_BACK, JSON.stringify({
+        u: window.location.pathname + window.location.search + window.location.hash, t: Date.now() }));
+    } catch (e) {}
+  }
+  function goBack() {
+    var b = null;
+    try { b = JSON.parse(localStorage.getItem(XAMAN_BACK) || 'null'); localStorage.removeItem(XAMAN_BACK); } catch (e) {}
+    // Never inside the desktop popup -- the library closes that itself once it has posted.
+    if (window.opener) return;
+    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return;
+    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return;
+    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return;
+    window.location.replace(b.u);
+  }
+
   function adoptXumm(x) {
     try {
       var p = x.state();
@@ -8798,7 +8835,8 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       p.then(function (state) {
         if (!state || !state.me || !state.me.account) return;
         if (!netOk(state.me)) return;
-        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) {}
+        try { accept(state.me.account, 'Xaman', 'xaman'); ui.done(get(K.addr)); } catch (e) { return; }
+        goBack();
       }).catch(noop);
     } catch (e) {}
   }
@@ -8829,24 +8867,64 @@ if (typeof window !== 'undefined') window.lxx = LXX;
     // so the wording has to carry both without asserting either.
     if (/popup-closed/.test(m)) {
       return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
-        + 'client/redirect URL", then ' + window.location.origin + ' is not a registered redirect '
+        + 'client/redirect URL", then ' + xamanRedirect() + ' is not a registered redirect '
         + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
     }
     if (/invalid client|redirect|access_denied/i.test(m)) {
-      return new Error('Xaman would not accept a sign-in from ' + window.location.origin
+      return new Error('Xaman would not accept a sign-in returning to ' + xamanRedirect()
         + ' — that address is not registered for this Xaman app. If this is your site, add it as a '
         + 'redirect URL at apps.xaman.dev; otherwise open LumosCore from its main address.');
     }
     return new Error(m || 'Xaman sign-in failed.');
   }
 
+  // THE SIGN-IN WINDOW HAS TO BE OPENED INSIDE THE TAP, AND THE SDK CANNOT DO THAT.
+  //
+  // This is why Xaman never worked on a phone. The SDK's authorize() is:
+  //     yield this.ping ... window.open(authorizeUrl, "XummPkceLogin", ...)
+  // so the open happens AFTER an await. Measured on the deployed XRPL build 2026-10-11: the tap lands,
+  // and window.open is called 108ms later. Desktop browsers tolerate that; iOS Safari does not -- it
+  // only allows a window to be created while a user gesture is active, so the call returns null.
+  //
+  // Nothing then reports it. The SDK stores the null on x.popup, so the watcher below (which asks
+  // whether x.popup has CLOSED) never fires, authorize() stays pending forever, and the dialog sits on
+  // "Waiting for Xaman" with a Cancel button. Reproduced exactly by stubbing window.open to return
+  // null: that is the screen RAZA has been getting on iPhone Safari every time.
+  //
+  // A window opened in the gesture under the SDK's own window NAME fixes it: when authorize() later
+  // calls window.open(url, "XummPkceLogin"), the browser retargets the window that already exists
+  // rather than creating one, which is allowed after the gesture has expired. Same name, or this does
+  // nothing. The SDK's feature string is copied so desktop keeps the sized popup it had.
+  var xamanWin = null;
+  function xamanPreopen() {
+    try {
+      xamanWin = window.open('about:blank', 'XummPkceLogin',
+        'directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,resizable=no,width=600,height=790');
+    } catch (e) { xamanWin = null; }
+    return xamanWin;
+  }
+  function xamanDropWin() {
+    try { if (xamanWin && !xamanWin.closed) xamanWin.close(); } catch (e) {}
+    xamanWin = null;
+  }
+
   function xamanConnect() {
+    // SYNCHRONOUS, BEFORE ANY PROMISE. run() calls this straight out of the row's click handler, so the
+    // gesture is still live here -- one await later it is not, which is the whole bug.
+    var pre = xamanPreopen();
+    if (!pre) {
+      // Blocked even inside the gesture: pop-ups are switched off for this site. Say so, rather than
+      // opening a dialog that waits for a window that will never exist.
+      return Promise.reject(new Error('Your browser blocked the Xaman sign-in window. Allow pop-ups '
+        + 'for this site, then try again.'));
+    }
     return xumm().then(function (x) {
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
+      rememberBack();
       var p = x.authorize();
-      if (!p || !p.then) { xamanPending = null; return Promise.reject(new Error('Xaman sign-in could not start.')); }
+      if (!p || !p.then) { xamanPending = null; xamanDropWin(); return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
       // WATCH THE WINDOW, because the SDK's events do not cover this. It settles only when the popup
       // POSTS a message back -- 'xumm_sign_request_rejected' or 'xumm_sign_request_popup_closed' --
@@ -8854,18 +8932,21 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       // just renders. So authorize() stays pending, 'error' never fires, and even closing the window
       // by hand leaves this dialog spinning; RAZA hit that twice on 2026-10-01. The SDK does keep the
       // handle on x.popup, so the window going away is a signal we can read ourselves.
-      // Null on mobile, where the flow is a full-page redirect rather than a popup — the timer simply
-      // never fires there, which is correct.
+      // FALL BACK TO OUR OWN HANDLE. x.popup is whatever the SDK's window.open returned, so when that
+      // call was the one iOS refused it is null and this watcher watched nothing -- the silent half of
+      // the bug above. The window we opened in the gesture is the same window once authorize()
+      // retargets it, so it answers "did the user close it" just as well, and it answers even when the
+      // SDK never got a handle at all.
       var watch = setInterval(function () {
-        var w = x && x.popup;
+        var w = (x && x.popup) || xamanWin;
         if (w && w.closed) { clearInterval(watch); failXaman(new Error('popup-closed')); }
       }, 800);
 
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { clearInterval(watch); xamanPending = null; return v; },
-        function (e) { clearInterval(watch); xamanPending = null; throw e; });
+        function (v) { clearInterval(watch); xamanPending = null; xamanWin = null; return v; },
+        function (e) { clearInterval(watch); xamanPending = null; xamanDropWin(); throw e; });
     }).then(function (state) {
       xamanPending = null;
       if (!state || !state.me || !state.me.account) throw new Error('Sign-in was cancelled.');
@@ -8873,6 +8954,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
         throw new Error('That Xaman account is on ' + state.me.networkType + '. LumosCore is on Mainnet.');
       }
       return accept(state.me.account, 'Xaman', 'xaman');
+    }).catch(function (e) {
+      // Anything that fails BEFORE authorize() retargets it -- a missing key, the library not
+      // loading, a refusal -- would otherwise leave the blank window we opened sitting there for the
+      // user to close by hand.
+      xamanDropWin();
+      throw e;
     });
   }
 
@@ -9217,6 +9304,12 @@ if (typeof window !== 'undefined') window.lxx = LXX;
 
     function pick() {
       build();
+      // WARM THE XAMAN SDK WHILE THE USER IS READING THE LIST. The script is 89KB and was fetched
+      // inside the tap, which is dead time with a blank sign-in window already on screen. Loading it
+      // here does not make the tap synchronous -- authorize() still awaits its own ping, which is why
+      // the window is pre-opened -- it just stops the wait being longer than it needs to be.
+      // Fire and forget: a failure here is reported properly when the row is actually tapped.
+      try { if (XAMAN_KEY) xumm().catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
       var list = document.createElement('div');
@@ -9710,7 +9803,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
 
   // LUMOS held INSIDE pools counts toward the threshold, same rule as the Stellar build. On the XRP
-  // Ledger a pool position is an LP token -- a trust line whose 40-char currency starts with 03 --
+  // Ledger a pool position is an LP token -- a trustline whose 40-char currency starts with 03 --
   // so the account's share of the pool's LUMOS is (my LP balance / total LP supply) * pool LUMOS.
   function poolLumos(rows, cb) {
     var lps = [];
@@ -10027,14 +10120,14 @@ function feeOf(value, rate) {
 
 // ---- balances ------------------------------------------------------------------------------------
 
-// EVERY trust line, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
+// EVERY trustline, following the ledger's `marker`. `account_lines` is PAGED, and every caller in
 // this project asked for `limit: 400` and read page one as if it were the whole account.
 //
 // That is not a theoretical limit. Measured on a real mainnet LP provider
-// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trust lines across 4 pages**, with its AMM LP token
+// (rhy6P75G3LA6FmPq2kNsiVkGCXsyKppk4h): **1,360 trustlines across 4 pages**, with its AMM LP token
 // sitting on page TWO. The pool page therefore read `myLp: 0` and refused a withdrawal — "You hold 0
 // LP tokens" — to an account that genuinely holds 75,141 of them. XRP Ledger accounts accumulate
-// trust lines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
+// trustlines from airdrops and spam, so hundreds is ordinary and 400 is not a safe ceiling.
 //
 // The same read decides money elsewhere: the fee tier checks for 250,000 LUMOS to charge 0.1%
 // instead of 0.2%, and rewards eligibility looks for LUMOS and LP positions. A holding on page two
@@ -10757,7 +10850,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       list.appendChild(poolRow({ acct: q, a1: side(r.amm.amount), a2: side(r.amm.amount2) }));
     });
   }
-  // The connected wallet's own trust lines, read once per page: a token the index has never heard of is still one
+  // The connected wallet's own trustlines, read once per page: a token the index has never heard of is still one
   // the user holds (RAZA 2026-09-15: "WHy cant i search this asset. I even have this asset in my wallet" — XYIELD,
   // absent from xrpl.to's index entirely).
   var LINES = null;
@@ -10782,9 +10875,16 @@ if (typeof window !== 'undefined') window.lxx = LXX;
       }).slice(0, 5);
       if (!hits.length) return;
       dropNote(list);
+      // PRESENTED AS AN ORDINARY ASSET, not as a section of its own (RAZA 2026-10-08, comparing the
+      // two chains: "it also shows 'in your wallet' ... we dont have that on Stellar. so please
+      // remove it from xrpl as well").
+      //
+      // The LOOKUP stays — it is the only reason XYIELD is findable at all, since xrpl.to's index
+      // has never heard of it, which is what the "(0)" in that screenshot is saying. Only the
+      // labelling goes: no group heading, and no "· in your wallet" under the name. Stellar needs no
+      // equivalent because its assets come back from its own index with a holder count, so a row
+      // there already looks like this.
       var anchor = list.querySelector('.lx-recgrp');                // before any pool group
-      var grp = el('div', 'lx-recgrp', 'In your wallet');
-      list.insertBefore(grp, anchor);
       hits.forEach(function (l) {
         var code = codeOf(l.currency) || l.currency;
         var r = rowFor({ n: code, u: '', i: l.account, c: l.currency, h: null, vf: 0, m: '', d: '' });
@@ -10797,10 +10897,14 @@ if (typeof window !== 'undefined') window.lxx = LXX;
           im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
           ico.appendChild(im);
         }
-        var sub = r.querySelector('.sp-sub');
-        if (sub) sub.textContent = code + ' · in your wallet';
+        // No subtitle override: rowFor already writes the code alone when there is no holder count,
+        // which is exactly how an indexed row reads minus the figure we genuinely do not have.
         list.insertBefore(r, anchor);
       });
+      // COUNTED, because these rows ARE assets on the ledger. render() set the heading from the
+      // index alone, so a token only the wallet knows about left it reading "(0)" above a visible
+      // result — the contradiction in the screenshot.
+      setCount(((d && d.rows) ? d.rows.length : 0) + hits.length);
     });
     var issuers = [];
     (d.rows || []).forEach(function (t) { if (issuers.indexOf(t.i) < 0 && issuers.length < 2) issuers.push(t.i); });
@@ -10973,7 +11077,7 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   window.__lxxSearchRun = run;
 })();
 
-</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
+</script><script id="lx-xrplchoosenet">(function(){if(window.lxChooseNetwork)return;function go(target){var t=target||"/dashboard";try{ if(window.lxCleanUrl){ var c=window.lxCleanUrl(t); if(c) t=c; } }catch(_){}try{ location.href=t; }catch(_){}}window.lxChooseNetwork=function(target){var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}if(addr){ go(target); return; }try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}go(target);};})();</script><script id="lx-xrplchainswitch">(function(){if(window.__lxxcs)return;window.__lxxcs=1;var SL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0yMy4xMyA5LjI5MmwtMi40IDEuMjI0LTExLjU5OCA1LjkwN0E2LjkwOSA2LjkwOSAwIDAxMTkuMzUgOS40OThsMS4zNzQtLjcuMjA1LS4xMDVhOC40MzkgOC40MzkgMCAwMC0xMy4zNzEgNy40NzIgMS41MzUgMS41MzUgMCAwMS0uODM0IDEuNDg0bC0uNzI1LjM3djEuNzI0bDIuMTM0LTEuMDg4LjY5MS0uMzUzLjY4MS0uMzQ3IDEyLjIyNi02LjIzIDEuMzc0LS42OTkgMi44NC0xLjQ0N1Y3Ljg1NkwyMy4xMyA5LjI5MnptMi44MTYgMi4wMTJMMTAuMjAxIDE5LjMybC0xLjM3NC43TDYgMjEuNDYzdjEuNzIzbDIuODA4LTEuNDMgMi40MDEtMS4yMjQgMTEuNjEtNS45MTZhNi45MDkgNi45MDkgMCAwMS0xMC4yMjkgNi45M2wtLjA4NS4wNDUtMS40OS43NmE4LjQzOSA4LjQzOSAwIDAwMTMuMzcyLTcuNDc1IDEuNTM2IDEuNTM2IDAgMDEuODMzLTEuNDgzbC43MjYtLjM3di0xLjcxOHoiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+",XL="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIj48Y2lyY2xlIGN4PSIxNiIgY3k9IjE2IiByPSIxNiIgZmlsbD0iIzIzMjkyRiIvPjxwYXRoIGQ9Ik0yMy4wNyA4aDIuODlsLTYuMDE1IDUuOTU3YTUuNjIxIDUuNjIxIDAgMDEtNy44OSAwTDYuMDM1IDhIOC45M2w0LjU3IDQuNTIzYTMuNTU2IDMuNTU2IDAgMDA0Ljk5NiAwTDIzLjA3IDh6TTguODk1IDI0LjU2M0g2bDYuMDU1LTUuOTkzYTUuNjIxIDUuNjIxIDAgMDE3Ljg5IDBMMjYgMjQuNTYyaC0yLjg5NUwxOC41IDIwYTMuNTU2IDMuNTU2IDAgMDAtNC45OTYgMGwtNC42MSA0LjU2M3oiIGZpbGw9IiNGRkYiLz48L2c+PC9zdmc+";var SN="Stellar",XN="XRP Ledger";var SMAP={"trade":"trade/stellar","pools":"pools/stellar","bridge":"bridge/stellar","rewards":"rewards/stellar","lumos":"lumos/stellar","launchpad":"launchpad/stellar","mcp":"mcp","list-your-token":"list-your-token"};function stellarHref(){var p=(location.pathname||"/").replace(/\/+$/,"");var m=p.match(/^\/([a-z-]+)/);return "/"+((m&&SMAP[m[1]])||"trade/stellar");}function go(){try{localStorage.setItem("lumos.chain","stellar");}catch(_){}var h=stellarHref();try{location.assign(h);}catch(_){location.href=h;}}var CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';var CHEVR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';function buildRow(){if(document.getElementById("lxmcrow"))return true;var foot=document.querySelector(".menu-foot");if(!foot)return false;var b=document.createElement("button");b.id="lxmcrow";b.className="lxmc-row";b.type="button";b.setAttribute("data-lx-noswap","");b.setAttribute("data-logoed","1");b.innerHTML='<span class="lxmc-rl"><img src="'+SL+'" alt=""></span>'+'<span class="lxmc-rt">Switch to '+SN+'</span>'+CHEVR;var th=foot.querySelector(".menu-theme-row");if(th)foot.insertBefore(b,th);else foot.appendChild(b);if(!window.__lxxcsTap){window.__lxxcsTap=1;window.addEventListener("click",function(e){var t=e.target;var hit=(t&&t.closest)?t.closest("#lxmcrow"):null;if(!hit)return;e.preventDefault();e.stopPropagation();go();},true);}return true;}function build(){return buildRow();}function start(){if(build())return;var mo=null,done=false;function stop(){if(done)return;done=true;try{if(mo)mo.disconnect();}catch(_){}}try{mo=new MutationObserver(function(){if(build())stop();});mo.observe(document.documentElement,{childList:true,subtree:true});}catch(_){}setTimeout(stop,15000);}function connectOnArrive(){var want=null;try{want=sessionStorage.getItem("lumos.connectOnArrive");if(want)sessionStorage.removeItem("lumos.connectOnArrive");}catch(_){return;}if(want!=="xrpl")return;var n=0,t=setInterval(function(){n++;var lxc=window.lxc;if(lxc&&lxc.open){clearInterval(t);var addr=null;try{addr=lxc.address&&lxc.address();}catch(_){}if(!addr){try{lxc.open();}catch(_){}}return;}if(n>50)clearInterval(t);},120);}if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",function(){start();connectOnArrive();});else {start();connectOnArrive();}})();</script><script id="lx-nofollow">(function(){
   var KEEP=[];
   function own(h){
     if(!h)return true;
@@ -11029,5 +11133,5 @@ if (typeof window !== 'undefined') window.lxx = LXX;
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);
   else boot();
-})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
+})();</script><script>(function(){if(window.__lxSite)return;window.__lxSite=1;var CLEAN={"lumoscore-dex":"/trade/xrpl","lumoscore-amm":"/pools/xrpl","lumoscore-launch-review":"/launchpad/review","lumoscore-launch-confirm":"/launchpad/confirm","lumoscore-launch-token":"/launchpad/xrpl","lumoscore-home":"/dashboard","lumoscore-wallet":"/wallet","lumoscore-bridge":"/bridge/xrpl","lumoscore-rewards":"/rewards/xrpl","lumoscore-lumos-token":"/lumos/xrpl","lumoscore-mcp":"/mcp/xrpl","lumoscore-list-token":"/list-your-token/xrpl","lumoscore-landing":"/","lumoscore-dex-asset":"/trade/xrpl","lumoscore-account":"/account/xrpl","lumoscore-asset-overview":"/trade/xrpl"};function lxClean(u){ if(typeof u!=="string"||u.indexOf("lumoscore-")!==0)return u;  var q="",h="",i=u.indexOf("#"); if(i>=0){h=u.slice(i);u=u.slice(0,i);}  i=u.indexOf("?"); if(i>=0){q=u.slice(i+1);u=u.slice(0,i);}  var base=u.replace(/\.html$/,"").replace(/-(dark|light|mobile)$/,"");  var p=new URLSearchParams(q), a=p.get("asset");  if(base==="lumoscore-account")        return a?("/account/xrpl/"+a+h):("/account/xrpl"+h);  if(base==="lumoscore-dex-asset")      return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-asset-overview") return a?("/trade/xrpl/"+a+h):("/trade/xrpl"+h);  if(base==="lumoscore-amm-pool")       return u+(q?("?"+q):"")+h;  var c=CLEAN[base]; if(!c)return u+(q?("?"+q):"")+h;  return c+(q?("?"+q):"")+h; }window.lxCleanUrl=lxClean;var self=(location.pathname.split("/").pop()||"");var MOB=/-mobile(\.html)?$/.test(self);var VALID=["lumoscore-home.html","lumoscore-landing.html","lumoscore-launch-confirm-light.html","lumoscore-launch-confirm.html","lumoscore-launch-review-light.html","lumoscore-launch-review.html","lumoscore-launch-token-light.html","lumoscore-launch-token.html","lumoscore-wallet-light.html","lumoscore-wallet.html","lumoscore-amm-dark.html","lumoscore-amm.html","lumoscore-amm-pool-dark.html","lumoscore-amm-pool.html","lumoscore-lumos-token-dark.html","lumoscore-lumos-token.html","lumoscore-dex-dark.html","lumoscore-dex.html","lumoscore-dex-asset-dark.html","lumoscore-dex-asset.html","lumoscore-bridge.html","lumoscore-bridge-dark.html","lumoscore-signin.html","lumoscore-signin-light.html","lumoscore-rewards-dark.html","lumoscore-rewards-light.html","lumoscore-mcp.html","lumoscore-account.html","lumoscore-account-dark.html","lumoscore-blog.html","lumoscore-blog-post.html","lumoscore-privacy.html","lumoscore-terms.html","lumoscore-support.html","lumoscore-whitepaper.html","lumoscore-docs-introduction.html","lumoscore-docs-connect-a-wallet.html","lumoscore-docs-fees.html","lumoscore-docs-swaps.html","lumoscore-docs-limit-orders.html","lumoscore-docs-liquidity-pools.html","lumoscore-docs-cross-chain.html","lumoscore-docs-wallet.html","lumoscore-docs-trustlines.html","lumoscore-docs-rewards.html","lumoscore-docs-launch-a-token.html","lumoscore-docs-asset-metadata.html","lumoscore-docs-verification.html","lumoscore-docs-curated-listing.html","lumoscore-docs-security.html","lumoscore-docs-troubleshooting.html","lumoscore-docs-faq.html","lumoscore-about.html","lumoscore-list-token.html","lumoscore-home-mobile.html","lumoscore-landing-mobile.html","lumoscore-launch-confirm-mobile.html","lumoscore-launch-review-mobile.html","lumoscore-launch-token-mobile.html","lumoscore-wallet-mobile.html","lumoscore-amm-mobile.html","lumoscore-amm-pool-mobile.html","lumoscore-lumos-token-mobile.html","lumoscore-dex-mobile.html","lumoscore-dex-asset-mobile.html","lumoscore-bridge-mobile.html","lumoscore-signin-mobile.html","lumoscore-rewards-mobile.html","lumoscore-mcp-mobile.html","lumoscore-account-mobile.html","lumoscore-blog-mobile.html","lumoscore-blog-post-mobile.html","lumoscore-privacy-mobile.html","lumoscore-terms-mobile.html","lumoscore-support-mobile.html","lumoscore-whitepaper-mobile.html","lumoscore-docs-introduction-mobile.html","lumoscore-docs-connect-a-wallet-mobile.html","lumoscore-docs-fees-mobile.html","lumoscore-docs-swaps-mobile.html","lumoscore-docs-limit-orders-mobile.html","lumoscore-docs-liquidity-pools-mobile.html","lumoscore-docs-cross-chain-mobile.html","lumoscore-docs-wallet-mobile.html","lumoscore-docs-trustlines-mobile.html","lumoscore-docs-rewards-mobile.html","lumoscore-docs-launch-a-token-mobile.html","lumoscore-docs-asset-metadata-mobile.html","lumoscore-docs-verification-mobile.html","lumoscore-docs-curated-listing-mobile.html","lumoscore-docs-security-mobile.html","lumoscore-docs-troubleshooting-mobile.html","lumoscore-docs-faq-mobile.html","lumoscore-about-mobile.html","lumoscore-list-token-mobile.html"];window.lxNavigate=function(c){if(typeof c==="string")c=[c];var p=null;for(var i=0;i<c.length;i++){var f=c[i];if(MOB===/-mobile\.html$/.test(f)&&VALID.indexOf(f)>=0){p=f;break;}}if(!p)for(var j=0;j<c.length;j++){if(VALID.indexOf(c[j])>=0){p=c[j];break;}}for(var k=0;!p&&k<c.length;k++){var g=c[k];if(MOB===/-mobile\.html$/.test(g)){p=g;break;}}if(!p)p=c[0];if(p){location.href=lxClean(p);}return true;};document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a");if(!a)return;var h=a.getAttribute("href")||"";if(h==="#"||h==="#!"){e.preventDefault();return;}var hb=h.split("?")[0].split("#")[0];if(/^lumoscore-[\w-]+\.html$/.test(hb)&&VALID.indexOf(hb)<0){e.preventDefault();return;}if(/^lumoscore-[\w-]+\.html/.test(h)){var cl=lxClean(h);if(cl!==h){e.preventDefault();location.href=cl;}}},true);var wrapped=0,tries=0;var iv=setInterval(function(){tries++;if(typeof window.__lxNav==="function"&&!window.__lxNav.__lxc){var o=window.__lxNav;var w=function(u){return o.call(this,lxClean(u));};w.__lxc=1;window.__lxNav=w;wrapped=1;}if(wrapped||tries>40)clearInterval(iv);},50);})();</script><style id="lx-themefix">html[data-theme="light"]{--surface-3:#ffffff}</style><style id="lx-tiptheme">#themeToggle[data-tooltip]::before{bottom:auto;top:calc(100% + 8px);transform:translateX(-50%) translateY(-2px)}#themeToggle[data-tooltip]::after{bottom:auto;top:calc(100% + 2px);transform:translateX(-50%) translateY(-2px);border-top:0;border-bottom:5px solid var(--text)}#themeToggle[data-tooltip]:hover::before,#themeToggle[data-tooltip]:hover::after,#themeToggle[data-tooltip]:focus-visible::before,#themeToggle[data-tooltip]:focus-visible::after{transform:translateX(-50%) translateY(0)}</style></body>
 </html>

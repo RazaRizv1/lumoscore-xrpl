@@ -100,6 +100,23 @@ const CHAIN = [
   // hand the Aptos strings back. It aborts rather than writing if a ">Aptos" text node survives in
   // any page key it is responsible for, so a moved template fails the build instead of shipping.
   '_xrplaptossweep',
+  // The Aptos string _xrplaptossweep could not reach, because it is not design copy: the inherited
+  // lx-gate script bakes `var NET="aptos"` — the design CONTAINER's name — and hands it to
+  // lxwOpenWallet() and to sessionStorage lumos.connDest whenever no wallet is connected. Rewrites it
+  // to "xrpl", makes actNet() prefer the chain named in the url, and drops the stale gate the account
+  // pages still carry. Position is not load-bearing: nothing downstream re-injects lx-gate.
+  '_xrplwalletgate',
+  // The four sign-in icons that 404 silently: two repointed at the network marks that exist, two
+  // dead <img> removed so the lettermark behind them is all that is left. Mirrors the ICON_FIX /
+  // ICON_DROP block in Stellar's _signinnets.js; /signin is cookie-shared, so both copies need it.
+  '_xrplsigninicons',
+  // Empties the designer's placeholder user chip, which is hidden from humans by CSS but sits in
+  // the HTML an AI crawler reads. Mirrors Stellar's _headerchip.js.
+  '_xrplheaderchip',
+  // Adds the product hubs to the site-wide footer menu, chain-specific on this build, and undoes
+  // three faults in the inherited one: absolute lumoscore.com urls, href=\"#\", and /dashboard
+  // labelled Home. Mirrors Stellar's _footernav.js.
+  '_xrplfooternav',
   // Dead last, for the same reason as the two above but about CSS rather than prose: it appends one
   // stylesheet to every page key's <head>, and any pass that rebuilds a page key from a donor clone
   // would hand back a head without it. It strips its own block before inserting, so running it here

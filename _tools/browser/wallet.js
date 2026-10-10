@@ -1559,6 +1559,52 @@
 
   // An Asset / Asset2 on an AMM transaction is a SPEC, not an amount: {currency, issuer} with no value,
   // so amt() cannot read it. Same decoder as everywhere else, so a 40-char hex renders as its name.
+  // The two reserves a pool action actually moved, as {value, code, currency, issuer}.
+  //
+  // Prefers the transaction's own Amount/Amount2 when it has them, because that is the exact request
+  // and needs no interpretation. Falls back to the account's balance changes in the metadata, which is
+  // the only place a tfWithdrawAll records what came back.
+  //
+  // The three traps in reading those changes, each checked against real transactions:
+  //   * add the network Fee back to the AccountRoot delta, or a 1 XRP deposit reads as 1.000012
+  //   * skip the pool's own LP token, whose currency code begins 03, or it appears as a third asset
+  //   * a RippleState Balance is signed from the LOW account's side, so negate it when this account
+  //     is the high one
+  // Magnitudes only: the row's verb already says which direction it went.
+  function lpMoved(tx, meta) {
+    var a1 = amt(tx.Amount), a2 = amt(tx.Amount2);
+    if (a1 && a2) return [a1, a2];
+    if (a1) return [a1];
+
+    var me = tx.Account, out = [];
+    var nodes = (meta && meta.AffectedNodes) || [];
+    for (var i = 0; i < nodes.length && out.length < 2; i++) {
+      var w = nodes[i].ModifiedNode || nodes[i].DeletedNode || nodes[i].CreatedNode;
+      if (!w) continue;
+      var f = w.FinalFields || w.NewFields || {}, pv = w.PreviousFields || {};
+      if (w.LedgerEntryType === 'AccountRoot') {
+        if (f.Account !== me || pv.Balance === undefined) continue;
+        var d = (Number(f.Balance) - Number(pv.Balance)) / 1e6 + (Number(tx.Fee || 0) / 1e6);
+        if (Math.abs(d) > 1e-9) out.push({ value: Math.abs(d), code: 'XRP', currency: 'XRP' });
+      } else if (w.LedgerEntryType === 'RippleState') {
+        var bal = f.Balance || {}, pb = pv.Balance;
+        if (pb === undefined || !bal.currency) continue;
+        if (/^03/.test(String(bal.currency))) continue;              // the pool's own LP token
+        var hi = (f.HighLimit || {}).issuer, lo = (f.LowLimit || {}).issuer;
+        if (hi !== me && lo !== me) continue;
+        var dv = (Number(bal.value) - Number(pb.value)) * (lo === me ? 1 : -1);
+        if (Math.abs(dv) > 1e-12) {
+          var dec = window.lxx.decodeCurrency(bal.currency);
+          out.push({
+            value: Math.abs(dv), code: (dec && dec.display) || bal.currency,
+            currency: bal.currency, issuer: (lo === me ? hi : lo),
+          });
+        }
+      }
+    }
+    return out;
+  }
+
   function assetCode(spec) {
     if (!spec) return null;
     if (typeof spec === 'string' || spec.currency === 'XRP' || (!spec.currency && !spec.issuer)) {
@@ -1695,8 +1741,31 @@
           var tt = tx.TransactionType;
           var isLp = tt === 'AMMDeposit' || tt === 'AMMCreate' || tt === 'AMMWithdraw' || tt === 'AMMDelete';
           var lpOut = tt === 'AMMWithdraw' || tt === 'AMMDelete';
-          var lpA = isLp ? assetCode(tx.Asset) : null;
-          var lpB = isLp ? assetCode(tx.Asset2) : null;
+          // BOTH HALVES OF AN LP ROW, WHICHEVER FIELDS THE TRANSACTION HAPPENS TO CARRY (RAZA
+          // 2026-10-07: "now show the recent activity on wallet page like stellar").
+          //
+          // The two AMM shapes carry different fields, and this row was reading one of each, so every
+          // pool action was missing half of what Stellar shows:
+          //
+          //   AMMCreate    Amount + Amount2, NO Asset/Asset2  -> amounts shown, pair missing from label
+          //   AMMWithdraw  Asset + Asset2, NO Amount/Amount2  -> pair shown, amounts missing entirely
+          //                (tfWithdrawAll, Flags 131072 — measured on RAZA's own withdrawals)
+          //
+          // lumoscore.com shows both on every pool row: the verb with both asset marks, over
+          // "107.33 HOLA + 51,572 CANNACOIN". So the amounts come from the metadata when the request
+          // does not carry them — which is also the figure that actually moved — and the pair falls
+          // back to those amounts when Asset/Asset2 are absent.
+          var lpAmts = isLp ? lpMoved(tx, meta) : null;
+          var lpA = isLp ? (assetCode(tx.Asset) || (lpAmts && lpAmts[0])) : null;
+          var lpB = isLp ? (assetCode(tx.Asset2) || (lpAmts && lpAmts[1])) : null;
+          // The two lines of one row must name the pair in the SAME order. The label follows
+          // Asset/Asset2 and the amounts come back in whatever order the metadata nodes appear, so a
+          // row could read "ARMY + PHNIX" over "71.71 PHNIX + 0.09 ARMY" — both true, and
+          // momentarily unreadable. The amounts are ordered to the label.
+          if (lpAmts && lpAmts.length === 2 && lpA && lpB && lpAmts[0].code !== lpA.code
+              && lpAmts[1].code === lpA.code) {
+            lpAmts = [lpAmts[1], lpAmts[0]];
+          }
 
           // The kind drives both the disc colour and the glyph, as it does on Stellar. A pass-through
           // is neither sent nor received, so it takes the neutral swap colour rather than the green of
@@ -1787,13 +1856,12 @@
               addrEl.textContent = short(other);
               addrEl.setAttribute('data-logoed', '1');     // the logo engine repaints short-text elements
             }
-            // The two reserves that moved, as Stellar prints them: "107.33 HOLA + 51,572 CANNACOIN". A
-            // tfWithdrawAll carries no Amount fields, so that row keeps the pair in its label and says
-            // nothing here rather than inventing a figure.
-            if (isLp) {
-              var d1 = amt(tx.Amount), d2 = amt(tx.Amount2);
-              if (d1 && d2) who = fmt(d1.value, 6) + ' ' + d1.code + ' + ' + fmt(d2.value, 6) + ' ' + d2.code;
-              else if (d1) who = fmt(d1.value, 6) + ' ' + d1.code;
+            // The two reserves that moved, as Stellar prints them: "107.33 HOLA + 51,572 CANNACOIN".
+            // The note that used to sit here said a tfWithdrawAll "says nothing rather than inventing a
+            // figure" — right not to invent one, wrong that there was none to find. The metadata has it;
+            // lpMoved() reads it, so a withdrawal now prints the same line a deposit does.
+            if (isLp && lpAmts && lpAmts.length) {
+              who = lpAmts.map(function (x) { return fmt(x.value, 6) + ' ' + x.code; }).join(' + ');
             }
             // AN ORDER IS NOT A PAYMENT, AND HAD NOTHING TO SAY (RAZA 2026-10-02: "WTF is this blank trx").
             //

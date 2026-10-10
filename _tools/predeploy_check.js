@@ -31,6 +31,29 @@ const files = walk(DIR);
 const rel = f => path.relative(DIR, f).replace(/\\/g, '/');
 const html = files.filter(f => f.endsWith('.html'));
 
+// THE PAGE AS THE BROWSER WILL SEE IT. _externalize.js moves every end-of-body script into
+// /assets/js/lx-<hash>.js so it can be cached between navigations — which means the things this file
+// checks for (a data layer's fetch call, a marker string, a wired endpoint) are no longer IN the HTML
+// it scans. Read naively, every one of those checks starts passing by finding nothing: a gate failing
+// silently, in the safe-looking direction.
+//
+// It showed up the moment externalisation ran here, exactly as Stellar's note records it did there —
+// four blog pages reported as empty shells while their layer sat intact in lx-f7c86ec6f437.js. So a
+// page is read with the scripts it references folded back in, and every check below goes on working
+// as written, against the code that will actually run.
+const _pageCache = new Map();
+function readPage(f) {
+  if (_pageCache.has(f)) return _pageCache.get(f);
+  let s = fs.readFileSync(f, 'utf8');
+  var _RX = new RegExp('<script[^>]*src="/assets/js/(lx-[0-9a-f]{12}' + String.fromCharCode(92) + '.js)"[^>]*></script>', 'g');
+  s = s.replace(_RX, (m, name) => {
+    try { return '<script>' + fs.readFileSync(path.join(DIR, 'assets', 'js', name), 'utf8') + '</' + 'script>'; }
+    catch (e) { return m; }
+  });
+  _pageCache.set(f, s);
+  return s;
+}
+
 // ---- 1. the admin panel must never be in the public build ---------------------------------------
 if (!ADMIN) {
   const leaked = files.filter(f => /(^|\/)lumoscore-admin-/.test(rel(f)));
@@ -38,7 +61,7 @@ if (!ADMIN) {
     fail.push(`${leaked.length} admin page(s) present in the public build: ${leaked.slice(0, 3).map(rel).join(', ')}${leaked.length > 3 ? ' …' : ''}`
       + `\n      Fix: npm run build   (it excludes and purges them)`);
   }
-  const linking = html.filter(f => /lumoscore-admin-/.test(fs.readFileSync(f, 'utf8')));
+  const linking = html.filter(f => /lumoscore-admin-/.test(readPage(f)));
   if (linking.length) {
     fail.push(`${linking.length} public page(s) reference an admin URL: ${linking.slice(0, 3).map(rel).join(', ')}`
       + `\n      Even a dead link advertises the panel's location.`);
@@ -56,7 +79,7 @@ const SECRETS = [
 ];
 const found = new Map();
 for (const f of files.filter(f => /\.(html|js|css|json|txt|map)$/i.test(f))) {
-  const body = fs.readFileSync(f, 'utf8');
+  const body = readPage(f);
   for (const [re, what] of SECRETS) {
     for (const m of body.match(re) || []) {
       const k = what + ' :: ' + m.slice(0, 12) + '…';
@@ -118,7 +141,7 @@ if (!ADMIN) {
   const vm = require('vm');
   const seen = new Set();
   for (const f of files.filter(f => f.endsWith('.html'))) {
-    const s = fs.readFileSync(f, 'utf8');
+    const s = readPage(f);
     const re = /<script id="(lx-[a-z0-9-]+)">([\s\S]*?)<\/script>/g;
     let m;
     while ((m = re.exec(s))) {
@@ -138,7 +161,7 @@ if (!ADMIN) {
 // which is exactly what shipped once. The build is only correct when lx-heromono-css is last.
 if (!ADMIN) {
   for (const f of files.filter(f => /lumoscore-(dex|amm)(-dark|-mobile)?\.html$/.test(rel(f)))) {
-    const s = fs.readFileSync(f, 'utf8');
+    const s = readPage(f);
     const mono = s.indexOf('<style id="lx-heromono-css"');
     if (mono < 0) continue;
     const after = ['lx-dexmain-css', 'lx-poolshero-css']
@@ -157,7 +180,7 @@ if (!ADMIN) {
 if (!ADMIN) {
   const OURS = (h) => h === 'lumoscore.com' || h.endsWith('.lumoscore.com');
   for (const f of files) {
-    const s = fs.readFileSync(f, 'utf8');
+    const s = readPage(f);
     let n = 0, sample = '';
     for (const tag of (s.match(/<a\b[^>]*>/gi) || [])) {
       const h = /href=("|')(https?:\/\/[^"']*)\1/i.exec(tag);
@@ -183,7 +206,7 @@ if (!ADMIN) {
   for (const f of files) {
     const name = rel(f);
     if (!/lumoscore-blog(-post)?(-mobile)?\.html$/.test(name)) continue;
-    const s = fs.readFileSync(f, 'utf8');
+    const s = readPage(f);
     if (s.indexOf('/lxapi/blog') < 0) {
       fail.push(name + ': the blog data layer is missing (no /lxapi/blog call) — this page would ship '
         + 'as an empty shell that still returns 200. _blogpage.js re-ran after _blogdata.js. '

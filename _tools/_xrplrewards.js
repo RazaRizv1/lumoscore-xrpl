@@ -15,6 +15,14 @@ const { stripById } = require(__dirname + '/stripscript.js');
 const B = String.fromCharCode(92);
 
 const ID = 'lx-xrplrewards';
+
+// [ retired slug, where it should point now ]. Must stay identical to ANN in Stellar's
+// _rewardslinks.js: same page, same three programmes, same posts — the posts are not chain-specific.
+const ANN = [
+  ['introducing-native-lp-rewards-for-lumos', '/blog/earn-lumos-every-15-days-how-lumoscore-lp-rewards-work'],
+  ['introducing-whale-holder-rewards-for-lumos', '/blog/lumos-whale-holder-rewards-programme'],
+  ['introducing-ecosystem-lp-rewards-for-lumos', '/blog/lumoscore-ecosystem-liquidity-rewards'],
+];
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/rewards.js', 'utf8');
 
@@ -70,6 +78,24 @@ for (const dev of ['desktop', 'mobile']) {
     const annBefore = (h.match(/<a class="blog"/g) || []).length;
     h = h.replace(/<a class="blog" href="https:\/\/lumoscore\.com\/blogs?\/([A-Za-z0-9-]+)"[^>]*>/g,
       '<a class="blog" href="/blog/$1">');
+    // AND THE DESTINATIONS, which the form fix above deliberately left alone. The three
+    // introducing-* posts were never published: a crawl of every internal link on the combined site
+    // found exactly these three dead, on /rewards, /rewards/stellar and /rewards/xrpl, and nothing
+    // else anywhere. RAZA 2026-10-10: "jsut make sure that no 404s anywhere."
+    //
+    // Identical table to Stellar's _rewardslinks.js, because this is the same page's copy on the other
+    // chain and the posts are chain-neutral. Keyed on the retired slug, which names its programme, so
+    // a reordered card cannot mis-assign a link.
+    for (const [dead, live] of ANN) {
+      h = h.split('<a class="blog" href="/blog/' + dead + '">')
+           .join('<a class="blog" href="' + live + '">');
+    }
+    for (const [dead] of ANN) {
+      if (h.indexOf('/blog/' + dead) >= 0) {
+        console.error('  ! ' + key + ': still links the dead slug ' + dead);
+        process.exit(1);
+      }
+    }
     const annRel = (h.match(/<a class="blog" href="\/blog\//g) || []).length;
     if (annBefore && annRel !== annBefore) {
       console.error('  ! ' + key + ': ' + annBefore + ' announcement link(s), only ' + annRel

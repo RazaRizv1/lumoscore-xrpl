@@ -4,6 +4,7 @@
   "bridge": "/bridge/stellar",
   "rewards": "/rewards/stellar",
   "lumos": "/lumos/stellar",
+  "launchpad": "/launchpad/stellar",
   "mcp": "/mcp",
   "list-your-token": "/list-your-token"
 }

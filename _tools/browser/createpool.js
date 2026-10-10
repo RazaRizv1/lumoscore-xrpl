@@ -60,6 +60,29 @@
   function modal() { return document.getElementById('createPoolModal'); }
   function lxx() { return window.lxx; }
 
+  // LUMOSCORE'S OWN MARK ON A POOL TRANSACTION (RAZA 2026-10-07: "on XRPL i cant see all types of
+  // activities. I mean, ive been doing so many things like creating pools, withdrawing, swapping").
+  //
+  // A swap is attributable because it pays a platform fee, and the dashboard feed finds swaps by
+  // pairing each fee with the self-payment beside it. **Pool operations pay no fee**, so until now
+  // nothing on the ledger distinguished an AMMCreate made here from one made on xrpl.to, Sologenic or
+  // First Ledger — and the feed cannot honestly list what it cannot attribute. That is the same
+  // objection RAZA raised on 2026-09-17 about rows that were not his.
+  //
+  // This memo is the attribution. It costs a few bytes, it is visible to anyone reading the ledger,
+  // and it says only what is true: this transaction was built by LumosCore.
+  //
+  // Only transactions signed from today forward carry it, so pool actions taken before this ships
+  // stay unattributable and will not appear.
+  function lxMemo(text) {
+    var hex = function (s) {
+      var h = '';
+      for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+      return h.toUpperCase();
+    };
+    return { Memo: { MemoType: hex('LumosCore'), MemoFormat: hex('text/plain'), MemoData: hex(text) } };
+  }
+
   function addr() {
     try { return (window.lxc && window.lxc.address && window.lxc.address()) || localStorage.getItem('lumos.address') || ''; }
     catch (e) { return ''; }
@@ -544,7 +567,8 @@
           TransactionType: 'AMMDeposit', Account: who,
           Asset: specOf(a), Asset2: specOf(b),
           Amount: A, Amount2: B,
-          Flags: 0x00100000                                    // tfTwoAsset
+          Flags: 0x00100000,                                   // tfTwoAsset
+          Memos: [lxMemo('LumosCore: add liquidity to the ' + (a.code || '?') + '/' + (b.code || '?') + ' pool')]
         };
         say('This pair already has a pool, so your liquidity goes into it.');
         if (go) setLabel(go, 'Confirm in wallet…');
@@ -593,7 +617,8 @@
           Amount: A, Amount2: B,
           TradingFee: TRADING_FEE,
           // The special cost, set rather than left to autofill: under-paying it is a rejection.
-          Fee: lxx().toDrops(inc)
+          Fee: lxx().toDrops(inc),
+          Memos: [lxMemo('LumosCore: create the ' + (a.code || '?') + '/' + (b.code || '?') + ' pool')]
         };
         if (go) setLabel(go, 'Confirm in wallet…');
         return window.lxc.submit(tx).then(function (hash) {

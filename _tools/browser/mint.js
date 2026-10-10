@@ -646,6 +646,45 @@
                     hashes: res.completed,
                   }));
                 } catch (e) { /* private mode: the page still shows the result below */ }
+
+                // SEND WHAT THE MINTER TYPED TO US, which until now nothing did.
+                //
+                // The name, description, socials and uploaded logo lived only in this browser's
+                // localStorage — the launch flow POSTs to xrplcluster.com and /lxapi/xrplprices and
+                // nowhere else — so closing this tab destroyed the only copy of the artwork for a
+                // token that now exists forever. Stellar hit this exact wall: "FRANK was minted, the
+                // fee arrived, and the asset page showed nothing."
+                //
+                // AFTER the result is stored and the success message is about to render, and its
+                // failure is deliberately silent. The mint is done and irreversible by this point;
+                // a metadata POST that fails must never turn a successful launch into an error
+                // message. What the user sees is unchanged either way.
+                //
+                // The endpoint verifies against the FEE payment, which is what ties this submission
+                // to a mint that actually paid us. Found by the step's own label, not by index:
+                // `completed` holds {what, hash} objects and the fee step is skipped entirely when
+                // the fee is zero, so completed[0] is only sometimes the right one — and when it is
+                // not, it is the issuer funding payment, which the endpoint would reject with a
+                // message about the wrong destination.
+                try {
+                  var feeHash = '';
+                  (res.completed || []).forEach(function (c) {
+                    if (c && c.what === 'Pay the launch fee' && c.hash) feeHash = c.hash;
+                  });
+                  if (feeHash) {
+                    fetch('/lxapi/xrplmintmeta', {
+                      method: 'POST',
+                      headers: { 'content-type': 'application/json' },
+                      body: JSON.stringify({
+                        code: d.currency, issuer: issuer.classicAddress, txHash: feeHash,
+                        name: d.name, description: d.desc || '',
+                        website: d.website || '', twitter: d.twitter || '', telegram: d.telegram || '',
+                        logo: d.icon || '',
+                      }),
+                    }).catch(function () {});
+                  }
+                } catch (e) { /* never block a completed launch */ }
+
                 status(el, log.join('<br>') + '<br><br><strong>Launched.</strong> Issuer '
                   + esc(issuer.classicAddress) + ' is blackholed, so the supply is fixed — and the pool account '
                   + esc(pool.classicAddress) + ' is blackholed too, so the liquidity can never be withdrawn by anyone.');

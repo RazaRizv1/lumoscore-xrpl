@@ -47,6 +47,13 @@
   function $(s, r) { return (r || document).querySelector(s); }
   function $$(s, r) { return [].slice.call((r || document).querySelectorAll(s)); }
   function lxx() { return window.lxx; }
+
+  // LumosCore's mark on a limit order. Orders are free — no platform fee — so like the pool
+  // operations this is the only thing tying one to this site. See the note in createpool.js.
+  function lxMemo(text) {
+    var hex = function (s) { var h = ''; for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0'); return h.toUpperCase(); };
+    return { Memo: { MemoType: hex('LumosCore'), MemoFormat: hex('text/plain'), MemoData: hex(text) } };
+  }
   function asset() { return window.__lxxAssetRef || null; }
   function addr() {
     try { return window.lxc && window.lxc.address ? window.lxc.address() : null; } catch (e) { return null; }
@@ -99,6 +106,51 @@
     var d = dp != null ? dp : (a >= 1000 ? 2 : a >= 1 ? 4 : 7);
     return Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: d });
   }
+  // THE SITE'S OWN QUANTITY FORMATTER, ported from Stellar's _dexassetdata.js so the two builds print
+  // the same figure the same way (RAZA 2026-10-08: "yes make them identical"). It abbreviates above a
+  // thousand (258800 -> 258.8K) and compresses the leading-zero run below a thousandth into a
+  // subscript count (0.0000253 -> 0.0₄253), which shortens without dropping a digit — the convention
+  // every exchange uses. Between those it spells the number out, cutting at three decimals and marking
+  // the cut with two dots so a truncated figure cannot be read as an exact one; an exact 0.5 stays
+  // "0.5". The threshold for the subscript form is FIVE zeros, not four: 0.000324 already fits, and
+  // compressing something readable only makes it harder to read.
+  //
+  // Kept byte-for-byte equivalent to Stellar's chain (SUBD/zsub/trimZ/smallNum/abbrNum/qtyTxt) rather
+  // than re-derived, because "identical" is the whole requirement. SUBD is built with fromCharCode for
+  // the same reason the rest of this file avoids exotic literals — it is injected verbatim at build.
+  var SUBD = String.fromCharCode(8320, 8321, 8322, 8323, 8324, 8325, 8326, 8327, 8328, 8329);
+  function zsub(n) { var s = String(n), o = ''; for (var i = 0; i < s.length; i++) o += SUBD.charAt(+s.charAt(i)); return o; }
+  function trimZ(t) {
+    while (t.length > 1 && t.charAt(t.length - 1) === '0') t = t.slice(0, -1);
+    if (t.charAt(t.length - 1) === '.') t = t.slice(0, -1);
+    return t;
+  }
+  function smallNum(x, sig) {
+    x = +x || 0; if (!(x > 0)) return '0';
+    var e = x.toExponential((sig || 4) - 1), i = e.indexOf('e');
+    if (i < 0) return String(x);
+    var mant = trimZ(e.slice(0, i)).split('.').join(''), exp = -parseInt(e.slice(i + 1), 10);
+    if (exp >= 5) return '0.0' + zsub(exp - 1) + mant;
+    if (x >= 1e-8) return trimZ(x.toFixed(8));
+    if (!(exp > 1)) return trimZ(x.toFixed(8));
+    return '0.0' + zsub(exp - 1) + mant;
+  }
+  function abbrNum(n) {
+    n = +n || 0; var a = Math.abs(n);
+    if (a >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return String(Math.round(n));
+  }
+  function qtyTxt(n) {
+    n = +n || 0; var a = Math.abs(n);
+    if (a >= 1000) return abbrNum(n);
+    if (a >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    if (a === 0) return '0';
+    if (a >= 0.001) { var t = n.toFixed(3); return (Math.abs((+t) - n) < 1e-12) ? String(+t) : (t + '..'); }
+    return (n < 0 ? '-' : '') + smallNum(Math.abs(n), 4);
+  }
+
   // An input value: plain digits with no grouping commas, so it parses back to the same number.
   function plainNum(n) {
     if (!isFinite(n) || n <= 0) return '';
@@ -336,8 +388,13 @@
   //   Ahead of you     what already rests at your price or better on your side — or, if your price crosses,
   //   / Execution      how much of this order the other side can fill right now
   // Stellar's classes (.lx-oc, .lx-oc-t, .lx-oc-r, .lx-oc-ok, .lx-oc-hi) are in the inherited sheet.
+  // THE PHONE GETS THIS BLOCK TOO (RAZA 2026-10-08, "fix both"). It used to return early on mobile,
+  // which cost phone users the only answer to "will this actually fill?" — the one question a limit
+  // order raises. Measured on lumoscore.com at 375px: Stellar renders it inside its mdxa-pane-limit
+  // container, so skipping it here was a gap, not a deliberate narrowing. The anchor it inserts
+  // before exists in both containers (mdxa-trade-summary / dxa-trade-summary, matched by substring)
+  // and the .lx-oc rules are in the mobile build's inherited sheet, both checked before this ran.
   function orderContext(p) {
-    if (isPhone(p)) return;
     var bk = window.__lxxBook;
     var sum = $('[class*="dxa-trade-summary"]', p);
     if (!bk || !sum || !sum.parentNode) return;
@@ -375,8 +432,16 @@
         if (!(s === 'buy' ? list[i].px >= pr : list[i].px <= pr)) break;
         q += list[i].amt; n++;
       }
+      // A FULL LIST IS A FLOOR, NOT A COUNT. When the queue reaches the end of the depth the ledger
+      // returned, everything past it is invisible — so the honest reading is "over X · N+ orders",
+      // which is how lumoscore.com words it (measured: "over 258.8K USDC · 200+ orders"). Printing
+      // the bare figures states a truncated count as the exact one, understating what is ahead of you.
+      var capped = n > 0 && n >= list.length;
       lbl = 'Ahead of you'; cls = n ? 'lx-oc-hi' : 'lx-oc-ok';
-      val = n ? (fmt(q, 2) + ' ' + a.code + ' · ' + n + (n === 1 ? ' order' : ' orders')) : 'nothing — first in line';
+      val = n
+        ? ((capped ? 'over ' : '') + qtyTxt(q) + ' ' + a.code + ' · ' + n
+          + (capped ? '+ orders' : (n === 1 ? ' order' : ' orders')))
+        : 'nothing — first in line';
     }
     var P6 = function (v) { return v ? String(+Number(v).toPrecision(6)) : '—'; };
     host.textContent = '';
@@ -512,7 +577,8 @@
         }
       }
 
-      var tx = { TransactionType: 'OfferCreate', Account: who, TakerGets: built.TakerGets, TakerPays: built.TakerPays };
+      var tx = { TransactionType: 'OfferCreate', Account: who, TakerGets: built.TakerGets, TakerPays: built.TakerPays,
+        Memos: [lxMemo('LumosCore: limit order')] };
       if (built.Flags) tx.Flags = built.Flags;
 
       b.textContent = 'Confirm in wallet…';

@@ -37,6 +37,25 @@ const MAX_LINKS = 6;
 const ADDR = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/;
 const CUR = /^([0-9A-Fa-f]{40}|[A-Za-z0-9]{3})$/;
 
+// ONE CURRENCY CAN BE WRITTEN TWO WAYS, AND A TOML PICKS WHICHEVER IT LIKES (RAZA 2026-10-08: "you
+// can also fin it in its toml on XRPL"). The ledger carries anything longer than three characters as
+// a 40-character hex blob, so callers here pass 534F4C4F00…; sologenic.com's toml writes the human
+// form, `currency = "SOLO"`. The reader compared the two as raw strings, so the block was skipped and
+// SOLO came back with no icon at all while its toml had one all along — and the same silence would
+// hit every 4+ character ticker whose issuer writes the readable form, which is most of them.
+//
+// Both sides are normalised to the hex form before comparing. A three-character code encodes to the
+// same 160 bits either way, so USD and 5553440000… agree too, and a 40-char all-hex string is
+// already canonical by definition — no currency code is forty characters of its own accord.
+function curKey(v) {
+  const s = String(v || '').trim().toUpperCase();
+  if (!s) return '';
+  if (/^[0-9A-F]{40}$/.test(s)) return s;
+  let h = '';
+  for (let i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
+  return (h + '0000000000000000000000000000000000000000').slice(0, 40).toUpperCase();
+}
+
 const json = (body, secs) => new Response(JSON.stringify(body), {
   headers: {
     'content-type': 'application/json; charset=utf-8',
@@ -52,7 +71,7 @@ const json = (body, secs) => new Response(JSON.stringify(body), {
 // Scanned line by line in document order: a `[[TOKENS]]` header starts a new token, and the
 // `[[TOKENS.WEBLINKS]]` tables that follow belong to it until the next `[[`-anything appears.
 export function readTokenLinks(text, issuer, currency) {
-  const want = String(currency || '').toUpperCase();
+  const want = curKey(currency);
   const lines = String(text || '').split(/\r?\n/);
   let inToken = false, tokIss = '', tokCur = '', inLink = false;
   let link = null;
@@ -70,7 +89,7 @@ export function readTokenLinks(text, issuer, currency) {
       if (head === '[[TOKENS]]') { inToken = true; inLink = false; tokIss = ''; tokCur = ''; continue; }
       if (head === '[[TOKENS.WEBLINKS]]') {
         // Only collect for the token we were asked about.
-        inLink = inToken && tokIss === issuer && (!tokCur || tokCur === want);
+        inLink = inToken && tokIss === issuer && (!tokCur || curKey(tokCur) === want);
         if (inLink) link = { url: '', type: '', title: '' };
         continue;
       }
@@ -91,6 +110,84 @@ export function readTokenLinks(text, issuer, currency) {
   }
   flush();
   return out;
+}
+
+// The token's own `icon`, and the name and description beside it.
+//
+// RAZA 2026-10-07: "the logo will be taken from firstledger's toml since army was minted on
+// firstledger so they must be maintaining its toml somewhere". That is exactly where it is —
+// measured on ARMY's, at 93sa0gfz….toml.firstledger.net:
+//
+//   [[TOKENS]]
+//   issuer = "rGG3wQ4kUzd7Jnmk1n5NWPZjjut62kCBfC"
+//   currency = "41524D5900000000000000000000000000000000"
+//   name = "ARMY"
+//   icon = "https://ipfs.firstledger.net/ipfs/QmbWMQRXp1JR9mypBerpPo9syYyqLQdyuQuDNJzSmgcaHJ"
+//
+// A SECOND PASS RATHER THAN A WIDER FIRST ONE. readTokenLinks() tracks the issuer and currency as it
+// goes and decides per WEBLINKS table, which works because those tables always FOLLOW the keys that
+// identify the token. `icon` has no such guarantee — a toml may put it before `currency` — so this
+// collects each [[TOKENS]] block whole and matches once the block has ended. Keeping the two apart
+// leaves the link reader, which is in production and correct, untouched.
+function readTokenMeta(text, issuer, cur) {
+  const want = curKey(cur);
+  let block = null, found = null;
+  const take = () => {
+    if (block && !found && block.iss === issuer && (!block.cur || curKey(block.cur) === want)) found = block;
+    block = null;
+  };
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    if (line.startsWith('[')) {
+      const head = line.replace(/\s+/g, '').toUpperCase();
+      // A WEBLINKS table belongs to the token above it, so it must not end the block — its own
+      // url/type/title keys are simply not ones this reader collects.
+      if (head === '[[TOKENS.WEBLINKS]]') continue;
+      take();
+      if (head === '[[TOKENS]]') block = { iss: '', cur: '', icon: '', name: '', desc: '' };
+      continue;
+    }
+    if (!block) continue;
+    const kv = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([\s\S]*?)"\s*$/.exec(line);
+    if (!kv) continue;
+    const k = kv[1].toLowerCase(), v = kv[2];
+    if (k === 'issuer') block.iss = v;
+    else if (k === 'currency') block.cur = v.toUpperCase();
+    else if (k === 'icon') block.icon = v.slice(0, 500);
+    else if (k === 'name') block.name = v.slice(0, 120);
+    else if (k === 'desc') block.desc = v.slice(0, 2000);
+  }
+  take();
+  return found;
+}
+
+// The token's icon url alone, for callers that only want the artwork.
+//
+// Exported so `xrplthumb.js` can fall back to it when xrpl.to has no thumbnail — which is the case
+// for anything freshly minted, including this launchpad's own tokens. Composition rather than a
+// second copy: the domain resolver, the block reader and the url check are all the ones above.
+//
+// It returns the URL, not the image. The caller fetches it server-side, so the browser still only
+// ever sees /lxapi/… and the issuer's host never learns a visitor's address.
+export async function tokenIconUrl(iss, cur, origin, ctx) {
+  try {
+    const map = await issuerDomains([iss], origin, ctx, null, 3000);
+    const domain = (map && map[iss]) || '';
+    if (!domain) return '';
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), 5000);
+    const r = await fetch('https://' + domain + '/.well-known/xrp-ledger.toml',
+      { headers: { accept: 'text/plain' }, signal: ac.signal, redirect: 'follow' });
+    clearTimeout(t);
+    if (!r.ok) return '';
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength > MAX_BYTES) return '';
+    const m = readTokenMeta(new TextDecoder('utf-8', { fatal: false }).decode(buf), iss, cur);
+    return (m && safeUrl(m.icon)) || '';
+  } catch (e) {
+    return '';
+  }
 }
 
 // https only, a real hostname, and no credentials in the url. These strings come off a third party's
@@ -214,7 +311,7 @@ export async function onRequest(context) {
   const hit = await cache.match(key);
   if (hit) return hit;
 
-  let domain = '', links = [], reached = true;
+  let domain = '', links = [], reached = true, meta = null;
   try {
     // 3s, not the search default: this endpoint has nothing to say without the domain.
     const map = await issuerDomains([iss], url.origin, context, null, 3000);
@@ -247,6 +344,17 @@ export async function onRequest(context) {
           // Only that one is dropped. A project whose links point at a DIFFERENT site still gets its
           // button; this removes a duplicate, not a category.
           links = cleanLinks(readTokenLinks(text, iss, cur), domain);
+          // The token's own artwork and words, from the same read. `icon` goes through the same
+          // safeUrl() the links do — it is a string an anonymous account chose, so https only, a
+          // real hostname and no credentials, or it is dropped rather than put in an <img src>.
+          const m = readTokenMeta(text, iss, cur);
+          if (m) {
+            meta = {
+              icon: safeUrl(m.icon) || '',
+              name: m.name || '',
+              desc: m.desc || '',
+            };
+          }
         }
       }
     } catch (e) { /* no toml, or it did not answer: no links is the answer */ }
@@ -266,7 +374,7 @@ export async function onRequest(context) {
   //
   // The third matches _issuerdomain.js's own TTL_FAIL, and for the same reason it exists there.
   const ttl = !reached ? TTL_UNREACHED : (links.length ? TTL_OK : TTL_NONE);
-  const res = json({ ok: true, domain, links, reached }, ttl);
+  const res = json({ ok: true, domain, links, reached, meta }, ttl);
   context.waitUntil(cache.put(key, res.clone()));
   return res;
 }
