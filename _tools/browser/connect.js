@@ -30,12 +30,29 @@
   // PASTE THE XAMAN API KEY HERE.
   //
   // Get it free at https://apps.xaman.dev -> create an application -> copy the API KEY (a uuid).
-  // The SECRET is NOT used here and must never be put in front-end code: this is the PKCE flow,
-  // which is designed to run without one. In the Xaman console, set the application's redirect URI
-  // to the site origin (https://lumoscore.com/) or sign-in will be refused by their server.
+  // It is a PUBLIC client identifier and is served to every visitor in this file, which is why it can
+  // live here. The SECRET is NOT used and must never be put in front-end code: this is the PKCE flow,
+  // designed to run without one. Xaman's own docs: "Never use an API Secret obtained from the
+  // Developer Dashboard in a frontend environment!"
+  //
+  // THE KEY AND THE REDIRECT LIST ARE ONE SETTING, NOT TWO. Xaman validates the pair, and refuses
+  // with a single "Invalid client/redirect URL" that says which of the two is wrong -- it reads
+  // identically for an unknown app and for an unregistered address (verified: a fabricated client_id
+  // produces the same page). Until 2026-10-11 this held the key of an application that no longer
+  // existed, so EVERY Xaman sign-in had been refused before the user was ever shown a prompt, on
+  // every device, for as long as the integration has been here. Changing one without the other puts
+  // it straight back.
+  //
+  // Registered for this app, and the only addresses sign-in can complete on:
+  //   https://lumoscore.com  +  /trade/xrpl
+  //   https://lumoscore-staging.pages.dev  +  /trade/xrpl
+  // Per-deployment origins (<hash>.lumoscore-staging.pages.dev) change every deploy and can never be
+  // registered, so Xaman must be tested on the alias or on production -- never on a deploy hash.
+  // Both verified accepted 2026-10-11 by requesting the gateway directly: it answers with a real
+  // "Sign in to lumoscore.com" sign request instead of access_denied.
   //
   // Left blank, Xaman shows as "Setup needed" instead of failing silently mid-flow.
-  var XAMAN_KEY = 'aa0d5f5f-c80c-4763-8bf6-1cb63cea7fbb';
+  var XAMAN_KEY = '7b33acf2-5f6d-4e07-9e5a-d371235be903';
   // ---------------------------------------------------------------------------------------------
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
