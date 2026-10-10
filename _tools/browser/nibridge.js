@@ -3050,12 +3050,39 @@
       + '</span><span><span class="am">' + esc2(sym || '') + '</span>'
       + '<span class="nt">' + esc2(place || '') + '</span></span></span>';
   }
+  // THE CHAIN IS BADGED ONTO THE ASSET DISC, as lumoscore.com does it (RAZA 2026-10-09: "in from
+  // column, network logo is missing ... To column is bit different than stellar (networks logo
+  // missing)"). The cell used to draw the asset mark alone, so a row said "2.0958 XRP / XRP Ledger"
+  // and "2.884955 USDT / Avalanche" with no way to tell the two chains apart at a glance.
+  //
+  // INLINE STYLES, NOT STELLAR'S CLASSES. lumoscore.com builds this with .lx-tic/.lx-tnet, and
+  // copying that markup here would have produced an unstyled badge: measured on the deployed XRPL
+  // bridge page, neither .lx-tnet nor .lx-tl has a single rule in this build. txRoute() beside this
+  // already inlines its logo styles for the same reason, so this matches the file it lives in.
+  //
+  // The badge is omitted rather than faked when netFile() has no artwork for a chain — NET_HAVE is
+  // the build's own list of files that exist, so a missing one would be a broken-image cross in a
+  // 12px circle.
   function txAmt(v, sym, place) {
     var n = Number(v);
     var shown = isFinite(n) ? fmt(n, (n > 0 && n < 1) ? 8 : 6) : '—';
+    var nu = netFile(place);
+    // !important ON THE BADGE'S OWN SIZE, and it is not belt-and-braces. The inherited stylesheet
+    // carries `.br-txwrap .br-table .br-asschip .br-ic img{width:100%!important;height:100%!important}`
+    // — written for the single asset mark that used to be the only image in here. A second <img> in
+    // the same wrapper is caught by it too, so the first version of this badge rendered at the full
+    // 26px squarely on top of the asset logo instead of 12px in its corner. Measured on the deployed
+    // page: width 26, not 12. An inline !important is the only thing that outranks it.
+    var badge = nu
+      ? ('<img loading="lazy" decoding="async" src="' + esc2(nu) + '" alt="" style="position:absolute;'
+        + 'right:-2px;bottom:-2px;width:12px!important;height:12px!important;min-width:0!important;'
+        + 'border-radius:50%;object-fit:cover;display:block;box-shadow:0 0 0 2px var(--surface)">')
+      : '';
     return '<span class="br-asschip">'
-      + '<span class="br-ic lx-netic" data-logo="" data-logoed="1">'
-      + (symLogo(sym) ? ('<img loading="lazy" decoding="async" src="' + esc2(symLogo(sym)) + '" alt="">') : '')
+      + '<span class="br-ic lx-netic" data-logo="" data-logoed="1" style="position:relative;overflow:visible">'
+      + (symLogo(sym) ? ('<img loading="lazy" decoding="async" src="' + esc2(symLogo(sym)) + '" alt=""'
+        + ' style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">') : '')
+      + badge
       + '</span><span><span class="am">' + shown + ' ' + esc2(sym || '') + '</span>'
       + '<span class="nt">' + esc2(place || '') + '</span></span></span>';
   }
@@ -3091,7 +3118,12 @@
 
   var TX_HEAD = '<tr><th>Time</th><th>From</th><th>Source address</th><th>To</th>'
     + '<th>Destination address</th><th>Bridge used</th>'
-    + '<th class="br-xph" aria-label="Explorer"></th></tr>';
+    // NAMED, NOT JUST aria-labelled (RAZA 2026-10-09: "Explorer column heading is missing"). This
+    // shipped as an empty <th> carrying only an aria-label, so a screen reader heard "Explorer" and
+    // everyone else saw a blank above the link icons — the one column heading on the table that was
+    // not written down. lumoscore.com names it. The aria-label stays: it is harmless beside real text
+    // and keeps the accessible name stable if the visible wording is ever shortened.
+    + '<th class="br-xph" aria-label="Explorer">Explorer</th></tr>';
 
   function paintTxs() {
     var all = txRecords();
