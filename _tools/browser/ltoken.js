@@ -192,9 +192,22 @@
     $$('.addr-row').forEach(function (row) {
       row.classList.add('lxlt');
       var tag = row.querySelector('.net-tag');
-      if (tag && !tag.querySelector('.b-ico')) {
+      // REBUILT EVEN WHEN A .b-ico IS ALREADY THERE (RAZA 2026-10-09: "Aptos logo showing up on Lumos
+      // token page on XRPL"). The guard used to be `!tag.querySelector('.b-ico')` — build the mark
+      // only if the tag has none — and the design ships one, holding APTOS's logo as a 96x96 base64
+      // webp. So the condition was false, this block never ran, and the row read "XRP Ledger" beside
+      // Aptos's mark. Confirmed by blowing the image up on the deployed page rather than inferring it
+      // from the filename: there is no filename, which is also why every Aptos sweep misses it — they
+      // match text, and this is pixels.
+      //
+      // The whole tag is rewritten rather than the nested <img> repointed, because the shipped
+      // structure nests the image inside a 7px span and repointing it would leave an XRP mark at 7px
+      // in a larger circle. data-lxnet marks it done, so a second call is a no-op instead of
+      // rebuilding on every paint.
+      if (tag && tag.getAttribute('data-lxnet') !== 'xrpl') {
         tag.textContent = '';
         tag.setAttribute('data-logoed', '1');
+        tag.setAttribute('data-lxnet', 'xrpl');
         var bi = el('span', 'b-ico');
         var im = document.createElement('img');
         im.src = XRP_LOGO;
@@ -220,6 +233,25 @@
         dom.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span>lumoscore.com</span>';
         row.appendChild(dom);
       }
+    });
+    // THE SECOND COPY OF THE SAME INHERITED MARK. The comparison row carries its own wrapper —
+    // .lt-cmp-chain > .lt-cmp-ico — holding Aptos's base64 webp nested inside a 14px span, beside the
+    // words "XRP Ledger". Found by sweeping the page for that image after fixing the .net-tag one and
+    // discovering a second still rendering, which is the only reason it is here: the text pass in
+    // paintChainLabels() cannot reach it (it matches text, and this is pixels) and the .addr-row
+    // rebuild above is scoped to .net-tag.
+    //
+    // The ICON is emptied rather than the whole chain element, because .lt-cmp-chain also holds the
+    // label and the row's own structure. data-lxnet makes a second call a no-op.
+    $$('.lt-cmp-ico').forEach(function (ic) {
+      if (ic.getAttribute('data-lxnet') === 'xrpl') return;
+      ic.setAttribute('data-lxnet', 'xrpl');
+      ic.textContent = '';
+      var cim = document.createElement('img');
+      cim.src = XRP_LOGO;
+      cim.alt = '';
+      cim.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%';
+      ic.appendChild(cim);
     });
     // The XRP price and the 24h change share one line under the dollar price, as on lumoscore.com.
     $$('.hero-price-block').forEach(function (hb) {
