@@ -470,11 +470,17 @@
       return Promise.reject(new Error('Your browser blocked the Xaman sign-in window. Allow pop-ups '
         + 'for this site, then try again.'));
     }
+    // BEFORE xumm(), NOT AFTER IT. Constructing the SDK can restore a remembered session and fire
+    // 'retrieved' immediately -- no round trip, no approval needed, which is correct when the reader
+    // has just tapped Xaman. adoptXumm() decides whether to announce by looking for this marker, so
+    // if it is written after xumm() that restore is silent: the reader taps Xaman, is connected, and
+    // is told nothing. Writing it here means a tap always counts as a sign-in, however fast it
+    // resolves.
+    rememberBack();
     return xumm().then(function (x) {
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
-      rememberBack();
       var p = x.authorize();
       if (!p || !p.then) { xamanPending = null; xamanDropWin(); return Promise.reject(new Error('Xaman sign-in could not start.')); }
 
@@ -497,7 +503,11 @@
       // Clear the rejector however this settles. Left dangling, a later unrelated 'error' event would
       // fire it at a sign-in that already finished.
       return Promise.race([p, refused]).then(
-        function (v) { clearInterval(watch); xamanPending = null; xamanWin = null; return v; },
+        // CLOSE IT ON SUCCESS TOO. When the session is already live, authorize() resolves without
+        // ever opening anything, so the blank window we pre-opened in the tap is never navigated and
+        // would be left on screen for the reader to dismiss. Where the SDK did retarget it, Xaman's
+        // own flow has closed it already and this is a no-op.
+        function (v) { clearInterval(watch); xamanPending = null; xamanDropWin(); return v; },
         function (e) { clearInterval(watch); xamanPending = null; xamanDropWin(); throw e; });
     }).then(function (state) {
       xamanPending = null;
@@ -856,12 +866,18 @@
 
     function pick() {
       build();
-      // WARM THE XAMAN SDK WHILE THE USER IS READING THE LIST. The script is 89KB and was fetched
-      // inside the tap, which is dead time with a blank sign-in window already on screen. Loading it
-      // here does not make the tap synchronous -- authorize() still awaits its own ping, which is why
-      // the window is pre-opened -- it just stops the wait being longer than it needs to be.
-      // Fire and forget: a failure here is reported properly when the row is actually tapped.
-      try { if (XAMAN_KEY) xumm().catch(noop); } catch (e) {}
+      // WARM THE SCRIPT ONLY -- NEVER CONSTRUCT THE SDK HERE.
+      //
+      // The 89KB library was being fetched inside the tap, which is dead time with a blank sign-in
+      // window already on screen, so preloading it is worth doing. But this first called xumm(),
+      // which also does `new XummPkce(...)` -- and CONSTRUCTING the SDK is what makes it restore a
+      // remembered session and fire 'retrieved'. Merely opening the wallet list therefore signed the
+      // reader in: RAZA, 2026-10-11, "as soon as i clicked on XRPL from network selection, it
+      // automatically connected even without confirmation". My own regression from the warm-up.
+      //
+      // Downloading the file has no such side effect, and the download is the slow part. The
+      // instance is built on the tap, where a restored session is exactly what the reader asked for.
+      try { if (XAMAN_KEY && !window.XummPkce) loadScript(XUMM_SRC).catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
       var list = document.createElement('div');
