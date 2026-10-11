@@ -1857,10 +1857,27 @@
             }
           } else {
             // The phone's card: `.nm` is the wallet, `.ex-num` holds the price with the amount in a
-            // nested `.sub`, and `.ex-time` is the age. The `.ex-ident` identicon is left alone — it
-            // is decorative, and it doubles as the thing that keeps the logo healer off the row.
+            // nested `.sub`, and `.ex-time` is the age.
             var nm = row.querySelector('.nm');
             if (nm) nm.textContent = whoTxt;
+
+            // THE IDENTICON IS DRAWN FROM THE TRADER, not left as the mock's.
+            //
+            // This used to be skipped on the grounds that it is decorative. It is not: it sits beside
+            // a wallet address and reads as that wallet's mark, so one identicon on every row says
+            // the same person made every trade. RAZA 2026-10-11, "Icons definitely need fixing" --
+            // all hundred rows were #06b6d4, because every row is a clone of the mock's first card.
+            //
+            // STELLAR VARIES THEM on the same list: five distinct marks across ten rows, measured on
+            // the twin page before changing this. Same identSvg, same palette, same derivation as the
+            // holders list -- it is the one surface here that was still showing the clone.
+            //
+            // The other half of the old note still holds and is preserved: an svg in this span is
+            // what keeps the logo healer off the row, so this REPLACES one svg with another rather
+            // than emptying it. Replacing it with text would hand the row straight to the healer.
+            var exIc = row.querySelector('.ex-ident');
+            var exWho = h.taker || h.maker;
+            if (exIc && exWho) exIc.innerHTML = identSvg(exWho, 28);
 
             var mb = row.querySelector('.type-badge');
             if (mb) { mb.className = 'type-badge ' + sideCls; mb.textContent = sideTxt; }
