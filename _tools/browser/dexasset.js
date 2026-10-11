@@ -2142,6 +2142,18 @@
             else accA.insertBefore(idc.firstChild, accA.firstChild);
           }
 
+          // THE PHONE NEVER GOT ONE. Everything above hangs off `a.lx-acct` / `.wallet-cell`, which are
+          // DESKTOP row classes -- the mobile row is .mdxa-hl-row and carries its mark in
+          // .mdxa-hl-ident, so accA was null and the branch was skipped entirely. Every row is a clone
+          // of the design's first mock row, so all fifty kept that row's identicon: RAZA 2026-10-11,
+          // "Why all wallets have same icons in asset holders section", every one #ff894c.
+          //
+          // The address and balance survived only by accident: their selectors are
+          // [class*="dxa-hl-addr"] and [class*="dxa-hl-bal"], and "mdxa-hl-addr" contains
+          // "dxa-hl-addr" as a substring. The identicon was the one that asked for an exact class.
+          var identM = tr.querySelector('[class*="dxa-hl-ident"]');
+          if (identM) identM.innerHTML = identSvg(h.account, 26);
+
           var balEl = tr.querySelector('[class*="dxa-hl-bal"]');
           var pctEl = tr.querySelector('[class*="dxa-hl-pct"]');
           if (balEl || pctEl) {
