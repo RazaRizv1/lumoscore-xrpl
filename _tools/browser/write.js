@@ -442,6 +442,29 @@
     var im = document.createElement('img');
     im.alt = '';
     im.src = thumbOf(a);
+    // FEED THE CHANNEL THE SHARED CSS ACTUALLY READS.
+    //
+    // The swap modal's picker is .lx-ap-ico, and the wallet stylesheet -- authored on the Stellar
+    // side, shared because /wallet serves both chains -- takes its logo from a custom property and
+    // hides anything else:
+    //     .lx-ap-ico{background-image:var(--lxlogo,none)!important}
+    //     .lx-ap-ico img{display:none!important}
+    // So the <img> below was inserted, loaded (48x48, confirmed), and rendered at 0x0 behind a
+    // display:none that an inline style cannot outrank -- a stylesheet !important beats an inline
+    // declaration. RAZA 2026-10-11: "No logos shown on swap popup on mobile."
+    //
+    // Nothing else is affected: .lx-ap-ico is the ONLY rule reading --lxlogo, so setting it on the
+    // other hosts this function serves (.a-ico, .dxa-pl-ico) is inert, and their imgs keep showing
+    // as they already do. Both channels carry the same url, so there is nothing to disagree about.
+    //
+    // The quote guard is the url(") trap this project has hit before: a quote inside the value would
+    // close the CSS string early. Our own endpoint encodes its parameters, so this is belt only.
+    try {
+      var lu = thumbOf(a);
+      if (lu && lu.indexOf('"') < 0 && lu.indexOf("'") < 0) {
+        host.style.setProperty('--lxlogo', 'url("' + lu + '")');
+      }
+    } catch (e) {}
     im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;border-radius:50%';
     im.onerror = function () { if (im.parentNode) im.parentNode.removeChild(im); plain(host, a.code.charAt(0).toUpperCase()); };
     host.appendChild(im);
