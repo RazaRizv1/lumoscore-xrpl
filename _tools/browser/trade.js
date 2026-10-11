@@ -713,11 +713,44 @@
     chip.appendChild(caret);
     chip.setAttribute('aria-haspopup', 'listbox');
 
-    chip.addEventListener('click', function (e) {
-      // This chip was a filter button; the design may still have its own handler bound. Taking the
-      // click outright is what stops a stale "all" filter racing the dropdown.
+    chip.setAttribute('data-lxmode', '1');               // what the window listener below looks for
+    chip.setAttribute('type', 'button');                 // a bare <button> is a submit button
+
+    // ONE LISTENER, ON WINDOW, IN CAPTURE -- NOT ON THE CHIP.
+    //
+    // This was bound to the chip, with capture on the chip itself, and on a PHONE the dropdown simply
+    // did not open: RAZA 2026-10-11, "I'm tapping on curated all drop down but it won't open". The
+    // design ships its own click router and on the mobile build it claims the tap before a
+    // chip-level listener ever runs, so the handler here was never reached. Capture at WINDOW is the
+    // only phase that runs ahead of it.
+    //
+    // This is the identical fix Stellar needed for the identical control (_dexdata.js), and the same
+    // remedy as the inherited row-click hijack. The rule this build keeps relearning: a listener on
+    // the element loses to a router bound higher up, and on mobile that router is always there.
+    //
+    // Bound ONCE for the page -- the chip is rebuilt whenever the design re-renders the filter row,
+    // and binding per chip would stack a listener on every pass.
+    if (window.__lxxModeClick) return;
+    window.__lxxModeClick = 1;
+    window.addEventListener('click', function (e) {
+      var t = e.target; if (!t || !t.closest) return;
+
+      var opt = t.closest('.lx-modemenu button');
+      if (opt) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        var m = opt.getAttribute('data-mode');
+        closeModeMenu();
+        applyMode(m);
+        return;
+      }
+      if (t.closest('.lx-modemenu')) { e.stopImmediatePropagation(); return; }
+
+      var c = t.closest('[data-lxmode]');
+      if (!c) { closeModeMenu(); return; }                // a tap anywhere else puts the menu away
       e.preventDefault(); e.stopImmediatePropagation();
       if (document.querySelector('.lx-modemenu')) { closeModeMenu(); return; }
+
+      var w = c.closest('.lx-modewrap'); if (!w) return;
       var menu = document.createElement('div');
       menu.className = 'lx-modemenu';
       menu.setAttribute('role', 'listbox');
@@ -725,6 +758,7 @@
         var b = document.createElement('button');
         b.type = 'button';
         b.setAttribute('role', 'option');
+        b.setAttribute('data-mode', p[0]);               // read back above, so no closure per button
         b.setAttribute('aria-checked', p[0] === MODE ? 'true' : 'false');
         var tick = document.createElement('span');
         tick.className = 'lx-modetick';
@@ -734,23 +768,10 @@
         txt.setAttribute('data-logoed', '1');
         txt.textContent = p[1];
         b.appendChild(tick); b.appendChild(txt);
-        b.addEventListener('click', function (ev) {
-          ev.preventDefault(); ev.stopPropagation();
-          closeModeMenu();
-          applyMode(p[0]);
-        });
         menu.appendChild(b);
       });
-      wrap.appendChild(menu);
+      w.appendChild(menu);
     }, true);
-
-    if (!window.__lxModeDocClose) {
-      window.__lxModeDocClose = 1;
-      document.addEventListener('click', function (e) {
-        if (e.target && e.target.closest && (e.target.closest('.lx-modemenu') || e.target.closest('.lx-modewrap'))) return;
-        closeModeMenu();
-      }, true);
-    }
   }
 
   // THE MINTS COME FROM OUR OWN PUBLISHED TOML (RAZA: "we're supposed to maintain toml for all
