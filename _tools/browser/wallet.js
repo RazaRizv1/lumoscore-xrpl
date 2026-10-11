@@ -1501,6 +1501,34 @@
         rowT = rowT.cloneNode(true);
         block.innerHTML = '';
 
+        // CANCEL ALL FOLLOWS THE ORDERS. It lives in the section header, outside this block, so
+        // emptying the block left it sitting above "No open orders on this account." offering to
+        // cancel nothing. RAZA 2026-10-11: "why's it even there when I don't have any open orders".
+        // Stellar hides it in exactly this branch (_walletdata.js, twice -- on render and again in
+        // orderCount), which is the behaviour being matched.
+        //
+        // It also ships as <a href="#" id="cancelAllBtn"> with NO CLASS, so it rendered in the
+        // browser's default link blue, underlined, among styled controls -- "why cancel all shown in
+        // blue". Styled here rather than in a stylesheet because the element is the design's and
+        // carries an id, not a class, so there is nothing to hook a rule onto that would not be
+        // inventing one.
+        var cah = document.getElementById('cancelAllBtn')
+          || document.querySelector('.order-cancel-all,[data-cancel-all]');
+        if (cah) {
+          cah.style.display = offers.length ? '' : 'none';
+          // -webkit-text-fill-color AS WELL AS color, because that property wins over color for the
+          // rendered text and the UA sets it on a link. Measured on a fresh load: font-weight and
+          // text-decoration from this very same inline style applied, and color alone did not --
+          // computed color stayed rgb(0,0,238) with -webkit-text-fill-color matching it. Setting one
+          // without the other leaves the anchor default-blue however loudly the color is declared.
+          cah.style.color = 'var(--accent, #ea6a2c)';
+          cah.style.setProperty('-webkit-text-fill-color', 'var(--accent, #ea6a2c)');
+          cah.style.textDecoration = 'none';
+          cah.style.fontWeight = '600';
+          cah.style.fontSize = '13px';
+          cah.style.cursor = 'pointer';
+        }
+
         if (!offers.length) {
           var d = el('div', 'lx-wcnote', 'No open orders on this account.');
           block.appendChild(d);
