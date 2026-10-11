@@ -2326,7 +2326,21 @@
           // The phone's card: TVL headline, and the pill that carried APR now carries the share.
           mTvl.textContent = money2(p.liq);
           var mApr = tr.querySelector('.mdxa-pl-apr');
-          if (mApr) plain(mApr, share);
+          // "44.9% share", NOT "44.9%" -- the word is load-bearing.
+          //
+          // THE LOGO HEALER ATE THIS CELL. It repaints any element holding a short, ticker-shaped
+          // string as a token logo, and "9.1%" is four characters. It stamped data-logo="BTC" and a
+          // background image onto the box, which then collapsed to 15x4px: RAZA 2026-10-11, "See the
+          // dot on the right, it's supposed to be an icon." The dot WAS the pool share, wearing
+          // BTC's logo in a four-pixel sliver.
+          //
+          // Stellar writes "44.9% share" here and is untouched, because eleven characters are out of
+          // the healer's range. So this is not a workaround invented for the phone -- it is the
+          // wording the reference build already uses, and it reads better besides.
+          //
+          // Marking the element data-logoed does NOT work, tried and measured: that flag escapes the
+          // logo ENGINE, not this healer, which re-ran after the paint and took the cell back.
+          if (mApr) plain(mApr, share === '—' ? '—' : (share + ' share'));
           var pill = tr.querySelector('.net-pill');
           if (pill) { pill.className = 'net-pill xrpl'; plain(pill, 'XRP Ledger'); }
         } else {
