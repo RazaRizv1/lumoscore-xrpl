@@ -117,6 +117,10 @@ const CHAIN = [
   // three faults in the inherited one: absolute lumoscore.com urls, href=\"#\", and /dashboard
   // labelled Home. Mirrors Stellar's _footernav.js.
   '_xrplfooternav',
+  // Points the design's own "Launch Token" buttons at /launchpad/xrpl rather than the network
+  // chooser, on pages whose url has already answered which network. Runs after the footer nav, which
+  // writes chain-specific links of its own and would otherwise be the only part of a page that knew.
+  '_xrpllaunchlinks',
   // Dead last, for the same reason as the two above but about CSS rather than prose: it appends one
   // stylesheet to every page key's <head>, and any pass that rebuilds a page key from a donor clone
   // would hand back a head without it. It strips its own block before inserting, so running it here
