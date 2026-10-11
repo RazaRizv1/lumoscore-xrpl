@@ -206,6 +206,23 @@
     st.textContent = '.dxa-tab-extra.dxa-pools:not(.lxda) .dxa-pl-head,.dxa-tab-extra.dxa-pools:not(.lxda) table,'
       + '.dxa-tab-extra.dxa-holders:not(.lxda) table,.dxa-tab-extra.dxa-holders:not(.lxda) .dxa-hl-stat .val,'
       + '.dxa-tab-extra.dxa-holders:not(.lxda) .dxa-hl-pgn{visibility:hidden}'
+      // THE PHONE HAD NO GATE AT ALL. Every selector above names the DESKTOP classes, and the mobile
+      // build renders different containers entirely -- .mdxa-tab-extra, .mdxa-pools, .mdxa-pl-list --
+      // so none of them matched and the design's mock sat there in full view until our paint landed.
+      // RAZA 2026-10-11: "There's possibly a flash bug in trade-asset (pools tab). I noticed it
+      // showed Aptos for split seconds when I switched to this tab." The mock it was showing is in
+      // the served markup: Pools 7, TVL $7.76M, 24h vol $1.63M, over Aptos pairs.
+      //
+      // The same omission covers the holders tab, which is the other panel he reported as breaking
+      // on the phone -- same mock, same missing gate, one tab across.
+      // A SEPARATE RULE, not a comma after the block above. Appending ",.mdxa-..." straight after
+      // "{visibility:hidden}" produces a selector list following a declaration block, which is not
+      // CSS: the browser drops the whole thing and the gate silently does nothing. Caught only
+      // because the panel reported gated=true while its contents still computed to visible.
+      + '.mdxa-tab-extra.mdxa-pools:not(.lxda) .mdxa-pl-head,.mdxa-tab-extra.mdxa-pools:not(.lxda) .mdxa-pl-list,'
+      + '.mdxa-tab-extra.mdxa-holders:not(.lxda) .mdxa-hl-list,'
+      + '.mdxa-tab-extra.mdxa-holders:not(.lxda) .mdxa-hl-stat .val,'
+      + '.mdxa-tab-extra.mdxa-holders:not(.lxda) .mdxa-hl-pgn{visibility:hidden}'
       // The snapshot camera is removed from the chart controls (RAZA 2026-09-16: "Remove the camera icon for screenshot").
       + '.lxda-snap{display:none!important}';
     (document.head || document.documentElement).appendChild(st);
@@ -1386,8 +1403,8 @@
           var badge = td[1] && td[1].querySelector('.type-badge');
           if (badge) { badge.className = 'type-badge ' + (h.bought ? 'buy' : 'sell'); badge.textContent = h.bought ? '▲ Buy' : '▼ Sell'; }
           var pEl = td[2] && td[2].querySelector('.mono');
-          if (pEl) pEl.textContent = otherXrp != null ? (xrp(otherXrp / h.mine.v, 5) + ' XRP')
-            : (xrp(h.other.v / h.mine.v, 5) + ' ' + curName(h.other.c));
+          if (pEl) pEl.textContent = otherXrp != null ? (xrpPx(otherXrp / h.mine.v) + ' XRP')
+            : (xrpPx(h.other.v / h.mine.v) + ' ' + curName(h.other.c));
           var aEl = td[3] && td[3].querySelector('.mono');
           if (aEl) aEl.textContent = amount(h.mine.v) + ' ' + asset.code;
           if (td[3]) {
@@ -1771,8 +1788,8 @@
           if (append && EX_MIN > 0 && !(otherXrp >= EX_MIN)) continue;
 
           var priceTxt = otherXrp != null
-            ? (xrp(otherXrp / mine.v, 5) + ' XRP')
-            : ((px >= 1000 ? amount(px) : xrp(px, 5)) + ' ' + curName(other.c));
+            ? (xrpPx(otherXrp / mine.v) + ' XRP')
+            : (xrpPx(px) + ' ' + curName(other.c));
           var amtTxt = amount(mine.v) + ' ' + asset.code;
           var whoTxt = shortAddr(h.taker || h.maker);
           var sideCls = bought ? 'buy' : 'sell';
@@ -2015,7 +2032,7 @@
   // the rich list for the page it names.
   var HL_TPL = null, HL_PAGE = 1, HL_PER = 50;
   function holdersPager(d, body) {
-    var ex = body.closest && body.closest('.dxa-tab-extra');
+    var ex = body.closest && body.closest('.dxa-tab-extra, .mdxa-tab-extra');
     var pg = ex && ex.querySelector('.dxa-hl-pgn');
     if (!pg) return;
     var total = d.total != null ? Math.round(d.total) : d.rows.length;
@@ -2150,7 +2167,7 @@
           body.appendChild(tr);
         }
         body.setAttribute('data-lxh', asset.code);
-        var exHl = body.closest && body.closest('.dxa-tab-extra');
+        var exHl = body.closest && body.closest('.dxa-tab-extra, .mdxa-tab-extra');
         if (exHl) exHl.classList.add('lxda');
         holdersPager(d, body);
         countsH(d);
@@ -2313,7 +2330,7 @@
       }
       if (template) {
         body.setAttribute('data-lxp', asset.code);
-        var exPl = body.closest && body.closest('.dxa-tab-extra');
+        var exPl = body.closest && body.closest('.dxa-tab-extra, .mdxa-tab-extra');
         if (exPl) exPl.classList.add('lxda');
       }
 
