@@ -56,6 +56,28 @@
     return v.toLocaleString('en-US', { maximumFractionDigits: dp || 4 });
   }
 
+  // A PRICE IS SIZED BY ITS MAGNITUDE, NOT BY A FIXED NUMBER OF DECIMALS.
+  //
+  // The price surfaces all passed dp:6, which means six decimals on a five-figure number: BTC read
+  // "58,964.239979 XRP" in a headline 259px wide inside a 375px phone. RAZA 2026-10-11: "In price,
+  // don't add too many decimals otherwise it will go out of the box like now. See what logic we used
+  // on mobile on stellar. Use the same logic."
+  //
+  // This IS Stellar's logic -- xlmAmt in _dexassetdata.js, ladder for ladder: a thousand or more is a
+  // whole number with separators, because the hundredths of an XRP on a 58,964 price are noise; one
+  // and up keeps four places and drops trailing zeros; below one hands back to xrp(), which already
+  // owns this build's small-number conventions including the subscript run below 1e-8.
+  //
+  // xrp() itself is left alone -- twenty call sites, and several (1372, 1751, 1795) already do this
+  // same ">= 1000 ? amount : xrp" test by hand. The ladder is named once here instead.
+  function xrpPx(v) {
+    if (v == null || !isFinite(v)) return '—';
+    if (v >= 1000) return Math.round(v).toLocaleString('en-US');
+    if (v >= 1) return String(+v.toFixed(4));
+    if (v > 0) return xrp(v, 4);
+    return '0';
+  }
+
   function amount(v) {
     if (v == null || !isFinite(v)) return '—';
     if (v >= 1e18) return (v / 1e18).toFixed(2) + 'Qi';
@@ -299,7 +321,7 @@
     for (var i = 0; i < list.length; i++) {
       var r = list[i];
       var row = el('div', 'dxa-ob-row mdxa-ob-row ' + side);
-      row.appendChild(el('span', 'px', xrp(r.px, 6)));
+      row.appendChild(el('span', 'px', xrpPx(r.px)));
       row.appendChild(el('span', 'am', amount(r.amt)));
       row.appendChild(el('span', 'sm', amount(r.sum)));
       var bar = el('span', 'bar');
@@ -551,12 +573,12 @@
     noMarketNote(null);
     var usd = (d.price && d.usd) ? (d.usd / d.price) : null;   // USD per XRP, from this token's pair
 
-    setCell('price', d.price == null ? null : xrp(d.price, 6) + ' ', 'XRP',
+    setCell('price', d.price == null ? null : xrpPx(d.price) + ' ', 'XRP',
       d.usd == null ? '' : money(d.usd));
 
     if (d.p24 == null) setCell('24h change', null, '', '');
     else setCell('24h change', (d.p24 >= 0 ? '+' : '') + d.p24.toFixed(2) + '%', '',
-      d.price == null ? '' : ((d.p24 >= 0 ? '+' : '') + xrp(d.price * d.p24 / 100, 6) + ' XRP'),
+      d.price == null ? '' : ((d.p24 >= 0 ? '+' : '') + xrpPx(d.price * d.p24 / 100) + ' XRP'),
       d.p24 >= 0 ? 'up' : 'down');
 
     setCell('24h volume', d.vol24 == null ? null : statAmt(d.vol24) + ' ', 'XRP',
@@ -999,7 +1021,7 @@
     var d = window.__lxxAssetData, a = window.__lxxAssetRef;
     if (!pd || !d || !a || d.price == null) return;
     var usd = CH_VIEW.vs === 'USD';
-    var priceTxt = usd ? (d.usd != null ? money(d.usd) : '—') : (xrp(d.price, 6) + ' XRP');
+    var priceTxt = usd ? (d.usd != null ? money(d.usd) : '—') : (xrpPx(d.price) + ' XRP');
 
     var big = pd.querySelector('.big');
     if (big) { plain(big, priceTxt); big.classList.add('lxp'); }
@@ -1019,7 +1041,9 @@
         if (hi == null || h > hi) hi = h;
         if (lo == null || l < lo) lo = l;
       }
-      var U = function (v) { return usd ? ('$' + xrp(v, 6)) : (xrp(v, 6) + ' XRP'); };
+      // High / Low sit beside the headline on one line, so they get the same ladder: six decimals
+      // here is what made the strip read "H 59,245.0942 L 58,385.195" and run out of room.
+      var U = function (v) { return usd ? ('$' + xrpPx(v)) : (xrpPx(v) + ' XRP'); };
       meta.textContent = '';
       meta.appendChild(el('span', 'lx-pairpx', priceTxt + ' per ' + a.code + ' · '));
       meta.appendChild(document.createTextNode(CH_VIEW.label + ' High '));
