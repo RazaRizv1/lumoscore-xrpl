@@ -972,7 +972,59 @@
   // these with `!important` because Circle CCTP could not reach them, and that CSS came across with
   // the fork -- a stylesheet outliving the layer whose decision it encoded. An inline important is the
   // one thing that reliably outranks it regardless of which <style> the build emits last.
+  // DELETE THE DEAD RULE INSTEAD OF SHOUTING OVER IT.
+  //
+  // RAZA 2026-10-12, repeatedly: "hedera still not appearing in cross chain destination dropdown",
+  // "not just search, but its also not in the list". Measured on staging with the menu OPEN: 44
+  // options, 32 drawn, the list running Gnosis -> Hyperliquid with Hedera between them and computing
+  // to display:none. Twelve are hidden and all twelve are hidden the same way.
+  //
+  // The option carried our inline reveal the whole time -- style="display: flex !important" was right
+  // there on the element. What beat it was not specificity, it was erasure: the design's own filter
+  // runs on OPEN as well as on typing, and does
+  //
+  //     o.style.display = ok ? "" : "none";
+  //
+  // The "" branch REPLACES the inline declaration and takes our !important with it, leaving the
+  // element with no inline display at all. Then lx-cctp-css, inherited whole from the Stellar fork,
+  // applies: `.brd-opt[data-net="Hedera"]{display:none !important}` -- one of eleven chains Circle
+  // CCTP could not reach, a stylesheet outliving the layer whose decision it encoded. Circle does not
+  // route anything on this page; Axelar does, and Axelar reaches Hedera.
+  //
+  // The block below already learned half of this lesson: it hides via data-lxunreach + a stylesheet
+  // rule BECAUSE the design wipes inline styles. The showing side kept trusting inline and had the
+  // same hole.
+  //
+  // Out-shouting it was the obvious fix and the wrong one. A more specific `!important` of our own
+  // would also outrank the design's plain `display:none`, so typing in the search box would stop
+  // filtering -- trading a chain that will not show for a search that will not hide. The rule has no
+  // business existing on this page at all, so it goes, and the reachable set computed below is left as
+  // the only thing deciding what the picker offers.
+  //
+  // Scoped to lx-cctp-css and to `.brd-opt[data-net=...]` so it cannot reach a rule that is still
+  // load-bearing, and run on every refresh because it is cheap and a late-arriving stylesheet would
+  // otherwise reinstate the bug silently.
+  function dropStaleChainHides() {
+    var killed = 0;
+    try {
+      for (var i = 0; i < document.styleSheets.length; i++) {
+        var sh = document.styleSheets[i];
+        if (!sh.ownerNode || sh.ownerNode.id !== 'lx-cctp-css') continue;
+        var rs; try { rs = sh.cssRules; } catch (_) { continue; }   // a sheet we may not read
+        for (var j = rs.length - 1; j >= 0; j--) {
+          var r = rs[j];
+          if (!r.selectorText) continue;
+          if (!/^\s*\.brd-opt\[data-net=/.test(r.selectorText)) continue;
+          if (!/display\s*:\s*none/i.test(r.cssText)) continue;
+          try { sh.deleteRule(j); killed++; } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return killed;
+  }
+
   function refreshDestinations() {
+    dropStaleChainHides();
     var reach = reachablePlaces();
     var shown = [];
     $$('.brd-opt').forEach(function (o) {
@@ -2546,7 +2598,15 @@
         // and nothing else, and charging a percentage of a WETH transfer would mean converting it to
         // XRP through a price nobody quoted. Undercharging is our cost; a fabricated conversion rate
         // on a page moving money is not acceptable at any price. Revisit if it ever matters.
+        // An XRP source now pays the normal platform fee, so the row says so -- it is labelled
+        // "LumosCore fee" and printing Axelar's relay fee under that label was always a little wrong.
+        // Token sources still pay us nothing, so for those it keeps naming the relay fee instead of
+        // showing a zero that looks like an error.
+        if (SRC && SRC.native && amt) {
+          f.textContent = fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)';
+        } else {
         f.textContent = fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + sym + ' relay fee';
+        }
       } else {
         f.textContent = amt ? (fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)') : '—';
       }
@@ -2749,6 +2809,13 @@
   function formBanner() {
     var ob = overBalance();
     if (ob) { var sb = srcBalance(); return 'Amount exceeds your balance (' + balFigure(sb.bal, sb.sym) + ').'; }
+    // A DISABLED BUTTON WITH NO REASON IS ITS OWN BUG. destAddrError() refuses the transfer, and the
+    // Review button label stays "Review transfer" -- so without this the reader sees a dead button and
+    // no explanation, which is how somebody concludes the site is broken and tries again elsewhere.
+    // Said here because this banner is rewritten on every repaint, so it clears itself the moment the
+    // address becomes valid.
+    var dc = destChain();
+    if (dc) { var ae = destAddrError(dc, recipient()); if (ae) return ae; }
     if (!QUOTING && !BEST && bridgeXrp() > 0 && destChain()) return NOTE.ni || NOTE.th || NOTE.ax || '';
     return '';
   }
@@ -3391,6 +3458,48 @@
   // Ordered the way the form is filled, not the way the checks happen to be written: the amount is the
   // first thing touched, so "Minimum 2 XRP" has to be reachable while the address is still empty. The
   // first version asked for the address first and the minimum could never be seen at all.
+  // THE DESTINATION ADDRESS, CHECKED BEFORE A SIGNATURE RATHER THAN AFTER THE MONEY HAS GONE.
+  //
+  // RAZA bridged 4 XRP to Hedera on 2026-10-12 and it never arrived. He had entered a Hedera ACCOUNT
+  // ID (0.0.10229748); Axelar addresses Hedera by its EVM address (0x2482e1ba...). We accepted the
+  // account id, hex-encoded it into the interchain_transfer memo and submitted. Axelar could not
+  // resolve the destination, so the message NEVER INDEXED -- Axelarscan returns 404 rather than a
+  // failed transfer, and an unindexed GMP message cannot be replayed. The XRP sits at the gateway.
+  //
+  // axCheck() did not catch it. It verifies every memo is well-formed hex and matches the inputs it
+  // was given -- so a destination that is wrong for the chain passes, because the encoding of a wrong
+  // address is still valid encoding. Checking the output against the same bad input proves nothing.
+  //
+  // SCOPE IS DELIBERATELY NARROW, and gateReview() above explains why: there are 28 destinations here
+  // and "a format check that is wrong about one of them blocks a transfer that would have worked".
+  // That reasoning held while being wrong was recoverable. On Axelar it is not, so the chains below
+  // are only those whose address shape is a property of the CHAIN and not of the route -- an EVM
+  // address, a Stellar G-address, a Solana base58 key. Everything else keeps presence-only checking.
+  var EVM_DEST = { hedera:1, xrplevm:1, ethereum:1, polygon:1, monad:1, arbitrum:1, base:1, optimism:1,
+    avalanche:1, bnbchain:1, linea:1, mantle:1, scroll:1, sei:1, gnosis:1, berachain:1 };
+  function destAddrError(chainKey, value) {
+    var k = norm(chainKey), v = String(value || "").trim();
+    if (!v) return "";                                  // the empty case is handled by its own message
+
+    if (EVM_DEST[k]) {
+      if (/^0x[0-9a-fA-F]{40}$/.test(v)) return "";
+      // The single most likely mistake on Hedera, answered with the thing to do rather than a refusal.
+      if (k === "hedera" && /^\d+\.\d+\.\d+$/.test(v)) {
+        return "Hedera needs the EVM address (0x...), not " + v;
+      }
+      return "Enter a valid 0x address for " + placeLabel(chainKey);
+    }
+    if (k === "stellar") {
+      if (/^G[A-Z2-7]{55}$/.test(v)) return "";
+      return "Enter a valid Stellar address (G...)";
+    }
+    if (k === "solana") {
+      if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v)) return "";
+      return "Enter a valid Solana address";
+    }
+    if (k === "xrpl" || k === "xrplevm") { /* handled above for evm */ }
+    return "";                                          // unknown shape: presence-only, as before
+  }
   function blockReason() {
     if (!addr()) return 'Connect a wallet';
     if (window.lxc && !window.lxc.canSign()) return 'This wallet cannot sign';
@@ -3427,6 +3536,10 @@
     var spend = (SRC && SRC.viaSwap) ? amountXrp() : amt;
     // (the balance was already checked above, before the swap-pricing wait)
     if (!recipient()) return 'Enter a destination address';
+    // Refuses here, which disables the button AND names the problem, instead of letting a transfer
+    // leave for an address the destination chain cannot resolve.
+    var addrBad = destAddrError(chain, recipient());
+    if (addrBad) return addrBad;
     // THE REAL REASON, not a generic wait. A recipient the destination chain would reject is refused
     // by the proxy with "recipient does not look like a base address" -- and the first version threw
     // that away and left the button reading "Waiting for a quote", which describes a network delay
@@ -3511,12 +3624,35 @@
     // THE AMOUNT IS THE TOTAL THAT LEAVES. The validators split it: transfer_amount = Amount -
     // gas_fee_amount. So the user's figure goes in whole and the relay takes its share out of it,
     // which is what the page has been showing them.
+    // THE PLATFORM FEE, ON XRP ONLY (RAZA 2026-10-12). This route charged nothing at all, which was
+    // never a pricing decision -- it was a consequence of the collector holding no trust lines, so a
+    // cut of a WETH transfer could only be taken by converting it at a rate nobody quoted. That
+    // reasoning covers the ITS TOKENS and nothing else: when the source is native XRP the collector
+    // receives it perfectly well, exactly as it already does on THORChain and NEAR Intents.
+    //
+    // Same feeRate() as every other route, so the 0.1% tier for 250K+ LUMOS holders applies here
+    // without a second rule to keep in step. Token sources are untouched and still free.
+    //
+    // TAKEN OFF THE TOP, not added on: Axelar splits the Amount it receives into
+    // transfer + gas_fee_amount, so the fee has to leave before the gateway ever sees it.
+    var axFee = 0, axSend = null;
+    if (SRC.native) {
+      var nd = netDrops(Number(typedRaw()));
+      axFee = nd.fee;
+      axSend = nd.net;
+    }
     var tx = {
       TransactionType: 'Payment', Account: me, Destination: AX.gateway,
-      Amount: SRC.native ? axUnits(typedRaw(), 6)
+      Amount: SRC.native ? String(axSend)
         : { currency: SRC.currency, issuer: SRC.issuer, value: typedRaw() },
       Memos: axMemos(chain, to, SRC.native ? gasUnits : unitsToDecimal(gasUnits, dp)),
     };
+    // A SMALLER AMOUNT MAKES THE RELAY FLOOR TIGHTER. axCheck already refuses gas >= amount, and
+    // taking the fee off the top moves that line -- so a transfer that only just covered the relay
+    // now will not. Said in words here rather than letting axCheck report it as a malformed build.
+    if (SRC.native && !(Number(gasUnits) < Number(axSend))) {
+      busy = false; say('Too small — the relay fee would take all of it'); setTimeout(setCta, 5000); return;
+    }
 
     // READ BACK BEFORE SIGNING. A malformed memo here is not a failed transfer, it is a lost one --
     // Axelar's own docs say such a message never indexes and cannot be recovered, unlike an
@@ -3527,8 +3663,15 @@
       gas: SRC.native ? gasUnits : unitsToDecimal(gasUnits, dp) });
     if (bad) { busy = false; say('Not sent — ' + bad); setTimeout(setCta, 5000); return; }
 
+    // One signature where Batch is available, same as the other two routes. tfAllOrNothing also means
+    // the fee cannot be taken for a transfer that then fails to leave.
+    var axFeeTx = (axFee > 0) ? {
+      TransactionType: 'Payment', Account: me, Destination: COLLECTOR, Amount: String(axFee),
+      Memos: [{ Memo: { MemoData: hex('lx:ax') } }],
+    } : null;
+    var axBatched = !!(axFeeTx && window.lxb && window.lxb.capable());
     say('Confirm the transfer in your wallet…');
-    window.lxc.submit(tx)
+    (axBatched ? window.lxb.submit(me, [tx, axFeeTx]) : window.lxc.submit(tx))
       .then(function (hash) {
         try {
           var k = 'lumos.ax.txs';
@@ -3541,6 +3684,11 @@
         say('Sent — Axelar is relaying it');
         busy = false;
         setTimeout(setCta, 8000);
+        // Only when it did not already travel inside the Batch above.
+        if (!axBatched && axFeeTx) { window.lxc.submit(axFeeTx).catch(function () {}); }
+        // Same as the THORChain route above, and for the same reason: no delivery polling here, so
+        // nothing else would ever take the reader off a review screen whose transfer has already left.
+        setTimeout(function () { try { resetAfterDelivery(); } catch (_) {} }, 8000);
       })
       .catch(function (e) {
         busy = false;
@@ -3559,12 +3707,26 @@
   function sendTh() {
     var me = addr(), amt = bridgeXrp(), n = netDrops(amt);
     if (!THQ || !THQ.inbound || !THQ.memo) { busy = false; setCta(); return; }
-    say('Confirm the transfer in your wallet…');
-    window.lxc.submit({
+    // THE FEE AND THE TRANSFER AS ONE SIGNATURE, where the wallet can carry it. Two things wrong with
+    // sending them separately, and Batch fixes both: it was a second wallet prompt, and the fee was
+    // submitted AFTER the transfer with its failure swallowed (`.catch(function(){})`), so a bridge
+    // could complete having paid us nothing. tfAllOrNothing makes that impossible -- either both
+    // apply or neither does.
+    //
+    // Xaman only, measured: GemWallet renders a Batch and then refuses it on submit. Everything not
+    // proven falls through to the two-transaction path below, unchanged.
+    var transferTx = {
       TransactionType: 'Payment', Account: me, Destination: THQ.inbound,
       Amount: String(n.net),
       Memos: [{ Memo: { MemoData: hex(THQ.memo) } }],
-    }).then(function (hash) {
+    };
+    var feeTx = (n.fee > 0) ? {
+      TransactionType: 'Payment', Account: me, Destination: COLLECTOR, Amount: String(n.fee),
+      Memos: [{ Memo: { MemoData: hex('lx:th') } }],
+    } : null;
+    var batched = !!(feeTx && window.lxb && window.lxb.capable());
+    say('Confirm the transfer in your wallet…');
+    (batched ? window.lxb.submit(me, [transferTx, feeTx]) : window.lxc.submit(transferTx)).then(function (hash) {
       try {
         var k = 'lumos.th.txs';
         var leg = srcLeg();                        // the token the reader picked, if it was not XRP
@@ -3578,12 +3740,21 @@
       say('Sent — THORChain is swapping it');
       busy = false;
       setTimeout(setCta, 8000);
-      // The fee is second here too, and its failure is ours.
-      if (n.fee > 0) {
-        window.lxc.submit({
-          TransactionType: 'Payment', Account: me, Destination: COLLECTOR, Amount: String(n.fee),
-          Memos: [{ Memo: { MemoData: hex('lx:th') } }],
-        }).catch(function () {});
+      // LEAVE THE REVIEW SCREEN once the transfer has gone (RAZA 2026-10-12: "The swap has already
+      // happened successfully. Why's this still here"). Only the NEAR Intents route ever cleared
+      // itself, and it does it from poll() when DELIVERY is observed — THORChain and Axelar have no
+      // polling, so they sat on the review screen with the money already sent, which is exactly how
+      // somebody sends twice.
+      //
+      // The same reset the NEAR route uses, so all three end up in one state rather than two. It
+      // deliberately does not reload: the Recent transactions row for this very transfer is painted
+      // from localStorage and a reload would throw away the thing the reader wants to see. The 8s
+      // matches setCta above, so the "Sent" message is readable before the form clears.
+      setTimeout(function () { try { resetAfterDelivery(); } catch (_) {} }, 8000);
+      // The fee is second here too, and its failure is ours. Skipped when it already travelled inside
+      // the Batch above -- submitting it again would charge the fee twice.
+      if (!batched && feeTx) {
+        window.lxc.submit(feeTx).catch(function () {});
       }
     }).catch(function (e) {
       busy = false;
@@ -3724,10 +3895,20 @@
         say('Confirm the transfer in your wallet…');
         // ONE ordinary Payment. No memo, no destination tag: SIMPLE deposit mode gives this quote its
         // own address, which is what identifies it.
-        return window.lxc.submit({
+        // Same one-signature treatment as the THORChain route: the deposit and our fee are two writes
+        // from one account, so a capable wallet carries them together under tfAllOrNothing and the
+        // fee stops being a best-effort afterthought that a decline silently loses.
+        var depositTx = {
           TransactionType: 'Payment', Account: me,
           Destination: q.depositAddress, Amount: String(n.net)
-        }).then(function (hash) { return { q: q, hash: hash }; });
+        };
+        var feeTx = (n.fee > 0) ? {
+          TransactionType: 'Payment', Account: me, Destination: COLLECTOR, Amount: String(n.fee),
+          Memos: [{ Memo: { MemoData: hex('lx:ni') } }]
+        } : null;
+        var batched = !!(feeTx && window.lxb && window.lxb.capable());
+        return (batched ? window.lxb.submit(me, [depositTx, feeTx]) : window.lxc.submit(depositTx))
+          .then(function (hash) { return { q: q, hash: hash, batched: batched, feeTx: feeTx }; });
       })
       .then(function (r) {
         // Tell 1Click the deposit exists rather than waiting for them to notice it. Best effort: the
@@ -3742,12 +3923,9 @@
         // THE FEE IS SECOND, AND ITS FAILURE IS OURS. If this is declined the user's transfer has
         // already gone; nothing is retried and nothing is said, because from their side the thing
         // they asked for happened.
-        var fee = n.fee;
-        if (fee > 0) {
-          window.lxc.submit({
-            TransactionType: 'Payment', Account: me, Destination: COLLECTOR, Amount: String(fee),
-            Memos: [{ Memo: { MemoData: hex('lx:ni') } }]
-          }).catch(function () {});
+        // Skipped when it already travelled inside the Batch — sending it again would charge twice.
+        if (!r.batched && r.feeTx) {
+          window.lxc.submit(r.feeTx).catch(function () {});
         }
       })
       .catch(function (e) {
@@ -3968,10 +4146,34 @@
     // separately would paint a destination list from one route and then rebuild it when the other
     // arrived, which is a visible flicker and, worse, a window in which a user can pick a chain that
     // is about to disappear.
+    // A REGISTRY THAT FAILS ONCE USED TO TAKE ITS CHAINS WITH IT, SILENTLY.
+    //
+    // RAZA 2026-10-12: "Hedera again disappeared from cross chain destination dropdown". Each of
+    // these was fetched exactly once, and a failure became `null` with no retry. The guard below only
+    // speaks up when ALL THREE are down -- so one route failing left the page looking perfectly
+    // healthy while quietly offering fewer destinations. Axelar is the one that shows: it is the only
+    // route to Hedera and XRPL EVM, so losing it deletes exactly those two from the list and says
+    // nothing. A reader cannot tell that from "we do not support Hedera".
+    //
+    // Three attempts with a short backoff, because the failure this is for is transient -- the
+    // upstream registry answers in ~0.1s when it answers at all. A route that is genuinely down then
+    // records a note instead of vanishing.
+    function regFetch(url, tries) {
+      return fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j && j.ok) return j; throw new Error("registry not ok"); })
+        .catch(function () {
+          if (tries > 1) {
+            return new Promise(function (go) { setTimeout(go, 700); })
+              .then(function () { return regFetch(url, tries - 1); });
+          }
+          return null;
+        });
+    }
     Promise.all([
-      fetch(API + '?op=tokens').then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch(API_AX + '?op=assets').then(function (r) { return r.json(); }).catch(function () { return null; }),
-      fetch(API_TH + '?op=pools').then(function (r) { return r.json(); }).catch(function () { return null; }),
+      regFetch(API + '?op=tokens', 3),
+      regFetch(API_AX + '?op=assets', 3),
+      regFetch(API_TH + '?op=pools', 3),
     ]).then(function (res) {
       var d = res[0], a = res[1], t = res[2];
       if (d && d.ok && Array.isArray(d.tokens)) {
@@ -3989,6 +4191,12 @@
       if (t && t.ok && Array.isArray(t.pools) && t.xrpTradeable) { TH = t; buildThNative(); }
       // ANY ONE route alone is a usable page. All three down is not.
       if (!ORIGIN && !AX && !TH) { say('Routes unavailable — try again shortly'); return; }
+      // NAMED, not silent. Axelar is the only way to Hedera and XRPL EVM, so when it is the one that
+      // failed the list is short by exactly those two and nothing else would ever mention it.
+      if (!AX) {
+        NOTE.ax = 'Axelar is unavailable right now, so Hedera and XRPL EVM are not listed. Reload to retry.';
+        try { console.warn("[bridge] Axelar registry unavailable after 3 attempts - Hedera and XRPL EVM hidden"); } catch (e) {}
+      }
       window.__lxxNiChains = Object.keys(BY_CHAIN).filter(function (c) { return NI_CHAIN[c]; });
       window.__lxxAxAssets = AX ? AX.assets.map(function (x) { return x.symbol; }) : [];
       window.__lxxThChains = Object.keys(TH_NATIVE);
