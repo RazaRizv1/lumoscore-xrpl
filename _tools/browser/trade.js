@@ -321,7 +321,11 @@
     //
     // If this is ever to mean verification again it needs a real curated list — issuer+currency, owned
     // by someone — and this line gated back on membership of it.
-    head.appendChild(vtick());
+    // GATED ON t.vf NOW, where it used to be unconditional. For the ranked table nothing changes --
+    // every row there is built with vf:1 and still gets the mark, which is the rule described above.
+    // What changes is the LumosCore Mints view, whose rows carry vf:0: those are launchpad mints,
+    // nobody has vouched for them, and ticking them said otherwise (RAZA 2026-10-11).
+    if (t.vf) head.appendChild(vtick());
     nm.appendChild(head);
     if (t.u) nm.appendChild(el('div', 'sub', t.u));
     cell.appendChild(nm);
@@ -440,8 +444,9 @@
     var meta = el('div', 'mdx-mk-meta');
     var nameRow = el('div', 'mdx-mk-name-row');
     nameRow.appendChild(el('span', 'mdx-mk-name', t.n));
-    // The phone card lists the same rows, so it ticks on the same rule — see the desktop note above.
-    nameRow.appendChild(vtick());
+    // The phone card lists the same rows, so it ticks on the same rule — see the desktop note above,
+    // including the vf gate: a mint must not be marked here either, or the two layouts disagree.
+    if (t.vf) nameRow.appendChild(vtick());
     if (t.u) nameRow.appendChild(el('span', 'mdx-mk-domain', t.u));
     meta.appendChild(nameRow);
     // THE PHONE IGNORED THE DENOMINATION AND DISAGREED WITH THE DESKTOP. This card hard-coded the
@@ -790,9 +795,30 @@
   function curHex(code) {
     var s = String(code || '');
     if (s.length <= 3) return s;
+    // ALREADY HEX, SO LEAVE IT (RAZA 2026-10-11: "add LUMOS (xrpl version) in LumosCore Mints").
+    // Our own toml writes LUMOS as the 40-character hex 4C554D4F53…, because the ledger carries codes
+    // over four characters that way, while every launchpad mint is written as a short code like POP.
+    // This function only passed short codes through, so the hex got hex-encoded A SECOND TIME into
+    // 3443353534443446…, /lxapi/xrpltoken answered for no such asset, loadMints dropped the row on
+    // its null check, and LUMOS was simply absent from its own mints list -- silently, because a
+    // dropped row looks exactly like a token we do not have.
+    if (/^[0-9A-Fa-f]{40}$/.test(s)) return s.toUpperCase();
     var h = '';
     for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0');
     return (h + '0000000000000000000000000000000000000000').slice(0, 40).toUpperCase();
+  }
+
+  // The line under an asset's name. xrpl.to calls this field "user" and for our own issuer it holds
+  // "LumosDAO" -- the name of the organisation, not a domain, and not what the rest of the site puts
+  // there (RAZA 2026-10-11: "Why does lumos read as lumosdao. fix it"). Every other row shows an
+  // issuer domain like ripple.com or circle.com, and the Stellar build shows lumoscore.com under its
+  // own LUMOS, so this read as a different KIND of value in the one row a reader is most likely to
+  // check. A function declaration, so it hoists above both call sites.
+  //
+  // Matched on the issuer, never the name: anyone may mint a token called LUMOS, and the whole point
+  // of the sub-line is to say WHICH one this is.
+  function subDom(iss, user) {
+    return (iss === LUMOS_ISS) ? 'lumoscore.com' : (user || '');
   }
 
   // Enough TOML for this file's shape: [[TOKENS]] blocks with issuer and currency. Not a general
@@ -826,10 +852,16 @@
               if (!lt || !lt.ok) return null;
               // The LUMOS row's shape, field for field, so every column and the sorter work unchanged.
               return {
-                c: lt.currency, i: lt.issuer, n: lt.name || t.currency, u: lt.user || '',
+                c: lt.currency, i: lt.issuer, n: lt.name || t.currency, u: subDom(lt.issuer, lt.user),
                 p: lt.price, d: lt.p24, w: lt.p7, v: lt.vol24, t: lt.tvl, x: lt.trades24,
                 hi: lt.hi, lo: lt.lo, m: lt.md5 || '', h: lt.holders,
-                vf: 0,                       // a mint is NOT curated — RAZA was explicit about this
+                // A MINT IS NOT CURATED -- RAZA was explicit about this, and said it again on
+                // 2026-10-11 ("please remove curated icon from these because these aren't curated").
+                // LUMOS is the one exception and not an inconsistency: it is the platform's own
+                // token, it is in the curated set on both chains, and it happens to also sit in this
+                // toml. Matched on the issuer rather than the name, because a name is whatever the
+                // minter typed and anyone may mint a token called LUMOS.
+                vf: (t.issuer === LUMOS_ISS) ? 1 : 0,
                 o: lt.origin || ''
               };
             })
@@ -1052,11 +1084,24 @@
     var wrap = el('div', 'lx-dnsw');
     wrap.setAttribute('role', 'group');
     wrap.setAttribute('aria-label', 'Show price change in');
+    // THE LOGO ENGINE ATE THIS CONTROL (RAZA 2026-10-11: "also fix this tiny lumos logo"). What
+    // looked like a stray LUMOS mark floating beside the Curated dropdown WAS this switcher: the
+    // engine had painted it and collapsed it to 8x8, leaving
+    //     <div class="lx-dnsw" data-logo="LUMOS" style="background:url(data:image/png;base64,...)">
+    // Its test is "no img/svg/[data-logo] descendant AND text of 1-5 characters", and this group's
+    // whole text is the two button labels -- XRP and $ -- so it read as a ticker.
+    //
+    // An EMPTY data-logo is the engine's own escape, documented on the perf cells in dexasset.js:
+    // it makes the querySelector('img,svg,[data-logo]') test succeed so the element is skipped, and
+    // the empty value matches no logo so nothing is drawn. Set on the wrapper AND on each button
+    // below, because both are short enough to qualify on their own.
+    wrap.setAttribute('data-logo', '');
 
     function mk(mode, label) {
       var b = document.createElement('button');
       b.type = 'button';
       b.setAttribute('data-dn', mode);
+      b.setAttribute('data-logo', '');     // see the note on wrap: XRP and $ are both ticker-shaped
       b.textContent = label;
       b.addEventListener('click', function () {
         if (DEN === mode) return;
@@ -1449,7 +1494,7 @@
           .then(function (lt) {
             if (!lt || !lt.ok || !(lt.price > 0)) return;
             d.rows.push({
-              c: lt.currency, i: lt.issuer, n: lt.name || 'LUMOS', u: lt.user || '',
+              c: lt.currency, i: lt.issuer, n: lt.name || 'LUMOS', u: subDom(lt.issuer, lt.user),
               p: lt.price, d: lt.p24, w: lt.p7, v: lt.vol24, t: lt.tvl, x: lt.trades24,
               hi: lt.hi, lo: lt.lo,
               m: lt.md5 || '', h: lt.holders, vf: 1, o: lt.origin || ''

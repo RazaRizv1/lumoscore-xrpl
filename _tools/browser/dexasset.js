@@ -558,11 +558,24 @@
   // merely rate-limited us would be a confident falsehood about their asset, and xrpl.to's cap is
   // 333 requests a day per IP -- being refused is ordinary.
   function noMarketNote(kind) {
-    var host = document.querySelector('.dxa-stats') || document.querySelector('[class*="dxa-stat"]');
-    host = host && host.parentElement;
+    // THIS NOTE HAD NEVER ONCE RENDERED. It looks for .dxa-stats, which exists only on the
+    // /xrpl/ page build -- and the combined site serves /trade/xrpl/<CODE-ISSUER> from the ROOT
+    // lumoscore-dex-asset.html, which carries no dxa-* class at all (measured: 0 occurrences in the
+    // built file, against 64 .stat-cell). So `host` was null, the function returned at the guard
+    // below, and the entire explanation written for the BCHAMP complaint silently did nothing on the
+    // page people actually visit. RAZA hit it again on 2026-10-12 with FLR: four dashes, no reason
+    // given -- which is the exact failure this note exists to prevent.
+    //
+    // Anchored on .stat-cell instead, which both builds have, with the dxa-* lookup kept first so the
+    // /xrpl/ build keeps placing it exactly where it did.
+    var anchor = document.querySelector('.dxa-stats') || document.querySelector('[class*="dxa-stat"]');
+    if (!anchor) {
+      var cell = document.querySelector('.stat-cell');
+      anchor = cell && cell.parentElement;          // the row the stat cells sit in
+    }
     var note = document.querySelector('.lx-nomarket');
     if (!kind) { if (note && note.parentNode) note.parentNode.removeChild(note); return; }
-    if (!host) return;
+    if (!anchor || !anchor.parentNode) return;
     if (!note) {
       note = document.createElement('div');
       note.className = 'lx-nomarket';
@@ -570,7 +583,9 @@
       note.style.cssText = 'margin:12px 0 0;padding:11px 14px;border-radius:12px;'
         + 'border:1px solid var(--border);background:var(--surface-2);'
         + 'font:400 12.5px/1.5 "Hanken Grotesk",system-ui,sans-serif;color:var(--text-soft)';
-      host.appendChild(note);
+      // Directly below the stat row on both builds, rather than appended inside a container whose
+      // shape differs between them.
+      anchor.parentNode.insertBefore(note, anchor.nextSibling);
     }
     note.textContent = kind === 'none'
       ? 'No market data for this token. It exists on the ledger, but no price feed tracks it — which '
@@ -601,8 +616,20 @@
     setCell('24h volume', d.vol24 == null ? null : statAmt(d.vol24) + ' ', 'XRP',
       (d.vol24 != null && usd) ? money(d.vol24 * usd) : '');
 
-    setCell('market cap', d.marketcap == null ? null : statAmt(d.marketcap) + ' ', 'XRP',
-      (d.marketcap != null && usd) ? money(d.marketcap * usd) : '');
+    // MARKET CAP IS THE SUPPLY BOX TIMES THE PRICE BOX, because those are the two numbers sitting
+    // next to it (RAZA 2026-10-12: "why's lumos marketcap on XRPL incorrectly written. just multiply
+    // the supply with price").
+    //
+    // The upstream `marketcap` is price x CIRCULATING, and the supply box deliberately shows ISSUED --
+    // the figure that matches the ledger. For LUMOS those are 289.40M and 999.95M, so the page showed
+    // supply 999.95M, price 0.00003033 and market cap 8.8K, when multiplying the two figures on screen
+    // gives 30.3K. Every reader who checked got a different answer from the one displayed.
+    //
+    // Whatever the convention elsewhere, a page cannot show its own workings and then contradict them.
+    // The chart's MCap series uses the same supply for the same reason -- see CH_VIEW.supply.
+    var mcap = (d.issued != null && d.price != null) ? d.issued * d.price : d.marketcap;
+    setCell('market cap', mcap == null ? null : statAmt(mcap) + ' ', 'XRP',
+      (mcap != null && usd) ? money(mcap * usd) : '');
 
     setCell('liquidity', d.tvl == null ? null : statAmt(d.tvl) + ' ', 'XRP',
       (d.tvl != null && usd) ? money(d.tvl * usd) : '');
@@ -725,7 +752,7 @@
 
     // The price band stops above a volume band, as on lumoscore.com (RAZA 2026-09-15: "volume bars missing").
     var W = 900, H = chartH(c.svg), L = 18, R = 836, T = 16, VB = H - 30, VH = 64, B = VB - VH - 12;
-    // MCap is the same series times circulating supply — the definition Stellar's tooltip states.
+    // MCap is the same series times ISSUED supply — the figure the supply and market-cap boxes use.
     var K = (CH_VIEW.metric === 'mcap' && CH_VIEW.supply > 0) ? CH_VIEW.supply : 1;
     if (K !== 1) pts = pts.map(function (p) { return [p[0], p[1] * K, p[2] * K, p[3] * K, p[4] * K, p[5]]; });
     var axisTxt = function (v) { return (CH_VIEW.vs === 'USD' ? '$' : '') + (K !== 1 ? amount(v) : xrp(v, 5)); };
@@ -1083,7 +1110,7 @@
       var g = el('div', 'chart-tools lxda-metric');
       g.setAttribute('data-logo', '');
       g.innerHTML = '<button type="button" data-metric="price" data-logo="">Price</button>'
-        + '<button type="button" data-metric="mcap" data-logo="" title="Market cap = price x circulating supply">MCap</button>';
+        + '<button type="button" data-metric="mcap" data-logo="" title="Market cap = price x supply">MCap</button>';
       var dn = el('div', 'chart-tools lxda-denom');
       dn.setAttribute('data-logo', '');
       dn.innerHTML = '<button type="button" data-cdn="usd" data-logo="">$</button>'
@@ -1113,12 +1140,15 @@
 
   function syncChartControls() {
     var d = window.__lxxAssetData;
-    CH_VIEW.supply = (d && d.circulating > 0) ? +d.circulating : 0;
+    // ISSUED, not circulating -- the same supply the stat box above shows and the same one the market
+    // cap box is now multiplied from. The MCap series and the MCap figure have to agree, or hovering
+    // the chart contradicts the box beside it.
+    CH_VIEW.supply = (d && d.issued > 0) ? +d.issued : ((d && d.circulating > 0) ? +d.circulating : 0);
     $$('.lxda-metric button[data-metric]').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-metric') === CH_VIEW.metric);
       if (b.getAttribute('data-metric') === 'mcap') {
         b.disabled = !(CH_VIEW.supply > 0);
-        b.title = CH_VIEW.supply > 0 ? 'Market cap = price x circulating supply' : 'Supply not known yet';
+        b.title = CH_VIEW.supply > 0 ? 'Market cap = price x supply' : 'Supply not known yet';
       }
     });
     $$('.lxda-denom button[data-cdn]').forEach(function (b) {

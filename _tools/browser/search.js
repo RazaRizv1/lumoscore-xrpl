@@ -47,7 +47,20 @@
     st.textContent = '.lxx-sea-ic{width:30px;height:30px;flex:0 0 30px;border-radius:50%;'
       + 'display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;'
       + 'font-weight:800;color:#fff;background:rgba(255,255,255,.10)}'
-      + '.lxx-sea-note{padding:18px 14px;text-align:center;opacity:.65;font-size:13.5px}'
+      // 17.6px, NOT 14px, AND THE NUMBER IS NOT A TASTE DECISION. This is the search popup's own
+      // gutter: the design sets `.sp-section-head{padding:15.4px 17.6px 6.6px}` and
+      // `.sp-empty{padding:33px 17.6px}`, both inherited and both measured on the live build. At 14px
+      // every message this layer writes sat 3.6px further left than the "Assets on the XRP Ledger"
+      // heading directly above it, which is what RAZA saw as the text being too close to the edge —
+      // not a big gap, but a misalignment against a fixed heading reads as one.
+      //
+      // Worth recording how long this hid: the obvious suspect was `.sp-empty`, the inherited empty
+      // state — and that rule is BYTE-IDENTICAL between this build and Stellar's, so comparing the
+      // two containers proved nothing and the bug looked unreproducible. It was never that class.
+      // XRPL does not use it: `note()` below writes `.lxx-sea-note` for all five of its messages,
+      // including "No XRP Ledger token matches that." So fixing the gutter here fixes every one of
+      // them, and the vertical 18px stays — the complaint was horizontal.
+      + '.lxx-sea-note{padding:18px 17.6px;text-align:center;opacity:.65;font-size:13.5px}'
       // THE ROWS WERE RENDERING AS DEFAULT BROWSER LINKS — blue and underlined.
       //
       // The row is an <a>, and the design's `.sp-row` rule sets layout only: display, gap, padding,
