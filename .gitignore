@@ -20,7 +20,27 @@ _containers_backup/
 
 # container snapshots (huge, and regenerable by re-running the transforms)
 _containers_broken_20260908/
-dist/xrpl/
+# BUILD OUTPUT, NONE OF IT TRACKED, AND dist/ JOINED THE LIST ON 2026-10-13.
+#
+# dist/xrpl/ and .deploy/ were already here, which left the repo tracking dist/ alone -- the ROOT
+# build, produced by `npm run build` (extract_site.js xrpl --root). That is the build staging does NOT
+# use: combine_with_stellar.js copies from dist/xrpl/, so the tracked copy was never the deployed one
+# and nothing kept it current. Measured the day it was removed, on the same bridge page:
+#
+#   dist/lumoscore-bridge.html       04:34   no Hedera fix, delivery badge still in
+#   dist/xrpl/lumoscore-bridge.html  23:08   both correct, and the one actually serving
+#
+# A stale copy of the wrong build is worse than no copy. It reads as the artifact, it survives a
+# revert while the containers do not (see the note at the top of this file), and the one thing it is
+# good for -- deploying -- would ship yesterday's pages from a directory nobody rebuilt. I had already
+# committed it once describing it as carrying a fix it did not contain.
+#
+# Nothing deploys from git here: lumoscore-xrpl.git is connected to no Pages project, and staging goes
+# up as a direct wrangler upload from disk. So untracking costs nothing and removes a trap.
+#
+# Rebuild it with the documented chain, never from a checkout:
+#   node _tools/rebuild.js && node _tools/extract_site.js xrpl && node _tools/combine_with_stellar.js --write
+dist/
 dist-combined/
 functions-combined/
 .deploy/
