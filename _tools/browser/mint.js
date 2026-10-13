@@ -337,12 +337,61 @@
   // The contract it keeps: on failure it reports exactly how far it got. A launch that stops halfway
   // has left the user's XRP somewhere -- in a funded issuer, or in a token with no pool -- and the
   // one thing they must not be told is a generic "something went wrong".
+  // CONSECUTIVE STEPS BY THE SAME SIGNER, and only the user's, because only the user's cost a prompt.
+  //
+  // A launch is 12 transactions but just 4 of them reach a wallet: steps 1-3 (fee, fund the issuer,
+  // fund the pool account) and step 6 (trust the new token). The issuer and pool steps sign locally
+  // with keys generated for this launch, so batching those would save nothing.
+  //
+  // ONLY A CONTIGUOUS RUN IS GROUPED, and that is the whole safety argument. Steps 1-3 sit together,
+  // so folding them into one Batch changes nothing about the order anything executes in. Step 6 is
+  // separated from them by the issuer's AccountSet and the pool's TrustSet, so it stays its own
+  // signature: pulling it forward would mean trusting a token before its issuer had been configured,
+  // and the ordering in this plan is load-bearing -- money is spent across these steps and the ledger
+  // cannot undo the ones that landed. 4 prompts -> 2, with no resequencing.
+  function groupPlan(plan, canBatch) {
+    var groups = [], cur = null;
+    plan.forEach(function (step, i) {
+      var joinable = canBatch && step.by === 'user' && cur && cur.by === 'user'
+        && cur.steps.length < (window.lxb ? window.lxb.max() : 8);
+      if (joinable) { cur.steps.push({ step: step, i: i }); return; }
+      cur = { by: step.by, steps: [{ step: step, i: i }] };
+      groups.push(cur);
+    });
+    return groups;
+  }
+
   function runLaunch(env) {
     var plan = env.plan;
     var completed = [];
     var chain = Promise.resolve();
+    var canBatch = !!(window.lxb && window.lxb.capable());
 
-    plan.forEach(function (step, i) {
+    groupPlan(plan, canBatch).forEach(function (grp) {
+      // A run of one is the ordinary path, untouched.
+      if (grp.steps.length > 1) {
+        chain = chain.then(function () {
+          grp.steps.forEach(function (s) { env.onStep(s.i, 'start', s.step); });
+          var me = (window.lxc && window.lxc.address && window.lxc.address()) || '';
+          return window.lxb.submit(me, grp.steps.map(function (s) { return s.step.tx; }))
+            .then(function (hash) {
+              return env.waitValidated(hash).then(function (res) {
+                if (!res || !res.ok) {
+                  throw new Error(grp.steps[0].step.what + ' was rejected by the ledger'
+                    + (res && res.code ? ' (' + res.code + ')' : '') + '.');
+                }
+                // One transaction, several plan steps: each is recorded against the same hash so the
+                // receipt still lists what happened rather than collapsing three payments into one line.
+                grp.steps.forEach(function (s) {
+                  completed.push({ what: s.step.what, hash: hash });
+                  env.onStep(s.i, 'done', s.step);
+                });
+              });
+            });
+        });
+        return;
+      }
+      var step = grp.steps[0].step, i = grp.steps[0].i;
       chain = chain.then(function () {
         env.onStep(i, 'start', step);
         // Three signers: the user's wallet, the throwaway issuer, and the throwaway pool account. The last two are generated

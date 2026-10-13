@@ -115,7 +115,27 @@
       n = document.createElement('div');
       n.className = 'lxx-limit-note';                            // limit.js's status line style
       n.setAttribute('role', 'status');
-      b.parentNode.insertBefore(n, b.nextSibling);
+      // AND THE GAP HAS TO MOVE WITH IT. limit.js styles the shared class `margin:8px 2px 0` — a top
+      // gap and no bottom one, which is correct for a note UNDER the button and wrong for one above:
+      // it would sit tight against the button it is about and leave the space on the side away from
+      // it. Stellar's .lxda-swaperr is `margin:0 0 9px` for exactly this position. This marker lets
+      // disStyle() restate that without editing the shared rule, which the Limit pane's own note —
+      // still below its button, and the only inline note on that pane — depends on.
+      n.setAttribute('data-lxabove', '1');
+      // AND MAKE SURE THE RULE EXISTS BY THE TIME THE NODE DOES. disStyle() is otherwise reached only
+      // through setDis(), which runs on the quote path — so a note raised before any quote (a balance
+      // warning on the first keystroke) would render with the below-the-button margin until a quote
+      // happened to land. It is id-guarded and hoisted, so calling it here costs one lookup.
+      disStyle();
+      // ABOVE THE BUTTON, NOT BELOW IT. This inserted at b.nextSibling, so "You only have 0.063812
+      // XRP available after the reserve." landed underneath the Swap button, past the fee notice and
+      // off the bottom of the panel -- RAZA 2026-10-11: "You only have ... error is appearing way
+      // below. See how it's done on Stellar mobile."
+      //
+      // Stellar does cta.parentNode.insertBefore(e, cta) (_dexassetdata.js, dxErr), putting the
+      // message between the figures it is about and the button it is blocking, which is where a
+      // reader looks when the button does not work. Same placement here.
+      b.parentNode.insertBefore(n, b);
     }
     n.textContent = text || '';
     n.setAttribute('data-tone', tone || '');
@@ -357,7 +377,7 @@
     //
     // It claims nothing else, which is why `filter` landed while those two did not. So the disabled
     // state is drawn with the properties left free: the orange fill dims, which is the cue a reader
-    // actually reads, and the explanation already sits underneath the button.
+    // actually reads, and the explanation sits directly above the button (see say()).
     //
     // FILTER DOES BOTH JOBS, AND NO PALETTE TOKENS. Stellar's own disabled CTA is
     //   opacity:.55; cursor:not-allowed; filter:grayscale(.25)
@@ -373,7 +393,11 @@
     // MATCH THE BUTTON THE SAME WAY cta() DOES. Mobile's class is mdxa-trade-cta, a different class
     // name that merely contains the desktop one as a substring, so `.dxa-trade-cta` misses it entirely
     // — the first version of this rule greyed the desktop button and did nothing on the phone.
-    st.textContent = '[data-lxunfill="1"] [class*="dxa-trade-cta"]{filter:grayscale(.25) opacity(.55)!important}';
+    st.textContent = '[data-lxunfill="1"] [class*="dxa-trade-cta"]{filter:grayscale(.25) opacity(.55)!important}'
+      // The margin for a note ABOVE the button — see the note on data-lxabove in say(). Matches
+      // Stellar's .lxda-swaperr{margin:0 0 9px}. Scoped to the attribute, so the Limit pane's note
+      // keeps limit.js's below-the-button spacing.
+      + '.lxx-limit-note[data-lxabove="1"]{margin:0 2px 9px!important}';
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -788,6 +812,9 @@
     if (!tx.Amount || !tx.DeliverMin || !tx.SendMax) { say(p, 'That amount is too small for the ledger.', 'bad'); return; }
     if (q.paths) tx.Paths = q.paths;
     var feeXrp = feeInXrp(p, q.amt, q.out);
+    // Set when the fee and the swap go out as ONE signed Batch, because that changes what is true
+    // after a failure: all-or-nothing means a failed swap cannot have left the fee paid.
+    var batched = false;
     var b = cta(p), label = b ? b.textContent : '';
     busy = true;
     function stop(text, tone) { busy = false; if (b) b.textContent = label; if (text != null) say(p, text, tone); }
@@ -811,6 +838,37 @@
       // failed swap cost the user nothing. First means a fee can be paid for a swap that then fails. The dry run above is
       // what keeps that rare — it has already told us the ledger accepts this exact swap — and the message below says so
       // plainly if it happens anyway.
+      // ONE CONFIRMATION WHERE THE WALLET CAN CARRY IT. The fee and the swap are two writes from the
+      // same account, so XLS-56 sends them as a single signature under tfAllOrNothing. That also
+      // retires the risk the fee-first ordering knowingly took on (RAZA 2026-09-17): a fee can no
+      // longer be paid for a swap that then fails, because either both apply or neither does.
+      //
+      // Xaman only, and that is measured rather than assumed. GemWallet RENDERS a Batch -- type,
+      // flags and raw JSON all correct -- and then refuses it on submit with "Invalid field
+      // TransactionType: Batch", so a wallet showing the dialog proves nothing. lxb.capable() is
+      // false for everything that has not landed a Batch on-ledger, and those wallets fall through to
+      // the two-signature flow below, unchanged.
+      //
+      // THE TRUST LINE IS DELIBERATELY NOT IN HERE. It is submitted and confirmed BEFORE the route is
+      // refreshed, and both ripple_path_find and the simulate dry run above assume the line already
+      // exists -- a delivery into a line the account does not yet hold has no route to quote and
+      // nothing to dry-run. Batching it would mean skipping both checks on exactly the swaps that
+      // most need them. So a swap needing a line goes 3 prompts -> 2, and one that does not goes
+      // 2 -> 1. Folding the line in is possible later; it needs the quote and dry run solved first.
+      if ((feeXrp > 0) && window.lxb && window.lxb.capable()) {
+        batched = true;
+        if (b) b.textContent = 'Approve the swap (1 of 1)…';
+        return window.lxb.submit(me, [
+          { TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
+            Amount: lxx().toDrops(feeXrp),
+            Memos: [feeMemo(s.pay.code, s.get.code, 1, 1)] },
+          tx
+        ]).then(function (h) { return { batchHash: h }; }, function (e) {
+          var m = (e && e.message) || '';
+          throw new Error(/reject|denied|cancel/i.test(m)
+            ? 'The swap was not approved, so nothing was swapped.' : m);
+        });
+      }
       if (!(feeXrp > 0)) return null;
       // Counted against the whole sequence, including the trust line when there was one — "1 of 2" on what is really the
       // second of three prompts is exactly the kind of small lie that makes someone abandon a signature.
@@ -824,7 +882,10 @@
         var m = (e && e.message) || '';
         throw new Error(/reject|denied|cancel/i.test(m) ? 'The platform fee was not approved, so nothing was swapped.' : m);
       });
-    }).then(function () {
+    }).then(function (prev) {
+      // The batched path already submitted BOTH writes in one transaction; asking for the swap again
+      // here would sign and send it a second time.
+      if (prev && prev.batchHash) return prev.batchHash;
       var ofN = p.getAttribute('data-lxsteps') === '3' ? 3 : 2;
       if (b) b.textContent = 'Approve the swap (' + ofN + ' of ' + ofN + ')…';
       return window.lxc.submit(tx);
@@ -836,8 +897,10 @@
         if (res.code === 'tecPATH_PARTIAL') setTimeout(requote, 50);
         var why = res.code === 'timeout' ? 'Submitted, but not confirmed yet. Check your wallet activity before trying again.'
           : (CODES[res.code] || ('The ledger did not accept the swap (' + res.code + ').'));
-        // Said out loud, because the fee has already left the account by this point.
-        stop(feeXrp > 0 ? (why + ' The platform fee was already paid.') : why, 'bad');
+        // Said out loud, because the fee has already left the account by this point -- UNLESS the two
+        // went out as one all-or-nothing Batch, where a failed swap means the fee was never taken.
+        // Telling someone they have paid a fee they still hold is its own kind of wrong.
+        stop((feeXrp > 0 && !batched) ? (why + ' The platform fee was already paid.') : why, 'bad');
         return;
       }
       stop('Swap complete ✓', 'good');
