@@ -26,9 +26,21 @@ const B = String.fromCharCode(92);
 const ID = 'lx-xrplconnect';
 const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 const page = fs.readFileSync(__dirname + '/browser/connect.js', 'utf8');
+// The XLS-56 Batch builder rides with connect because it is keyed on the connected wallet and every
+// flow that might batch -- swap, bridge, launchpad -- is on a page that already carries lxc. It ships
+// INERT: every wallet defaults to not-capable, so until one is proven this changes nothing for anyone.
+const batch = fs.readFileSync(__dirname + '/browser/batch.js', 'utf8');
 
-for (const src of [core, page]) {
+for (const src of [core, page, batch]) {
   if (src.indexOf('</' + 'script') >= 0) { console.error('  a source file contains a closing script tag — aborting'); process.exit(1); }
+}
+
+// batch.js reads lxc.transport(), so connect must define window.lxc before it runs. They are
+// concatenated in that order below; this asserts the dependency rather than trusting the order to
+// survive an edit.
+if (batch.indexOf('window.lxb') < 0 || page.indexOf('window.lxc = {') < 0) {
+  console.error('  ! connect/batch contract broken — expected window.lxc in connect.js and window.lxb in batch.js');
+  process.exit(1);
 }
 
 // Loud, because a build that quietly ships a connect flow nobody can use is the worst outcome here.
@@ -36,7 +48,7 @@ if (!/var XAMAN_KEY = '[0-9a-f-]{36}'/.test(page)) {
   console.warn('  ! Xaman API key not set in _tools/browser/connect.js — Xaman will show "Setup needed"');
 }
 
-const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
+const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + batch + '\n</' + 'script>';
 
 // ---- the design's OTHER connect modal ------------------------------------------------------------
 // `#lcConnectModal` is a second, separate inherited modal (the `lc-*` family — not the `lxw-*` one
