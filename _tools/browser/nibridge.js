@@ -3243,17 +3243,22 @@
         + 'style="width:18px;height:18px;border-radius:50%;object-fit:cover;display:inline-block;vertical-align:-4px;margin-right:6px">') : '')
       + '<span>' + esc2(n) + '</span></span>';
   }
-  // Only NEAR Intents reports one, and only it can: it polls a status endpoint. A blank cell for the
-  // other two is honest -- once their payment is on the ledger, neither route tells us any more.
-  function txStatus(r) {
-    if (!r.status || r.status === 'PENDING_DEPOSIT') return '';
-    var ok = r.status === 'SUCCESS';
-    var bad = r.status === 'FAILED' || r.status === 'REFUNDED';
-    var label = ok ? 'Delivered' : (r.status === 'REFUNDED' ? 'Refunded'
-      : r.status === 'FAILED' ? 'Failed' : 'Processing');
-    var col = ok ? '#0f9257' : bad ? '#ef4444' : 'var(--text-soft)';
-    return '<span style="margin-left:8px;font-size:11px;font-weight:600;color:' + col + '">' + label + '</span>';
-  }
+  // THE PER-ROW STATUS BADGE IS GONE (RAZA 2026-10-13: "whats up with this green text 'Delivered' in
+  // cross-chain trx history? we dont have that on stellar" -> "bro you gotta remove from XRPL").
+  //
+  // It rendered Delivered / Processing / Failed / Refunded in the To cell, and only ever on NEAR
+  // Intents rows, because only that route polls a status endpoint -- THORChain and Axelar tell us
+  // nothing once their payment is on the ledger. Correct in the code and ambiguous on the screen: a
+  // green "Delivered" beside a blank cell reads as "that one did not arrive" rather than "we cannot
+  // tell about that one", which is the opposite of what the blank means.
+  //
+  // lumoscore.com has no such column, and the fork follows Stellar. Worth recording that Stellar is
+  // not missing the DATA -- _nearintents.js already polls /lxapi/oneclick?op=status and handles
+  // SUCCESS -- it simply does not draw it. So this comes back by adding it to BOTH, with something
+  // for the untrackable routes too, and not by reinstating it here alone.
+  //
+  // The status itself is untouched: it still drives the wizard's own "Delivered" line and the
+  // post-send poll. This removes one badge from one table, nothing else.
 
   var TX_HEAD = '<tr><th>Time</th><th>From</th><th>Source address</th><th>To</th>'
     + '<th>Destination address</th><th>Bridge used</th>'
@@ -3291,7 +3296,7 @@
               + '<td>' + txAmt(r.sent, r.sentSym, 'XRP Ledger') + '</td>'
               + '<td class="mono">' + (me ? ('<a class="lx-txaddr" href="https://bithomp.com/explorer/'
                 + encodeURIComponent(me) + '" target="_blank" rel="noopener">' + esc2(short(me)) + '</a>') : '—') + '</td>'
-              + '<td>' + txAmt(r.recv, r.recvSym, r.place) + txStatus(r) + '</td>'
+              + '<td>' + txAmt(r.recv, r.recvSym, r.place) + '</td>'
               + '<td class="mono">' + (r.to ? esc2(short(r.to)) : '—') + '</td>'
               + '<td class="lx-buse">' + txRoute(r) + '</td>'
               + '<td class="br-xp"><a class="br-xplink" href="' + esc2(txExplorer(r.hash))
