@@ -130,11 +130,36 @@
         + '.activity-feed-row .lx-fgt.transfer{color:#22c55e}'
         + '.activity-feed-row .lx-fgt.lp{color:#2dd4bf}'
         + '.activity-feed-row .lx-fgt.order{color:#f472b6}'
+        // The cross-chain badge had no colour of its own, so it fell back to the default grey while
+        // every other kind had one. Blue, matching the CROSS-CHAIN chip on lumoscore.com.
+        + '.activity-feed-row .lx-fgt.xchain{color:#38bdf8}'
+        + '.activity-feed-row .lx-actvia{opacity:.78;margin-left:6px}'
+        + '.activity-feed-row .lx-actvia{display:inline-flex;align-items:center;gap:5px}'
+        + '.activity-feed-row .lx-actvialogo{width:13px;height:13px;border-radius:50%;display:block;flex:0 0 13px}'
         // color-mix is not everywhere yet, and without a disc the glyph floats against the row.
         + '@supports not (background:color-mix(in srgb,red 15%,transparent)){'
         + '.activity-feed-row .lx-fgt{background:rgba(127,127,140,.14)}}'
         + '@media(max-width:760px){.activity-feed-row .lx-fg{flex:0 0 34px;width:34px;height:34px}'
-        + '.activity-feed-row .lx-fgt svg{width:16px;height:16px}}';
+        + '.activity-feed-row .lx-fgt svg{width:16px;height:16px}}'
+        // THE RIGHT-HAND COLUMN, and the reason this row was cramped on a phone.
+        //
+        // Stellar puts the timestamp and the explorer mark in ONE wrapper that stacks them
+        // (_realdata.js: '<div class="lx-frr"><div class="time">…</div><a class="lx-actlink">…</a></div>').
+        // This feed appended both straight onto the row, so on a flex row they sat SIDE BY SIDE and
+        // each paid for its own gap. Measured at 375px, same 342px row: Stellar's .info got 245px,
+        // this one got 177px -- 68px narrower -- and "100.0K LUMOS -> 2.46 XRP" wrapped onto three
+        // lines against Stellar's two.
+        //
+        // The class was never in this build at all (0 occurrences against Stellar's 4): .lx-frr is
+        // created by _realdata.js, a Stellar transform the fork does not run, so the markup had
+        // nothing to stack it even if it had been nested. Declarations copied from there verbatim
+        // rather than re-derived, for the same reason the glyph rules above were.
+        + '.activity-feed-row .lx-frr{flex:0 0 auto;display:flex;flex-direction:column;'
+        + 'align-items:flex-end;gap:8px}'
+        + '.activity-feed-row .lx-frr .time{min-width:0;font-size:12.5px}'
+        // The inherited sheet fades the mark until the row is hovered and gives it a left margin,
+        // which is wrong once it is stacked under the time rather than beside it.
+        + '.activity-feed-row .lx-frr .lx-actlink{margin-left:0}';
       document.head.appendChild(st);
     } catch (e) {}
   }
@@ -279,6 +304,9 @@
     // The logo healer repaints any element holding one to five characters, which every ticker is.
     // data-lxpainted is its own skip marker — this slot is painted here.
     s.setAttribute('data-lxpainted', '1');
+    // A DESTINATION CHAIN IS NOT AN XRPL TOKEN, so its mark cannot come from the thumb proxy -- it is
+    // a file we already ship. A caller hands one in as a.logo; every other path is unchanged.
+    if (a.logo) { s.style.backgroundImage = 'url("' + a.logo + '")'; return s; }
     var url = (a.raw === 'XRP' && !a.i)
       ? '/lxapi/xrplthumb?id=' + XRP_ID + '&w=48'
       : (a.i ? '/lxapi/xrplthumb?iss=' + encodeURIComponent(a.i)
@@ -399,6 +427,30 @@
   function describe(tx, meta) {
     var type = tx.TransactionType;
 
+    // CROSS-CHAIN BEFORE SWAP/TRANSFER, because a bridge IS a Payment and would otherwise fall
+    // through to the branch below and be labelled Transfer -- true but useless, and it would not say
+    // where the money went.
+    var br = bridgeOf(tx);
+    if (br) {
+      var sentAmt = amountOf(tx.Amount) || amountOf(tx.SendMax);
+      var moved2 = sentAmt ? sentByAccount(meta, tx, sentAmt) : 0;
+      if (moved2 > 0) sentAmt = { v: moved2, c: sentAmt.c, raw: sentAmt.raw, i: sentAmt.i };
+      // NAMED ONLY WHEN THE NAME IS REAL. THORChain's memo abbreviates the chain to a letter or two
+      // ("=:a:0x…" is Avalanche), and a row reading "2.0 XRP -> A" is worse than one that just says it
+      // was bridged. Axelar states the chain in full, so that one always names it.
+      var where = (br.chain && br.chain.length >= 3)
+        ? (br.chain.charAt(0).toUpperCase() + br.chain.slice(1)) : '';
+      var txt = (sentAmt ? amtStr(sentAmt) : '') + (where ? (' \u2192 ' + where) : '');
+      return {
+        cls: 'xchain', tag: 'Cross-chain', via: br.via,
+        type: 'Bridged via ' + br.via, meta: txt,
+        parts: sentAmt
+          ? (where
+              ? [{ a: sentAmt }, ' \u2192 ', { a: { c: where, logo: chainLogo(where) }, nameOnly: true }]
+              : [{ a: sentAmt }])
+          : null,
+      };
+    }
     if (type === 'Payment') {
       var got = amountOf(meta && (meta.delivered_amount || meta.DeliveredAmount));
       var spent = amountOf(tx.SendMax);
@@ -639,6 +691,32 @@
     verb.className = 'lx-actverb ' + (d.cls || '');
     verb.textContent = d.tag || d.type;                  // the KIND — "Swap", "Transfer", "Order placed"; the sheet uppercases it
     m.appendChild(verb);
+    // WHICH BRIDGE, AS A SECOND CHIP (RAZA 2026-10-12: "Cross chain trxs are appearing differently on
+    // XRPL on Dashboard platform activity if compared to stellar"). lumoscore.com reads
+    // "CROSS-CHAIN | via NEAR Intents" and this row carried only the first, so the same transfer
+    // looked like a different kind of event on the two chains. Reuses .lx-actverb so it inherits the
+    // pill the design already styles, with .lx-actvia to sit a shade back from the kind chip.
+    if (d.via) {
+      var via = document.createElement('span');
+      via.className = 'lx-actverb lx-actvia';
+      via.setAttribute('data-logoed', '1');   // 'via Axelar' is short text in a pill — the logo healer's exact target
+      var vsrc = VIA_LOGO[d.via];
+      if (vsrc) {
+        var vimg = document.createElement('img');
+        vimg.className = 'lx-actvialogo';
+        vimg.src = vsrc;
+        vimg.alt = '';
+        // NOT lazy. These are 13px brand marks inside a scrolling feed, so lazy-loading them means a
+        // pill sits wordless-and-markless until the row is scrolled into view -- measured: the Axelar
+        // logo reported naturalWidth 0 with inViewport false while the file served a perfectly good
+        // 96x96 PNG. A few KB fetched eagerly is the right trade for an icon this small.
+        // A broken file must not leave a torn icon in the pill; the words carry it on their own.
+        vimg.onerror = function () { if (vimg.parentNode) vimg.parentNode.removeChild(vimg); };
+        via.appendChild(vimg);
+      }
+      via.appendChild(document.createTextNode('via ' + d.via));
+      m.appendChild(via);
+    }
     // Who did it. The feed is the platform's, so the account is the point — and it is a link, as on Stellar.
     var who = tx.Account || '';
     if (who) {
@@ -656,19 +734,26 @@
     info.appendChild(m);
     row.appendChild(info);
 
+    // ONE COLUMN FOR BOTH, as on Stellar -- see the .lx-frr note in injectFeedCss(). These used to be
+    // appended straight onto the row, which made them two flex siblings competing for width with .info.
+    var frr = document.createElement('div');
+    frr.className = 'lx-frr';
+
     var time = document.createElement('div');
     time.className = 'time';
     time.textContent = ago(date);
-    row.appendChild(time);
+    frr.appendChild(time);
 
-    // The explorer mark, at the end of the row. The stylesheet for it came across with the design
+    // The explorer mark, under the timestamp. The stylesheet for it came across with the design
     // (`.activity-feed-row .lx-actlink`, faded until the row is hovered) and had nothing to style,
     // because this feed stopped at the timestamp.
     try {
       var xl = window.lxxExplorer && window.lxxExplorer.link(
         window.lxxExplorer.txHash(entry), 'View this transaction on Bithomp');
-      if (xl) row.appendChild(xl);
+      if (xl) frr.appendChild(xl);
     } catch (e) {}
+
+    row.appendChild(frr);
 
     return row;
   }
@@ -718,8 +803,12 @@
               var l = (jr && jr.result && jr.result.transactions) || [];
               for (var i = 0; i < l.length; i++) {
                 var x = l[i].tx || l[i].tx_json || {}, mm = l[i].meta || l[i].metaData || {};
-                if (!/^(AMM(Create|Deposit|Withdraw)|OfferCreate)$/.test(x.TransactionType || '')) continue;
                 if (mm.TransactionResult !== 'tesSUCCESS') continue;
+                // A bridge carries its route's own memo rather than ours, so it is admitted on that
+                // instead of on hasLumosMemo -- the Axelar transfer has no LumosCore memo at all and
+                // pays us no fee, so this scan is the ONLY place it can be found.
+                if (bridgeOf(x)) { pools.push(l[i]); continue; }
+                if (!/^(AMM(Create|Deposit|Withdraw)|OfferCreate)$/.test(x.TransactionType || '')) continue;
                 if (!hasLumosMemo(x)) continue;
                 pools.push(l[i]);
               }
@@ -766,6 +855,84 @@
   // Does this transaction carry LumosCore's own memo? The mark is written as hex, so the test is on the
   // hex of "LumosCore" rather than on decoded text — decoding every memo of every transaction to read
   // one field would be work for nothing.
+  // A BRIDGE IS A PAYMENT TO SOMEONE ELSE, which is exactly why the feed never showed one.
+  //
+  // RAZA 2026-10-12: "why isnt my cross chain activity showing up on Platform activity on XRPL?" The
+  // fee pairing below requires `x.Destination === x.Account` -- a payment to YOURSELF, which is what
+  // an XRPL swap is. A bridge pays a third party (the Axelar gateway, a THORChain vault, a 1Click
+  // deposit address), so every one was skipped and the fee that found it was thrown away with it.
+  // Stellar has had a CROSS-CHAIN row the whole time -- see the tag note in the Payment branch.
+  //
+  // Identified from the memo the transfer already carries, not from a destination address: the
+  // THORChain vault rotates and every 1Click deposit address is per-quote, so an address list would
+  // be wrong within a day.
+  var AX_GATEWAY = 'rfmS3zqrQrka8wVyhXifEeyTwe8AMz2Yhw';
+  // THE BRIDGE'S OWN MARK, as Stellar draws beside 'via NEAR Intents'. All three files already ship
+  // in this build -- NEAR's green token icon rather than /assets/networks/nearintents.png, which is a
+  // lighter rendition and the wrong one (same choice ROUTE_META makes in nibridge).
+  // Stellar carries a mark beside every asset AND the chain, which is what makes its rows look fuller.
+  // Measured: both feeds use 42px badges, 36px inline icons and 10px chips, and XRPL letters are 16px
+  // against 15px -- the difference was never size, only how many marks a row carries.
+  //
+  // Slugged from the display name, which matches the shipped filename for every chain these routes
+  // reach except XRPL EVM, which has no file of its own and borrows the XRP Ledger mark.
+  function chainLogo(name) {
+    var slug = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!slug) return '';
+    if (slug === 'xrplevm') slug = 'xrpl';
+    return '/assets/networks/' + slug + '.png';
+  }
+  var VIA_LOGO = {
+    'Axelar': '/assets/networks/axelar.png',
+    'THORChain': '/assets/networks/thorchain.png',
+    'NEAR Intents': '/assets/tokens/ni/NEAR.png',
+  };
+  var TH_ABBR = { a: 'AVAX', b: 'BTC', c: 'BCH', e: 'ETH', g: 'GAIA', s: 'BSC', d: 'DOGE', r: 'THOR' };
+  var TH_DISPLAY = { BTC: 'Bitcoin', ETH: 'Ethereum', BCH: 'Bitcoin Cash', LTC: 'Litecoin',
+    DOGE: 'Dogecoin', AVAX: 'Avalanche', BSC: 'BNB Chain', BASE: 'Base', SOL: 'Solana',
+    TRON: 'Tron', GAIA: 'Cosmos Hub', THOR: 'THORChain' };
+  function memoText(m) { return m ? curNameAny(m) : ''; }
+  function curNameAny(h) {
+    var out = '';
+    for (var i = 0; i + 1 < String(h).length; i += 2) {
+      var b = parseInt(String(h).substr(i, 2), 16);
+      if (b) out += String.fromCharCode(b);
+    }
+    return out;
+  }
+  function bridgeOf(tx) {
+    if (!tx || tx.TransactionType !== 'Payment') return null;
+    if (!tx.Destination || tx.Destination === tx.Account) return null;   // a self-payment is a swap
+    var ms = tx.Memos || [];
+    var byType = {}, datas = [];
+    for (var i = 0; i < ms.length; i++) {
+      var m = (ms[i] && ms[i].Memo) || {};
+      var d = m.MemoData ? memoText(m.MemoData) : '';
+      if (m.MemoType) byType[memoText(m.MemoType)] = d;
+      if (d) datas.push(d);
+    }
+    // Axelar: the gateway plus its own interchain_transfer marker, and the chain is stated outright.
+    if (tx.Destination === AX_GATEWAY && byType.type === 'interchain_transfer') {
+      return { via: 'Axelar', chain: byType.destination_chain || '' };
+    }
+    // THORChain: its memo is "=:CHAIN.ASSET:address", so the chain is the first segment.
+    for (var k = 0; k < datas.length; k++) {
+      if (datas[k].indexOf('=:') === 0) {
+        // THORChain shortens the chain in its memo -- RAZA's Avalanche transfer reads '=:a:0x...'. The
+        // single letters are from THORChain's own memo-length-reduction table, not inferred: a=AVAX,
+        // b=BTC, c=BCH, e=ETH, g=GAIA, s=BSC, d=DOGE, r=THOR. A memo carrying the long form
+        // ('AVAX.AVAX') resolves through the same display map.
+        //
+        // ANYTHING NOT IN BOTH TABLES STAYS UNNAMED. The docs also allow fuzzy abbreviations that
+        // resolve against the deepest pool, so a letter we do not recognise could be more than one
+        // chain -- and a row naming the wrong destination is worse than one naming none.
+        var seg = (datas[k].split(':')[1] || '').split('.')[0] || '';
+        var code = TH_ABBR[seg.toLowerCase()] || seg.toUpperCase();
+        return { via: 'THORChain', chain: TH_DISPLAY[code] || '' };
+      }
+    }
+    return null;
+  }
   var LUMOS_MEMO_HEX = '4C756D6F73436F7265';          // "LumosCore"
   function hasLumosMemo(tx) {
     var ms = (tx && tx.Memos) || [];
