@@ -27,7 +27,7 @@ for (const src of [core, page]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n</' + 'script>';
 
-let files = 0, pages = 0, stripped = 0, mocked = 0;
+let files = 0, pages = 0, stripped = 0, mocked = 0, unmerged = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -96,6 +96,31 @@ for (const dev of ['desktop', 'mobile']) {
       }
     }
 
+    // ONE MORE INHERITED WRITER, AND THIS ONE TALKS TO THE WRONG LEDGER.
+    //
+    // The phone's Trade boot ends with `try{lxMobMergeV();}catch(_){}` -- a Stellar leftover that
+    // fetches /lxapi/assetmeta and merges its `verified` map into VFD so curated Stellar assets
+    // show their tick. Its own comment explains why it exists: "Mobile keeps its OWN copy of the
+    // verified map, so the merge added to the desktop script never reached it."
+    //
+    // None of that is true here. This fork's tick comes from xrpl.to's own verified flag (see
+    // browser/dexasset.js), there is no curated XRPL list, and the map is keyed CODE-G… against
+    // STELLAR issuers -- so not one entry it adds can ever match an XRPL row. It is a request to
+    // another chain's backend on every mobile Trade load and nothing more, which is exactly what
+    // the health bot reports as "Talks only to its own chain".
+    //
+    // It is not free when it "succeeds" either: on a non-empty map it strips the .mdx-mk-list
+    // staleness guard and forces a second full renderPairs() over a list that was already right.
+    //
+    // THE CALL GOES, NOT THE FUNCTION. Deleting a definition out of a shared inherited block is how
+    // this project once killed seven unrelated features at once; the same reasoning as the mock
+    // renderer above, which is disabled through its own guard rather than cut out.
+    const mergeCall = 'try{lxMobMergeV();}catch(_){}';
+    if (h.indexOf(mergeCall) >= 0) {
+      h = h.split(mergeCall).join('/* lxMobMergeV: Stellar curation, not this ledger */');
+      unmerged++;
+    }
+
     const mine = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
     h = h.replace(mine, '');
 
@@ -110,5 +135,6 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl trade: injected on ' + pages + ' page key(s) across ' + files + ' container(s); '
-  + 'stripped the Stellar market layer from ' + stripped + '; disabled the Aptos mock renderer on ' + mocked);
+  + 'stripped the Stellar market layer from ' + stripped + '; disabled the Aptos mock renderer on ' + mocked
+  + '; dropped the Stellar verified-map merge from ' + unmerged);
 if (!pages) console.error('  ! no page carried id="dexMkTbody" — nothing was wired');
