@@ -857,7 +857,12 @@
       // 2 -> 1. Folding the line in is possible later; it needs the quote and dry run solved first.
       if ((feeXrp > 0) && window.lxb && window.lxb.capable()) {
         batched = true;
-        if (b) b.textContent = 'Approve the swap (1 of 1)…';
+        // ONE SIGNATURE NEEDS NO COUNTER. This said "Approve the swap (1 of 1)…", which counts to one
+        // and makes a single prompt look like the start of a sequence (RAZA 2026-10-14). The counter
+        // earned its place when the fee was its own prompt; the Batch above is what retired it. Stellar
+        // has said "Confirm in wallet…" on this button all along, so this is the fork catching up to it
+        // rather than new wording.
+        if (b) b.textContent = 'Confirm in wallet…';
         return window.lxb.submit(me, [
           { TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
             Amount: lxx().toDrops(feeXrp),
@@ -886,8 +891,16 @@
       // The batched path already submitted BOTH writes in one transaction; asking for the swap again
       // here would sign and send it a second time.
       if (prev && prev.batchHash) return prev.batchHash;
-      var ofN = p.getAttribute('data-lxsteps') === '3' ? 3 : 2;
-      if (b) b.textContent = 'Approve the swap (' + ofN + ' of ' + ofN + ')…';
+      // SAME RULE HERE, AND IT FIXES A COUNT THAT WAS ALREADY WRONG. prev is the fee's hash when the
+      // fee was its own prompt, and null when there was no fee to charge; data-lxsteps is '3' only when
+      // a trust line was signed first. With neither, this swap is the ONLY signature the user gives --
+      // and the label still read "(2 of 2)", because the attribute defaults to 2. That is exactly the
+      // small lie the note above warns about, told by the line it was written next to.
+      var steps3 = p.getAttribute('data-lxsteps') === '3';
+      var ofN = steps3 ? 3 : 2;
+      if (b) b.textContent = (!prev && !steps3)
+        ? 'Confirm in wallet…'
+        : ('Approve the swap (' + ofN + ' of ' + ofN + ')…');
       return window.lxc.submit(tx);
     }).then(function (hash) {
       if (b) b.textContent = 'Confirming…';
