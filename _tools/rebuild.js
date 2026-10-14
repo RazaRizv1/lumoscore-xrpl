@@ -100,6 +100,15 @@ const CHAIN = [
   // hand the Aptos strings back. It aborts rather than writing if a ">Aptos" text node survives in
   // any page key it is responsible for, so a moved template fails the build instead of shipping.
   '_xrplaptossweep',
+  // One guard added to the inherited logo healer, which wipes the text of any 1-5 character element
+  // it can resolve as a ticker. It already refuses pure digits; it did not refuse "1B", and
+  // looksLikeIcon() says yes to anything with a gradient background -- which is exactly how the
+  // design paints gradient TEXT. So the $LUMOS supply card's headline was blanked 108 times in 13
+  // seconds and the card showed nothing where "1B" belongs. Must run AFTER every pass that rebuilds
+  // a page from the design, or the unguarded healer comes back with it; it is idempotent and aborts
+  // if the healer's own rule is no longer found, so a re-minified nxnav-js fails the build loudly
+  // rather than quietly shipping the blank again.
+  '_xrpllogoguard',
   // The Aptos string _xrplaptossweep could not reach, because it is not design copy: the inherited
   // lx-gate script bakes `var NET="aptos"` — the design CONTAINER's name — and hands it to
   // lxwOpenWallet() and to sessionStorage lumos.connDest whenever no wallet is connected. Rewrites it
