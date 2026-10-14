@@ -704,13 +704,19 @@
       }
     };
   }
-  function lineMemo(code) {
+  // THE COUNT IN HERE IS WRITTEN TO THE LEDGER, so it gets the real total rather than a fixed 3. It
+  // said "transaction 1 of 3. The platform fee and the swap follow." on every trust line, including
+  // the ones where neither was true: a Batch-capable wallet signs the fee and the swap together, and
+  // a swap with no fee to charge never has a fee prompt at all. Both are 2, and this memo is permanent.
+  function lineMemo(code, total, feeSeparate, oneSig) {
+    var tail = feeSeparate ? 'The platform fee and the swap follow.'
+      : (oneSig ? 'The swap and its platform fee follow as one transaction.' : 'The swap follows.');
     return {
       Memo: {
         MemoType: hexAscii('LumosCore'),
         MemoFormat: hexAscii('text/plain'),
         MemoData: hexAscii('LumosCore: trust line for ' + code + ', required before this account can receive it '
-          + '- transaction 1 of 3. The platform fee and the swap follow.')
+          + '- transaction 1 of ' + total + '. ' + tail)
       }
     };
   }
@@ -731,7 +737,21 @@
     // How many signatures this swap actually takes, so every label and memo counts the same way: a token this account
     // cannot yet receive needs its trust line first, and then it is three, not two.
     var needLine = s.get.currency !== 'XRP' && !acct.line;
-    p.setAttribute('data-lxsteps', needLine ? '3' : '2');
+    // HOW MANY SIGNATURES THIS ACTUALLY TAKES. This used to be "3 if a trust line is needed, else 2",
+    // which was true when the fee was always its own prompt. It is not true now, in two ways: a
+    // Batch-capable wallet signs the fee and the swap as ONE transaction, and a swap with no fee to
+    // charge has no fee prompt at all. Either way a trust-line swap is 2, not 3, and the button, the
+    // memo and the later labels all read this one number so they cannot disagree.
+    //
+    // feeRate() rather than feeInXrp(), because the fee amount needs the post-trust-line quote, which
+    // does not exist yet -- the line is signed and confirmed BEFORE the route is asked for again. What
+    // is being decided here is only WHETHER there is a fee prompt, and that is the rate. sendSwap
+    // recomputes the total exactly once the real figure is in hand, and corrects this if it has to.
+    var willFee = feeRate() > 0;
+    var oneSig = willFee && !!(window.lxb && window.lxb.capable());
+    var steps = (needLine ? 1 : 0) + (oneSig ? 1 : (willFee ? 2 : 1));
+    p.setAttribute('data-lxsteps', String(steps));
+    p.setAttribute('data-lxline', needLine ? '1' : '0');
 
     var step = Promise.resolve();
     if (needLine) {
@@ -742,11 +762,11 @@
         }
         // THE TRUST LINE EXPLAINS ITSELF TOO (RAZA 2026-09-17, on the fee memo). This is the one prompt of the three with
         // nothing on it but "TrustSet, limit 1000000000" — the least recognisable transaction in the whole product.
-        if (b) b.textContent = 'Approve the ' + s.get.code + ' trust line (1 of 3)…';
+        if (b) b.textContent = 'Approve the ' + s.get.code + ' trust line (1 of ' + steps + ')…';
         return window.lxc.submit({
           TransactionType: 'TrustSet', Account: me,
           LimitAmount: { currency: s.get.currency, issuer: s.get.issuer, value: '1000000000' },
-          Memos: [lineMemo(s.get.code)]
+          Memos: [lineMemo(s.get.code, steps, willFee && !oneSig, oneSig)]
         });
       }).then(function (hash) {
         if (b) b.textContent = 'Confirming…';
@@ -812,6 +832,21 @@
     if (!tx.Amount || !tx.DeliverMin || !tx.SendMax) { say(p, 'That amount is too small for the ledger.', 'bad'); return; }
     if (q.paths) tx.Paths = q.paths;
     var feeXrp = feeInXrp(p, q.amt, q.out);
+    // THE EXACT COUNT, now that the fee amount is a real number rather than a rate. doSwap had to
+    // guess from feeRate() alone to label the trust line, which it signs before this quote exists; the
+    // same arithmetic repeated here with feeXrp settles it, and the attribute is corrected so the fee
+    // and swap labels below cannot inherit a stale guess. The conditions are deliberately the same
+    // expressions the branches themselves use -- a count derived differently from the code it
+    // describes is how the "(2 of 2)" on a single prompt survived in the first place.
+    var willBatch = (feeXrp > 0) && !!(window.lxb && window.lxb.capable());
+    var steps = (p.getAttribute('data-lxline') === '1' ? 1 : 0)
+      + (willBatch ? 1 : ((feeXrp > 0) ? 2 : 1));
+    p.setAttribute('data-lxsteps', String(steps));
+    // One signature needs no counter: Stellar's button has said "Confirm in wallet…" all along, and
+    // "(1 of 1)" counts to one, which makes a lone prompt look like the start of a sequence.
+    function promptLabel() {
+      return steps <= 1 ? 'Confirm in wallet…' : ('Approve the swap (' + steps + ' of ' + steps + ')…');
+    }
     // Set when the fee and the swap go out as ONE signed Batch, because that changes what is true
     // after a failure: all-or-nothing means a failed swap cannot have left the fee paid.
     var batched = false;
@@ -857,12 +892,11 @@
       // 2 -> 1. Folding the line in is possible later; it needs the quote and dry run solved first.
       if ((feeXrp > 0) && window.lxb && window.lxb.capable()) {
         batched = true;
-        // ONE SIGNATURE NEEDS NO COUNTER. This said "Approve the swap (1 of 1)…", which counts to one
-        // and makes a single prompt look like the start of a sequence (RAZA 2026-10-14). The counter
-        // earned its place when the fee was its own prompt; the Batch above is what retired it. Stellar
-        // has said "Confirm in wallet…" on this button all along, so this is the fork catching up to it
-        // rather than new wording.
-        if (b) b.textContent = 'Confirm in wallet…';
+        // RAZA 2026-10-14: this said "Approve the swap (1 of 1)…". The counter earned its place when
+        // the fee was its own prompt; the Batch on this very line is what retired it. With a trust
+        // line signed first it is still honestly 2 of 2, which is why this asks promptLabel() rather
+        // than hardcoding either wording.
+        if (b) b.textContent = promptLabel();
         return window.lxb.submit(me, [
           { TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
             Amount: lxx().toDrops(feeXrp),
@@ -877,7 +911,9 @@
       if (!(feeXrp > 0)) return null;
       // Counted against the whole sequence, including the trust line when there was one — "1 of 2" on what is really the
       // second of three prompts is exactly the kind of small lie that makes someone abandon a signature.
-      var of = p.getAttribute('data-lxsteps') === '3' ? 3 : 2;
+      // The fee is always the prompt before the swap, and the swap is always last, so this is
+      // steps-1 of steps whether or not a trust line came first.
+      var of = steps;
       if (b) b.textContent = 'Approve the platform fee (' + (of - 1) + ' of ' + of + ')…';
       return window.lxc.submit({
         TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
@@ -891,16 +927,10 @@
       // The batched path already submitted BOTH writes in one transaction; asking for the swap again
       // here would sign and send it a second time.
       if (prev && prev.batchHash) return prev.batchHash;
-      // SAME RULE HERE, AND IT FIXES A COUNT THAT WAS ALREADY WRONG. prev is the fee's hash when the
-      // fee was its own prompt, and null when there was no fee to charge; data-lxsteps is '3' only when
-      // a trust line was signed first. With neither, this swap is the ONLY signature the user gives --
-      // and the label still read "(2 of 2)", because the attribute defaults to 2. That is exactly the
-      // small lie the note above warns about, told by the line it was written next to.
-      var steps3 = p.getAttribute('data-lxsteps') === '3';
-      var ofN = steps3 ? 3 : 2;
-      if (b) b.textContent = (!prev && !steps3)
-        ? 'Confirm in wallet…'
-        : ('Approve the swap (' + ofN + ' of ' + ofN + ')…');
+      // The swap is always the last prompt, so it is steps of steps -- and when it is the only one,
+      // promptLabel() drops the counter entirely. This used to read the old 3-or-2 attribute and so
+      // announced "(2 of 2)" on a swap that was the single signature being asked for.
+      if (b) b.textContent = promptLabel();
       return window.lxc.submit(tx);
     }).then(function (hash) {
       if (b) b.textContent = 'Confirming…';
