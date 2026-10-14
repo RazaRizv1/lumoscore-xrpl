@@ -401,6 +401,37 @@
       ? usd(d.vol24 * (d.usd / d.price)) : '—', 'past 24h');
 
     // ---- supply numbers ----------------------------------------------------------------------
+    // THE ELEMENT HAS TO EXIST BEFORE ANYTHING CAN FILL IT.
+    //
+    // This loop has always run over an empty list on every XRPL page -- there is no .lx-supnum in
+    // the fork's markup and nothing here created one, so `issued` was fetched, had somewhere to go,
+    // and was dropped on the floor. Stellar's _lumostoken.js BUILDS the span when it is missing, in
+    // both places it writes one (`if(!ns){ ...innerHTML... }`); the fork inherited the reader and
+    // not the writer, which is why the health bot saw "no .lx-supnum on the page" rather than a
+    // wrong number. A selector that matches nothing fails silently and for ever.
+    //
+    // It belongs in the supply totem, between the round "1B" and the note, because that note's
+    // "Fixed supply of 1,000,000,000 LUMOS" is DELIBERATE prose and stays. Both figures are true and
+    // they are not the same fact: 1,000,000,000 was minted, the issuer is blackholed so that can
+    // never change, and tokens sent back to it are burned -- so the ISSUED figure can only fall. It
+    // is 999,952,640 today. Showing the minted number alone quietly rounds away every burn.
+    //
+    // Deliberately NOT given class "note": SUPPLY_FIX above rewrites text nodes inside
+    // `.supply-totem .note`, so a live number parked there would be a rewrite target instead of a
+    // reading. Styled inline rather than through a stylesheet, because a new `<style id="lx-...">`
+    // on this page is one more layer for stripById to shut off and one more duplicate to pile up.
+    var totem = $('.supply-totem');
+    if (totem && !totem.querySelector('.lx-supnum')) {
+      var issuedLine = el('div', 'lt-issued');
+      issuedLine.style.cssText = 'font-size:14px;color:var(--text-soft);margin-top:10px;line-height:1.4';
+      issuedLine.appendChild(document.createTextNode('Currently issued '));
+      var issuedNum = el('span', 'lx-supnum');
+      issuedNum.style.cssText = 'font-family:"JetBrains Mono",monospace;color:var(--text-muted)';
+      issuedLine.appendChild(issuedNum);
+      var totemNote = totem.querySelector('.note');
+      if (totemNote) totem.insertBefore(issuedLine, totemNote); else totem.appendChild(issuedLine);
+    }
+
     $$('.lx-supnum').forEach(function (e) {
       var t = e.textContent;
       if (/circulating/i.test(t)) e.textContent = d && d.circulating != null
