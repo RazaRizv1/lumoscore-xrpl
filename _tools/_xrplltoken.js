@@ -119,9 +119,25 @@ for (const dev of ['desktop', 'mobile']) {
       h = h.slice(0, a) + h.slice(z + closeTag.length);
     }
 
+    // THE GATE GOES IN THE HEAD, and that is the whole point of it.
+    //
+    // First attempt put it at the end of body beside the script, and measured on staging the flash
+    // got WORSE, not better:
+    //     300ms "View all 14 pools →"  ->  600ms HIDDEN  ->  900ms "View all 22 pools →"
+    // Three states instead of two. A stylesheet at the end of body does not exist until the parser
+    // reaches it, so the mock paints first and then vanishes -- the reader sees the wrong number AND
+    // a disappearing control. A rule that hides a baked value has to be in force before that value
+    // can paint, which means the head. Stellar's copy does exactly this for the same reason.
+    //
+    // The body fallback stays for a page with no </head>, where late is still better than never.
+    const hi = h.indexOf('</' + 'head>');
+    if (hi >= 0) h = h.slice(0, hi) + STYLE + h.slice(hi);
+
+    // Recomputed AFTER the head insert: the earlier splice shifts every offset after it, and a
+    // stale index here would splice the script into the middle of the document.
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
-    json[key] = h.slice(0, bi) + STYLE + SCRIPT + h.slice(bi);
+    json[key] = h.slice(0, bi) + (hi >= 0 ? '' : STYLE) + SCRIPT + h.slice(bi);
     pages++;
   }
 

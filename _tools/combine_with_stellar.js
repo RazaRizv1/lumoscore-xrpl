@@ -241,6 +241,52 @@ if (WRITE) {
 console.log('    xrpl connect  : ' + (WRITE ? (xcFile + ' on ' + xcPages + ' stellar page(s), dormant')
   : 'n/a (dry run)'));
 
+// ---- the chooser must OFFER the chain this tree contains -------------------------------------------
+//
+// LX_XRPL_PUBLIC is read by Stellar's _lumosparent and _multichain at TRANSFORM time, and it defaults
+// off for a good reason: a deploy that advertises XRPL without carrying XRPL pages ships six 404s on
+// every page. Production's dist is exactly that deploy, so off is right there.
+//
+// This tree is the opposite case. It HAS the XRPL pages, so "Coming soon" is simply false here.
+//
+// WHY THIS IS A GUARD AND NOT A PATCH. Twice now the chooser has silently reverted to "Next up" on
+// staging -- once because the flag was never set, and once (2026-10-15) because I rebuilt Stellar's
+// dist flag-off to keep production safe and every later combine inherited it. The state lives in a
+// directory shared by two deploy targets that need opposite values, so any build can carry the wrong
+// one and nothing says a word.
+//
+// Patching the copies here was the obvious alternative and is worse: the live card's meta line is
+// per-hub text ("Swaps and limit orders", "AMM pools") that only _lumosparent knows, so a patched
+// card would read "Coming soon" under a working link, or carry a blander string than a real build.
+// That trades a visible wrongness for a quieter one. Failing loudly costs one rebuild and cannot
+// ship a lie.
+if (WRITE) {
+  const bad = [];
+  for (const f of fs.readdirSync(OUT + '/assets/js')) {
+    if (!f.endsWith('.js')) continue;
+    const t = fs.readFileSync(OUT + '/assets/js/' + f, 'utf8');
+    if (t.indexOf('var SOON={"xrpl":1}') >= 0) { bad.push('assets/js/' + f + ' — Launch App modal'); break; }
+  }
+  for (const f of fs.readdirSync(OUT)) {
+    if (!f.endsWith('.html')) continue;
+    const t = fs.readFileSync(OUT + '/' + f, 'utf8');
+    if (t.indexOf('lx-lp-card soon" data-lxnet="xrpl"') >= 0) { bad.push(f + ' — network chooser card'); break; }
+  }
+  if (bad.length) {
+    die('the Stellar build was made WITHOUT LX_XRPL_PUBLIC=1, so this tree would ship XRP Ledger as '
+      + '"Coming soon" / "Next up" while carrying its pages.\n'
+      + '      found in: ' + bad.join('\n                ') + '\n'
+      + '      Rebuild Stellar with the flag, then combine again:\n'
+      + '        cd C:/LumosCore\n'
+      + '        LX_XRPL_PUBLIC=1 node _tools/_lumosparent.js\n'
+      + '        LX_XRPL_PUBLIC=1 node _tools/_multichain.js\n'
+      + '        node _tools/_donorfix.js && node _tools/_nofollow.js && node _tools/_heromono.js\n'
+      + '        node _tools/extract_site.js aptos --root && node _tools/_externalize.js\n'
+      + '      Afterwards rebuild it flag-OFF before any deploy to lumoscore.com, which has no XRPL pages.');
+  }
+  console.log('    chooser       : offers XRP Ledger (LX_XRPL_PUBLIC build)');
+}
+
 // ---- routes ---------------------------------------------------------------------------------------
 // Only XRPL's PAGE routes are taken. Its ALIASES and CASE_FIXES (/blogs, /Dashboard -> /dashboard,
 // /lumoscore-landing -> /) are the same rules Stellar already publishes, and a second copy of a 301
