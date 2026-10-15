@@ -116,6 +116,13 @@ const CHAIN = [
   // if the healer's own rule is no longer found, so a re-minified nxnav-js fails the build loudly
   // rather than quietly shipping the blank again.
   '_xrpllogoguard',
+  // Stellar's trending-tabs crash, inherited with the containers: the IIFE guards its result but not
+  // its lookup, so `tList.closest(...)` throws on every dashboard load and kills the rest of that
+  // script block. _page_fixes.js fixed it on Stellar 2026-10-13; this copy predates that. Same place
+  // in the order as the logo guard and for the same reason -- it patches inherited design code, so it
+  // must run after everything that rebuilds a page from the design, and it aborts if renderTrending
+  // is no longer found rather than reporting success over a renamed function.
+  '_xrpltrendguard',
   // The Aptos string _xrplaptossweep could not reach, because it is not design copy: the inherited
   // lx-gate script bakes `var NET="aptos"` — the design CONTAINER's name — and hands it to
   // lxwOpenWallet() and to sessionStorage lumos.connDest whenever no wallet is connected. Rewrites it
