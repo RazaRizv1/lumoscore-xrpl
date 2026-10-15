@@ -100,7 +100,13 @@
   // AMM and is unrecoverable by design, plus ~2.9 XRP permanently out of circulation in the
   // blackholed issuer and pool accounts. Nothing here is refundable, so if the launch slips, put
   // this back to { create: 0.50, liq: 1.50, pool: 0 } rather than leaving it live.
-  var USD = USD_REAL;
+  // WRITTEN AS A LITERAL, NOT `= USD_REAL`. _xrplaunchpad.js parses this exact line --
+  //     /var\s+USD\s*=\s*\{\s*create:\s*([\d.]+)\s*,\s*liq:\s*([\d.]+)/
+  // -- to bake the price into the page copy AND into lx-faq-ld, the FAQPage structured data search
+  // engines read. Its own note records why: the page once quoted one price and charged another.
+  // An alias defeats that parser, and it aborted the build rather than shipping prose that disagreed
+  // with the charge. Keep both numbers here in literal form so the copy follows the money.
+  var USD = { create: 5, liq: 10, pool: 10 };
   var TEST_PRICING = USD.create !== USD_REAL.create || USD.liq !== USD_REAL.liq;
 
   // THE REVIEW PAGE HAS ITS OWN COST PANEL, with no ids at all -- `.cost-row` blocks matched by
