@@ -89,7 +89,18 @@
   // So roughly 2.9 XRP per launch is permanently out of circulation, and the only recoverable part is nothing at all —
   // which is what "the liquidity cannot be rugged" costs.
   var USD_REAL = { create: 5, liq: 10, pool: 10 };
-  var USD = { create: 0.50, liq: 1.50, pool: 0 };
+  // LIVE PRICING, from 2026-10-15. RAZA, asked directly whether to flip before the push to main:
+  // "yes flip the pricing to the real $5/$10/$10".
+  //
+  // Recorded because the line above says to restore these "once a test launch has succeeded", and
+  // that has NOT happened -- the ~3.4 XRP GemWallet round-trip is still the open item, and it needs
+  // a real device. The flip was his call with that stated; it is not an inference from a green run.
+  //
+  // What changes for a launcher the moment this ships: $25 instead of $2, of which $10 goes into the
+  // AMM and is unrecoverable by design, plus ~2.9 XRP permanently out of circulation in the
+  // blackholed issuer and pool accounts. Nothing here is refundable, so if the launch slips, put
+  // this back to { create: 0.50, liq: 1.50, pool: 0 } rather than leaving it live.
+  var USD = USD_REAL;
   var TEST_PRICING = USD.create !== USD_REAL.create || USD.liq !== USD_REAL.liq;
 
   // THE REVIEW PAGE HAS ITS OWN COST PANEL, with no ids at all -- `.cost-row` blocks matched by
