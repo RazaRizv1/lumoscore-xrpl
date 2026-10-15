@@ -98,6 +98,28 @@
     // showed the gap, which is the third time on this page that has been the deciding check.
     var cs = document.querySelectorAll('.cstat');
     for (var i = 0; i < cs.length; i++) cs[i].classList.add('lxlt');
+
+    // A GATE THAT NEVER OPENS IS WORSE THAN THE FLASH IT PREVENTS.
+    //
+    // The .lt-cmp-foot gate hides the "View all N pools" button until paintTabsAndLinks has written
+    // a real count. If the pool lookup never answers, that button stays invisible for ever -- and a
+    // missing link is a worse trade than a wrong number, because the page silently loses a way out
+    // of itself. This codebase has shipped exactly that shape before: a mask whose reveal depended
+    // on data that did not arrive.
+    //
+    // So after six seconds, drop the COUNT rather than the button. "View all pools" is true without
+    // the figure and is the one wording that cannot be stale. Only fires if the real write never
+    // happened -- once the count lands, .lxlt is already set and this finds nothing to do.
+    try {
+      setTimeout(function () {
+        var fts = document.querySelectorAll('.lt-cmp-foot:not(.lxlt)');
+        for (var k = 0; k < fts.length; k++) {
+          var b = fts[k].querySelector('button,a');
+          if (b) b.textContent = 'View all pools →';
+          fts[k].classList.add('lxlt');
+        }
+      }, 6000);
+    } catch (e) {}
   }
 
   // THE PAGE NAMED THREE DIFFERENT CHAINS, none of them this one. Beside a correct XRP Ledger price
@@ -277,6 +299,19 @@
       $$('button[data-goto="pl"], .lt-cmp-foot button, .lt-cmp-foot a').forEach(function (b) {
         var want = 'View all ' + state.pools + ' pools →';
         if (/View all/.test(b.textContent || '') && b.textContent !== want) b.textContent = want;
+        // REVEAL, NOW THAT THE COUNT IS OURS.
+        //
+        // The design ships "View all 14 pools" in the markup against a real 22, and the health bot
+        // caught it flashing: 14 held from 563ms, corrected to 22 at 903ms. The row values beside
+        // this button were gated all along and the button never was -- Stellar's note on the same
+        // bug says why, and it is worth repeating: it reads as a link rather than as data. It is
+        // both. The number in it is as wrong as any other stale figure on the page.
+        //
+        // Outside the text write on purpose: when the markup already happens to carry the right
+        // count there is nothing to replace, and a reveal that only runs on a CHANGE would leave
+        // the button hidden for ever on exactly those loads.
+        var ft = b.closest ? b.closest('.lt-cmp-foot') : null;
+        if (ft) ft.classList.add('lxlt');
       });
     }
   }

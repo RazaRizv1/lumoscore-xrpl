@@ -53,6 +53,22 @@ const IDFIX = [
   ['ctMcXRP Ledger', 'ctMcXrpl2'],
 ];
 
+
+// THE FOOTER BUTTON CARRIES A COUNT, so it is data and is gated like data.
+//
+// The design ships "View all 14 pools" against a real 22, and the health bot measured it:
+// 14 held from 563ms, corrected at 903ms. The .lt-cmp-row values beside it were gated all
+// along and this one never was, because it reads as a link rather than as a figure. Stellar
+// hit the identical bug on its own copy (_lumostoken.js: "the design is 14 against a real 65")
+// and gates it exactly this way; the fork inherited neither the rule nor the reveal.
+//
+// ltoken.js adds .lxlt once paintTabsAndLinks has written a real count, and drops the COUNT
+// rather than the button after six seconds if that never happens -- a hidden link is a worse
+// trade than a missing number.
+const CSS_ID = 'lx-xrplltoken-css';
+const STYLE = '<style id="' + CSS_ID + '">'
+  + '.lt-cmp-foot:not(.lxlt) button,.lt-cmp-foot:not(.lxlt) a{visibility:hidden}'
+  + '</' + 'style>';
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + chart + '\n</' + 'script>';
 
 let files = 0, pages = 0, stripped = 0, idFixes = 0;
@@ -83,9 +99,29 @@ for (const dev of ['desktop', 'mobile']) {
 
     h = stripById(h, ID).html;
 
+    // STRIP EVERY PREVIOUS COPY, NOT THE FIRST ONE, AND WITHOUT A REGEX.
+    //
+    // This was `new RegExp('<style id="' + CSS_ID + '">[\s\S]*?</style>', 'g')` and it matched
+    // nothing: inside a single-quoted string `\s` and `\S` are not escapes, so the class collapsed
+    // to [sS] -- a pattern for the letter s. Every run therefore appended another stylesheet, and
+    // the containers went 8 -> 12 and 14 -> 21 copies across three runs before the count was
+    // checked. stripById does not help here; it removes <script id>, never <style>.
+    //
+    // The loop also repairs containers that already piled up, because it removes ALL copies rather
+    // than one. Indexed string surgery, so there is no escaping layer left to get wrong.
+    var openTag = '<style id="' + CSS_ID + '">';
+    var closeTag = '</' + 'style>';
+    for (;;) {
+      const a = h.indexOf(openTag);
+      if (a < 0) break;
+      const z = h.indexOf(closeTag, a);
+      if (z < 0) break;
+      h = h.slice(0, a) + h.slice(z + closeTag.length);
+    }
+
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
-    json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
+    json[key] = h.slice(0, bi) + STYLE + SCRIPT + h.slice(bi);
     pages++;
   }
 
