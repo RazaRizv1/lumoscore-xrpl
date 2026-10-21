@@ -2,13 +2,14 @@
   "name": "lumoscore-xrpl",
   "private": true,
   "version": "0.1.0",
-  "description": "LumosCore on the XRP Ledger. Separate project on purpose: nothing here may read or write C:/LumosCore.",
+  "description": "LumosCore on the XRP Ledger. Separate project on purpose: it READS C:/LumosCore (the shared Functions in shared-functions.json, and the combine) and never writes it.",
   "scripts": {
-    "build": "node _tools/extract_site.js xrpl --root",
+    "build": "node C:/LumosCore/_tools/shared_functions.js . && node _tools/extract_site.js xrpl --root",
     "serve": "node serve.js 8082",
     "test": "node _tools/xrpl-core.test.js",
-    "predeploy": "node _tools/predeploy_check.js",
+    "predeploy": "node C:/LumosCore/_tools/shared_functions.js . --check && node _tools/predeploy_check.js",
     "deploy": "npx wrangler pages deploy dist --project-name=lumoscore-xrpl --branch=main --commit-dirty=true",
-    "idem": "node _tools/idempotence_check.js"
+    "idem": "node _tools/idempotence_check.js",
+    "sync:functions": "node C:/LumosCore/_tools/shared_functions.js ."
   }
 }
