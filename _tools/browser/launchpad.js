@@ -148,6 +148,19 @@
     if (document.getElementById('lxx-costgate')) return;
     var st = document.createElement('style');
     st.id = 'lxx-costgate';
+    // A JS-INJECTED GATE CANNOT FIX A FLASH IN MARKUP THAT PRECEDES IT, and widening this selector to
+    // cover the phone's sticky bar was my first answer to RAZA's 2026-10-23 report ("It shows apt for
+    // split seconds when the page is refreshed"). It did not work, and could not have: measured in the
+    // built page, the mock sits at byte 183,670 and this stylesheet is appended at byte 676,296. The
+    // browser parses, lays out and paints that bar nearly half a megabyte before it reaches the script
+    // that would hide it. On a phone, on a ~1.2MB page, that window is long enough to read.
+    //
+    // I had "verified" the widened selector by stripping .lxx-costready after load and watching the
+    // cell go hidden. That proves the SELECTOR MATCHES. It says nothing about whether the rule exists
+    // at first paint, which was the entire question.
+    //
+    // The mock is gone from the shipped markup instead -- see _xrplaunchpad.js -- so there is nothing
+    // left to flash whenever this runs. These selectors are back to what they were.
     st.textContent = 'html:not(.lxx-costready) .cost-row .v,'
       + 'html:not(.lxx-costready) .cost-total .v{visibility:hidden}';
     (document.head || document.documentElement).appendChild(st);
@@ -223,17 +236,48 @@
     // were missing entirely, and the extra liquidity was missing on the review page.
     var createXrp = USD.create / xrpUsd;
     var liqXrp = USD.liq / xrpUsd + extraXrp();
-    var netXrp = ledgerXrp();
+
+    // THE $10 POOL FEE WAS QUOTED NOWHERE AND CHARGED ANYWAY. NO BACKTICKS IN THIS COMMENT.
+    //
+    // RAZA 2026-10-20: "Why is the launch cost $19 instead of $25." Because this row carried only
+    // the LEDGER's costs. The row is literally called "Liq. pool & network" and it was showing the
+    // network half alone — the base reserve that makes the issuing account exist, plus the owner
+    // reserve AMMCreate consumes — while USD.pool, the ten dollars named in the very same label,
+    // was left out of both the row and the total.
+    //
+    // It is not left out of the CHARGE. mint.js builds the collector payment as
+    //     (cfg.usd.create + cfg.usd.pool) / rate
+    // — fifteen dollars — against a panel promising five. So the quote under-reported by exactly the
+    // pool fee, and the gap was invisible precisely because the panel is internally consistent: the
+    // dollars beside each row are computed from the same rate as its XRP, so "14.6 XRP ≈ $19.02" is
+    // arithmetically perfect and still the wrong number.
+    //
+    // That is the dangerous shape of this bug. A stale rate would have made the two halves disagree
+    // and shown itself. A missing TERM keeps them in step and simply quotes less than it takes.
+    //
+    // Both costs now sit in the row that names them. The ledger's reserves stay — they are real, they
+    // are unavoidable, and the total has to mean every drop that leaves the wallet.
+    // AND THE TOTAL IS THE $25, NOT $29 (RAZA 2026-10-20, on the fix above: "This is supposed to be
+    // $25 total. Why's it now $29 in $ value").
+    //
+    // The first pass put the ledger's reserve in this row too, on the earlier principle that the total
+    // "has to mean every drop that leaves the wallet". RAZA's contract is simpler and it is his to
+    // set: the launch costs $25 — five to create, ten for the pool, ten of liquidity — and the XRP
+    // Ledger's reserve is not something LumosCore charges. Most of it is not even spent: a reserve is
+    // locked, and the owner reserve comes back if the object is ever removed.
+    //
+    // So the three priced rows sum to exactly $25 and the reserve moves OUT of the total — but NOT out
+    // of sight, which was the other half of the old reasoning and the half worth keeping. It gets its
+    // own line under the total, because a wallet still needs that XRP on hand and discovering it at
+    // the signing step is the surprise this panel exists to prevent.
+    var poolXrp = (USD.pool || 0) / xrpUsd;
 
     setCost('create', createXrp, createXrp * xrpUsd);
     setCost('liq', liqXrp, liqXrp * xrpUsd);
+    setCost('pool', poolXrp, poolXrp * xrpUsd);
 
-    // The row is literally called "Liq. pool & network", so the ledger's charges belong in it: the
-    // base reserve that makes the issuing account exist (locked forever once it is blackholed) and
-    // the owner reserve AMMCreate consumes. Neither is a LumosCore fee, and both are unavoidable.
-    setCost('pool', netXrp, netXrp * xrpUsd);
-
-    var totalXrp = createXrp + liqXrp + netXrp;
+    var totalXrp = createXrp + liqXrp + poolXrp;
+    reserveNote(ledgerXrp(), xrpUsd);
     setCost('total', totalXrp, totalXrp * xrpUsd);
 
     // Published so the review page can check it against the connected wallet's actual balance.
@@ -285,6 +329,30 @@
   // Both numbers are now computed from the same constants, so they can only disagree if one of these
   // files changes without the other.
   function ledgerXrp() { return (2 * ledger.base) + 0.88 + ledger.owner; }
+
+  // The reserve, said out loud and kept out of the total. It is the XRP Ledger's charge, not ours, so
+  // it does not belong in a figure labelled "total launch cost" — but the wallet still has to hold it,
+  // and the review step checks the FULL amount before the first signature. A reader who budgets for
+  // the total alone and is then refused at review would have been told the truth and still misled.
+  //
+  // Written once under the total row and updated in place afterwards, so a repaint cannot stack it.
+  function reserveNote(xrp, rate) {
+    if (!(xrp > 0) || !(rate > 0)) return;
+    var totalCell = costCell('total');
+    var row = totalCell && totalCell.closest ? totalCell.closest('.cost-total, .cost-row') : null;
+    if (!row || !row.parentNode) return;
+    var note = document.getElementById('lxx-reserve-note');
+    if (!note) {
+      note = document.createElement('div');
+      note.id = 'lxx-reserve-note';
+      note.style.cssText = 'margin-top:6px;font-size:12px;line-height:1.35;opacity:.7';
+      row.parentNode.insertBefore(note, row.nextSibling);
+    }
+    var usd = xrp * rate;
+    note.textContent = '+ ' + xrp.toFixed(2) + ' XRP XRP Ledger reserve (≈ $'
+      + (usd % 1 === 0 ? Math.round(usd).toLocaleString('en-US') : usd.toFixed(2))
+      + '), held by the network — not a LumosCore fee.';
+  }
 
   // The design's recalcCost() lives inside an IIFE, so it cannot be called or replaced -- and it
   // repaints these same elements whenever the liquidity or share inputs change. Duplicate listeners
@@ -711,6 +779,17 @@
     }
   }
 
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function load() {
     // The cost panel exists on BOTH the form and the review step, so the guard cannot be the form's
     // ticker field -- that is what left the review page quoting 173.50 XRP.
@@ -797,10 +876,10 @@
       // Reserves are governance-settable and have been lowered twice, so they are read rather than
       // assumed. A failure here leaves the defaults above, which are today's values.
       .then(function () {
-        return fetch('https://xrplcluster.com/', {
+        return lxpost('https://xrplcluster.com/', {
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ method: 'server_info', params: [{}] }),
-        }).then(function (r) { return r.json(); }).then(function (j) {
+        }).then(function (j) {
           var v = j && j.result && j.result.info && j.result.info.validated_ledger;
           if (!v) return;
           if (isFinite(Number(v.reserve_base_xrp))) ledger.base = Number(v.reserve_base_xrp);

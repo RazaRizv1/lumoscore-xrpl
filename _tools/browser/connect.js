@@ -67,19 +67,63 @@
   var XAMAN_RETURN = '/trade/xrpl';
   // The page the sign-in started from, so a phone returning to XAMAN_RETURN is taken back to it.
   var XAMAN_BACK = 'lumos.xamanBack';
+  // "Show the Connected screen once this page has loaded." Survives exactly one navigation, which is
+  // the hop from XAMAN_RETURN to the dashboard described at the adopt site.
+  var XAMAN_SHOW = 'lumos.xamanShow';
+  // Where a completed sign-in belongs. NOT XAMAN_RETURN: that one is a fixed address registered in
+  // the Xaman app and cannot be changed from here without the app's settings changing to match.
+  var HOME = '/dashboard';
+  // Where the confirmation is SHOWN — the landing, matching Stellar: connect there and the popup sits
+  // over the marketing page until Continue, which is the only thing that moves you to the dashboard.
+  //
+  // ?stay=1 is load-bearing, not decoration. _authgate.js puts a gate in <head> that replaces "/" with
+  // "/dashboard" the moment a wallet is stored, so hopping to a bare "/" after adopting the session
+  // would bounce straight past the landing (measured). That gate ships its own escape hatch for
+  // exactly this — "A ?stay=1 escape hatch keeps the landing reachable while connected" — so this uses
+  // the documented way out rather than fighting it.
+  var LANDING = '/?stay=1';
   var RPC = 'https://xrplcluster.com/';
 
   var K = {
     addr: 'lumos.address', wallet: 'lumos.wallet', transport: 'lumos.transport',
     chain: 'lumos.chain', network: 'lumos.network',
-    // Which wallet was last connected. Same key the Stellar build uses, and deliberately NOT cleared
-    // by forget(): which wallet you last used is the thing worth remembering once you sign out.
-    lastWallet: 'lumos.lastWallet'
+    // Which wallet was last connected, PER CHAIN. It used to be `lumos.lastWallet`, the same key the
+    // Stellar build writes — and one slot cannot hold two answers. The ids never overlap (rabet,
+    // freighter, lobstr on one side; xaman, gem, cross on the other), so whichever chain you connected
+    // on last won the slot and the other chain matched nothing and fell back to "Installed" for ever.
+    //
+    // RAZA 2026-10-17: "on XRPL it doesnt show last used. it keeps showing installed" — his Stellar
+    // picker had Rabet tagged, so the shared key held "rabet". Reproduced by writing that value here:
+    // all three XRPL rows lose the tag; write "gem" instead and GemWallet gets it back.
+    //
+    // It broke the other direction too, unreported: connecting on XRPL wrote "gem" into the shared
+    // key and Stellar's picker then had nothing to match either.
+    //
+    // Deliberately NOT cleared by forget(): which wallet you last used is the thing worth remembering
+    // once you sign out.
+    lastWallet: 'lumos.lastWallet.xrpl',
+    // Read-only, for the one-time migration below.
+    lastWalletLegacy: 'lumos.lastWallet'
   };
 
   function get(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
   function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   function del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+  // The last XRPL wallet, honouring the old shared key ONCE so that someone whose most recent connect
+  // was on this chain does not lose the tag the day this ships. The legacy value is only accepted if
+  // it names a wallet THIS picker offers — that test is the whole point, since a Stellar id sitting in
+  // the shared slot is exactly the bug being fixed and must not be migrated in.
+  function lastWalletId() {
+    var v = get(K.lastWallet);
+    if (v) return v;
+    var old = get(K.lastWalletLegacy);
+    if (!old) return '';
+    for (var i = 0; i < WALLETS.length; i++) {
+      if (WALLETS[i].id === old) { set(K.lastWallet, old); return old; }
+    }
+    return '';
+  }
   function noop() {}
 
   // THE FADE-IN GATE THAT NEVER OPENED (RAZA 2026-09-16: "[Still not showing - WTF, this has been going on since yesterday]" —
@@ -161,6 +205,12 @@
 
   function forget() {
     del(K.addr); del(K.wallet); del(K.transport); del(K.chain); del(K.network);
+    // DISCONNECT HAS TO REACH THE SDK TOO. Clearing our own keys left `XummPkceJwt` behind, and
+    // resume() rebuilds the SDK on the next page load whenever that key exists — which fires
+    // 'retrieved', which calls accept(), and signs the reader straight back in. Silently, because
+    // there is no XAMAN_BACK marker to announce it. Pressing Disconnect and then reloading would
+    // simply undo the disconnect.
+    xamanForget();
     cookieChain('');
     emit();
   }
@@ -179,11 +229,22 @@
   // ---- ledger ----------------------------------------------------------------------------------
   // Confirms the account exists. An unfunded account is NOT an error: below the base reserve the
   // ledger simply has no record of it, which is the normal state of a brand-new wallet.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function ledgerState(a) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: 'account_info', params: [{ account: a, ledger_index: 'validated' }] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       var res = (j && j.result) || {};
       if (res.error === 'actNotFound') return 'unfunded';
       if (res.error) return 'unknown';
@@ -342,15 +403,31 @@
         u: window.location.pathname + window.location.search + window.location.hash, t: Date.now() }));
     } catch (e) {}
   }
-  function goBack() {
+  // WHERE THE READER SHOULD END UP — returned, NOT navigated to.
+  //
+  // This used to be goBack(), which called location.replace() the instant the session was adopted.
+  // On a phone that is the whole problem: the Xaman app sends you back as a fresh page load, the
+  // confirmation is drawn, and the redirect fires in the same tick — so "You're connected" appears
+  // for a split second and the reader is dumped on the dashboard having had no chance to read it,
+  // let alone check the address (RAZA 2026-10-17: "it doesn't show this popup... It does show this
+  // popup for split seconds but doesnt stop").
+  //
+  // Returning the target instead lets the Connected screen own the decision: it is handed to the
+  // design's own Continue button, so the reader leaves when they press it and lands back where they
+  // started sign-in rather than always on the dashboard.
+  //
+  // Still CONSUMED here, every time it is read. The marker doubles as the "this page view is
+  // completing a sign-in" signal, and leaving it behind would make the next ordinary page load
+  // announce a connection that did not happen.
+  function backTarget() {
     var b = null;
     try { b = JSON.parse(localStorage.getItem(XAMAN_BACK) || 'null'); localStorage.removeItem(XAMAN_BACK); } catch (e) {}
     // Never inside the desktop popup -- the library closes that itself once it has posted.
-    if (window.opener) return;
-    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return;
-    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return;
-    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return;
-    window.location.replace(b.u);
+    if (window.opener) return '';
+    if (!b || typeof b.u !== 'string' || b.u.charAt(0) !== '/' || b.u.charAt(1) === '/') return '';
+    if (Date.now() - (b.t || 0) > 15 * 60 * 1000) return '';
+    if (b.u.split('#')[0] === window.location.pathname + window.location.search) return '';
+    return b.u;
   }
 
   // ADOPTING A SESSION IS NOT THE SAME AS ANNOUNCING ONE, and conflating them produced both of the
@@ -364,31 +441,117 @@
   //        the SDK is constructed with rememberJwt, so it re-fires 'retrieved' on EVERY later page
   //        load to hand back the remembered session. That is the whole point of it -- it is how the
   //        phone stays signed in across the redirect -- but it meant every page load re-announced a
-  //        connection the reader made once, and goBack() then moved them as well.
+  //        connection the reader made once, and the redirect then moved them as well.
   //
   // So: adopt on every event (the session must be picked up, silently, as often as it is offered),
   // but ANNOUNCE only when this page view is actually completing a sign-in. rememberBack() writes
-  // XAMAN_BACK before leaving for Xaman and goBack() consumes it, so its presence IS that signal --
-  // read before goBack() can clear it, and false on an ordinary page load.
+  // XAMAN_BACK before leaving for Xaman and backTarget() consumes it, so its presence IS that signal --
+  // read before backTarget() can clear it, and false on an ordinary page load.
   var xamanAdopted = '';
+
+  // Drop any remembered Xaman session so the next authorize() has to ask. `XummPkceJwt` is the SDK's
+  // own storage key; logout() is what clears an instance that has already read it. xamanAdopted is
+  // reset too — it is the "this address is already taken" guard, and leaving the old address in it
+  // would make the picker ignore the new one as a duplicate.
+  function xamanForget(x) {
+    xamanAdopted = '';
+    try { localStorage.removeItem('XummPkceJwt'); } catch (e) {}
+    try { if (x && typeof x.logout === 'function') x.logout(); } catch (e) {}
+  }
+  // Says why, but only while someone is waiting on an answer. Set when run() shows the waiting
+  // screen and cleared when anything resolves, so an ordinary page load that quietly restores a
+  // remembered session draws nothing — which is the behaviour the `announce` flag already protected.
+  var xamanWaiting = null;
+  function xamanSay(msg) {
+    if (!xamanWaiting) { try { console.warn('[lumoscore] Xaman connect:', msg); } catch (e) {} return; }
+    var w = xamanWaiting; xamanWaiting = null;
+    try { ui.fail(w, msg); } catch (e) {}
+  }
+
   function adoptXumm(x) {
     try {
       var p = x.state();
       if (!p || !p.then) return;
-      // Read now: both events may resolve before either reaches goBack().
+      // Read now: both events may resolve before either reaches backTarget().
       var announce = false;
       try { announce = !!localStorage.getItem(XAMAN_BACK); } catch (e) {}
       p.then(function (state) {
-        if (!state || !state.me || !state.me.account) return;
-        if (!netOk(state.me)) return;
+        // EVERY EXIT HERE USED TO BE SILENT, AND THAT IS WHY THIS WAS UNDIAGNOSABLE.
+        //
+        // RAZA 2026-10-20, signed out on a phone: tapping Xaman "brings me to pools main page" and
+        // "still not connecting". There was no error anywhere to go on — four separate returns in
+        // this function each meant something different and all four looked identical from outside:
+        // no session, wrong network, a malformed address, and a duplicate event. The one path that
+        // DOES report (run's catch -> ui.fail) is not on this route at all.
+        //
+        // So each one now says what it was. xamanSay only draws when a connect is actually in flight,
+        // so a remembered session restored quietly on an ordinary page load stays quiet — that was
+        // the point of the `announce` flag and it is preserved.
+        if (!state || !state.me || !state.me.account) {
+          xamanSay('Xaman did not return an account. If you approved it in the app, try once more.');
+          return;
+        }
+        if (!netOk(state.me)) {
+          xamanSay('That Xaman account is on ' + String(state.me.networkType || 'another network')
+            + '. Switch it to Mainnet in Xaman and connect again.');
+          return;
+        }
         var addr = state.me.account;
         // The second event of the pair, for a sign-in already taken. Not an error, just done.
         if (xamanAdopted === addr) return;
+
+        // NOBODY GETS SIGNED IN WHO DID NOT ASK. NO BACKTICKS IN THIS COMMENT.
+        //
+        // RAZA 2026-10-20: "When I tap launch app, instead of showing me networks popup, and then
+        // wallet selection, then wallet signing, it just bypasses all that and connects me to
+        // Xaman." His header came back carrying an address after ONE tap, having been signed out.
+        //
+        // The cause is the side effect this file already documents from 2026-10-11 — constructing
+        // XummPkce with rememberJwt restores a remembered session and fires 'retrieved'. That fix
+        // stopped the warm-up from CONSTRUCTING the SDK. It did not gate what happens when the event
+        // arrives anyway: accept() ran unconditionally, so a stale JWT left over in the browser
+        // signed the reader straight in, skipping the network choice, the wallet choice and the
+        // approval in the app.
+        //
+        // The `announce` flag below was only ever deciding whether to SHOW a confirmation. It was
+        // never deciding whether to connect, which is the decision that actually mattered.
+        //
+        // Two things make an adoption legitimate, and nothing else does:
+        //   * xamanWaiting — this page view asked: the reader tapped Xaman and is on the waiting
+        //     screen right now;
+        //   * announce — this page view is completing the app round trip, which rememberBack()
+        //     marked before we left for Xaman.
+        // A remembered SDK session with neither is just a leftover, and the app's own address key is
+        // what restores a genuinely connected reader on an ordinary load — independently of this.
+        if (!xamanWaiting && !announce) return;
+
         xamanAdopted = addr;
-        try { accept(addr, 'Xaman', 'xaman'); } catch (e) { return; }
+        try { accept(addr, 'Xaman', 'xaman'); }
+        catch (e) { xamanSay((e && e.message) || 'Xaman returned an address this app could not read.'); return; }
         if (!announce) return;                       // a remembered session, quietly restored
-        try { ui.done(get(K.addr)); } catch (e) {}
-        goBack();
+        backTarget();                                // consume the marker; its job was the signal above
+
+        // THE LANDING BELONGS BEHIND THIS SCREEN, AND THE DASHBOARD COMES AFTER CONTINUE — which is
+        // what Stellar does, and the shape RAZA asked these to share: "please make sure it keeps the
+        // background as the landing page until ive clicked continue button, after that it will take
+        // me to dashboard page, not anywhere else".
+        //
+        // A phone always returns to XAMAN_RETURN ('/trade/xrpl') because that address is registered in
+        // the Xaman app and cannot be changed from here. So the confirmation was drawn over the trade
+        // page, and Continue then loaded a second page before the app settled on the dashboard — two
+        // navigations the reader watches. An earlier pass moved the hop to the dashboard, which fixed
+        // the double navigation but put the wrong page behind the screen.
+        //
+        // The hop happens BEFORE the screen is drawn, so the one navigation is over by the time there
+        // is anything to read; it goes to the LANDING, and Continue carries on to the dashboard.
+        //
+        // Stellar needs none of this: connecting there never reloads the page, so its popup is simply
+        // drawn where the reader already was. Only the phone's app round trip makes a fresh load.
+        if (window.location.pathname !== '/') {
+          try { localStorage.setItem(XAMAN_SHOW, '1'); } catch (e) {}
+          try { window.location.replace(LANDING); return; } catch (e) {}
+        }
+        try { ui.done(get(K.addr), '', HOME); } catch (e) {}
       }).catch(noop);
     } catch (e) {}
   }
@@ -471,13 +634,30 @@
         + 'for this site, then try again.'));
     }
     // BEFORE xumm(), NOT AFTER IT. Constructing the SDK can restore a remembered session and fire
-    // 'retrieved' immediately -- no round trip, no approval needed, which is correct when the reader
-    // has just tapped Xaman. adoptXumm() decides whether to announce by looking for this marker, so
+    // 'retrieved' immediately. adoptXumm() decides whether to announce by looking for this marker, so
     // if it is written after xumm() that restore is silent: the reader taps Xaman, is connected, and
     // is told nothing. Writing it here means a tap always counts as a sign-in, however fast it
     // resolves.
     rememberBack();
+
+    // A TAP ON XAMAN MEANS "LET ME CHOOSE AN ACCOUNT", NOT "USE THE ONE FROM LAST TIME". The SDK is
+    // built with rememberJwt, so a stored session used to be restored the instant it was constructed:
+    // no QR, no approval, straight back to the previous address. That was deliberate and it was the
+    // wrong call — it makes switching accounts impossible from inside the site. RAZA 2026-10-17, after
+    // changing accounts in his Xaman app: "Instead of showing me barcode it automatically connect me
+    // to the wallet that i last used... Dont autoconnect".
+    //
+    // Cleared TWICE on purpose, and both are load-bearing: once here, so a FIRST construction finds no
+    // session to retrieve, and again once the SDK resolves, because xumm() is memoised — resume() may
+    // already have built an instance at page load and that one holds its session in memory, where
+    // removing the key cannot reach it.
+    //
+    // Safe for the phone round trip: this only drops a STALE session. Signing in writes a fresh JWT on
+    // the way back, and resume() also accepts the return on the URL (`returning`) rather than relying
+    // on the key being there beforehand.
+    xamanForget();
     return xumm().then(function (x) {
+      xamanForget(x);
       // Race the SDK's own 'error' against authorize(), because a refused sign-in only ever arrives
       // on the event -- authorize() itself stays pending forever.
       var refused = new Promise(function (_res, rej) { xamanPending = rej; });
@@ -716,12 +896,15 @@
   var WALLETS = [
     {
       id: 'xaman', name: 'Xaman', sub: 'Mobile and desktop',
+      // Has a real phone app, so it is reachable from a handset. See the note on the picker's filter.
+      mobile: true,
       ico: '#2d2d2d', glyph: 'X', logo: '/assets/wallets/xaman.png',
       connect: xamanConnect,
       status: function () { return Promise.resolve(XAMAN_KEY ? '' : 'Setup needed'); }
     },
     {
       id: 'gem', name: 'GemWallet', sub: 'Browser extension',
+      mobile: false,
       ico: 'linear-gradient(135deg,#3f9c5a 0%,#1f6b3a 100%)', glyph: 'G',
       logo: '/assets/wallets/gem.png',
       connect: gemConnect,
@@ -731,6 +914,7 @@
     },
     {
       id: 'cross', name: 'Crossmark', sub: 'Browser extension',
+      mobile: false,
       ico: 'linear-gradient(135deg,#6b57ff 0%,#3a2bb5 100%)', glyph: 'C',
       logo: '/assets/wallets/crossmark.webp',
       connect: crossConnect,
@@ -801,8 +985,21 @@
     + '.lxx-nm{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}'
     + '.lxx-nm b{font-size:14.5px;font-weight:700}'
     + '.lxx-nm span{font-size:12.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
+    // THE `hidden` ATTRIBUTE DOES NOTHING HERE WITHOUT THIS RULE. The browser's own
+    // `[hidden]{display:none}` is a UA-stylesheet declaration, and `.lxx-row{display:flex}` above is
+    // an author CLASS rule — the class wins, so setting b.hidden marked the row and left it on screen.
+    // That is why Crossmark was still listed on RAZA's phone after the handheld filter shipped
+    // (2026-10-17), and why my own check passed: I read back the `hidden` PROPERTY, which was
+    // perfectly true, instead of asking whether the row was actually invisible.
+    + '.lxx-row[hidden]{display:none!important}'
     + '.lxx-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;'
     + 'background:rgba(255,255,255,.08);color:var(--text-muted,#9b9ba4);white-space:nowrap}'
+    // "Last used" is GREEN, the same green Stellar's .lxw-badge uses -- values copied from that
+    // stylesheet rather than picked by eye, so the two pickers cannot drift apart on a colour
+    // (RAZA 2026-10-17: "last used should be in green color like on Stellar"). The neutral style above
+    // stays for "Installed", which is a statement about the browser, not about the reader's history.
+    + '.lxx-badge.lxx-last{background:rgba(52,210,122,.14);color:#16a34a;'
+    + 'box-shadow:inset 0 0 0 1px rgba(52,210,122,.22)}'
     + '.lxx-state{padding:26px 22px 24px;text-align:center;display:flex;flex-direction:column;'
     + 'align-items:center;gap:12px}'
     + '.lxx-state h4{margin:0;font-size:16.5px;font-weight:800}'
@@ -864,6 +1061,64 @@
     function open() { build(); bd.hidden = false; }
     function close() { if (bd) bd.hidden = true; }
 
+    // THE NETWORK COMES FIRST, HERE TOO. NO BACKTICKS IN THIS COMMENT.
+    //
+    // RAZA 2026-10-20: "Tapping Launch app should bring the network selection popup instead of
+    // directly bringing the wallet popup."
+    //
+    // Stellar's pages have had this screen all along — it is _mc_engine's chooser, and
+    // combine_with_stellar injects THIS file into those pages so picking XRP Ledger can connect in
+    // place. The reverse was never built: an XRPL page assumed the route had already decided the
+    // network and went straight to the wallet list. So the same button behaved differently depending
+    // on which chain's page you happened to be standing on.
+    //
+    // What happens on each row, per RAZA when asked: "If someone selects stellar, then they will
+    // select stellar wallet, and then they connect and land to stellar dashboard. its straight
+    // forward." XRP Ledger stays in place; Stellar hands off to Stellar's own flow, which owns its
+    // wallets and its dashboard. Nothing here tries to connect a Stellar wallet itself — this layer
+    // has no business holding a G-address, and the two builds share storage keys.
+    // SECTION IN, SECTION OUT — the same rule the chain-switch map was built on and for the same
+    // reason: an identifier is chain-specific. /pools/xrpl/id/<r-address> pasted onto Stellar asks it
+    // for a pool that does not exist, and the reader gets an empty page that looks like a broken
+    // link. Only the section travels; anything unknown falls back to Stellar's own landing.
+    function netpick() {
+      build();
+      body.innerHTML = '';
+      body.appendChild(head('Choose a network', 'Choose a network to continue'));
+      var list = document.createElement('div');
+      list.className = 'lxx-list';
+
+      [
+        { id: 'stellar', name: 'Stellar', sub: 'Connect on Stellar', logo: '/assets/networks/stellar.png' },
+        { id: 'xrpl', name: 'XRP Ledger', sub: 'Connect on XRP Ledger', logo: '/assets/networks/xrpl.png' }
+      ].forEach(function (n) {
+        var b = document.createElement('button');
+        b.className = 'lxx-row'; b.type = 'button';
+        var ic = document.createElement('span');
+        ic.className = 'lxx-ico';
+        if (n.logo) {
+          var im = document.createElement('img');
+          im.src = n.logo; im.alt = '';
+          im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+          ic.appendChild(im);
+        }
+        var nm = document.createElement('span');
+        nm.className = 'lxx-nm';
+        var nb = document.createElement('b'); nb.textContent = n.name;
+        var ns = document.createElement('span'); ns.textContent = n.sub;
+        nm.appendChild(nb); nm.appendChild(ns);
+        b.appendChild(ic); b.appendChild(nm);
+        // Same window-capture delegate as the wallet rows — see the note there. A plain listener here
+        // is eaten on any page carrying an inherited capture-phase row handler, and this screen is
+        // reachable from Stellar's pages too.
+        b.setAttribute('data-lxn', n.id);
+        list.appendChild(b);
+      });
+
+      body.appendChild(list);
+      open();
+    }
+
     function pick() {
       build();
       // WARM THE SCRIPT ONLY -- NEVER CONSTRUCT THE SDK HERE.
@@ -883,9 +1138,39 @@
       var list = document.createElement('div');
       list.className = 'lxx-list';
 
+      // A PHONE SHOULD ONLY BE OFFERED WALLETS A PHONE CAN REACH. Crossmark and GemWallet are browser
+      // EXTENSIONS — tapping either on a handset can only ever end at "not installed in this browser"
+      // (RAZA 2026-10-17: "Remove wallets on mobile that can not be open from mobile").
+      //
+      // The test is CAPABILITY, not the user agent, because "extension" does not mean "desktop":
+      // GemWallet ships a Firefox add-on that runs on Firefox for ANDROID, where it works exactly as
+      // it does on a laptop. So an extension-only wallet starts hidden on a handset and is revealed
+      // if detection actually finds it — the one browser where it is usable keeps it, and every phone
+      // where it is not loses it. Xaman is flagged mobile:true and is never filtered.
+      // NOT isHandheld(). That one answers "does this device do taps", which is the right question
+      // for a click handler and the wrong one here: it is true on any TOUCHSCREEN LAPTOP, and hiding
+      // a browser extension from a Windows laptop with a touch display would remove a wallet that
+      // works perfectly. Measured in the review pane, which reports coarse pointer at desktop size
+      // and would have had it filtering the desktop list too.
+      //
+      // The question here is "is this a device that cannot run extensions at all", so: a phone or
+      // tablet user agent, or a pointer that is coarse with no fine pointer anywhere. A touch laptop
+      // has a mouse as well and fails the second test.
+      var handheld = (function () {
+        try { if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) return true; } catch (e) {}
+        try {
+          return window.matchMedia('(pointer:coarse)').matches
+            && !window.matchMedia('(any-pointer:fine)').matches;
+        } catch (e) {}
+        return false;
+      })();
       WALLETS.forEach(function (w) {
         var b = document.createElement('button');
         b.className = 'lxx-row'; b.type = 'button';
+        if (handheld && !w.mobile) {
+          b.hidden = true;
+          w.status().then(function (s) { if (s === 'Installed') b.hidden = false; }).catch(noop);
+        }
         var ic = document.createElement('span');
         ic.className = 'lxx-ico';
         if (w.logo) {
@@ -913,16 +1198,24 @@
         badge.hidden = true;
         b.appendChild(badge);
 
-        // ONE TAG PER ROW, AND "Last used" WINS. The Stellar build settled this in _lastusedbadge:
-        // a row that is both installed and last-used showed "Installed", so the recency tag never
-        // appeared for the wallet you actually use. The row has space for one tag, and "Last used"
-        // is the more useful of the two — it already implies the wallet is installed.
-        var wasLast = false;
-        try { wasLast = !!get(K.lastWallet) && get(K.lastWallet) === w.id; } catch (e) {}
+        // ONE TAG IN THE WHOLE LIST, AND "Last used" WINS. The Stellar build settled the per-ROW half
+        // of this in _lastusedbadge: a row that is both installed and last-used showed "Installed", so
+        // the recency tag never appeared for the wallet you actually use.
+        //
+        // This goes one further, per RAZA 2026-10-17: "make sure that installed tags dont appear once
+        // there's already last used wallet that we've recorded". Once the list can say which wallet you
+        // came back to, "Installed" is noise on every other row — it answers a question nobody is asking
+        // any more, and three tags down a three-row list reads as a table of states rather than a
+        // recommendation. Before the first connect there is no history, so the install tags still earn
+        // their place and still show.
+        var known = '';
+        try { known = lastWalletId(); } catch (e) {}
+        var wasLast = !!known && known === w.id;
         if (wasLast) {
           badge.textContent = 'Last used';
+          badge.className = 'lxx-badge lxx-last';
           badge.hidden = false;
-        } else {
+        } else if (!known) {
           // Detection is async and must never hold up the list being usable.
           w.status().then(function (s) {
             if (!s) return;
@@ -931,7 +1224,22 @@
           }).catch(noop);
         }
 
-        b.addEventListener('click', function () { run(w); });
+        // WINDOW CAPTURE, NOT A LISTENER ON THE ROW. NO BACKTICKS IN THIS COMMENT.
+        //
+        // RAZA 2026-10-20, on a STELLAR page: Launch App, XRP Ledger, Xaman — "instead of opening the
+        // Xaman signing, it brings me to stellar trade main page." It worked on XRPL pages and failed
+        // on Stellar ones, which is the signature of an inherited handler, not of our code.
+        //
+        // Stellar's _wallet_realconnect describes itself: it "intercepts the connect-modal wallet-row
+        // click (capture phase)" and lists Xaman among the wallets it does not support, which "fall
+        // through to the demo flow". combine_with_stellar injects THIS layer into Stellar's pages, so
+        // on those pages both are armed — and a capture-phase listener beats a listener bound to the
+        // row every time.
+        //
+        // The same rule the connect TRIGGER in this file already follows, for the same reason, with
+        // the same note: capture runs window -> document, so window is the only phase that is early
+        // enough. The row carries its id and one delegate below reads it.
+        b.setAttribute('data-lxw', w.id);
         list.appendChild(b);
       });
 
@@ -1045,7 +1353,7 @@
     //
     // The home target is passed to lxwOpenWallet so the design's own Continue button navigates
     // through its goHome(); we do not wire that button ourselves either.
-    function designConnected(addr) {
+    function designConnected(addr, home) {
       // THE DESIGN'S CONNECTED SCREEN IS THE ONE RAZA WANTS, and it must look identical to Stellar's:
       // green tick, wallet logo, "rhabrr...aNoP", "XRP Ledger - Xaman", Continue. The block below
       // fills exactly that markup. The fallback underneath is a plain address and a button, and it
@@ -1065,10 +1373,24 @@
       //
       // The opener is an optimisation now, not a gate -- and the modal is revealed directly, because
       // the network chooser hides it (parentNode [hidden]) before handing over to this layer.
+      // MOUNT FIRST, THEN LOOK. The design's modal is built LAZILY on some pages: measured on the
+      // deployed landing — which is exactly where a phone returns from the Xaman app — there are ZERO
+      // .lxw-screen nodes until something opens it, and three the moment one does. Checking before
+      // mounting therefore bailed to the plain fallback panel on the one page that matters most
+      // (RAZA 2026-10-17: "the popup that it shows for split seconds is not exactly like this").
+      //
+      // __lxwDesignOpen is the design's own opener, saved when this layer replaced the global. Where
+      // the layer never replaced it — the landing again — the global IS still the design's, so calling
+      // it is safe. The presence of __lxwDesignOpen is precisely what tells the two apart, which is
+      // why the fallback cannot accidentally re-enter our own picker.
+      //
+      // `home` is where the reader started sign-in, when this is a phone coming back from the Xaman
+      // app. Falling back to the dashboard keeps every other entry point behaving as before.
+      var mount = window.__lxwDesignOpen
+        || (typeof window.lxwOpenWallet === 'function' ? window.lxwOpenWallet : null);
+      if (typeof mount === 'function') { try { mount('xrpl', home || '/dashboard'); } catch (e) {} }
       var scr = document.querySelectorAll('.lxw-screen');
       if (!scr.length) return false;                 // genuinely no design modal on this page
-      var mount = window.__lxwDesignOpen;
-      if (typeof mount === 'function') { try { mount('xrpl', '/dashboard'); } catch (e) {} }
       try {
         var mo = document.querySelector('.lxw-modal');
         if (mo) {
@@ -1099,8 +1421,8 @@
       return true;
     }
 
-    function done(addr, note) {
-      if (designConnected(addr)) return;
+    function done(addr, note, home) {
+      if (designConnected(addr, home)) return;
       // Fallback only for a page that does not ship the design's wallet modal at all.
       build();
       body.innerHTML = '';
@@ -1113,24 +1435,104 @@
       if (note) { var p = document.createElement('p'); p.textContent = note; s.appendChild(p); }
       var b = document.createElement('button');
       b.className = 'lxx-btn'; b.type = 'button'; b.textContent = 'Continue';
-      b.addEventListener('click', function () { close(); window.location.reload(); });
+      // Same rule as the design's button: go where sign-in started if we know, otherwise just
+      // re-render this page as a connected one.
+      b.addEventListener('click', function () {
+        close();
+        if (home) { try { window.location.replace(home); return; } catch (e) {} }
+        window.location.reload();
+      });
       s.appendChild(b);
       body.appendChild(s);
       open();
     }
 
-    return { pick: pick, waiting: waiting, signing: signing, fail: fail, done: done, close: close, open: open };
+    return { pick: pick, netpick: netpick, waiting: waiting, signing: signing, fail: fail, done: done, close: close, open: open };
+  })();
+
+  // ASSEMBLED, NOT WRITTEN OUT, AND THAT IS NOT STYLE. NO BACKTICKS IN THIS COMMENT.
+  //
+  // The first version of this map held the paths as literals — '/pools/stellar' and friends. A
+  // transform in this build's chain rewrites chain paths across every emitted script, and it
+  // rewrote them: the built page came out carrying trade: '/trade/xrpl', pools: '/pools/xrpl'. A
+  // row labelled "Connect on Stellar" would have navigated straight back to an XRPL page, and the
+  // only reason it was caught is that the built output was read instead of the source.
+  //
+  // So the section travels as a bare NAME and the chain is joined on at runtime. Do not "tidy"
+  // this back into whole paths — the rewriter will find them again, and the failure is silent.
+  var CHAIN_S = 'stel' + 'lar';
+  var SECTIONS = {
+    trade: 1, pools: 1, bridge: 1, rewards: 1, lumos: 1, launchpad: 1
+  };
+  var CHAINLESS = { mcp: 1, 'list-your-token': 1 };
+  function stellarCounterpart() {
+    var seg = '';
+    try { seg = (window.location.pathname || '').split('/').filter(Boolean)[0] || ''; } catch (e) {}
+    if (CHAINLESS[seg]) return '/' + seg;
+    if (SECTIONS[seg]) return '/' + seg + '/' + CHAIN_S;
+    return '/';
+  }
+
+  // The one delegate the wallet rows rely on. Bound once, on window, in capture — see the note at the
+  // row for why nothing less survives on a Stellar page. Scoped to our own dialog by the attribute,
+  // so it cannot claim a click on anything else's list.
+  (function wireWalletRows() {
+    if (window.__lxcRowClick) return;
+    window.__lxcRowClick = 1;
+    window.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var row = t.closest('.lxx-row[data-lxw],.lxx-row[data-lxn]');
+      if (!row) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      // A network row first: it only switches which screen is showing, or hands off to Stellar.
+      var net = row.getAttribute('data-lxn');
+      if (net) {
+        if (net === 'xrpl') { try { ui.pick(); } catch (e2) {} return; }
+        // Stellar owns its own wallets. Hand over at the section they are already looking at and let
+        // its flow finish on its dashboard; #connect is the signal its build reads on arrival.
+        try { window.location.href = stellarCounterpart() + '#connect'; } catch (e2) {}
+        return;
+      }
+
+      var id = row.getAttribute('data-lxw');
+      for (var i = 0; i < WALLETS.length; i++) {
+        if (WALLETS[i].id === id) { run(WALLETS[i]); return; }
+      }
+    }, true);
   })();
 
   function run(w) {
     ui.waiting(w);
+    // A WAITING SCREEN THAT NEVER RESOLVES IS THE SAME BUG AS A SILENT RETURN.
+    //
+    // Xaman's SDK opens its own window, and on a phone that window is blocked whenever it is opened
+    // after an await — the trap this project has hit before. When that happens authorize() simply
+    // never settles: no resolve, no reject, nothing for the catch below to report, and the reader is
+    // left on a spinner or back where they started with no explanation. RAZA 2026-10-20: "still not
+    // connecting", with no error shown anywhere.
+    //
+    // So the wait is bounded and says what probably happened. The flag also lets adoptXumm report
+    // through xamanSay while a connect is genuinely in flight.
+    if (w && w.id === 'xaman') {
+      xamanWaiting = w;
+      setTimeout(function () {
+        if (xamanWaiting !== w) return;                      // something resolved; nothing to say
+        xamanSay('Xaman did not come back. If its window did not open, allow pop-ups for this site '
+          + 'and try again — or open the Xaman app, approve the request there, and return here.');
+      }, 25000);
+    }
     w.connect().then(function (addr) {
+      xamanWaiting = null;
       return ledgerState(addr).then(function (st) {
         ui.done(addr, st === 'unfunded'
           ? 'This account is not activated on the XRP Ledger yet — it needs a small XRP reserve before it can hold anything.'
           : '');
       });
     }).catch(function (e) {
+      xamanWaiting = null;
       ui.fail(w, (e && e.message) || 'Something went wrong.');
     });
   }
@@ -1149,8 +1551,10 @@
   }
 
   function openPicker() {
-    if (get(K.addr)) ui.done(get(K.addr), '');
-    else ui.pick();
+    if (get(K.addr)) { ui.done(get(K.addr), ''); return; }
+    // The network screen first, then the wallets — the order Stellar's pages have always used.
+    // netpick's XRP Ledger row calls pick(), so nothing is skipped and nothing is duplicated.
+    ui.netpick();
   }
 
   // ON `window`, NOT `document`, and that is the whole point.
@@ -1203,8 +1607,58 @@
     xumm().catch(noop);
   }
 
+  // GIVE THE TRANSACTION ITS OWN DEADLINE INSTEAD OF LETTING THE WALLET GUESS ONE.
+  //
+  // RAZA 2026-10-18, user report swapping XLM -> XRP through GemWallet: "The latest ledger sequence
+  // 107724542 is greater than the transaction's LastLedgerSequence (107724541). Preliminary result:
+  // temBAD_AMOUNT." A deadline one ledger behind the ledger it was submitted into — i.e. a margin of
+  // effectively nothing, so it expired between being built and being applied.
+  //
+  // We never set LastLedgerSequence on a swap at all: the note above gemSubmit says the extension
+  // "fills in Fee, Sequence and LastLedgerSequence", so that number was GemWallet's, computed from
+  // whatever ledger it had last seen. Setting our own takes the guess away from it.
+  //
+  // 150 LEDGERS, roughly ten minutes, and the generous end is deliberate. The wallet is a HUMAN
+  // approval step — Xaman means picking up a phone and opening an app — and a tight window turns a
+  // slow approval into a failed transaction, which is the very bug being fixed. The usual argument
+  // for a short deadline (don't let a stale order fill at a bad price) does not bite here, because
+  // every swap already ships DeliverMin at the quote less slippage: a late fill is refused by the
+  // ledger rather than filled badly. See the partial-payment note in dxaswap.
+  //
+  // SYNCHRONOUS, AND THAT IS NOT AN ACCIDENT. There is no await here and there must never be one:
+  // this runs inside the click that opens the wallet, and an await before that call is exactly what
+  // breaks Xaman's popup and the iOS deep-link — see [[xaman-popup-must-open-in-the-tap]] and
+  // [[lumoscore-ios-deeplink-activation]]. The ledger index comes from lxx.currentLedger(), which
+  // every ledger read already keeps up to date for free, so nothing has to be fetched.
+  //
+  // It refuses to stamp from a stale number: better to leave the field absent and let the wallet do
+  // what it does today than to write a deadline derived from where the ledger was minutes ago.
+  function stampDeadline(tx) {
+    try {
+      if (!tx || typeof tx !== 'object') return;
+      if (tx.LastLedgerSequence) return;                   // the caller meant its own deadline
+      var L = window.lxx && window.lxx.currentLedger && window.lxx.currentLedger();
+      if (!L || !(L.seq > 0) || L.age > 60000) return;     // nothing fresh enough to trust
+      // Add back what has already elapsed, so an index seen 40s ago still yields ~10 minutes.
+      tx.LastLedgerSequence = L.seq + 150 + Math.ceil(L.age / 4000);
+    } catch (e) {}
+  }
+
   window.lxc = {
+    // TWO CALLERS, TWO MEANINGS — and conflating them cost a round trip. NO BACKTICKS IN THIS COMMENT.
+    //
+    // open() is called by Stellar's own chooser after the reader has ALREADY picked XRP Ledger there:
+    // combine_with_stellar injects this layer into Stellar's pages precisely so that choice can
+    // connect in place. The network is settled by the time it arrives, so open() must show WALLETS.
+    //
+    // Making it show the network screen is what RAZA saw next: "when i select XRPL, it shows the same
+    // popup again" — his first popup was Stellar's chooser (it has a Search networks field), the
+    // second was this one. Asking twice for an answer already given.
+    //
+    // openNetworks() is the other meaning: start the flow from nothing, which is what Launch App on an
+    // XRPL page does through _xrplchoosenet's shim. Same layer, same screens, different starting point.
     open: function () { get(K.addr) ? ui.done(get(K.addr), '') : ui.pick(); },
+    openNetworks: function () { openPicker(); },
     address: function () { return get(K.addr); },
     wallet: function () { return get(K.wallet); },
     transport: function () { return get(K.transport); },
@@ -1223,6 +1677,7 @@
     submit: function (tx) {
       var t = get(K.transport);
       if (!get(K.addr)) return Promise.reject(new Error('Connect a wallet first.'));
+      stampDeadline(tx);
       if (t === 'gem') return gemSubmit(tx);
       if (t === 'cross') return crossSubmit(tx);
       if (t === 'xaman') return xamanSubmit(tx);
@@ -1236,7 +1691,19 @@
     configured: function () { return { xaman: !!XAMAN_KEY }; }
   };
 
-  function boot() { resume(); watchWalletChip(); }
+  // The other half of that hop: we arrived on the dashboard carrying the marker, so draw the screen
+  // the reader was promised. Consumed immediately — it must survive one navigation and no more, or
+  // every later visit to the dashboard would reopen a confirmation for a sign-in long finished.
+  function showPending() {
+    var want = '';
+    try { want = localStorage.getItem(XAMAN_SHOW) || ''; localStorage.removeItem(XAMAN_SHOW); } catch (e) {}
+    if (!want) return;
+    var addr = get(K.addr);
+    if (!addr) return;
+    try { ui.done(addr, '', HOME); } catch (e) {}
+  }
+
+  function boot() { resume(); showPending(); watchWalletChip(); }
 
   // DORMANT MODE, for pages that are not XRPL pages.
   //
@@ -1258,6 +1725,24 @@
   // So when the host page sets window.__lxcNoBoot before this script runs, window.lxc is defined and
   // nothing else happens: no resume, no chip watcher, no takeover. lxc.open() still works, which is all
   // the chooser needs. XRPL's own pages never set the flag, so their behaviour is unchanged.
+  // ONE THING STILL RUNS WHILE DORMANT: the pending confirmation. The landing is a dormant page, and
+  // it is also where a phone is sent after a Xaman sign-in so the screen can sit over the marketing
+  // page the way Stellar's does — so leaving showPending() inside boot() meant the hop landed there
+  // and nothing was ever drawn. Measured: the landing held, the marker was never consumed, no popup.
+  //
+  // Safe to run dormant, because it is not a takeover: it fires only when OUR OWN adopt set the marker
+  // moments earlier, consumes it immediately, and touches nothing on an ordinary page load. Everything
+  // the dormant guard actually protects — resume(), the chip watcher, the connect-UI takeover — stays
+  // behind it.
+  if (window.__lxcNoBoot) {
+    try {
+      if (localStorage.getItem(XAMAN_SHOW)) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', showPending);
+        else showPending();
+      }
+    } catch (e) {}
+  }
+
   if (!window.__lxcNoBoot) {
     takeOverConnectUi();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

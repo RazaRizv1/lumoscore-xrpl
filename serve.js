@@ -1123,6 +1123,33 @@ async function xrplPrices(req, res, q) {
   }
 }
 
+// THE VOUCH LISTS COME FROM THE FUNCTION, NEVER A COPY.
+//
+// RAZA 2026-10-20. The three mirrors below each used to set `vf: t.verified ? 1 : 0` — the raw
+// upstream gateway flag — while the Functions they mirror run it through vouched(). The upstream
+// marks GateHub's look-alike USDC and does NOT mark PHNIX, ARMY, BCHAMP or DROP, so on localhost
+// the curated assets showed bare and a confusable one ticked: the exact inversion of production.
+// ATOM was absent from the local Trade table for the same reason.
+//
+// That is worse than a cosmetic dev difference. It is a machine that manufactures false bug
+// reports, and it hides real ones — a tick bug introduced in _unvouched.js would look correct here.
+//
+// So the lists are IMPORTED from the Function's own module rather than restated. The transport has
+// to differ (Workers vs node) but the decision cannot: there is one ALLOW, one DENY, one HIDE, and
+// adding a token to any of them now changes dev and production in the same edit.
+//
+// pathToFileURL because this is an ES module loaded from CommonJS on Windows — import() of a bare
+// C:\ path throws ERR_UNSUPPORTED_ESM_URL_SCHEME.
+let _vouchMod = null;
+async function vouch() {
+  if (!_vouchMod) {
+    const href = require('url').pathToFileURL(
+      path.join(__dirname, 'functions', 'lxapi', '_unvouched.js')).href;
+    _vouchMod = await import(href);
+  }
+  return _vouchMod;
+}
+
 // Local mirror of functions/lxapi/xrpltokens — market rows for the Trade page. See that file.
 let _xtCache = { at: 0, n: 0, body: null };
 async function xrplTokens(req, res, q) {
@@ -1144,17 +1171,54 @@ async function xrplTokens(req, res, q) {
     const bulk = await r.json();
     const xrpPerUsd = Number(bulk && bulk.exch && bulk.exch.USD);
     const usdPerXrp = xrpPerUsd > 0 ? 1 / xrpPerUsd : null;
+    const V = await vouch();
     const rows = [];
+    const rowOf = (t, p) => {
+      const mm = Array.isArray(t.maxMin24h) ? t.maxMin24h : [];
+      return { c: t.currency, i: t.issuer, n: String(t.name || ''),
+        u: V.issuerName(t.issuer, t.currency, t.user),
+        p, d: num(t.pro24h), w: num(t.pro7d), v: num(t.vol24hxrp), t: num(t.tvl),
+        x: num(t.vol24htx), m: String(t.md5 || ''),
+        hi: num(mm[0]), lo: num(mm[1]), h: num(t.holders),
+        // Membership of this roster IS the vouch, hence 1 — same as the Function. vouched() still
+        // has the last word, so a DENY entry can veto a row that ranked in.
+        vf: V.vouched(t.issuer, t.currency, 1),
+        o: String(t.origin || '') };
+    };
     for (const t of (bulk.tokens || [])) {
       const p = Number(t.exch);
       if (!isFinite(p)) continue;
-      const mm = Array.isArray(t.maxMin24h) ? t.maxMin24h : [];
-      rows.push({ c: t.currency, i: t.issuer, n: String(t.name || ''), u: String(t.user || ''),
-        p, d: num(t.pro24h), w: num(t.pro7d), v: num(t.vol24hxrp), t: num(t.tvl),
-        x: num(t.vol24htx), m: String(t.md5 || ''),
-        hi: num(mm[0]), lo: num(mm[1]), h: num(t.holders), vf: t.verified ? 1 : 0,
-        o: String(t.origin || '') });
+      if (V.hidden(t.issuer, t.currency)) continue;
+      rows.push(rowOf(t, p));
       if (rows.length >= n) break;
+    }
+    // …and the vouched tokens the volume ranking never reaches. Sequential and unguarded by a
+    // deadline, unlike the Function: this is one developer's machine, it is two extra requests at
+    // most, and the 120s cache above means it happens once every two minutes. The Function races a
+    // ceiling because it answers for everyone at once.
+    const have = new Set(rows.map(r => r.i + '|' + V.tickerOf(r.c)));
+    for (const v of V.vouchedTokens()) {
+      if (have.has(v.issuer + '|' + v.ticker)) continue;
+      const cur = V.currencyOf(v.ticker);
+      if (V.hidden(v.issuer, cur)) continue;
+      try {
+        const rr = await fetch('https://api.xrpl.to/api/token/'
+          + encodeURIComponent(v.issuer + '-' + cur), { headers: xrplToHeaders() });
+        // SAY WHY, EVERY TIME. These used to be three bare `continue`s, and when LUMOS stopped
+        // appearing that silence cost several rounds of investigation: the roster simply had one
+        // fewer row and nothing anywhere said whether the token had been skipped, refused, or
+        // misread. The answer was `upstream 429` — the unkeyed budget, hitting the SECOND append
+        // call, which is also why ATOM (first) kept succeeding. A dev server should never make a
+        // developer guess at that.
+        if (!rr.ok) { console.log('[vouch-append] ' + v.ticker + ': upstream ' + rr.status
+          + (rr.status === 429 ? ' — xrpl.to daily budget; set XRPLTO_API_KEY to avoid it' : '')); continue; }
+        const jj = await rr.json();
+        const t = jj && jj.token;
+        if (!t) { console.log('[vouch-append] ' + v.ticker + ': no token in the reply'); continue; }
+        const p = Number(t.exch);
+        if (!isFinite(p)) { console.log('[vouch-append] ' + v.ticker + ': exch not a number'); continue; }
+        rows.push(rowOf(t, p));
+      } catch (e) { console.log('[vouch-append] ' + v.ticker + ': ' + (e && e.message)); }
     }
     let usd = usdPerXrp;
     const peg = rows.find(x => x.n === 'RLUSD');
@@ -1195,9 +1259,15 @@ async function xrplSearch(req, res, q) {
     if (!r.ok) throw new Error('upstream ' + r.status);
     const j = await r.json();
     const xrpPerUsd = Number(j && j.exch && j.exch.USD);
-    const rows = ((j && j.tokens) || []).map(t => ({ n: String(t.name||''), u: String(t.user||''),
+    // NOT filtered by hidden(), deliberately — the Function does not either. Search is someone
+    // asking a direct question about a token they may already hold; DENY takes away the mark and
+    // HIDE takes away the promotion, neither takes away the answer.
+    const V = await vouch();
+    const rows = ((j && j.tokens) || []).map(t => ({ n: String(t.name||''),
+      u: V.issuerName(t.issuer, t.currency, t.user),
       i: String(t.issuer||''), c: String(t.currency||''), h: num(t.holders), v: num(t.vol24hxrp),
-      p: num(t.exch), vf: t.verified ? 1 : 0, m: String(t.md5||'') })).filter(t => t.n && t.i);
+      p: num(t.exch), vf: V.vouched(t.issuer, t.currency, t.verified), m: String(t.md5||'') }))
+      .filter(t => t.n && t.i);
     const body = { ok: true, q: term, total: num(j.total), count: rows.length, rows,
       usd: xrpPerUsd > 0 ? 1 / xrpPerUsd : null, src: 'xrpl.to',
       attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
@@ -1224,13 +1294,30 @@ async function xrplToken(req, res, q) {
     if (!r.ok) throw new Error('upstream ' + r.status);
     const j = await r.json(); const t = j && j.token;
     if (!t) return send({ ok: false, error: 'not found', id });
-    const body = { ok: true, id, name: String(t.name||''), user: String(t.user||''),
+    const V = await vouch();
+    const body = { ok: true, id, name: String(t.name||''),
+      user: V.issuerName(t.issuer, t.currency, t.user),
       issuer: String(t.issuer||''), currency: String(t.currency||''),
       price: num(t.exch), usd: num(t.usd), p24: num(t.pro24h), p7: num(t.pro7d), p1h: num(t.pro1h),
       vol24: num(t.vol24hxrp), trades24: num(t.vol24htx), tvl: num(t.tvl),
       marketcap: num(t.marketcap), holders: num(t.holders), trustlines: num(t.trustlines),
       offers: num(t.offers), issued: num(t.amount), circulating: num(t.supply),
-      verified: t.verified ? 1 : 0, md5: String(t.md5||''), domain: String(t.domain||''), origin: String(t.origin||''),
+      verified: V.vouched(t.issuer, t.currency, t.verified),
+      md5: String(t.md5||''),
+      // DELIBERATELY EMPTY, and that is the honest answer here.
+      //
+      // The Function resolves this from the LEDGER's AccountRoot Domain — a value the issuing
+      // account signed — precisely BECAUSE the upstream's `domain` field is supplied by whoever
+      // listed the token. The four tokens called ATOM claim x.com and cosmos.github.io
+      // (_issuerdomain.js has the measurements). There is no ledger walk in this dev server, so
+      // the only domain available here is the claimed one.
+      //
+      // Printing it would be worse than printing nothing: it is the exact bug RAZA reported on
+      // 2026-10-02, and running it through the normaliser — which this line did until 2026-10-20 —
+      // actively helps the lie by turning "https://www.circle.com/" into a tidy "circle.com".
+      // Blank says "not verified here"; the roster and search mirrors already omit it entirely.
+      domain: '',
+      origin: String(t.origin||''),
       src: 'xrpl.to', attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
     _xtokCache.set(id, { at: Date.now(), body });
     send(body);
@@ -1277,9 +1364,56 @@ async function xrplPools(req, res, q) {
   } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
 }
 
-// Local mirror of functions/lxapi/xrplbridge — Axelar chains reachable from the XRP Ledger.
-// The list is fetched, never hardcoded: a bridge offering a route that no longer exists is worse
-// than one offering fewer.
+// PASS-THROUGHS FOR ENDPOINTS THIS SERVER NEVER MIRRORED AT ALL.
+//
+// ADDED 2026-10-20. `/lxapi/xrpltrades` and `/lxapi/xrplhistory` simply had no local route, so they
+// 404'd and the Trade-Asset page kept the DESIGN'S MOCK rows — EVM addresses like 0x0f…3ce6 on an
+// XRP Ledger page. The whole Recent Exchanges section was therefore untestable on localhost, which
+// is how a layout bug in it reached production: the fix could not be exercised before shipping.
+//
+// One helper rather than one function each. A missing mirror and a drifting mirror are the same
+// problem — see the note above xrplThumb — and a generic pass-through is the cheapest answer to
+// both: the deployed Function owns the upstream contract, the retries and the key.
+function lxapiProxy(name, emptyShape) {
+  return async function (req, res, q) {
+    const send = (body) => {
+      const b = Buffer.from(body);
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+        'access-control-allow-origin': '*', 'content-length': b.length });
+      res.end(b);
+    };
+    const qs = String(q || '').slice(0, 600);
+    try {
+      const r = await fetch('https://lumoscore.com/lxapi/' + name + (qs ? '?' + qs : ''));
+      const body = await r.text();
+      send(r.ok ? body
+        : JSON.stringify(Object.assign({ ok: false, error: 'upstream ' + r.status }, emptyShape || {})));
+    } catch (e) {
+      send(JSON.stringify(Object.assign({ ok: false, error: String((e && e.message) || e) }, emptyShape || {})));
+    }
+  };
+}
+const xrplTradesProxy = lxapiProxy('xrpltrades', { rows: [] });
+const xrplHistoryProxy = lxapiProxy('xrplhistory', { rows: [] });
+
+// Local mirror of functions/lxapi/xrplbridge — the destinations the bridge OFFERS.
+//
+// PASS-THROUGH TO PRODUCTION since 2026-10-20, and this one was the worst of the three. The
+// Function narrows Axelar's live registry with a hand-kept OFFERED list and returns the
+// intersection as `supported`. This mirror rebuilt `rows` and `count` faithfully and omitted
+// `supported` entirely — and the picker reads:
+//
+//     var list = (d.supported && d.supported.length) ? d.supported : d.rows.map(r => r.name);
+//
+// so a missing field does not empty the dropdown, it opens it to EVERYTHING. Measured against
+// production the same minute: supported 14, rows 58. Localhost was offering 58 bridge destinations
+// for a product that offers 14, and bridgehiw.js answers "Which chains are supported?" from the
+// same payload, so the dialog agreed with the wrong list.
+//
+// OFFERED is a literal inside the Function and cannot be imported the way the vouch lists are. It
+// could be extracted into a shared module — but that is a production file changed for a dev-only
+// benefit, and asking the deployed endpoint costs one line and cannot drift at all. If OFFERED ever
+// needs to be edited and SEEN locally, extracting it is the right move then, not now.
 let _xbCache = { at: 0, body: null };
 async function xrplBridge(req, res) {
   const send = (o) => { const b = Buffer.from(JSON.stringify(o));
@@ -1287,23 +1421,9 @@ async function xrplBridge(req, res) {
       'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
   if (Date.now() - _xbCache.at < 900000 && _xbCache.body) return send(_xbCache.body);
   try {
-    const r = await fetch('https://api.axelarscan.io/api/getChains',
-      { headers: xrplToHeaders() });
+    const r = await fetch('https://lumoscore.com/lxapi/xrplbridge');
     if (!r.ok) throw new Error('upstream ' + r.status);
-    const raw = await r.json();
-    const all = Array.isArray(raw) ? raw : (raw.data || []);
-    const xrpl = all.find(c => c.id === 'xrpl');
-    if (!xrpl) return send({ ok: false, error: 'xrpl not in the Axelar registry', rows: [] });
-    const rows = all.filter(c => c.id !== 'xrpl' && !c.deprecated && c.name)
-      .map(c => ({ id: String(c.id||''), name: String(c.name||''),
-        short: String(c.short_name||c.name||''), type: String(c.chain_type||''),
-        img: c.image ? ('https://axelarscan.io' + c.image) : '' }))
-      .sort((a, b2) => a.name.localeCompare(b2.name));
-    const body = { ok: true,
-      source: { id: xrpl.id, name: xrpl.name, native: (xrpl.native_token && xrpl.native_token.symbol) || 'XRP' },
-      count: rows.length, rows, transfers: false,
-      note: 'Route discovery only — transfers are not enabled yet.',
-      src: 'Axelar', srcUrl: 'https://axelarscan.io' };
+    const body = await r.json();
     _xbCache = { at: Date.now(), body };
     send(body);
   } catch (e) { send({ ok: false, error: String((e && e.message) || e), rows: [] }); }
@@ -1319,15 +1439,34 @@ function xrplToHeaders(extra) {
   return h;
 }
 
-// Local mirror of functions/lxapi/xrplthumb — token logos, proxied so the key stays server-side.
+// Local mirror of functions/lxapi/xrplthumb — token logos.
+//
+// PASS-THROUGH TO PRODUCTION since 2026-10-20, for a reason that is not about convenience: the
+// Function accepts EITHER an md5 id or an issuer+currency pair, deriving the id via _tokenid.js
+// when `id` is absent. This mirror demanded a 32-hex id and answered 400 to everything else — and
+// the callers that cannot supply one are named in that module: "an account's own holdings and a
+// pool's own reserves". So the wallet and the pool pages lost their logos on localhost only, which
+// is indistinguishable on screen from a token genuinely having none.
+//
+// It cannot simply import _tokenid.js either. That module derives the id with
+// crypto.subtle.digest('MD5', …), and MD5 is a Cloudflare EXTENSION to Web Crypto — node answers
+// "Unrecognized algorithm name". Restating the md5(issuer_currencyHex) rule here would be a second
+// copy of someone else's API contract, which is the thing this file keeps getting wrong.
+//
+// Proxying also drops the local XRPLTO_API_KEY requirement: production holds the key, so logos now
+// work on a fresh clone with nothing configured.
 async function xrplThumb(req, res, q) {
   const id = String(q.get('id') || '').trim().toLowerCase();
-  if (!/^[0-9a-f]{32}$/.test(id)) { res.writeHead(400); res.end('bad id'); return; }
+  const iss = String(q.get('iss') || '').trim();
+  const cur = String(q.get('cur') || '').trim();
+  if (!/^[0-9a-f]{32}$/.test(id) && !(iss && cur)) { res.writeHead(400); res.end('bad id'); return; }
   const sizes = [16,32,40,48,64,96,128];
   let w = parseInt(q.get('w') || '48', 10); if (sizes.indexOf(w) < 0) w = 48;
+  const qs = (id ? 'id=' + encodeURIComponent(id) : 'iss=' + encodeURIComponent(iss) + '&cur=' + encodeURIComponent(cur))
+    + '&w=' + w;
   try {
-    const r = await fetch('https://api.xrpl.to/api/thumb/' + id + '?w=' + w,
-      { headers: xrplToHeaders({ accept: 'image/webp,image/*' }) });
+    const r = await fetch('https://lumoscore.com/lxapi/xrplthumb?' + qs,
+      { headers: { accept: 'image/webp,image/*' } });
     if (!r.ok) { res.writeHead(r.status === 401 ? 404 : r.status); res.end('no logo'); return; }
     const buf = Buffer.from(await r.arrayBuffer());
     res.writeHead(200, { 'content-type': r.headers.get('content-type') || 'image/webp',
@@ -1353,31 +1492,27 @@ async function xrplOhlc(req, res, q) {
   const send = (o) => { const b = Buffer.from(JSON.stringify(o));
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*', 'content-length': b.length }); res.end(b); };
+  // PASS-THROUGH TO PRODUCTION since 2026-10-20, same reason as xrplThumb above: the Function falls
+  // back to tokenId(iss, cur) when no md5 is given, this mirror did not, and _tokenid.js cannot be
+  // imported here because node's Web Crypto has no MD5. The range table below is kept only to
+  // validate the label before asking — an unknown range should still be refused locally.
   const id = String(q.get('id') || '').trim().slice(0, 120);
-  if (!id) return send({ ok: false, error: 'no id', pts: [] });
+  const iss = String(q.get('iss') || '').trim();
+  const cur = String(q.get('cur') || '').trim();
+  if (!id && !(iss && cur)) return send({ ok: false, error: 'no id', pts: [] });
   const label = String(q.get('r') || '7D').toUpperCase();
-  const spec = _XR_RANGES[label];
-  if (!spec) return send({ ok: false, error: 'bad range', pts: [] });
+  if (!_XR_RANGES[label]) return send({ ok: false, error: 'bad range', pts: [] });
   const vs = String(q.get('vs') || 'USD').toUpperCase() === 'XRP' ? 'XRP' : 'USD';
-  const ck = id + '|' + label + '|' + vs;
+  const ck = (id || iss + '-' + cur) + '|' + label + '|' + vs;
   const c = _xohlcCache.get(ck);
   if (c && Date.now() - c.at < 300000) return send(c.body);
+  const qs = (id ? 'id=' + encodeURIComponent(id)
+    : 'iss=' + encodeURIComponent(iss) + '&cur=' + encodeURIComponent(cur))
+    + '&r=' + encodeURIComponent(label) + '&vs=' + vs;
   try {
-    const r = await fetch('https://api.xrpl.to/api/ohlc/' + encodeURIComponent(id)
-      + '?range=' + spec.range + '&interval=' + spec.interval + '&vs_currency=' + vs,
-      { headers: xrplToHeaders() });
+    const r = await fetch('https://lumoscore.com/lxapi/xrplohlc?' + qs);
     if (!r.ok) throw new Error('upstream ' + r.status);
-    const j = await r.json();
-    let pts = ((j && j.ohlc) || []).map(x => [Number(x[0]), Number(x[4])])
-      .filter(p => isFinite(p[0]) && isFinite(p[1]) && p[1] > 0);
-    if (spec.trimMs && pts.length) {
-      const cut = pts[pts.length - 1][0] - spec.trimMs;
-      const t = pts.filter(p => p[0] >= cut);
-      if (t.length > 1) pts = t;
-    }
-    const body = { ok: true, id, range: label, vs, interval: String(j && j.interval || spec.interval),
-      count: pts.length, pts, src: 'xrpl.to',
-      attribution: 'Data by xrpl.to', attributionUrl: 'https://xrpl.to' };
+    const body = await r.json();
     _xohlcCache.set(ck, { at: Date.now(), body });
     send(body);
   } catch (e) { send({ ok: false, id, range: label, error: String((e && e.message) || e), pts: [] }); }
@@ -1405,6 +1540,8 @@ http.createServer((req, res) => {
   if (p === '/lxapi/xrplbridge') return xrplBridge(req, res);
   if (p === '/lxapi/xrplthumb') return xrplThumb(req, res, new URL(req.url, 'http://x').searchParams);
   if (p === '/lxapi/xrplohlc') return xrplOhlc(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrpltrades') return xrplTradesProxy(req, res, new URL(req.url, 'http://x').searchParams);
+  if (p === '/lxapi/xrplhistory') return xrplHistoryProxy(req, res, new URL(req.url, 'http://x').searchParams);
   // Local mirror of functions/lxapi/assetsearch. Without it every asset lookup 404s in dev while
   // working in production, which is exactly the kind of split that hides a real bug.
   if (p === '/lxapi/assetsearch') {

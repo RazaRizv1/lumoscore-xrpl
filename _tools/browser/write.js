@@ -35,6 +35,38 @@
     try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
   }
 
+  // MAX MUST NEVER ASK FOR MORE THAN THERE IS (RAZA 2026-10-24: "i selected MAX and its showing that i
+  // dont have that much. but i selected max which is supposed to enter exactly how many i have").
+  //
+  // toFixed() ROUNDS, and rounding a balance can only ever round it UP past itself. Measured on his
+  // own trust line the same day:
+  //     ledger balance   19254190.1614216
+  //     toFixed(6)       19254190.161422     <- larger than the balance
+  // and doSwap() then refused with "19,254,190.161422 BRO is available" — quoting, as the amount
+  // available, the very number it had just rejected. Two displays of one balance disagreeing by
+  // 4e-7, which is invisible and completely blocking.
+  //
+  // Truncated as a STRING rather than by Math.floor(v*1e6)/1e6: these are issued-token balances with
+  // up to 15 significant digits, and at nineteen million tokens the multiply is still exact but it is
+  // not a property worth relying on — a holder with a larger balance would silently get a wrong
+  // figure from the arithmetic and a correct one from the text. The exponential form cannot be sliced,
+  // so it keeps the arithmetic path, which is only reachable at magnitudes where 6dp is already noise.
+  //
+  // Same family as the dust-fee bug: a rounding step between a checked value and the value actually
+  // used is how a guard ends up refusing its own suggestion.
+  function floorDp(v, dp) {
+    var n = Number(v);
+    if (!isFinite(n) || n <= 0) return 0;
+    var s = String(n);
+    if (s.indexOf('e') >= 0 || s.indexOf('E') >= 0) {
+      var p = Math.pow(10, dp);
+      return Math.floor(n * p) / p;
+    }
+    var dot = s.indexOf('.');
+    if (dot < 0) return n;
+    return Number(s.slice(0, dot + 1 + dp));
+  }
+
   function fmt(n, dp) {
     if (n == null || !isFinite(n)) return '—';
     var s = Number(n).toFixed(dp == null ? 6 : dp);
@@ -49,20 +81,54 @@
   // EVERY READ HAS A DEADLINE (RAZA 2026-09-17: a swap that "just stucks there"). Measured the same day: `ripple_path_find`
   // answers in 0.4s buying RLUSD and 28.4s selling it, and `fetch` will wait on a public node indefinitely — so one slow
   // answer left "Finding a route…" on screen with no error and no way forward.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params, ms) {
     var ctl = null;
     try { ctl = new AbortController(); } catch (e) {}
     var limit = ms || (method === 'ripple_path_find' ? 12000 : 20000);
     var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, limit);
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
       signal: ctl ? ctl.signal : undefined
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       clearTimeout(timer);
       var res = j && j.result;
-      if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
+      if (!res || res.error) {
+        // THE LEDGER'S OWN ERROR CODE TRAVELS WITH THE ERROR, same contract as pooldetail.js.
+        //
+        // RAZA 2026-10-16, on the Send dialog refusing a good address: "Why is it not considering
+        // this addres. Its correct". It was correct. The account simply did not exist yet, and
+        // paying an unactivated account is how you create one on this ledger.
+        //
+        // This line threw `error_message` and nothing else, so preflight()'s guard —
+        //     if (/actNotFound/i.test(e.message || '')) return null;   // unfunded, legal for XRP
+        // — was testing a human sentence for a machine code. The ledger answers `actNotFound` with
+        // the message "Account not found.", which does not contain the word it was looking for, so
+        // the guard never once matched: the error rethrew and the dialog showed the raw sentence.
+        //
+        // EVERYTHING BELOW THAT GUARD WAS THEREFORE DEAD CODE. The reserve check, the "a first
+        // payment must be at least N XRP" refusal and the "this activates a new account" warning
+        // have never run, and no XRP has ever been sendable from this site to an address that was
+        // not already funded. It looked like deliberate validation, which is why nobody doubted it.
+        //
+        // The message stays human because it is what gets displayed; the code is what gets matched.
+        // Prose is the upstream's to reword, a code is a contract.
+        var err = new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
+        err.code = (res && res.error) || '';
+        throw err;
+      }
       return res;
     }, function (e) {
       clearTimeout(timer);
@@ -672,8 +738,13 @@
     return rpc('account_info', { account: dest.account, ledger_index: 'validated' })
       .then(function (r) { return r.account_data; })
       .catch(function (e) {
-        if (/actNotFound/i.test(e.message || '')) return null;   // unfunded, which is legal for XRP
-        throw e;
+        // ON THE CODE, not the prose — see the note in rpc(). This read matched `e.message` against
+        // "actNotFound" while the ledger's message for that code is "Account not found.", so it
+        // never fired and an unfunded destination was reported as a failure instead of as the
+        // ordinary thing it is. The message test is kept as a second chance in case a node answers
+        // with a code and no message, but the code is what decides.
+        if (e && (e.code === 'actNotFound' || /actNotFound/i.test(e.message || ''))) return null;
+        throw e;                                                 // unfunded is legal for XRP; this is not
       })
       .then(function (ad) {
         if (!ad) {
@@ -886,8 +957,11 @@
         if (!a) return;
         // For XRP this is already balance minus reserve; a little is left for the network fee, or the
         // transaction cannot pay for itself and fails for an amount the button just offered.
+        // Floored, not rounded — the same trap as the swap's Max above. XRP survived it only because
+        // the 0.0002 fee headroom is a thousand times larger than the rounding error; an issued token
+        // has no headroom and was offering a figure doSend() would refuse.
         var v = a.code === 'XRP' ? Math.max(0, a.spendable - 0.0002) : a.spendable;
-        amtIn.value = String(+v.toFixed(6));
+        amtIn.value = String(floorDp(v, 6));
         say('');
       });
     }
@@ -923,12 +997,43 @@
     if (!to || !window.lxx || !window.lxx.isAddress(to)) return;
     var tries = 0;
     (function openIt() {
-      var btn = [].slice.call(document.querySelectorAll('.quick-actions .qa-btn, button')).filter(function (b) {
-        return /^\s*send\s*$/i.test(b.textContent || '') && !b.closest('.modal-overlay') && b.getBoundingClientRect().height > 0;
-      })[0];
-      if (!btn) { if (++tries < 40) setTimeout(openIt, 250); return; }
-      pendingTo = to;                                    // survives the open-time reset; see resetSend()
-      btn.click();
+      // Already open — a retry got there, or the page opened it itself. Skip straight to filling.
+      var mOpen = sendModal();
+      if (mOpen && mOpen.classList.contains('open')) {
+        pendingTo = to;
+      }
+      var btn = (mOpen && mOpen.classList.contains('open')) ? null
+        : [].slice.call(document.querySelectorAll('.quick-actions .qa-btn, button')).filter(function (b) {
+          return /^\s*send\s*$/i.test(b.textContent || '') && !b.closest('.modal-overlay') && b.getBoundingClientRect().height > 0;
+        })[0];
+      if (!btn && !(mOpen && mOpen.classList.contains('open'))) {
+        if (++tries < 40) setTimeout(openIt, 250);
+        return;
+      }
+      // CLICKING IS NOT OPENING, AND THIS IS WHY IT FAILED ON PHONES. NO BACKTICKS IN THIS COMMENT.
+      //
+      // RAZA 2026-10-20: tapping Send on an account page "should take me to the wallet page (which it
+      // does) but also open the send popup with the recipient wallet address entered in."
+      //
+      // Measured on the phone layout: the opener FOUND a perfectly good button — .action-btn, 94px
+      // tall, outside any modal, passing its own filter — clicked it, and #modalSend stayed closed,
+      // class "modal-overlay" with no "open". The button exists in the markup well before the page's
+      // own script binds a handler to it, so on a slower layout the click lands on a button that does
+      // nothing yet. Then this code moved straight on to filling a dialog that was never opened.
+      //
+      // Stellar hit exactly this and its note says so in as many words: "clicking is not the same as
+      // having opened... fill() then returned true anyway (it only checked that a button was FOUND)".
+      // Its fix is to click, CHECK, and let the poll come back — and that is what was missing here.
+      // Same page, same handoff, same bug, fixed on one side a month ago.
+      if (btn) {
+        pendingTo = to;                                  // survives the open-time reset; see resetSend()
+        try { btn.click(); } catch (e) {}
+      }
+      var mNow = sendModal();
+      if (!mNow || !mNow.classList.contains('open')) {
+        if (++tries < 40) setTimeout(openIt, 250);        // not open yet — come back and try again
+        return;
+      }
       var fill = 0;
       (function put() {
         var m = sendModal();
@@ -936,6 +1041,7 @@
         if (!toIn) { if (++fill < 20) setTimeout(put, 150); return; }
         toIn.value = to;
         toIn.dispatchEvent(new Event('input', { bubbles: true }));
+        toIn.dispatchEvent(new Event('change', { bubbles: true }));
       })();
     })();
   })();
@@ -1104,8 +1210,13 @@
     var rate = $('.swap-rate', m);
     return [rate, rate && rate.nextElementSibling && rate.nextElementSibling.tagName === 'DIV' ? rate.nextElementSibling : null];
   }
+  // ONE STATE NOW, and the parameter is kept only so the several call sites do not all have to change
+  // in lockstep with this one. Every caller asks for the same thing: panels visible, button reading
+  // "Confirm Swap". The dialog the design rebuilds on open is put back into that state by the observer
+  // below, which is the job this function still does.
   function setReviewState(m, reviewing) {
     if (!m) return;
+    reviewing = true;
     m.__lxReview = !!reviewing;
     swapPanels(m).forEach(function (el) { if (el) el.style.display = reviewing ? '' : 'none'; });
     var go = $('.modal-foot .btn-primary', m);
@@ -1116,9 +1227,11 @@
     });
     if (!wrote) go.insertBefore(document.createTextNode(reviewing ? ' Confirm Swap ' : ' Review Swap '), go.firstChild);
   }
-  // Any change to the trade sends the dialog back to its first screen.
+  // There is no first screen to go back to any more, so this no longer sends the dialog anywhere. Kept
+  // because the quote path calls it on every edit, and it still does something worth doing: re-asserts
+  // the one state against a dialog the design may have rebuilt underneath us.
   function resetReview() {
-    swapModals().forEach(function (m) { if (m.__lxReview) setReviewState(m, false); });
+    swapModals().forEach(function (m) { setReviewState(m, true); });
   }
 
   // The design's in-field asset button, hidden and replaced by the chip Stellar uses — inserted right after it, exactly
@@ -1198,7 +1311,7 @@
             e.stopPropagation();
             var inp = $('.field-amt input', fld);
             if (!inp || !swapFrom) return;
-            inp.value = String(+Number(swapFrom.spendable).toFixed(6));
+            inp.value = String(floorDp(swapFrom.spendable, 6));
             quoteSwap();
           });
           meta.parentNode.appendChild(mx);
@@ -1274,6 +1387,21 @@
     // seconds. It just stays there"). Errors stay put.
     clearTimeout(swapSay.t);
     if (text && /^swap complete/i.test(text)) swapSay.t = setTimeout(function () { swapSay(''); }, 2000);
+  }
+
+  // Take a row OUT of the summary. swapInfoRow() only ever writes into rows the design already ships,
+  // so dropping a call to it leaves the label on screen with whatever the markup baked in — which is
+  // the opposite of removing it.
+  function swapDropRow(m, label) {
+    var rows = $$('.modal-body > div[style*="border-radius"] > div', m);
+    for (var i = 0; i < rows.length; i++) {
+      var k = rows[i].querySelector('span');
+      if (k && new RegExp(label, 'i').test(k.textContent || '')) {
+        if (rows[i].parentNode) rows[i].parentNode.removeChild(rows[i]);
+        return true;
+      }
+    }
+    return false;
   }
 
   function swapInfoRow(m, label, value) {
@@ -1447,7 +1575,9 @@
     if (!swapQuote) { swapSay('Enter an amount first.', 'bad'); return; }
     var amount = swapQuote.inAmount;
     if (amount > swapFrom.spendable) {
-      swapSay('That is more than you can swap. ' + fmt(swapFrom.spendable, 6) + ' ' + swapFrom.code + ' is available.', 'bad');
+      // Floored here too. fmt() rounds, so this sentence could state a figure fractionally LARGER
+      // than the balance — and then refuse it if the reader typed exactly what it had just named.
+      swapSay('That is more than you can swap. ' + fmt(floorDp(swapFrom.spendable, 6), 6) + ' ' + swapFrom.code + ' is available.', 'bad');
       return;
     }
     var minOut = swapQuote.out * (1 - SLIP);
@@ -1513,13 +1643,20 @@
   // rather than leaving someone to work it out from their balance. The memo names the charge on the wallet's review screen.
   function collectFee(amount) {
     return feeInXrp(amount).then(function (feeXrp) {
-      if (!(feeXrp > 0)) return;
+      // ASKED IN DROPS, THE UNIT ACTUALLY SENT. NO BACKTICKS IN THIS COMMENT.
+      //
+      // feeXrp is XRP and toDrops ROUNDS, so a dust swap gives a fee under one drop: toDrops returns
+      // "0" while feeXrp > 0 is still true, and this guard let a ZERO-DROP Payment through to the
+      // wallet. Found 2026-10-20 on the dashboard Custom Swap and fixed in the same pass there and on
+      // Trade-Asset. Nothing to charge is a legitimate outcome on a tiny swap, not a failure.
+      var fd = (feeXrp > 0) ? window.lxx.toDrops(feeXrp) : null;
+      if (!fd || !(+fd > 0)) return;
       var of = swapSteps || 2;
       swapSay('Approve the platform fee (' + (of - 1) + ' of ' + of + ') in your wallet…');
       return window.lxc.submit({
         TransactionType: 'Payment', Account: addr(),
         Destination: COLLECTOR,
-        Amount: window.lxx.toDrops(feeXrp),
+        Amount: fd,
         Memos: [feeMemo(swapFrom.code, swapTo.code, of - 1, of)]
       }).catch(function (e) {
         var m = (e && e.message) || '';
@@ -1596,7 +1733,17 @@
       sp.appendChild(st);
     });
     swapInfoRow(m, 'route', '—');
-    swapInfoRow(m, 'price impact', '—');
+    // NO PRICE IMPACT ROW (RAZA 2026-10-24: "Please remove this price impact from XRPL Swap box").
+    //
+    // It was never a parity question and never a real figure: this was the ONLY line in the file that
+    // touched it, and it wrote a literal em dash. Nothing computed it, so the row has said exactly
+    // nothing since the day it was added — a label with a permanent blank beside it on the screen
+    // where somebody decides whether to sign.
+    //
+    // If it comes back it has to come back with an implementation: price impact is execution price
+    // against spot, which this dialog could derive from the path quote, and a dash is worse than an
+    // absence because it reads as a figure that failed to load. See [[price-impact-definition]].
+    swapDropRow(m, 'price impact');
     swapInfoRow(m, 'network fee', '~0.000012 XRP');
   }
 
@@ -1655,16 +1802,14 @@
         go.removeAttribute('disabled');
         go.addEventListener('click', function (e) {
           e.preventDefault();
-          // First press reviews, second press signs — Stellar's shape, in one dialog.
-          if (!m.__lxReview) {
-            if (!swapQuote) { swapSay('Enter an amount first.', 'bad'); return; }
-            setReviewState(m, true);
-            return;
-          }
+          // ONE PRESS (RAZA 2026-10-24: "one-step on both"). This used to review first and sign second,
+          // which was Stellar's wallet dialog copied faithfully — and Stellar's has now been collapsed
+          // to one step too, so the pair still matches. doSwap() already refuses with a reason when
+          // there is no quote, so nothing is lost by going straight there.
           doSwap();
         });
       }
-      setReviewState(m, false);                          // opens on the clean first screen
+      setReviewState(m, true);                           // one screen: figures visible from the start
 
       // …and again every time the dialog is OPENED. Wiring happens once, at load, but the design rebuilds this dialog when
       // it opens — which puts its own "Confirm Swap" label and both summary boxes back. Watched, the same way the fee row
@@ -1672,7 +1817,10 @@
       if (window.MutationObserver && !m.__lxOpenObs) {
         m.__lxOpenObs = new MutationObserver(function () {
           var open = m.classList.contains('open') || m.style.display === 'flex';
-          if (open && !m.__lxReview) setReviewState(m, false);
+          // Always re-applied on open: the design rebuilds this dialog each time, which puts its own
+          // label and its own hidden panels back. `__lxReview` is no longer a meaningful test, so it
+          // is not one.
+          if (open) setReviewState(m, true);
         });
         m.__lxOpenObs.observe(m, { attributes: true, attributeFilter: ['class', 'style'] });
       }
@@ -1684,19 +1832,56 @@
     // ON THE $LUMOS PAGE THE DEFAULT IS LUMOS (RAZA 2026-09-16: "On LUMOS token page, if we click swap, it needs to be like it
     // is on Stellar" — where that button opens XLM → LUMOS). Swapping to RLUSD from a page about LUMOS is not what the button
     // says it does; the earlier instruction was about the dashboard's Custom Swap, which still defaults to RLUSD.
-    if (!swapFrom || !swapTo) {
+    // A PLACEHOLDER MUST BE REPLACEABLE, AND THE FIRST VERSION OF THIS WAS NOT.
+    //
+    // Caught on production 2026-10-20 by seeding a real r-address and opening the dialog before the
+    // wallet layer had finished reading the ledger. held() was still empty, the fallback below set a
+    // zero-balance XRP object, and `if (!swapFrom || !swapTo)` then refused to touch the pair for the
+    // life of the page -- so the row read "Balance: 0 XRP" while window.__lxxData said
+    // {balance: 47.7189, reserved: 43, spendable: 4.7189}. Closing and reopening did not help.
+    //
+    // The old `if (list.length)` guard could not do this: it set nothing until data existed, so the
+    // first open WITH data got real numbers. Adding the signed-out fallback is what made a stale
+    // placeholder possible, so the fallback has to carry its own way out.
+    //
+    // Marked rather than inferred. "spendable === 0" is a real state -- an account can hold no XRP --
+    // and re-seeding on it would fight a user who genuinely has none. lxPlaceholder is set ONLY by
+    // the synthetic arms below, so a value the reader picked themselves is never overwritten.
+    var stale = (swapFrom && swapFrom.lxPlaceholder) || (swapTo && swapTo.lxPlaceholder);
+    if (!swapFrom || !swapTo || (stale && held().length)) {
       var list = held();
-      if (list.length) {
-        var xrpA = list.filter(function (h) { return !h.issuer; })[0] || list[0];
-        var onLumosPage = !!document.querySelector('.lumos-hero-row') || /\/lumos(\/|$)/.test(window.location.pathname);
-        var want = onLumosPage
-          ? (list.filter(function (h) { return h.issuer === LUMOS.issuer && h.currency === LUMOS.currency; })[0]
-             || { code: 'LUMOS', currency: LUMOS.currency, issuer: LUMOS.issuer, balance: 0, spendable: 0 })
-          : (list.filter(function (h) { return h.issuer === RLUSD.issuer && h.currency === RLUSD.currency; })[0]
-             || { code: 'RLUSD', currency: RLUSD.currency, issuer: RLUSD.issuer, balance: 0, spendable: 0 });
-        if (!swapFrom) setSwapAsset('from', xrpA);
-        if (!swapTo) setSwapAsset('to', want);
-      }
+      // SIGNED OUT, THE DIALOG STILL HAS TO SAY WHAT IT WOULD SWAP (RAZA 2026-10-20: "On swap popup,
+      // its showing aptos. also the popup itself is not like what we have on Stellar").
+      //
+      // `held()` is empty with no account, and this used to be guarded by `if (list.length)`, so a
+      // signed-out visitor never reached setSwapAsset -- and setSwapAsset is what calls swapPick(),
+      // which hides the design's in-field `.asset-pick` button and inserts the `.lx-asset-pick
+      // .lx-swap-pick` chip Stellar uses. Nothing ran, so BOTH reported symptoms followed from the
+      // one gate: the design's button stayed visible still carrying its Aptos mock ("APT"), and the
+      // picker sat inside the amount row instead of below it.
+      //
+      // Measured signed out before this change: picks were ["APT", "L LUMOS"] and both `.field-amt`
+      // were flex-direction:row. On lumoscore.com the same page signed out shows ["XLM", LUMOS] with
+      // the chip below -- because Stellar builds its picker from a zero-balance fallback rather than
+      // from holdings. This is that fallback.
+      //
+      // The zero-balance shapes are the ones this function already builds for a token the account
+      // does not hold (the `||` arms below), so nothing new is invented: `spendable: 0` is what makes
+      // the quote and the Max chip read as empty rather than as a balance we cannot know.
+      var xrpA = list.filter(function (h) { return !h.issuer; })[0]
+        || list[0]
+        || { code: 'XRP', currency: 'XRP', issuer: '', balance: 0, spendable: 0, lxPlaceholder: 1 };
+      var onLumosPage = !!document.querySelector('.lumos-hero-row') || /\/lumos(\/|$)/.test(window.location.pathname);
+      var want = onLumosPage
+        ? (list.filter(function (h) { return h.issuer === LUMOS.issuer && h.currency === LUMOS.currency; })[0]
+           || { code: 'LUMOS', currency: LUMOS.currency, issuer: LUMOS.issuer, balance: 0, spendable: 0, lxPlaceholder: 1 })
+        : (list.filter(function (h) { return h.issuer === RLUSD.issuer && h.currency === RLUSD.currency; })[0]
+           || { code: 'RLUSD', currency: RLUSD.currency, issuer: RLUSD.issuer, balance: 0, spendable: 0, lxPlaceholder: 1 });
+      // Re-seeded unconditionally when `stale` brought us here: the point is to REPLACE the
+      // placeholder, so the `!swapFrom` test that guards the first fill must not also guard the
+      // refresh. A real holding carries no lxPlaceholder, which is what stops this looping.
+      if (!swapFrom || (stale && swapFrom.lxPlaceholder)) setSwapAsset('from', xrpA);
+      if (!swapTo || (stale && swapTo.lxPlaceholder)) setSwapAsset('to', want);
     }
 
     // THE TRUST-LINE GATE GOES (RAZA 2026-09-15: "If the user doesnt hold the asset, the trustline will be automatically
@@ -1707,6 +1892,27 @@
         g.style.display = 'none';
       });
     });
+
+    // AND RUN AGAIN THE MOMENT BALANCES LAND.
+    //
+    // The placeholder swap above recovers on the next open, which still leaves the reader looking at
+    // "Balance: 0 XRP" if they opened the dialog during the ledger read and simply waited -- the
+    // wallet layer takes a while here (this test account has 98 trust lines). wallet.js already
+    // announces that moment for exactly this purpose: "Announced so a dialog on a non-wallet page can
+    // fill itself the moment balances land, rather than polling or racing this fetch." Nothing in this
+    // file had ever listened.
+    //
+    // Bound once per page, not per call: wireSwap() runs on every open and a listener added each time
+    // would stack. Re-entering wireSwap() is safe -- swapPick() returns the chip it already built and
+    // the seeding block is a no-op once the pair holds real assets.
+    if (!window.__lxxSwapDataHook) {
+      window.__lxxSwapDataHook = 1;
+      try {
+        window.addEventListener('lxx:walletdata', function () {
+          try { wireSwap(); } catch (_) {}
+        });
+      } catch (_) {}
+    }
   }
 
   // ---- Trustlines ------------------------------------------------------------------------------------
@@ -1994,10 +2200,71 @@
   // Published on `window` rather than exported to a second copy of this logic: this is the same
   // element, the same fields and the same signing path the wallet uses. There is no second swap
   // implementation anywhere, which is the point.
-  window.__lxxOpenSwap = function () {
+  // `sel` is optional: { code, issuer } naming the asset the caller wants in FROM.
+  //
+  // RAZA 2026-10-19: "from wallet page, my assets, i opened swap popup for XLM asset on XRPL ... it
+  // should have shown XLM in from and XRP in TO. But it showing XRP is from and RLUSD in To."
+  //
+  // The row menu knew exactly which asset it was opened on -- it carries data-lxcode/data-lxiss and
+  // uses them for every other item in that menu -- but called this with NO ARGUMENTS, so the dialog
+  // fell back to its own defaults. Picking "Swap" on a row and getting a different pair is worse than
+  // the button not being there: the amount you then type is against an asset you did not choose.
+  //
+  // Matched on code AND issuer, never code alone: this ledger has four tokens called ATOM and two
+  // called LUMOS, so a ticker match would preselect an impostor on a row the user picked by sight.
+  // See [[lumoscore-token-logos]].
+  // A CLOSED DIALOG MUST NOT REOPEN ON THE LAST TRADE (RAZA 2026-10-24: "if the swap box is filled and
+  // the popup is closed, and then opened again, the details are not refreshed").
+  //
+  // Nothing cleared it. The amounts, the quote, the rate line and the route row all survived the close,
+  // so reopening showed a priced swap for an amount nobody had just typed — and the figures beside it
+  // were as old as whenever the dialog was last used. On a box whose next button signs a payment, a
+  // stale quote is the dangerous kind of leftover: it looks live.
+  //
+  // Cleared on OPEN rather than on close, deliberately. The design's own script closes this dialog
+  // through routes this file does not own — the × , the backdrop, Escape — so a close handler would
+  // have to catch all of them and would silently miss any added later. Opening is the one moment that
+  // is always ours, and it is also the only moment the state actually matters.
+  function resetSwapBox(m) {
+    if (!m) return;
+    var f = swapFields(m);
+    [f.from, f.to].forEach(function (fld) {
+      var inp = fld && $('.field-amt input', fld);
+      if (inp) inp.value = '';
+    });
+    swapQuote = null;
+    try { swapSay(''); } catch (_) {}
+    setReviewState(m, false);
+    // The same function the "no amount typed" path uses, so a reopened dialog reads exactly like a
+    // fresh one rather than like a third state nobody designed.
+    try { clearSwapQuote(m); } catch (_) {}
+  }
+
+  window.__lxxOpenSwap = function (sel) {
     tick();
     var m = $('#modalSwap');
     if (!m) return false;
+    resetSwapBox(m);
+    if (sel && sel.code) {
+      var list = held();
+      var want = list.filter(function (a) {
+        return a.code === sel.code && String(a.issuer || '') === String(sel.issuer || '');
+      })[0];
+      if (want) {
+        setSwapAsset('from', want);
+        // THE COUNTER ASSET HAS TO MOVE TOO, or picking RLUSD would leave RLUSD on both sides. For an
+        // issued token the natural other side is XRP, which is what every pool and path on this ledger
+        // routes through. Only touched when it would otherwise collide or make no sense.
+        var xrp = list.filter(function (a) { return !a.issuer; })[0];
+        if (want.issuer) {
+          if (xrp) setSwapAsset('to', xrp);
+        } else if (swapTo && !swapTo.issuer) {
+          // From is XRP and To is also XRP: pick the first issued asset instead of leaving a no-op pair.
+          var other = list.filter(function (a) { return a.issuer; })[0];
+          if (other) setSwapAsset('to', other);
+        }
+      }
+    }
     openModal(m);
     // Balances can still be in flight on a cold load; the dialog is usable as soon as they land and
     // this repaint is what fills the From balance and the asset pickers when they do.

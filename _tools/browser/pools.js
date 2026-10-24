@@ -299,7 +299,26 @@
     wrap.href = '/pools/xrpl/id/' + encodeURIComponent(p.acct);
     wrap.style.cssText = 'display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none';
     var icons = el('div', 'pair-icons');
+    // TWO GUARDS, BECAUSE THE HEALER HAS TWO ROUTINES AND THEY READ DIFFERENT ATTRIBUTES.
+    //
+    // RAZA 2026-10-18, user report: "the secondary asset logo is completely blank or missing, leaving
+    // only a single icon visible" (LOL, GM, DMNDBR, AmericaFirst, AiCat, XIO, SOL, DIP).
+    //
+    // `data-paired` was already here and is correct — but it only stops the healer's pairs() pass,
+    // which explicitly skips a guarded box. Its OTHER pass does not look at that attribute at all:
+    //
+    //     querySelectorAll('[class*="ico"],…,[class*="pair-ic"],…')   <- "pair-icons" matches BOTH
+    //     if (!cand(el)) continue;        // cand() checks data-logoed, never data-paired
+    //     el.innerHTML = L[tk];           // <- replaces the WHOLE box with ONE logo
+    //
+    // So it resolved a ticker from the row's text, wiped both of our real logos out of the container
+    // and painted a single one in their place. That is the reported symptom exactly, and it explains
+    // why only SOME rows broke: `if (!tk) continue;` leaves the box alone whenever the row's text
+    // does not resolve, which is why RLUSD/XUSD, MILADY, LUMOS, FLR and CULT looked fine.
+    //
+    // data-logoed is the opt-out cand() honours. Both are set because each stops a different pass.
     icons.setAttribute('data-paired', '1');
+    icons.setAttribute('data-logoed', '1');
     var la = logoEl(nameOf(p.a1), p.a1 && p.a1.m, 32); la.classList.add('pa');
     var lb = logoEl(nameOf(p.a2), p.a2 && p.a2.m, 32); lb.classList.add('pb');
     icons.appendChild(la); icons.appendChild(lb);
@@ -380,6 +399,11 @@
 
     var head = el('div', 'pc-head');
     var icons = el('div', 'pair-icons');
+    // THE PHONE'S CARD CARRIED NEITHER GUARD, so it was open to BOTH healer passes while the table
+    // above was only open to one. Same class, same healer, same single-icon outcome — and the mobile
+    // list is the one with no pager, so it renders every pool at once. See the long note in row().
+    icons.setAttribute('data-paired', '1');
+    icons.setAttribute('data-logoed', '1');
     // The design's two discs, replaced with the same real logos the table uses.
     var ia = logoEl(nameOf(p.a1), p.a1 && p.a1.m, 26); ia.classList.add('a');
     var ib = logoEl(nameOf(p.a2), p.a2 && p.a2.m, 26); ib.classList.add('b');
@@ -741,6 +765,9 @@
   // It still is, and that is now correct by construction: the endpoint selects the top pools by 24h
   // volume across the whole ledger, and this orders that set by whichever column the reader picks.
   var SORT = { key: 'liq', dir: -1 };
+  // THE DATASET CURRENTLY ON SCREEN, which is not always the full one. Set by renderPage, so every
+  // path that draws rows records what it drew without having to remember to.
+  var VIEW = null;
   function applySort(rows) {
     if (!SORT.key) return rows;
     var k = SORT.key, dir = SORT.dir;
@@ -765,12 +792,24 @@
       var key = th.getAttribute('data-lxsort');
       SORT = { key: key, dir: (SORT.key === key && SORT.dir === -1) ? 1 : -1 };
       paintHeadings();
-      var d = window.__lxxPoolsData, hh = listHost();
+      // SORT WHAT IS ON SCREEN, NOT THE WHOLE LEDGER.
+      //
+      // This read window.__lxxPoolsData, the full unfiltered dataset, so clicking a column header
+      // while a search was active silently threw the search away: RAZA 2026-10-19 searched "rlusd",
+      // sorted by Liquidity, and the table came back with 5,998 pools including XRP/CRYPTO and
+      // CAVA/USDV. The header did not just reorder the list, it replaced it -- and the search box
+      // still read "rlusd" above the wrong rows, so the page contradicted itself.
+      //
+      // VIEW is whatever renderPage last drew, so sorting a search reorders the search and sorting
+      // the full list reorders the full list. The fallback keeps the old behaviour for the very
+      // first click, before anything has been rendered.
+      var d = VIEW || window.__lxxPoolsData, hh = listHost();
       if (d && hh) renderPage(hh, d, 1);
     }, true);
   }
 
   function renderPage(h, d, n) {
+    VIEW = d;                                   // what a column-header sort must reorder
     var total = d.rows.length;
 
     // NO PAGER, NO PAGING. The phone build carries no #paginationAll at all, so paging there would
@@ -860,11 +899,22 @@
   // The same count the pool page shows: the LP token's holder list, which needs the token's currency from amm_info first.
   // Only for the rows on screen, three at a time, and capped — this is a repair for a missing field, not a column to build
   // out of a hundred round trips.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params) {
-    return fetch('https://xrplcluster.com/', {
+    return lxpost('https://xrplcluster.com/', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
       return res;
@@ -1019,6 +1069,9 @@
   function searchPools(h, q) {
     var my = ++poolQ;
     var all = window.__lxxPoolsData;
+    // Clear any warning from the PREVIOUS search before this one starts. Without this, clearing the
+    // box leaves "some pools may be missing" sitting over the full, complete list.
+    searchNote(h, null);
     if (q.length < 2) { if (all) renderPage(h, all, 1); return; }
     var ql = q.toLowerCase();
     noteHost(h, 'Searching the XRP Ledger…');
@@ -1039,13 +1092,31 @@
         // Losing it costs reach, not the feature: pools outside the loaded page become unreachable,
         // but the ones already in hand are still searchable, and a partial answer beats a dead end.
         if (!s || !s.ok) return localPools(h, ql, all, my);
-        var seen = {}, issuers = [];
+        var seen = {}, issuers = [], vouched = {};
         ((s && s.rows) || []).forEach(function (t) {
           var code = nameOf({ c: t.c, i: t.i }).toLowerCase(), nm = String(t.n || '').toLowerCase();
           if ((code.indexOf(ql) < 0 && nm.indexOf(ql) < 0) || seen[t.i]) return;
           seen[t.i] = 1;
+          if (t.vf) vouched[t.i] = 1;
           issuers.push(t.i);
         });
+        // VERIFIED ISSUERS ARE ASKED FIRST, BECAUSE THE CAP BELOW DECIDES WHO IS ASKED AT ALL.
+        //
+        // RAZA 2026-10-19 searched "rlusd" and got ten XRP/RLUSD pools topping out at $2.0K, none of
+        // them Ripple's. The real one exists and is the largest pool on the result set by three
+        // orders of magnitude: 1.85M XRP + 2.40M RLUSD, $4.82M. It was not ranked badly — it was
+        // never queried.
+        //
+        // Fifty issuers on this ledger use the ticker RLUSD. ISSUER_CAP asks 32 of them, and until
+        // now "which 32" was whatever order the search happened to return — so the one issuer the
+        // reader actually meant could fall off the end, and the page would then show a complete-
+        // looking list built entirely from impostors. The ticker is not the identity; the issuer is.
+        // See [[xrpl-verified-tick-rule]] and [[lumoscore-token-logos]].
+        //
+        // The answer was already in hand: /lxapi/xrplsearch returns vf per row, and for this query
+        // exactly one row carries vf=1 with domain ripple.com. This sorts on it. Array sort is
+        // stable, so everything else keeps the order it arrived in and nothing else changes.
+        issuers.sort(function (a, b) { return (vouched[b] ? 1 : 0) - (vouched[a] ? 1 : 0); });
         // EVERY POOL FOR THE ASSET, which is the point of searching by issuer rather than filtering
         // the loaded page (RAZA 2026-10-07: "it must show all pools for any asset").
         //
@@ -1059,10 +1130,48 @@
         //     32, which covers every code measured here and still bounds a pathological query.
         var ISSUER_CAP = 32;
         window.__lxxPoolSearchTrunc = issuers.length > ISSUER_CAP;
-        return Promise.all(issuers.slice(0, ISSUER_CAP).map(function (iss) {
+        // A DROPPED ISSUER USED TO LEAVE NO TRACE. This was `.catch(function(){return null;})`, so a
+        // single failed request removed every pool of that issuer from the answer and the page then
+        // rendered what was left as though it were the whole ledger. For a search where ONE issuer is
+        // the one that matters — RLUSD, USDC, anything with impostors — losing exactly that one is
+        // indistinguishable from it not existing.
+        //
+        // Now: a non-200 is an error rather than something r.json() chokes on later, one retry covers
+        // the ordinary blip, and anything still failing is COUNTED so the reader can be told the list
+        // is partial instead of being shown a short list with a confident total.
+        var failed = 0;
+        function poolsFor(iss, tries) {
           return fetch('/lxapi/xrplpools?n=1000&issuer=' + encodeURIComponent(iss))
-            .then(function (r) { return r.json(); }).catch(function () { return null; });
-        })).then(function (res) {
+            .then(function (r) {
+              if (!r.ok) throw new Error('HTTP ' + r.status);
+              return r.json();
+            })
+            .catch(function () {
+              if (tries > 0) {
+                return new Promise(function (go) { setTimeout(go, 600); })
+                  .then(function () { return poolsFor(iss, tries - 1); });
+              }
+              failed++;
+              return null;
+            });
+        }
+        // EIGHT AT A TIME, NOT THIRTY-TWO AT ONCE.
+        //
+        // This was Promise.all over the whole capped list, so a single keystroke fired up to 32
+        // concurrent requests of n=1000 at the same endpoint. HTTP/2 multiplexes them onto one
+        // connection, so nothing in the browser throttles it and they genuinely all leave together.
+        //
+        // That is enough to hurt the thing it is asking: while testing this search on 2026-10-19 I
+        // reproduced the fan-out and the pools endpoint started answering "Pool data is unavailable
+        // right now" to ordinary page loads. A search that degrades the page for everyone else --
+        // including the searcher's own next keystroke -- is too expensive however good the answer is.
+        //
+        // The work is unchanged: the same issuers, the same n=1000, the same completeness. Only the
+        // burst is bounded, which also makes the retry above meaningful rather than 32 retries
+        // landing on an endpoint that is already struggling.
+        return mapLimit(issuers.slice(0, ISSUER_CAP), 8, function (iss) {
+          return poolsFor(iss, 1);
+        }).then(function (res) {
           if (my !== poolQ) return;
           var rows = [], got = {};
           function add(r) {
@@ -1081,9 +1190,84 @@
             return;
           }
           renderPage(h, { ok: true, rows: rows, total: rows.length }, 1);
+          // SAY SO WHEN THE ANSWER IS PARTIAL. __lxxPoolSearchTrunc has been set here since the cap
+          // was introduced and NOTHING HAS EVER READ IT, so a truncated search has always been
+          // presented as a complete one — the precise shape of bug this file keeps fixing elsewhere
+          // ("a short list reads exactly like a complete one", a few lines above).
+          searchNote(h, issuers.length, ISSUER_CAP, failed, q);
         });
       })
       .catch(function () { localPools(h, ql, all, my); });
+  }
+
+  // Promise.all with a ceiling on how many run at once. Resolves in the SAME ORDER as the input, so
+  // callers that zip results back against their list are unaffected, and never rejects: a thrown
+  // worker lands as null in its slot, which is what the per-issuer fetch already does for itself.
+  function mapLimit(items, limit, fn) {
+    return new Promise(function (done) {
+      var out = new Array(items.length), next = 0, active = 0, finished = 0;
+      if (!items.length) { done(out); return; }
+      function pump() {
+        while (active < limit && next < items.length) {
+          var idx = next++;
+          active++;
+          (function (k) {
+            var p;
+            try { p = fn(items[k]); } catch (e) { p = Promise.resolve(null); }
+            Promise.resolve(p).then(function (v) { out[k] = v; }, function () { out[k] = null; })
+              .then(function () {
+                active--; finished++;
+                if (finished === items.length) done(out); else pump();
+              });
+          })(idx);
+        }
+      }
+      pump();
+    });
+  }
+
+  // The one line that admits a search did not see everything.
+  //
+  // Two separate reasons, stated separately because they mean different things to the reader:
+  //   * capped   -- more issuers use this ticker than we ask about, so pools exist that are not here
+  //   * failed   -- we asked and did not get an answer, so this is a fault rather than a limit
+  //
+  // Placed in the pager's own "Showing x-y of N" line when there is one, because that line is the
+  // page's existing claim about completeness and this is a qualification of it. The phone has no
+  // pager, so there it goes directly under the table.
+  //
+  // Cleared on every search, including the clean ones -- a stale warning is worse than none.
+  function searchNote(h, matched, cap, failed, q) {
+    var old = document.querySelector('.lxp-partial');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    if (matched == null) return;                       // called only to clear
+    var capped = matched > cap;
+    if (!capped && !failed) return;
+
+    var bits = [];
+    if (capped) {
+      bits.push(cap + ' of ' + matched + ' issuers using "' + q + '" were searched');
+    }
+    if (failed) {
+      bits.push(failed + ' issuer' + (failed === 1 ? '' : 's') + ' could not be read');
+    }
+    var msg = bits.join('; ') + ' — some pools may be missing.';
+
+    var el = document.createElement('span');
+    el.className = 'lxp-partial';
+    el.textContent = ' ' + msg;
+    el.style.cssText = 'color:var(--text-soft,#9aa0aa);font-size:12px;margin-left:8px';
+
+    var pg = $('#paginationAll');
+    var line = pg && pg.querySelector('div');
+    if (line) { line.appendChild(el); return; }
+    // No pager (the phone build): sit under the list the rows were just written into, rather than a
+    // guessed id — h is the host renderPage filled, so it is the one that is certainly on the page.
+    if (h && h.parentNode) {
+      el.style.display = 'block';
+      el.style.margin = '8px 0 0';
+      h.parentNode.appendChild(el);
+    }
   }
 
   // What can still be answered without the issuer lookup: the pools already loaded on this page.

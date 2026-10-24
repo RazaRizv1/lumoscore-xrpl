@@ -70,11 +70,114 @@
   //
   // xrp() itself is left alone -- twenty call sites, and several (1372, 1751, 1795) already do this
   // same ">= 1000 ? amount : xrp" test by hand. The ladder is named once here instead.
+  // SUBSCRIPT ZERO-RUNS, the same notation Stellar uses (RAZA 2026-10-17: "if the price is something
+  // like 0.000006891 XRP, so you can use subscript notation").
+  //
+  // Ported from _dexassetdata.js rather than reinvented, so a price reads identically on both
+  // chains: 0.000006891 becomes 0.0(5)6891, which is seven characters instead of eleven and loses
+  // nothing. The threshold is FIVE leading zeros, not four -- 0.000324 spelled out is eight
+  // characters and perfectly readable, and compressing something that already fits only makes it
+  // harder to read.
+  //
+  // Half a price is worse than a compressed one: in a column this narrow the long form truncates,
+  // and nobody can tell 0.0000324 from 0.0000009 by its first four characters.
+  var SUBD = String.fromCharCode(8320, 8321, 8322, 8323, 8324, 8325, 8326, 8327, 8328, 8329);
+  function zsub(n) { var s = String(n), o = ''; for (var i = 0; i < s.length; i++) o += SUBD.charAt(+s.charAt(i)); return o; }
+  function trimZ(t) {
+    while (t.length > 1 && t.charAt(t.length - 1) === '0') t = t.slice(0, -1);
+    if (t.charAt(t.length - 1) === '.') t = t.slice(0, -1);
+    return t;
+  }
+  function smallNum(x, sig) {
+    x = +x || 0; if (!(x > 0)) return '0';
+    var e = x.toExponential((sig || 4) - 1), i = e.indexOf('e');
+    if (i < 0) return String(x);
+    var mant = trimZ(e.slice(0, i)).split('.').join(''), exp = -parseInt(e.slice(i + 1), 10);
+    if (exp >= 5) return '0.0' + zsub(exp - 1) + mant;
+    if (x >= 1e-8) return trimZ(x.toFixed(8));
+    if (!(exp > 1)) return trimZ(x.toFixed(8));
+    return '0.0' + zsub(exp - 1) + mant;
+  }
+
+  // THE ZERO COUNT HAS TO SIT LOWER THAN THE DIGITS AROUND IT (RAZA 2026-10-17: "the subscript
+  // notation number should be a bit below so that there's no confusion"). U+2085 is a subscript by
+  // name, but JetBrains Mono has no glyph for it, so the browser substitutes from a fallback face
+  // and it lands near mid-height -- in 0.0(5)6892 the 5 then reads as part of the number instead of
+  // a count of the zeros before it, which is precisely the confusion the notation exists to avoid.
+  //
+  // So the count is wrapped and shifted in CSS rather than trusted to the font. Returns HTML, which
+  // is why it is separate from xrpPx: every other caller writes through textContent and must keep
+  // getting a plain string.
+  // A LOCAL ESCAPER, because this file has none. The first version called esc(), which exists in
+  // other layers and not in this one -- a bare name that parses fine and throws the moment a price
+  // is formatted. node --check cannot see it; only running it can.
+  function pxEsc(s2){ return String(s2).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function pxHtml(v) {
+    var t = xrpPx(v);
+    var i = t.indexOf('0.0');
+    if (i !== 0) return pxEsc(t);
+    var out = '', run = '';
+    for (var k = 0; k < t.length; k++) {
+      var c = t.charCodeAt(k);
+      if (c >= 8320 && c <= 8329) { run += String.fromCharCode(48 + (c - 8320)); continue; }
+      if (run) { out += '<span class="lx-zsub">' + run + '</span>'; run = ''; }
+      out += pxEsc(t.charAt(k));
+    }
+    if (run) out += '<span class="lx-zsub">' + run + '</span>';
+    return out;
+  }
+
+  // The phone row's own rules, injected once. The design's .ex-row is a four-column grid
+  // ("24px 1fr 70px auto"), so the explorer anchor became a fifth child with no column and dropped
+  // to its own line under every row -- RAZA: "why the explorer link icon dropped down". Stellar
+  // solved this the same way and its comment says so outright; this is that rule, for this grid.
+  function exRowCss() {
+    if (document.getElementById('lx-exrow-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-exrow-css';
+    st.textContent =
+      '#mdxaExList .ex-row[data-lxex]{grid-template-columns:24px 1fr auto auto 16px}'
+      // Real amounts run longer than the mock's "18 USDC"; the design's fixed 70px column wrapped
+      // them and left rows at uneven heights, which is the other half of what looked like breakage.
+      + '#mdxaExList .ex-row[data-lxex] .ex-num{white-space:nowrap;text-align:right}'
+      + '#mdxaExList .ex-row[data-lxex] .ex-num .sub{display:block;white-space:nowrap}'
+      + '.lx-exlink{display:inline-flex;align-items:center;justify-content:center;color:var(--text-soft,#8a8fa3)}'
+      + '.lx-zsub{font-size:.72em;vertical-align:-.32em;line-height:1;padding-left:.5px}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  // THE TRADE FEED CUTS AT THREE DECIMALS AND SAYS SO (RAZA 2026-10-17: "instead of writing for
+  // eg (0.1000000 or 0.01922361 etc), show it like on Stellar for eg 0.010..").
+  //
+  // Seven decimals spend the widest cell in the row on precision nobody reads in a trade list, and
+  // it is what pushed these lines onto three rows. Two dots say the figure continues rather than
+  // letting the reader believe it ended there -- and they appear ONLY when something was actually
+  // dropped, so an exact 0.5 stays "0.5". Ported from Stellar so the two feeds read alike.
+  //
+  // Below a thousandth three decimals would round the number away entirely, so the leading-zero
+  // compression takes over there instead and keeps every digit.
+  function tradeNum(n) {
+    n = +n || 0; var a = Math.abs(n);
+    // amount() only abbreviates from a million up, so a four-figure trade came out "1,234.5" where
+    // Stellar's abbrNum says "1.2K" -- three characters wider, in the column that was already
+    // overflowing. Take the thousands band here and hand everything above it to amount(), which
+    // agrees with abbrNum from 1e6 on.
+    if (a >= 1e6) return amount(n);
+    if (a >= 1000) return (n / 1000).toFixed(1) + 'K';
+    // Above a unit, Stellar's qtyTxt rounds to two places and does NOT add the dots -- "123.46", not
+    // "123.456..". Two decimals is already the whole readable part of a figure that size, so there is
+    // nothing dropped worth announcing. Keeping the dots here is what made the XRPL rows wider than
+    // Stellar's for the same trade.
+    if (a >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    if (a >= 0.001) { var t = n.toFixed(3); return (Math.abs((+t) - n) < 1e-12) ? String(+t) : (t + '..'); }
+    return (n < 0 ? '-' : '') + smallNum(a, 4);
+  }
+
   function xrpPx(v) {
     if (v == null || !isFinite(v)) return '—';
     if (v >= 1000) return Math.round(v).toLocaleString('en-US');
     if (v >= 1) return String(+v.toFixed(4));
-    if (v > 0) return xrp(v, 4);
+    if (v > 0) return smallNum(v, 4);
     return '0';
   }
 
@@ -129,13 +232,34 @@
     try { return window.lxx.encodeCurrency(code); } catch (e) { return code; }
   }
 
+  // THE LEDGER TELLS US WHEN TO COME BACK AND WE WERE THROWING THAT AWAY. xrplcluster meters by
+  // units rather than requests -- "rate limit: units quota (2000 per 10s) exhausted, retry in
+  // ~8591ms" -- and one trade-asset load spends 24 calls on it, so a reload, a second tab, or a
+  // quick walk through a few tokens lands on the ceiling. The old rpc read that answer as a dead
+  // ledger: book() rejected, and the panel sat on the design's APT/USDC mock under "Could not read
+  // the order book." for as long as the page stayed open (RAZA 2026-10-17, screenshot). It looked
+  // token-specific and was not -- LUMOS reproduces it too once the quota is spent, which is why a
+  // single cold load never showed it.
+  //
+  // A throttle is a "not yet", never a "no". Wait the interval it names and ask again. Everything
+  // else still fails on the first answer: a token with no book must not take 25 seconds to say so.
+  // The retry itself lives in ONE place now (xrpl-core: ledgerPost), shared with the other 22
+  // scripts that read the ledger. It was written here first and duplicating it was how the next
+  // one would quietly drift. lxpost resolves with the same parsed envelope fetch().json() did, so
+  // the unwrapping below is unchanged, and it carries its own per-attempt timeout -- a stalled
+  // socket still settles, which is what makes the catch that paints the error able to run.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       var res = j && j.result;
-      if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
+      if (!res || res.error) throw new Error(String((res && (res.error_message || res.error)) || 'ledger unavailable'));
       return res;
     });
   }
@@ -177,11 +301,17 @@
       if (!isFinite(px) || !isFinite(amt) || amt <= 0) continue;
       out.push({ px: px, amt: amt });
     }
+    // DEPTH IS QUOTED IN XRP, NOT IN THE TOKEN (RAZA 2026-10-17: "The depth column on Trade-asset
+    // page is supposed to be in XRP, not LUMOS"). Stellar settled this already and says so in its own
+    // words -- "Normalise so each column means one thing: amount is CODE, depth is XLM" -- and
+    // accumulates amount x price there. Summing raw token amounts here made the column a running
+    // total of a different unit from the one the header named, and incomparable with the Stellar
+    // side of the same book.
     // The ledger returns each book already ordered by price quality, but the two books are quoted
     // in opposite directions, so sort explicitly rather than trust the arrival order.
     out.sort(function (a, b) { return side === 'ask' ? a.px - b.px : b.px - a.px; });
     var run = 0;
-    for (var j = 0; j < out.length; j++) { run += out[j].amt; out[j].sum = run; }
+    for (var j = 0; j < out.length; j++) { run += out[j].amt * out[j].px; out[j].sum = run; }
     return out.slice(0, 16);
   }
 
@@ -325,6 +455,47 @@
     }, 1500);
   }
 
+  // THE BEST ASK SITS AT THE BOTTOM OF ITS PANEL, so the panel has to OPEN there (RAZA 2026-10-17:
+  // "the red section should be slided to the bottom by default instead of the user having to slide it
+  // down"). The ladder is taller than its box -- 496px of rows in a 323px panel on LUMOS -- and a
+  // fresh scroll box starts at the top, so what showed first was the far end of the book while the
+  // prices anyone actually trades at sat off-screen, just above the spread.
+  //
+  // Pinned on paint AND whenever the panel gains height, because the Orderbook tab is usually CLOSED
+  // when the rows are written: a hidden element has no scrollHeight to scroll to, so a one-shot pin at
+  // paint time silently does nothing. Measured: clientHeight 0 while the tab is shut, 323 once open.
+  //
+  // A reader who scrolls away keeps their place -- re-pinning under them would fight the wheel.
+  function pinAsks(node) {
+    if (!node) return;
+    var go = function () { if (!node.__lxAway) node.scrollTop = node.scrollHeight; };
+    go();
+    [0, 60, 250, 700].forEach(function (ms) { setTimeout(go, ms); });
+    if (node.__lxPin) return;
+    node.__lxPin = 1;
+    node.addEventListener('scroll', function () {
+      node.__lxAway = (node.scrollHeight - node.clientHeight - node.scrollTop) > 8;
+    }, { passive: true });
+    // ResizeObserver is the tidy trigger and it is NOT enough on its own: it does not fire in the
+    // review pane at all (measured — observed this very node across the tab opening and got zero
+    // callbacks), so anything relying on it alone cannot be verified before shipping. The tab press
+    // is the event that actually reveals the panel, and a click always fires.
+    try { new ResizeObserver(go).observe(node); } catch (e) {}
+    if (!window.__lxObTabPin) {
+      window.__lxObTabPin = 1;
+      window.addEventListener('click', function (e) {
+        var t = e.target && e.target.closest && e.target.closest('.dxa-trade-tab,.mdxa-trade-tab');
+        if (!t) return;
+        // after the pane is shown, not during: the panel has no height until the class lands
+        [0, 60, 250, 700].forEach(function (ms) {
+          setTimeout(function () {
+            pinAsks(document.getElementById('dxaObAsks') || document.getElementById('mdxaObAsks'));
+          }, ms);
+        });
+      }, true);
+    }
+  }
+
   function paintBook(node, list, side) {
     if (!node) return;
     node.innerHTML = '';
@@ -335,8 +506,15 @@
       return;
     }
     var max = list[list.length - 1].sum || 1;
-    for (var i = 0; i < list.length; i++) {
-      var r = list[i];
+    // ASKS READ FROM THE SPREAD OUTWARD, so the cheapest one to buy sits at the BOTTOM of the red
+    // block, touching the spread, and price and depth both climb as the eye travels up (RAZA
+    // 2026-10-17: "as we go up the depth and price should rise instead of the opposite... You've made
+    // it upside down in XRPL"). rows() hands them over cheapest-first, which is the order the ladder
+    // needs reversed -- Stellar does exactly this and says so in one word: aList.slice().reverse().
+    // Bids already descend from the spread downward, so only this side was inverted.
+    var seq = side === 'ask' ? list.slice().reverse() : list;
+    for (var i = 0; i < seq.length; i++) {
+      var r = seq[i];
       var row = el('div', 'dxa-ob-row mdxa-ob-row ' + side);
       row.appendChild(el('span', 'px', xrpPx(r.px)));
       row.appendChild(el('span', 'am', amount(r.amt)));
@@ -347,6 +525,7 @@
       row.appendChild(bar);
       node.appendChild(row);
     }
+    if (side === 'ask') pinAsks(node);
   }
 
   // ---- stats ------------------------------------------------------------------------------------
@@ -628,8 +807,33 @@
     // Whatever the convention elsewhere, a page cannot show its own workings and then contradict them.
     // The chart's MCap series uses the same supply for the same reason -- see CH_VIEW.supply.
     var mcap = (d.issued != null && d.price != null) ? d.issued * d.price : d.marketcap;
-    setCell('market cap', mcap == null ? null : statAmt(mcap) + ' ', 'XRP',
-      (mcap != null && usd) ? money(mcap * usd) : '');
+    // DOLLARS ONLY, LIKE STELLAR (RAZA 2026-10-20: "On Stellar trade-asset page, we're only showing
+    // $value marketcap. but on XRPL we're showing both in XRP and $value... only show $Value").
+    //
+    // This cell read "31.0K XRP" with "$41,424" beneath it. lumoscore.com's own asset page shows a
+    // single "$73.0K" and hides the sub outright -- `sub.style.display="none"`, commented "no FDV
+    // sub" in _dexassetdata.js. Matched here field for field: usdCompact() is the same shape as
+    // Stellar's abbrUsd (two significant figures and a K/M/B suffix), so the two chains now format
+    // the number identically rather than merely both being in dollars.
+    //
+    // WHAT IT COSTS, stated plainly: the XRP figure was the one we can always compute, and the
+    // dollar one needs the XRP/USD rate. Without that rate this cell is now a dash where it used to
+    // show a real number. That is deliberate and it is what Stellar does -- its market cap needs
+    // `pu > 0` and prints "—" otherwise -- and a cell that silently switches currency would be worse
+    // than one that admits it has nothing.
+    //
+    // The figure itself is unchanged: still issued x price, for the reason spelled out above. It
+    // will not match Stellar's number, and should not -- different chain, different supply, and
+    // Stellar's is computed on CIRCULATING.
+    setCell('market cap', (mcap != null && usd) ? usdCompact(mcap * usd) : null, '', '');
+    // Hidden, not merely emptied. setCell writes '' into the sub, which leaves an empty node still
+    // taking its line-height -- so the cell would sit a few pixels taller than its neighbours for no
+    // reason. Stellar hides the same node for the same reason.
+    (function () {
+      var c = cellByLabel('market cap');
+      var s = c && c.querySelector('.sub');
+      if (s) s.style.display = 'none';
+    })();
 
     setCell('liquidity', d.tvl == null ? null : statAmt(d.tvl) + ' ', 'XRP',
       (d.tvl != null && usd) ? money(d.tvl * usd) : '');
@@ -771,14 +975,39 @@
     var t0 = pts[0][0], t1 = pts[pts.length - 1][0], tspan = (t1 - t0) || 1;
     var y = function (v) { return span > 0 ? B - ((v - lo) / span) * (B - T) : (T + B) / 2; };
 
-    // THE BRAND ACCENT, NOT GREEN-OR-RED. This line was coloured by direction — green if the range
-    // closed higher, red if lower — and lumoscore.com never does that: its chart is always
-    // `var(--accent,#ea6a2c)` with the same accent fading out underneath (0.20 to 0), read off the live
-    // Stellar page. RAZA 2026-09-15: "WTF does the chart have red line. We dont have that on Stellar."
-    // The direction is still on the page, in the 24h change beside the price.
+    // GREEN OR RED BY DIRECTION — and this line used to say the opposite, which is worth keeping
+    // rather than deleting, because the history is the argument.
+    //
+    // It read: "THE BRAND ACCENT, NOT GREEN-OR-RED. This line was coloured by direction ... and
+    // lumoscore.com never does that: its chart is always var(--accent,#ea6a2c) ... RAZA 2026-09-15:
+    // 'WTF does the chart have red line. We dont have that on Stellar.'"
+    //
+    // That was correct when it was written, and the reason it gave was PARITY, not a dislike of
+    // coloured lines. On 2026-10-16 RAZA asked for direction colouring on the Stellar Trade-Asset
+    // chart, and then for it here. Stellar now does do that, so the same rule that removed this
+    // colouring is the rule that brings it back. Anyone reading only the old note would "fix" this
+    // straight back to accent and be wrong.
+    // REVERSED ON 2026-10-16, AND THE NOTE ABOVE IS WHY IT IS NOT A CONTRADICTION. The red line was
+    // removed from this chart on 2026-09-15 for one stated reason — lumoscore.com did not have it —
+    // and that reason has now gone: RAZA asked for exactly this on the STELLAR Trade-Asset chart
+    // first ("If the chart is UP in the last 24 hours, then it will be green. If down ... red. Same
+    // logic applies on 1W, 1M, 1Y"), then for it here. The rule that governed both decisions is the
+    // same one: this chart matches Stellar's. Only the answer moved.
+    //
+    // FIRST CLOSE VERSUS LAST, over the points actually drawn, so the colour always describes the
+    // span on screen and every timeframe is served by one rule. pts[i][1] is the close — the same
+    // value the line itself is plotted from, so the colour can never disagree with the shape.
+    //
+    // BOTH AN ATTRIBUTE AND A style, which is this file's existing pattern and not belt-and-braces
+    // for its own sake: see the note at the top of chart.js about var() in SVG presentation
+    // attributes. Measured in Chrome today, var() DOES resolve there — but the literal costs
+    // nothing and keeps the line coloured anywhere it does not.
+    var xUp  = (pts.length > 1) ? (+pts[pts.length - 1][1] >= +pts[0][1]) : true;
+    var xHex = xUp ? '#35c07f' : '#ff5b5b';
+    var xVar = xUp ? 'var(--green,#35c07f)' : 'var(--red,#ff5b5b)';
     var s = '<defs><linearGradient id="dxaAreaGrad" x1="0" x2="0" y1="0" y2="1">'
-      + '<stop offset="0%" stop-color="var(--accent,#ea6a2c)" stop-opacity="0.20"></stop>'
-      + '<stop offset="100%" stop-color="var(--accent,#ea6a2c)" stop-opacity="0"></stop></linearGradient></defs>';
+      + '<stop offset="0%" stop-color="' + xHex + '" style="stop-color:' + xVar + '" stop-opacity="0.20"></stop>'
+      + '<stop offset="100%" stop-color="' + xHex + '" style="stop-color:' + xVar + '" stop-opacity="0"></stop></linearGradient></defs>';
 
     // Five gridlines, labelled with REAL prices off this series rather than the design's constants.
     for (var g = 0; g < 5; g++) {
@@ -834,7 +1063,7 @@
       }
     } else {
       s += '<path d="' + line + ' L' + R + ' ' + B + ' L' + L + ' ' + B + ' Z" fill="url(#dxaAreaGrad)" class="lxda-area"></path>'
-        + '<path d="' + line + '" fill="none" stroke="#ea6a2c" style="stroke:var(--accent,#ea6a2c)" stroke-width="2"'
+        + '<path d="' + line + '" fill="none" stroke="' + xHex + '" style="stroke:' + xVar + '" stroke-width="2"'
         + ' stroke-linecap="round" stroke-linejoin="round" class="lxda-line"></path>';
     }
 
@@ -1070,10 +1299,40 @@
     var big = pd.querySelector('.big');
     if (big) { plain(big, priceTxt); big.classList.add('lxp'); }
 
+    // THE PILL FOLLOWS THE CHART TAB (RAZA 2026-10-17: "if we change the tab to 1W, or 1M, or 1Y, it
+    // should also change the percentage tag color based on the tab... Right now it only shows 24h").
+    // It read d.p24 whatever was on screen, so a 1Y chart climbing all year could sit under a red
+    // "▼ 2.51% (24h)" — a true number answering a question nobody asked.
+    //
+    // DERIVED FROM THE PLOTTED POINTS, not from another field, for every range except 1D. `pts` is
+    // the exact series drawn beneath this pill, so the figure and the line can never disagree — and
+    // there is no API field for 1M or 1Y to disagree with in the first place. 1D keeps `p24` because
+    // that is the authoritative 24h move the rest of the page shows, and a chart window that starts
+    // a few minutes either side of midnight-24h would otherwise print a second, slightly different
+    // opinion of the same thing.
+    var PILL_TAG = { '1D': '24h', '1W': '7d', '1M': '30d', '1Y': '1y', 'ALL': 'all' };
     var pill = pd.querySelector('.change-pill');
-    if (pill && d.p24 != null && isFinite(d.p24)) {
-      plain(pill, (d.p24 >= 0 ? '▲ ' : '▼ ') + Math.abs(d.p24).toFixed(2) + '% (24h)');
-      pill.className = 'change-pill lxp ' + (d.p24 >= 0 ? 'up' : 'down');
+    if (pill) {
+      var lbl = String(CH_VIEW.label || '1D').toUpperCase();
+      var pct = null, tag = PILL_TAG[lbl] || lbl.toLowerCase();
+      if (lbl === '1D') {
+        pct = d.p24;
+      } else if (pts && pts.length > 1) {
+        // First and last CLOSE that are real numbers. A gap at either end is skipped rather than
+        // read as a price, which would otherwise show a 100% move against a zero.
+        var firstC = null, lastC = null;
+        for (var pi = 0; pi < pts.length; pi++) {
+          var cv = Number(pts[pi][1]);
+          if (!isFinite(cv) || cv <= 0) continue;
+          if (firstC === null) firstC = cv;
+          lastC = cv;
+        }
+        if (firstC > 0 && lastC > 0) pct = ((lastC - firstC) / firstC) * 100;
+      }
+      if (pct != null && isFinite(pct)) {
+        plain(pill, (pct >= 0 ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(2) + '% (' + tag + ')');
+        pill.className = 'change-pill lxp ' + (pct >= 0 ? 'up' : 'down');
+      }
     }
 
     var meta = pd.querySelector('.meta');
@@ -1278,13 +1537,19 @@
   // against CRAP, PHNI and XUSD as well, and a CRAP-denominated price under a bare "Price" heading
   // would read as XRP.
 
+  // SHORT, AS STELLAR WRITES IT (RAZA 2026-10-17: "Stellar says: now, 3m, 5m while XRPL says 3m ago,
+  // 5m ago etc. due to which more space is used and then the design breaks").
+  //
+  // The column is the narrowest on the phone card, and "ago" on every row is four characters of
+  // nothing -- the heading already says these are recent. Dropping it is what lets the amount beside
+  // it stay on one line instead of wrapping to three.
   function ago(ms) {
     if (!ms || !isFinite(ms)) return '';
     var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
-    if (s < 45) return 'just now';
-    if (s < 3600) return Math.round(s / 60) + 'm ago';
-    if (s < 86400) return Math.round(s / 3600) + 'h ago';
-    return Math.round(s / 86400) + 'd ago';
+    if (s < 45) return 'now';
+    if (s < 3600) return Math.round(s / 60) + 'm';
+    if (s < 86400) return Math.round(s / 3600) + 'h';
+    return Math.round(s / 86400) + 'd';
   }
 
   function curName(c) {
@@ -1311,7 +1576,20 @@
   var PAGE_PER = 100;
   // THE DESIGN REWRITES ITS SAMPLE TRADES WHENEVER THE EXCHANGES TAB IS OPENED (RAZA 2026-09-16, the XAH page: "0x00…665c · BUY ·
   // 4.1820 APT"). Our rows are kept and put back, with the table hidden between the design's write and ours.
-  var EX_ROWS = null, EX_MIN = 0;
+  // THE PHONE HAS NO #dxaExTable AND THE SIZE FILTERS DIED ON THAT (RAZA 2026-10-17: "the trxs on
+  // XRPL trade-asset page don't filter when we [change] the tabs from All to 10+ XRp, 100+ XRP etc").
+  // Desktop's container is a <tbody id="dxaExTable">; the phone renders cards into
+  // <div id="mdxaExList">. Every handler below looked up the desktop id alone and returned on null,
+  // so pressing a chip highlighted it -- that part is pure class-toggling -- and then did nothing at
+  // all. Measured on the live phone build: 0 of #dxaExTable, 100 rows in #mdxaExList, every one of
+  // them already carrying the data-lxxrp the filter reads. The data was never the problem.
+  function exHost() {
+    return document.getElementById('dxaExTable') || document.getElementById('mdxaExList');
+  }
+
+  // EX_SHOWN: how many rows the size filter currently matches. Stamped by pageTable, read by exMore,
+  // because that is the number Stellar decides on and it is already computed there.
+  var EX_ROWS = null, EX_MIN = 0, EX_SHOWN = 0;
   // Paging state for "Keep looking" (RAZA 2026-09-16, item 4) and for the My Trades filter (item 7).
   var EX_TPL = null, EX_PAGE = 0, EX_DONE = false, EX_ASSET = null, EX_MINE = false;
 
@@ -1477,8 +1755,20 @@
       if (info && info.parentNode) info.parentNode.insertBefore(b, info.nextSibling);
       else foot.appendChild(b);
     }
+    // WHEN IT IS OFFERED AT ALL — Stellar's rule, which this did not have (RAZA 2026-10-19: "on Stellar we don't have
+    // Keep looking on the All tab, we have simple pagination. It only appears in 10+, 100+ and 1000+ XLM").
+    //
+    // _dexassetdata.js gates it on `TRADE_FILTER > 0 && all.length < EX_MIN` with EX_MIN = 25: the offer to spend more
+    // of the budget is only worth making when a SIZE FILTER has come up short, because that is the only case where the
+    // answer might be further back. The All tab already has every trade the feed returned and a pager to walk them, so
+    // a button there asks the reader to wait for nothing — which is exactly what the screenshot showed, "Keep looking"
+    // sitting beside pages 1-4 of 395 trades.
+    //
+    // Same threshold deliberately: EX_WANT is 25 here and EX_MIN is 25 there, and keepLooking() already stops at
+    // EX_WANT, so the button now disappears at the very moment the walk would have stopped anyway.
+    //
     // "Keep looking" walks the TOKEN's feed; with My Trades on the table is the wallet's own history, which is already whole.
-    b.style.display = EX_MINE ? 'none' : '';
+    b.style.display = (EX_MINE || !(EX_MIN > 0) || EX_SHOWN >= EX_WANT) ? 'none' : '';
     b.disabled = state === 'busy' || state === 'end';
     b.textContent = state === 'busy' ? 'Looking…' : (state === 'end' ? 'No older trades' : 'Keep looking');
   }
@@ -1572,7 +1862,7 @@
       [].forEach.call(c.parentNode.querySelectorAll('button.chip[data-min-xlm]'), function (x) { x.classList.toggle('active', x === c); });
       var was = EX_MIN;
       EX_MIN = +c.getAttribute('data-min-xlm') || 0;
-      var bd = document.getElementById('dxaExTable');
+      var bd = exHost();
       if (!bd) return;
       // DROPPING THE FILTER AFTER A WALK STARTS OVER. A walk under '100+ XRP' never builds the small legs it reads, so
       // widening the filter afterwards has nothing to widen TO — the table would sit there showing the large ones and
@@ -1595,7 +1885,7 @@
     }, true);
   }
   function watchEx() {
-    var bd = document.getElementById('dxaExTable');
+    var bd = exHost();
     if (!bd || bd.__lxxWatch || !window.MutationObserver) return;
     bd.__lxxWatch = new MutationObserver(function () {
       var f = bd.firstElementChild;
@@ -1604,7 +1894,7 @@
     bd.__lxxWatch.observe(bd, { childList: true });
   }
   function restoreEx() {
-    var bd = document.getElementById('dxaExTable');
+    var bd = exHost();
     if (!bd || !EX_ROWS) return;
     var f = bd.firstElementChild;
     if (f && (f.hasAttribute('data-lxex') || f.hasAttribute('data-lxnote'))) { bd.classList.add('lxda'); return; }
@@ -1618,7 +1908,7 @@
     window.addEventListener('click', function (e) {
       var t = e.target && e.target.closest && e.target.closest('.tabs-bar .tab');
       if (!t || (t.getAttribute('data-tab') || '') !== 'exchanges' || !EX_ROWS) return;
-      var bd = document.getElementById('dxaExTable');
+      var bd = exHost();
       if (bd) bd.classList.remove('lxda');
       [0, 60, 250, 700].forEach(function (ms) { setTimeout(restoreEx, ms); });
     }, true);
@@ -1638,33 +1928,59 @@
       if (!keep) r.style.display = 'none';
       return keep;
     });
-    var em = host.querySelector('tr.lx-exempty');
-    if (em && em.parentNode) em.parentNode.removeChild(em);
+    // The count the "Keep looking" gate needs, taken where it is already known rather than recounted
+    // from the DOM at a call site that may have been handed the table, the panel or the body.
+    if (noun === 'exchanges') EX_SHOWN = rows.filter(function (r) { return r.hasAttribute('data-lxex'); }).length;
+    // '.lx-exempty', not 'tr.lx-exempty': the phone's note is a div, so the tr-only selector left the
+    // previous one in place and the panel kept saying "No exchanges of 100+ XRP" under the 1K+ chip.
+    // Removes ALL of them -- one stale note is how a second one gets appended beneath it.
+    [].forEach.call(host.querySelectorAll('.lx-exempty'), function (em) {
+      if (em.parentNode) em.parentNode.removeChild(em);
+    });
     // ONLY WHEN THERE ARE ROWS TO FILTER (RAZA 2026-09-17, SOLO under 1000+ XRP showing "Recent exchanges are unavailable
     // right now." AND "No exchanges of 1000+ XRP among the latest trades." at once). exNote() ends by calling this
     // function, so a failed load with a size chip active stacked the filter note underneath the failure — two notes
     // contradicting each other, one of them a guess. Nothing was filtered out if nothing loaded.
-    if (!rows.length && (EX_MIN > 0 || EX_MINE) && host.tagName === 'TBODY' && host.querySelector('[data-lxex]')) {
-      var et = document.createElement('tr');
-      et.className = 'lx-exempty';
-      et.setAttribute('data-lxnote', '1');
+    // The phone needs this note MORE than the desktop does, not less: LUMOS's largest recent trade is
+    // 23 XRP, so "100+ XRP" legitimately matches nothing, and without a note the panel just empties
+    // and reads as broken. The host is a <tbody> on desktop and a <div> on the phone, so the note is
+    // built to match -- appending a <tr> to a div renders as unstyled text at the top of the list.
+    var isTable = host.tagName === 'TBODY';
+    if (!rows.length && (EX_MIN > 0 || EX_MINE) && host.querySelector('[data-lxex]')) {
       var emptyTxt = EX_MINE
         ? (me ? 'No trades from this wallet among the trades loaded — keep looking for older ones.'
               : 'Connect a wallet to see your own trades in this asset.')
         : ('No exchanges of ' + EX_MIN + '+ XRP among the latest trades.');
-      var ed = el('td', null, emptyTxt);
-      ed.colSpan = 6;
-      ed.style.cssText = 'padding:26px 12px;text-align:center;opacity:.7';
-      et.appendChild(ed);
+      var et, ed;
+      if (isTable) {
+        et = document.createElement('tr');
+        ed = el('td', null, emptyTxt);
+        ed.colSpan = 6;
+        ed.style.cssText = 'padding:26px 12px;text-align:center;opacity:.7';
+        et.appendChild(ed);
+      } else {
+        et = el('div', null, emptyTxt);
+        et.style.cssText = 'padding:26px 12px;text-align:center;opacity:.7';
+      }
+      et.className = 'lx-exempty';
+      et.setAttribute('data-lxnote', '1');
       host.appendChild(et);
     }
     var n = rows.length, pages = Math.max(1, Math.ceil(n / PAGE_PER));
     page = Math.max(1, Math.min(pages, page || 1));
     host.__lxxPage = page;
     host.__lxxNoun = noun;
-    rows.forEach(function (r, i) { r.style.display = (i >= (page - 1) * PAGE_PER && i < page * PAGE_PER) ? '' : 'none'; });
     var foot = host.closest('.panel') ? host.closest('.panel').querySelector('.panel-foot') : document.querySelector('#dxaPanel .panel-foot, .panel-foot');
-    if (!foot) return;
+    // PAGE ONLY WHERE THERE IS SOMETHING TO PAGE WITH. The phone build carries no .panel-foot and so
+    // no pager at all (checked on the live page), which means slicing to PAGE_PER there would hide
+    // every row past the first hundred behind a control that does not exist. Filtering still applies
+    // -- that is the whole point of the chips -- but what survives the filter is all shown.
+    if (foot) {
+      rows.forEach(function (r, i) { r.style.display = (i >= (page - 1) * PAGE_PER && i < page * PAGE_PER) ? '' : 'none'; });
+    } else {
+      rows.forEach(function (r) { r.style.display = ''; });
+      return;
+    }
     var info = foot.querySelector('.info');
     // STELLAR'S WORDING, including the size filter it was read under: "Showing 1-4 of 4 recent trades · ≥ 100 XLM".
     if (info) {
@@ -1696,7 +2012,7 @@
     var t = document.querySelector('.tabs-bar .tab.active');
     var which = t ? (t.getAttribute('data-tab') || '') : 'exchanges';
     if (which === 'pools') { var pb = poolsTable(); return pb && pb.tagName === 'TBODY' ? pb : null; }
-    if (which === 'exchanges' || !which) return document.getElementById('dxaExTable');
+    if (which === 'exchanges' || !which) return exHost();
     return null;
   }
   if (!window.__lxxPager) {
@@ -1820,7 +2136,12 @@
           var priceTxt = otherXrp != null
             ? (xrpPx(otherXrp / mine.v) + ' XRP')
             : (xrpPx(px) + ' ' + curName(other.c));
-          var amtTxt = amount(mine.v) + ' ' + asset.code;
+          // tradeNum, not amount(): amount() only abbreviates from a million up, so a five-figure
+          // fill spelled itself out as "10,186.48 LUMOS" in a column one phone-width wide (RAZA
+          // 2026-10-17: "it should have said 10.18K"). tradeNum is the rule Stellar's qtyTxt uses --
+          // K/M/B above a thousand, two dots below it when places were dropped -- so the two chains
+          // now write the same trade the same way.
+          var amtTxt = tradeNum(mine.v) + ' ' + asset.code;
           var whoTxt = shortAddr(h.taker || h.maker);
           var sideCls = bought ? 'buy' : 'sell';
           var sideTxt = bought ? '▲ Buy' : '▼ Sell';
@@ -1863,8 +2184,8 @@
               var tot = td[3].querySelector('.lx-extot');
               if (!tot) { tot = el('span', 'lx-extot'); td[3].appendChild(tot); }
               plain(tot, otherXrp != null
-                ? ((otherXrp >= 1000 ? amount(otherXrp) : xrp(otherXrp, 7)) + ' XRP')
-                : ((other.v >= 1000 ? amount(other.v) : xrp(other.v, 7)) + ' ' + curName(other.c)));
+                ? (tradeNum(otherXrp) + ' XRP')
+                : (tradeNum(other.v) + ' ' + curName(other.c)));
             }
 
             var tEl = td[4] && td[4].querySelector('.time');
@@ -1888,8 +2209,41 @@
           } else {
             // The phone's card: `.nm` is the wallet, `.ex-num` holds the price with the amount in a
             // nested `.sub`, and `.ex-time` is the age.
+            // THE ADDRESS IS A LINK HERE TOO. NO BACKTICKS IN THIS COMMENT.
+            //
+            // RAZA 2026-10-20, phone: "tapping on the wallet address is taking me to Bithomp instead
+            // of public wallet page like it does on desktop." The desktop branch above turns
+            // .wallet-cell into an anchor at /account/xrpl/<addr>; this one only ever set
+            // .textContent, so the address stayed plain text inside a row carrying data-lxtx — and
+            // wireTxLinks(), a window-capture handler, opens the TRADE on Bithomp for any tap on
+            // such a row.
+            //
+            // That handler is already correct: it bails on e.target.closest('a'). Nothing about it
+            // needs changing, because an address that is a real link was always the thing it was
+            // written to defer to. This is the fourth fix on this page to land on one layout and not
+            // the other, which is the same habit as the chip icon and the search placeholder on
+            // Trade-main.
+            //
+            // Kept visually identical on purpose — RAZA asked for a destination, not a restyle — so
+            // the anchor inherits colour and drops the underline. An <a> is also outside the ticker
+            // logo healer's scan set (span, div, i, b), so this cannot hand the row to it.
             var nm = row.querySelector('.nm');
-            if (nm) nm.textContent = whoTxt;
+            if (nm) {
+              var nmAddr = h.taker || h.maker;
+              if (nm.tagName !== 'A' && nmAddr && window.lxx.isAddress(nmAddr) && nm.parentNode) {
+                var nmA = document.createElement('a');
+                nmA.className = nm.className;
+                nmA.style.color = 'inherit';
+                nmA.style.textDecoration = 'none';
+                while (nm.firstChild) nmA.appendChild(nm.firstChild);
+                nm.parentNode.replaceChild(nmA, nm);
+                nm = nmA;
+              }
+              if (nm.tagName === 'A' && nmAddr && window.lxx.isAddress(nmAddr)) {
+                nm.href = '/account/xrpl/' + encodeURIComponent(nmAddr);
+              }
+              nm.textContent = whoTxt;
+            }
 
             // THE IDENTICON IS DRAWN FROM THE TRADER, not left as the mock's.
             //
@@ -1912,20 +2266,67 @@
             var mb = row.querySelector('.type-badge');
             if (mb) { mb.className = 'type-badge ' + sideCls; mb.textContent = sideTxt; }
 
+            exRowCss();
+            // The grid needs a fifth column before the link is added to it -- see exRowCss().
+            row.setAttribute('data-lxex', '');
+
             var num = row.querySelector('.ex-num');
             if (num) {
               var sub = num.querySelector('.sub');
-              // Only the price text node is replaced, so the nested `.sub` keeps its place.
-              var wrote = false;
-              [].forEach.call(num.childNodes, function (n) {
-                if (n.nodeType === 3 && n.nodeValue.trim()) { n.nodeValue = priceTxt; wrote = true; }
+              // THE PRICE IS NOW MARKUP, because the zero-count has to be shifted below the baseline
+              // and a text node cannot carry a span. It goes in its own element so the nested `.sub`
+              // keeps its place and the design's own price text node is removed rather than left
+              // behind to render twice.
+              var pxEl = num.querySelector('.lx-px');
+              if (!pxEl) {
+                pxEl = document.createElement('span');
+                pxEl.className = 'lx-px';
+                num.insertBefore(pxEl, num.firstChild);
+              }
+              [].slice.call(num.childNodes).forEach(function (n) {
+                if (n.nodeType === 3 && n.nodeValue.trim()) num.removeChild(n);
               });
-              if (!wrote) num.insertBefore(document.createTextNode(priceTxt), num.firstChild);
-              if (sub) sub.textContent = amtTxt;
+              var pxUnit = otherXrp != null ? ' XRP' : (' ' + curName(other.c));
+              var pxVal = otherXrp != null ? (otherXrp / mine.v) : px;
+              pxEl.innerHTML = pxHtml(pxVal) + pxEsc(pxUnit);
+              // BOTH LEGS, AS STELLAR'S PHONE CARD READS (RAZA 2026-10-17: "Recent exchanges section
+              // on trade-asset page is not the same as on Stellar"). Its sub-line is the whole fill
+              // -- "25 XLM -> 1.1K VELO" -- while this one showed only what was received, so the row
+              // said what came out and never what went in. The desktop table here has carried both
+              // for weeks in its own .lx-extot; only the phone was short, which is the third time a
+              // fix landed on one layout and not the other on this page.
+              if (sub) {
+                var otherTxt = otherXrp != null
+                  ? (tradeNum(otherXrp) + ' XRP')
+                  : (tradeNum(other.v) + ' ' + curName(other.c));
+                sub.textContent = otherTxt + ' → ' + amtTxt;
+              }
             }
 
             var mt = row.querySelector('.ex-time');
             if (mt) mt.textContent = ago(h.t);
+
+            // AND THE EXPLORER LINK, which the phone card never had. Stellar's shows one on every
+            // row; this layout has no element for it in the design, so the anchor is created rather
+            // than repurposed. Same destination and the same rel as the desktop row above, so a
+            // trade opens the same place whichever screen it was tapped on.
+            if (h.hash && !row.querySelector('.lx-exlink')) {
+              var mlk = document.createElement('a');
+              mlk.className = 'lx-exlink';
+              mlk.href = 'https://bithomp.com/explorer/' + encodeURIComponent(h.hash);
+              mlk.target = '_blank';
+              mlk.rel = 'noopener nofollow';
+              mlk.setAttribute('aria-label', 'View this trade on Bithomp');
+              mlk.style.opacity = '.75';
+              mlk.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+                + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+                + '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'
+                + '<polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+              // Appended to the ROW, which now has a fifth grid column for it. The inline width and
+              // margin are gone: the column places it, and a margin on a grid child only pushed the
+              // cell wider.
+              row.appendChild(mlk);
+            }
 
             if (h.hash) row.setAttribute('data-lxtx', h.hash);
           }
@@ -2043,13 +2444,54 @@
     }
   }
 
-  function setTabCount(re, value) {
+  // A COUNT THAT ARRIVES BEFORE ITS TAB IS BUILT USED TO BE THROWN AWAY (RAZA 2026-10-17:
+  // "sometimes the count for Exchanges, Holders and Pools don't appear until i refresh").
+  //
+  // This was a single attempt against a DOM that may not exist yet: the design builds the tab bar
+  // itself, and the three painters here fire whenever their data lands. Win the race and the number
+  // is written; lose it -- a fast API answer, a slow render, any reload where the order flips -- and
+  // the loop found no tabs, returned, and nothing ever asked again. Hence "until i refresh": the
+  // refresh was not fixing anything, it was re-rolling the race.
+  //
+  // So every value is REMEMBERED and re-applied until it lands. An observer catches the tab bar the
+  // moment the design inserts it, and a bounded timer covers the case where the bar is replaced
+  // wholesale rather than mutated. Both stop as soon as nothing is pending, so a page that wins the
+  // race first time does no extra work at all.
+  var PENDING_COUNTS = [];
+
+  function applyTabCount(re, value) {
     var tabs = $$('.tabs-bar .tab');
     for (var i = 0; i < tabs.length; i++) {
       if (!re.test(tabs[i].textContent || '')) continue;
       var c = tabs[i].querySelector('.count') || tabs[i].querySelector('span:last-child');
-      if (c) { c.textContent = value; c.classList.add('lxp'); }
-      return;
+      if (!c) return false;                       // the tab exists but its slot does not, yet
+      c.textContent = value;
+      c.classList.add('lxp');
+      return true;
+    }
+    return false;
+  }
+
+  function flushTabCounts() {
+    if (!PENDING_COUNTS.length) return;
+    PENDING_COUNTS = PENDING_COUNTS.filter(function (p) { return !applyTabCount(p.re, p.value); });
+  }
+
+  function setTabCount(re, value) {
+    // The newest value for a tab replaces any older one still waiting, so a retry can never write a
+    // figure that has already been superseded.
+    PENDING_COUNTS = PENDING_COUNTS.filter(function (p) { return String(p.re) !== String(re); });
+    if (applyTabCount(re, value)) return;
+    PENDING_COUNTS.push({ re: re, value: value });
+    if (!setTabCount._wired) {
+      setTabCount._wired = 1;
+      try {
+        new MutationObserver(flushTabCounts).observe(document.body, { childList: true, subtree: true });
+      } catch (e) {}
+      var n = 0, iv = setInterval(function () {
+        flushTabCounts();
+        if (++n > 40 || !PENDING_COUNTS.length) clearInterval(iv);
+      }, 300);
     }
   }
 
@@ -2545,9 +2987,15 @@
     CURATED = fetch('/lxapi/xrpltokens?n=100')
       .then(function (r) { return r.json(); })
       .then(function (j) {
+        // THE ROW'S OWN FLAG, not a bare 1 for being present. Membership used to be the whole test,
+        // so anything in the top hundred was ticked here no matter what -- including the GateHub
+        // USDC the deny list exists to refuse (RAZA 2026-10-17: "Remove curated and verification
+        // icon from this usdc because its not the real by circle"). It was denied in the API, ticked
+        // on this page, and the contradiction was invisible because the two surfaces never compared
+        // notes. `vf` already means "in the roster AND not denied" -- carry it through.
         var s = {};
         [].forEach.call((j && j.rows) || [], function (x) {
-          if (x && x.i && x.c) s[x.i + '|' + String(x.c).toUpperCase()] = 1;
+          if (x && x.i && x.c) s[x.i + '|' + String(x.c).toUpperCase()] = x.vf ? 1 : 0;
         });
         return s;
       })
@@ -2610,15 +3058,27 @@
     if (addrEl) {
       addrEl.setAttribute('data-copy', asset.issuer);
       addrEl.setAttribute('data-copy-label', asset.code + ' issuer');
+      // THE ISSUER'S NAME, NOT JUST ITS ADDRESS (RAZA 2026-10-17: "why aren't you mentioning that
+      // its gatehub usdc besides it... and also on the trade-asset page"). A page headed USDC above
+      // a bare r-address says nothing a reader can use: Circle's page and GateHub's differ only in
+      // 34 characters of base58, and the one that is NOT Circle's is the one that needed saying.
+      // The website pill beside this carries the issuer's domain, and GateHub publishes none, so
+      // without this its page identified its issuer nowhere at all.
+      //
+      // Same `user · address` shape the swap picker already uses, and skipped when the name merely
+      // repeats the ticker.
+      var iname = String((d && d.user) || '').trim();
+      if (iname && iname.toLowerCase() === String(asset.code || '').toLowerCase()) iname = '';
+      var addrTxt = ' ' + (iname ? (iname + ' · ') : '') + shortAddr(asset.issuer);
       // Only the text node is replaced, so the design's copy icon stays where it is.
       var wrote = false;
       [].forEach.call(addrEl.childNodes, function (n) {
         if (n.nodeType === 3 && n.nodeValue.trim()) {
-          n.nodeValue = ' ' + shortAddr(asset.issuer);
+          n.nodeValue = addrTxt;
           wrote = true;
         }
       });
-      if (!wrote) addrEl.appendChild(document.createTextNode(' ' + shortAddr(asset.issuer)));
+      if (!wrote) addrEl.appendChild(document.createTextNode(addrTxt));
       wireIssuerCopy();
     }
 
@@ -2898,7 +3358,32 @@
       vt.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
       p.appendChild(vt);
     });
-    $$('.lxad').forEach(function (ad) { ad.setAttribute('data-href', '/lumos/xrpl'); ad.removeAttribute('data-adself'); });
+    // THE BUTTON NOW GOES WHERE IT CAN BE ACTED ON (RAZA 2026-10-17: "change the orange button text
+    // from 'View LUMOS' to 'Buy LUMOS' and link it with Trade-asset LUMOS page"). It pointed at
+    // /lumos/xrpl, which is the token's overview -- a page about LUMOS rather than a page you can buy
+    // it on. Trade-asset opens with the swap panel in reach, so the verb and the destination now
+    // agree. The text is re-set here rather than in the card builder because this fork inherits
+    // Stellar's BUILT markup: the string over there never reaches these containers.
+    // data-adself IS RE-DERIVED HERE, not just stripped. The design sets it on every page (it reads a
+    // ticker off a query string this site does not use), which is why it was being cleared wholesale --
+    // and that was harmless while the link pointed at /lumos/xrpl, a different page. Now that the
+    // button goes to LUMOS's own Trade-asset page, clearing it everywhere means that on THAT page the
+    // card points at the page you are reading and a click just reloads it.
+    //
+    // Stellar's rule, applied here: on the promoted asset's own page there is nowhere to navigate to,
+    // so the click brings the buy box into view instead. Same card, same words, only the click target
+    // differs -- which is the behaviour _adslot.js settled on deliberately.
+    var onLumos = !!(asset && asset.issuer === LUMOS_ISS && String(asset.code).toUpperCase() === 'LUMOS');
+    $$('.lxad').forEach(function (ad) {
+      ad.setAttribute('data-href', '/trade/xrpl/LUMOS-' + LUMOS_ISS);
+      if (onLumos) ad.setAttribute('data-adself', '1');
+      else ad.removeAttribute('data-adself');
+    });
+    $$('.lxad-cta').forEach(function (c) {
+      if (c.getAttribute('data-lxcta') === '1') return;
+      c.setAttribute('data-lxcta', '1');
+      c.textContent = 'Buy LUMOS →';
+    });
 
     // Holder-size filters are denominated in the quote asset.
     $$('.chip').forEach(function (c) {
@@ -2951,7 +3436,7 @@
       var sp = h.querySelectorAll('span');
       if (sp[0]) plain(sp[0], 'Price (XRP)');
       if (sp[1]) plain(sp[1], 'Amount (' + asset.code + ')');
-      if (sp[2]) plain(sp[2], 'Depth (' + asset.code + ')');
+      if (sp[2]) plain(sp[2], 'Depth (XRP)');
     });
     var ask = b && b.asks[0] ? b.asks[0].px : null, bid = b && b.bids[0] ? b.bids[0].px : null;
     $$('.dxa-ob-spread, .mdxa-ob-spread').forEach(function (s) {
@@ -3071,6 +3556,54 @@
   //
   // The text is ATTACKER-CONTROLLED — anyone can issue a token and publish metadata for it — so it
   // goes in through plain(), which is textContent, never innerHTML. The edge caps and normalises it.
+  // CURATED DESCRIPTIONS, FOR THE TOKENS THE UPSTREAM GETS WRONG OR LEAVES BLANK (RAZA 2026-10-16).
+  //
+  // Named DESC_TEXT and not CURATED: `var CURATED` is already taken a few hundred lines up for the
+  // /lxapi/xrpltokens promise cache, at this same scope. A second `var CURATED` is legal JavaScript
+  // and passes a syntax check — it just quietly becomes the SAME binding, so this object would have
+  // overwritten that cache and `if (CURATED) return CURATED;` would hand its callers a map of
+  // descriptions where a token list was expected. See [[lumoscore-silent-failures]].
+  //
+  // Two complaints, one gap. "USDC and USDT asset descriptions are incomplete. The description text
+  // doesnt mention that they are stablecoins pegged to the USD" — XRPLMeta holds a record for both
+  // and no desc field at all, so they fell through to generic(), which says where the token trades
+  // and nothing about what it is. And SHX: "the description does not match the Axelar-backed SHX
+  // token" — there XRPLMeta DOES answer, with Stronghold's own line about SHX on its home chain.
+  // True of the token in general, wrong about the bridged balance someone holds on this ledger.
+  //
+  // So the two symptoms are opposite — nothing upstream versus the wrong thing upstream — and one
+  // table fixes both, because both are cases where we know the token better than the feed does.
+  //
+  // IT SITS ABOVE XRPLMETA AND BELOW OUR OWN MINTS. A creator's text for a token issued through our
+  // launchpad still wins; anything not named here is untouched and still asks XRPLMeta as before.
+  //
+  // RLUSD is deliberately NOT here. Ripple publishes a good description and XRPLMeta serves it, so
+  // an entry would only be ours to keep up to date for no gain. The bar for adding a line is that
+  // the feed is wrong or silent, not that we could word it differently.
+  //
+  // Keyed ISSUER|CODE, the same shape the curated roster in trade.js uses and for the same reason:
+  // this ledger carries several USDs and two USDCs, and a ticker match would print Circle's text
+  // under a gateway's token — the exact mistake this page exists to avoid.
+  var DESC_TEXT = {
+    // Circle's own issuance.
+    'rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE|USDC':
+      "USDC is a US dollar stablecoin issued by Circle and backed by cash and short-dated US "
+      + "Treasuries, so it is designed to hold a value of one US dollar. This is Circle's own "
+      + "issuance on the XRP Ledger.",
+    // GateHub's gateway issuance, NOT Tether's own — which is the part worth saying out loud,
+    // because the ticker is identical to the one people know and the counterparty is not.
+    'rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq|USDT':
+      "USDT is a US dollar stablecoin, designed to hold a value of one US dollar. This issuance on "
+      + "the XRP Ledger comes from GateHub rather than from Tether itself, so the balance is a "
+      + "claim on the issuing gateway.",
+    // The home chain is left unnamed on purpose: SHX exists on more than one, and naming the wrong
+    // one would be a second wrong description replacing the first.
+    'rfmS3zqrQrka8wVyhXifEeyTwe8AMz2Yhw|SHX':
+      "SHX is Stronghold's token, used across its payments products. This is the Axelar-bridged "
+      + "version on the XRP Ledger: the balance here is backed by SHX held on its home chain "
+      + "rather than issued by Stronghold on this ledger.",
+  };
+
   function paintDescription() {
     var desc = $('.asset-description');
     if (!desc) return;
@@ -3080,6 +3613,11 @@
     var row = a ? reg[a.code + '-' + a.issuer] : null;
     var own = row && typeof row.desc === 'string' ? row.desc.trim() : '';
     if (own) { show(desc, own); return; }
+
+    // Before the cache read and before either fetch: a curated token must not spend a request, and
+    // must not be shown a stale XRPLMeta line this browser stored for it last week.
+    var ck2 = a ? (String(a.issuer) + '|' + String(a.code).toUpperCase()) : '';
+    if (ck2 && Object.prototype.hasOwnProperty.call(DESC_TEXT, ck2)) { show(desc, DESC_TEXT[ck2]); return; }
 
     desc.style.display = 'none';                       // the mock is never on screen
     if (!a) { drop(desc); return; }

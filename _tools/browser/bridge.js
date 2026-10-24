@@ -271,11 +271,22 @@
   // this account's spendable XRP, the amounts are zero, the estimate is a dash, and the review says only what the
   // form holds: the chosen network and the two addresses.
   var XRP_SPEND = null;
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpcB(method, params) {
-    return fetch('https://xrplcluster.com/', {
+    return lxpost('https://xrplcluster.com/', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) { return j && j.result; });
+    }).then(function (j) { return j && j.result; });
   }
   function loadSpendable() {
     var me = addr();

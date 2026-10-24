@@ -39,16 +39,27 @@
   // with a complete quote beside it). A public node can accept a request and never answer, and `fetch` has no timeout of its
   // own, so one unanswered call froze the swap with no error and no way back. Every read now has a deadline; `ripple_path_find`
   // is the slow one and gets a longer one.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params, ms) {
     var ctl = null;
     try { ctl = new AbortController(); } catch (e) {}
     var limit = ms || (method === 'ripple_path_find' ? 12000 : 20000);
     var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, limit);
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
       signal: ctl ? ctl.signal : undefined
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       clearTimeout(timer);
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
@@ -267,7 +278,17 @@
     seq++;
     var f = fields(p);
     var recv = input(f[1]);
-    if (recv) recv.value = '';
+    // NOT WHILE IT IS BEING TYPED INTO. "0.01" is typed one character at a time, and the first of
+    // those characters is "0" — which makes want 0, empties "You pay", and brings us here 300ms
+    // later to blank the box the user is still typing in. The decimal could never be reached:
+    // RAZA 2026-10-18, "Not able to put numbers in decimals like 0.01, 0.2 etc in you receive
+    // section, it gets automatically removed immediately after putting 0".
+    //
+    // The same guard already protects the other writer of this box (`document.activeElement !==
+    // recv` where the quote lands), for the same reason — this path simply never got it. Clearing
+    // is still correct when the box is NOT focused, which is what the "slow ripple_path_find lands
+    // under an empty You pay" note above is about.
+    if (recv && document.activeElement !== recv) recv.value = '';
     mark(frowMono(f[1]), '≈ $0.00 USD');
     var d = window.__lxxAssetData, s = sides(p);
     // With no amount there is still a rate to state: the page's own live price.
@@ -595,11 +616,23 @@
       applyQuote(p, amt, s.pay.currency === 'XRP' ? amt / d.price : amt * d.price, null, true);
     }
     inflight = my;
-    rpc('ripple_path_find', {
+    // THE EDGE ANSWERS THIS IN ~1.6s; THE NODE THIS PAGE CAN REACH TAKES ~29s.
+    //
+    // RAZA 2026-10-18: "In Trade-asset swaps sometimes it takes too much time in finding the best
+    // routes." The deadline on ripple_path_find here is 12s (see rpc's own limit), so against
+    // xrplcluster the lookup could not finish even once — the button sat on "Finding the best
+    // route…" and then fell through to the catch below, which prices the swap at the page's own rate
+    // and simulates. A correct-looking panel, built from the fallback, every single time.
+    //
+    // lxx.pathFind sends it to /lxapi/xrplpath, which asks Ripple's own node from the edge. The
+    // second argument is this exact call, unchanged, as the fallback — so if the endpoint is absent
+    // or unhappy the behaviour is bit-for-bit what shipped before. See [[xrpl-pathfind-direction-asymmetry]].
+    var PF = {
       source_account: me, destination_account: me,
       destination_amount: s.get.currency === 'XRP' ? '-1' : { currency: s.get.currency, issuer: s.get.issuer, value: '-1' },
       send_max: amountObj(s.pay, amt), ledger_index: 'validated'
-    }).then(function (r) {
+    };
+    window.lxx.pathFind(PF, function () { return rpc('ripple_path_find', PF); }).then(function (r) {
       if (my !== seq) return;
       inflight = 0;
       var alt = (r.alternatives || [])[0];
@@ -832,15 +865,24 @@
     if (!tx.Amount || !tx.DeliverMin || !tx.SendMax) { say(p, 'That amount is too small for the ledger.', 'bad'); return; }
     if (q.paths) tx.Paths = q.paths;
     var feeXrp = feeInXrp(p, q.amt, q.out);
+    // A FEE THAT ROUNDS TO NOTHING IS NOT A FEE. NO BACKTICKS IN THIS COMMENT.
+    //
+    // Same defect the dashboard Custom Swap had (RAZA 2026-10-20, 0.976727 LUMOS for 0.00003 XRP):
+    // feeXrp is XRP, the ledger is paid in DROPS, and toDrops ROUNDS. 0.2% of a dust output is well
+    // under one drop, so toDrops returns "0" while feeXrp > 0 is still true -- and every test below
+    // asked the XRP question, so the skip never fired and a zero-drop Payment went to the wallet.
+    // Decide once, in drops, and let every branch read the same answer.
+    var feeD = null;
+    if (feeXrp > 0) { var _d = lxx().toDrops(feeXrp); if (_d && +_d > 0) feeD = _d; }
     // THE EXACT COUNT, now that the fee amount is a real number rather than a rate. doSwap had to
     // guess from feeRate() alone to label the trust line, which it signs before this quote exists; the
     // same arithmetic repeated here with feeXrp settles it, and the attribute is corrected so the fee
     // and swap labels below cannot inherit a stale guess. The conditions are deliberately the same
     // expressions the branches themselves use -- a count derived differently from the code it
     // describes is how the "(2 of 2)" on a single prompt survived in the first place.
-    var willBatch = (feeXrp > 0) && !!(window.lxb && window.lxb.capable());
+    var willBatch = !!feeD && !!(window.lxb && window.lxb.capable());
     var steps = (p.getAttribute('data-lxline') === '1' ? 1 : 0)
-      + (willBatch ? 1 : ((feeXrp > 0) ? 2 : 1));
+      + (willBatch ? 1 : (feeD ? 2 : 1));
     p.setAttribute('data-lxsteps', String(steps));
     // One signature needs no counter: Stellar's button has said "Confirm in wallet…" all along, and
     // "(1 of 1)" counts to one, which makes a lone prompt look like the start of a sequence.
@@ -890,7 +932,7 @@
       // nothing to dry-run. Batching it would mean skipping both checks on exactly the swaps that
       // most need them. So a swap needing a line goes 3 prompts -> 2, and one that does not goes
       // 2 -> 1. Folding the line in is possible later; it needs the quote and dry run solved first.
-      if ((feeXrp > 0) && window.lxb && window.lxb.capable()) {
+      if (feeD && window.lxb && window.lxb.capable()) {
         batched = true;
         // RAZA 2026-10-14: this said "Approve the swap (1 of 1)…". The counter earned its place when
         // the fee was its own prompt; the Batch on this very line is what retired it. With a trust
@@ -899,7 +941,7 @@
         if (b) b.textContent = promptLabel();
         return window.lxb.submit(me, [
           { TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-            Amount: lxx().toDrops(feeXrp),
+            Amount: feeD,
             Memos: [feeMemo(s.pay.code, s.get.code, 1, 1)] },
           tx
         ]).then(function (h) { return { batchHash: h }; }, function (e) {
@@ -908,7 +950,7 @@
             ? 'The swap was not approved, so nothing was swapped.' : m);
         });
       }
-      if (!(feeXrp > 0)) return null;
+      if (!feeD) return null;
       // Counted against the whole sequence, including the trust line when there was one — "1 of 2" on what is really the
       // second of three prompts is exactly the kind of small lie that makes someone abandon a signature.
       // The fee is always the prompt before the swap, and the swap is always last, so this is
@@ -917,7 +959,7 @@
       if (b) b.textContent = 'Approve the platform fee (' + (of - 1) + ' of ' + of + ')…';
       return window.lxc.submit({
         TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-        Amount: lxx().toDrops(feeXrp),
+        Amount: feeD,
         Memos: [feeMemo(s.pay.code, s.get.code, of - 1, of)]
       }).then(function (h) { return h; }, function (e) {
         var m = (e && e.message) || '';
@@ -943,7 +985,7 @@
         // Said out loud, because the fee has already left the account by this point -- UNLESS the two
         // went out as one all-or-nothing Batch, where a failed swap means the fee was never taken.
         // Telling someone they have paid a fee they still hold is its own kind of wrong.
-        stop((feeXrp > 0 && !batched) ? (why + ' The platform fee was already paid.') : why, 'bad');
+        stop((feeD && !batched) ? (why + ' The platform fee was already paid.') : why, 'bad');
         return;
       }
       stop('Swap complete ✓', 'good');
@@ -960,7 +1002,19 @@
       // missing, at the place the eye goes after a wallet sheet closes.
       try {
         if (typeof window.lxToast === 'function' && quote && quote.out > 0) {
-          window.lxToast((side(p) === 'buy' ? 'Bought ' : 'Sold ') + fmt(quote.out, 6) + ' ' + s.get.code);
+          // THE VERB AND THE AMOUNT HAVE TO BE ABOUT THE SAME ASSET.
+          //
+          // RAZA 2026-10-19, from the Stellar side but the same line exists here: selling USDC for
+          // XLM toasted "Sold 5.6089 XLM" — 5.6089 XLM is what was RECEIVED, so the toast said the
+          // user sold the thing they just bought. `s.get` is literally "what you get"; pairing it
+          // with "Sold" could only ever be wrong on a sell.
+          //
+          // Both branches now name the asset whose page this is, which is also what the button above
+          // says ("Bought USDC ✓" / "Sold USDC ✓"): on a buy that is what arrived, on a sell it is
+          // what went out. The two lines can no longer disagree about which side they describe.
+          window.lxToast(side(p) === 'buy'
+            ? ('Bought ' + fmt(quote.out, 6) + ' ' + s.get.code)
+            : ('Sold ' + fmt(quote.amt, 6) + ' ' + s.pay.code));
         }
       } catch (e) {}
     }).then(function () {

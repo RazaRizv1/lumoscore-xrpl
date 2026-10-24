@@ -32,12 +32,23 @@
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return [].slice.call((r || document).querySelectorAll(s)); };
 
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc1(method, params) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); });
+    });
   }
   // One retry: a dropped request from the public node was enough to leave the list empty.
   function rpc(method, params) {

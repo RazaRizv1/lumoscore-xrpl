@@ -47,6 +47,17 @@
 
   // Deadlines, for the reason written up in write.js: a public node can hold `ripple_path_find` for half a minute (measured
   // 28.4s selling RLUSD), and an unanswered fetch leaves the quote spinning with nothing on screen to explain it.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params, ms) {
     var ctl = null;
     try { ctl = new AbortController(); } catch (e) {}
@@ -66,11 +77,11 @@
     // alternative. The button says "Finding a route…" while it waits, which is true.
     var limit = ms || (method === 'ripple_path_find' ? 25000 : 20000);
     var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, limit);
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
       signal: ctl ? ctl.signal : undefined
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       clearTimeout(timer);
       return (j && j.result) || {};
     }, function () { clearTimeout(timer); return {}; });   // this caller already treats {} as "no answer"
@@ -293,13 +304,23 @@
   function explain(code, what) { return CODES[code] || ((what || 'That') + ' did not go through (' + code + ').'); }
 
   // ---- the account ---------------------------------------------------------------------------------
-  var H = { who: '', hold: [], lines: [], reserve: { base: 1, inc: 0.2 }, loading: null, usd: null };
+  // `failed` SEPARATES "WE COULD NOT READ THIS WALLET" FROM "THIS WALLET IS EMPTY". rpc() resolves
+  // with {} when the call did not come back, so a throttled or dropped account_info left hold empty
+  // and the dialog stated, flatly, "No assets in this wallet yet" over an account that holds plenty
+  // (RAZA 2026-10-17: "My assets are not appearing in quick actions -> custom order/swap"). A failed
+  // look is not a finding, and saying so beats a confident wrong answer the reader cannot argue with.
+  var H = { who: '', hold: [], lines: [], reserve: { base: 1, inc: 0.2 }, loading: null, usd: null,
+            failed: false, unfunded: false };
 
   function loadAccount(force) {
     var who = addr();
-    if (!who) { H.who = ''; H.hold = []; H.lines = []; return Promise.resolve(); }
+    if (!who) { H.who = ''; H.hold = []; H.lines = []; H.failed = false; H.unfunded = false; return Promise.resolve(); }
     if (H.loading && !force) return H.loading;
     if (!force && H.who === who) return Promise.resolve();
+    // Cleared as the attempt STARTS, so `H.failed` always describes the most recent read rather than
+    // an older one. loaded() reads it now, and a stale true would make a read that is still in flight
+    // look like one that has already failed.
+    H.failed = false;
     H.loading = Promise.all([
       rpc('account_info', { account: who, ledger_index: 'validated' }),
       rpc('server_info', {}),
@@ -308,6 +329,11 @@
       var si = ((r[1] && r[1].info) || {}).validated_ledger || {};
       H.reserve = { base: +si.reserve_base_xrp > 0 ? +si.reserve_base_xrp : 1, inc: +si.reserve_inc_xrp > 0 ? +si.reserve_inc_xrp : 0.2 };
       var info = r[0] && r[0].account_data;
+      // actNotFound is an ANSWER -- the account exists on no ledger yet, so "empty" is true of it.
+      // Anything else that leaves us without account_data is a failed read, and must not be reported
+      // as an empty wallet.
+      H.unfunded = !!(r[0] && r[0].error === 'actNotFound');
+      H.failed = !info && !H.unfunded;
       var hold = [], lines = [];
       if (info) {
         var sp = lxx().spendableXrp(info.Balance, info.OwnerCount, H.reserve);
@@ -319,10 +345,60 @@
         lines.push(a);
         if (t.balance > 0 && !t.frozen) hold.push(a);
       });
-      H.who = who; H.hold = hold; H.lines = lines; H.loading = null;
-    }).catch(function () { H.loading = null; });
+      // H.who IS THE CACHE KEY, so setting it after a failed read stored the failure as the answer:
+      // loadAccount() returns early for the same address from then on and the dialog never tries
+      // again for as long as the page is open. Left blank on failure, so the next open re-reads.
+      H.who = H.failed ? '' : who;
+      H.hold = hold; H.lines = lines; H.loading = null;
+    }).catch(function () { H.loading = null; H.failed = true; H.who = ''; });
     return H.loading;
   }
+  // Why the list is empty, in the reader's terms. Three different situations shared one sentence
+  // before, and only one of the three was true at a time.
+  // SETTLED, NOT SUCCEEDED — and getting that wrong made the failure message unreachable (RAZA
+  // 2026-10-24: "why does it keep saying loading your assets").
+  //
+  // `H.who` is the cache key and is deliberately BLANKED on a failed read, three lines up, so the next
+  // open retries instead of storing the failure as the answer. Testing `H.who === addr()` therefore
+  // reports false for "still reading" AND for "read and failed" — so emptyWhy() returned at its first
+  // line every time and "Could not read this wallet" could never be shown. A failed read said
+  // "Loading your assets…" for as long as the dialog stayed open, which is the one thing that message
+  // must never mean.
+  //
+  // `H.failed` is the other half of the answer: set on both failure paths, and reset to false at the
+  // top of the next attempt and on every successful read, so it cannot go stale. See
+  // [[absent-has-many-causes]] — loading / failed / empty are three states and need three tests, not
+  // two strings behind one.
+  function loaded() { return !H.loading && (H.who === addr() || H.failed); }
+
+  function emptyWhy() {
+    if (!loaded()) return 'Loading your assets…';
+    if (H.failed) return 'Could not read this wallet — close and reopen to try again';
+    if (H.unfunded) return 'This wallet is not funded yet';
+    return 'No assets in this wallet yet';
+  }
+
+  // A PICKER OPENED BEFORE THE WALLET FINISHED LOADING DECLARED THE WALLET EMPTY AND NEVER TOOK IT
+  // BACK (RAZA 2026-10-17, with fifteen assets on screen behind the dialog). onOpen() starts the
+  // account read and paints the dialog straight away, so a chip pressed inside that window builds its
+  // list from an H that is still empty. The part that made it look permanent rather than merely slow
+  // is that nothing re-rendered the menu when the read landed: measured on the live build, pressed at
+  // 250ms it said "No assets in this wallet yet", and seven seconds later -- data in hand, menu still
+  // open, untouched -- it said exactly the same thing.
+  //
+  // The builder is therefore re-runnable: it draws from whatever H holds now, and once more when the
+  // read completes. Nothing is redrawn if the reader closed the menu or opened a different one in the
+  // meantime, so a late answer cannot yank the list out from under a finger.
+  function rebuildOnLoad(m, build) {
+    build();
+    if (loaded()) return;
+    loadAccount().then(function () {
+      if (!m || !m.isConnected || !m.parentNode) return;
+      m.innerHTML = '';
+      build();
+    });
+  }
+
   function heldOf(a) { for (var i = 0; i < H.hold.length; i++) if (same(H.hold[i], a)) return H.hold[i]; return null; }
   // How much of `a` this account can actually put into a NEW limit order — the one figure the Limit
   // tab's "Available", its MAX button and its validation all read.
@@ -388,7 +464,9 @@
     var m = document.createElement('div');
     m.className = 'lxq-menu';
     m.style.top = (anchor.offsetTop + anchor.offsetHeight + 6) + 'px';
-    build(m);
+    // Every picker in this dialog lists the wallet, so the redraw belongs here rather than in each
+    // builder -- both of them had the same race and a third would have inherited it.
+    rebuildOnLoad(m, function () { build(m); });
     m.addEventListener('click', function (e) { e.stopPropagation(); });
     host.appendChild(m);
   }
@@ -598,13 +676,17 @@
     }
     var seq = ++sw.seq;
     setGo(false, 'Finding a route…');
-    rpc('ripple_path_find', {
+    // The popup's OTHER quote path — "I want exactly this much out" — through the same fast edge, for
+    // the same reason as the send_max one below. Both tabs of this dialog hit ripple_path_find, so
+    // fixing one and leaving the other is how half the panel stays slow.
+    var PFW = {
       source_account: me, destination_account: me,
       destination_amount: amountObj(sw.to, want),
       source_currencies: [isXrp(sw.from) ? { currency: 'XRP' }
         : { currency: sw.from.currency, issuer: sw.from.issuer }],
       ledger_index: 'validated'
-    }).then(function (r) {
+    };
+    window.lxx.pathFind(PFW, function () { return rpc('ripple_path_find', PFW); }).then(function (r) {
       if (seq !== sw.seq) return;                     // a newer edit has superseded this one
       var best = null;
       (r.alternatives || []).forEach(function (a) {
@@ -718,7 +800,7 @@
           if (side === 'to') searchInto(m, other, pick);
 
           var rows = list.filter(function (a) { return !(side === 'to' && same(a, other)); });
-          if (!rows.length) menuHead(m, 'No assets in this wallet yet');
+          if (!rows.length) menuHead(m, emptyWhy());
           else if (side === 'from') filterInto(m, rows, pick);
           else {
             menuHead(m, 'In this wallet');
@@ -817,11 +899,33 @@
   function setGo(enabled, label) {
     var go = $('#swapGo');
     if (!go) return;
+    // A BUTTON THAT LOOKS LIVE MUST BE LIVE. NO BACKTICKS IN THIS COMMENT.
+    //
+    // quoteSwap() ends in setGo(true, "Swap"), and it can land at any time -- the 300ms typing
+    // debounce, an asset pick, a late path-find. If a swap is still in flight when one does, the
+    // button was repainted full-opacity "Swap" while doSwap() still refused at its sw.busy guard.
+    // That is the shape RAZA reported: a bright orange button that silently does nothing, for good,
+    // because nothing ever clears the flag once a wallet confirmation has been abandoned. One choke
+    // point, so no future caller can re-enable it by accident either.
+    if (enabled && sw.busy) enabled = false;
     if (label) go.textContent = label;
     if (enabled) { go.removeAttribute('data-lxdis'); go.style.opacity = ''; go.style.cursor = 'pointer'; }
     else { go.setAttribute('data-lxdis', '1'); go.style.opacity = '0.55'; go.style.cursor = 'not-allowed'; }
   }
   function detail(k, v) { var s = $('#swapModal .lx-swapd [data-k="' + k + '"]'); if (s) s.textContent = v; }
+
+  // One rule, injected once by id so a re-render cannot stack copies. It names background-image
+  // rather than the `background` shorthand on purpose: the shorthand would also reset the colour and
+  // the radius the design sets on this span, and those are its to own.
+  function chipArtCss() {
+    if (document.getElementById('lxq-chipart-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lxq-chipart-css';
+    st.textContent = '.lx-dchip[data-lxart]>span:first-child{'
+      + 'background-image:var(--lxa)!important;background-size:contain!important;'
+      + 'background-position:center!important;background-repeat:no-repeat!important}';
+    (document.head || document.documentElement).appendChild(st);
+  }
 
   function paintChip(which, a) {
     var id = which === 'from' ? 'swapFrom' : 'swapTo';
@@ -829,14 +933,36 @@
     if (!nameEl) return;
     nameEl.textContent = a ? a.code : 'Select';
     nameEl.setAttribute('data-logoed', '1');
-    var ic = nameEl.parentNode.firstElementChild;
+    // THE SELECTED CHIP'S MARK, WRITTEN SOMEWHERE THE OTHER WRITER CANNOT REACH.
+    //
+    // RAZA 2026-10-17: "on custom swap popup, the shx logo is fine in the dropdown, but when i
+    // select, it becomes usdc logo". The dropdown is painted by paintIco() and was always right;
+    // only the chip was wrong, and it was wrong by reverting to the design's own generic
+    // blue-circle-with-a-dollar SVG — which is why it read as "the USDC logo".
+    //
+    // THE DESIGN REPAINTS THIS SPAN. Measured on production: setting the background here the way
+    // this function used to, then watching the node, the style attribute was REWRITTEN five times
+    // in four seconds, each time back to its baked data-uri. Our declaration carried !important and
+    // that made no difference at all — the attribute is replaced wholesale, so the declaration is
+    // not outranked, it is erased. Priority cannot win a fight about existence.
+    //
+    // So the url goes on the CHIP, which that writer does not touch, and a stylesheet rule reads it
+    // from there. A stylesheet !important outranks a PLAIN inline declaration, and the design's is
+    // plain — so this wins without watching the node or racing anything. Verified on production: the
+    // mark held for five seconds of repaints. Same remedy, same reasoning, as disStyle() in
+    // dxaswap.js, which this file's sibling needed against the same widget.
+    var chip = nameEl.parentNode;
+    var ic = chip.firstElementChild;
     if (ic && ic !== nameEl) {
       ic.setAttribute('data-logoed', '1');
       if (a) {
+        chipArtCss();
         ic.textContent = '';
-        ic.style.setProperty('background', 'center / contain no-repeat url("' + logoOf(a) + '")', 'important');
+        chip.style.setProperty('--lxa', 'url("' + logoOf(a) + '")');
+        chip.setAttribute('data-lxart', '1');
       } else {
-        ic.style.removeProperty('background');
+        chip.removeAttribute('data-lxart');
+        chip.style.removeProperty('--lxa');
         ic.textContent = '?';
       }
     }
@@ -844,7 +970,23 @@
     var bal = block && $('.lx-dbal', block);
     if (bal) {
       var h = a && heldOf(a);
-      bal.textContent = (a && addr()) ? ('Balance: ' + fmt(h ? h.spendable : 0, 7) + ' ' + a.code) : '';
+      // A ZERO NOBODY HAS VERIFIED IS NOT A BALANCE (RAZA 2026-10-18, user report: "Taking too long to
+      // update the balance", with screenshots reading "Balance: 0 XRP" and "Balance: 0 RLUSD" on a
+      // funded wallet).
+      //
+      // heldOf() searches H.hold, which is EMPTY until loadAccount() resolves — three ledger reads,
+      // seconds on a cold phone. So the dialog opened stating a balance of zero as fact and corrected
+      // itself later. The number was never late; it was wrong, and then it was right.
+      //
+      // H.who IS THE LOADED MARKER and the only honest way to tell the two cases apart: it is set to
+      // the address ONLY after a successful read (and deliberately left blank on failure, see the note
+      // where it is assigned). That distinction matters here, because a real zero is also possible —
+      // this file already records a case where "Balance: 0 RLUSD" was correct because the account held
+      // no trust line for it. Loaded-and-zero still prints 0; not-yet-loaded prints a dash.
+      var loaded = H.who && H.who === addr();
+      bal.textContent = (a && addr())
+        ? ('Balance: ' + (loaded ? fmt(h ? h.spendable : 0, 7) : '—') + ' ' + a.code)
+        : '';
     }
   }
   function paintSwap() {
@@ -1049,12 +1191,26 @@
     }
     var seq = ++sw.seq;
     setGo(false, 'Finding a route…');
-    rpc('ripple_path_find', {
+    // ASKED AT THE EDGE FIRST, where Ripple's own node answers in ~1.6s instead of ~29s.
+    //
+    // RAZA 2026-10-18, user report, RLUSD -> XRP: "No route between those two assets right now" —
+    // which is the message twelve lines below, printed when `alternatives` comes back empty. The
+    // route is real: s2.ripple.com returns one alternative for this pair in 1.6s, three runs out of
+    // three. xrplcluster, the only node a browser can reach, took 29.1s for the same answer on one
+    // measurement and failed outright with `failedToForward` on another. Against a 25s deadline that
+    // is a coin toss, and both of its outcomes read to the user as "there is no route".
+    //
+    // The direction is what makes it so one-sided: out of XRP is 0.47s on that same node.
+    // See [[xrpl-pathfind-direction-asymmetry]].
+    //
+    // Fallback is this identical call, so a missing or unhappy endpoint restores today's behaviour.
+    var PF = {
       source_account: me, destination_account: me,
       destination_amount: isXrp(sw.to) ? '-1' : { currency: sw.to.currency, issuer: sw.to.issuer, value: '-1' },
       send_max: amountObj(sw.from, amt),
       ledger_index: 'validated'
-    }).then(function (r) {
+    };
+    window.lxx.pathFind(PF, function () { return rpc('ripple_path_find', PF); }).then(function (r) {
       if (seq !== sw.seq) return;
       var alt = (r.alternatives || [])[0];
       if (!alt) { clearQuote(); swapSay('No route between those two assets right now.'); return; }
@@ -1088,6 +1244,23 @@
       clearQuote();
       swapSay('Could not get a quote from the XRP Ledger.');
     });
+  }
+
+  // A FEE THAT ROUNDS TO NOTHING IS NOT A FEE. NO BACKTICKS IN THIS COMMENT.
+  //
+  // RAZA 2026-10-20, Android tablet, dashboard Custom Swap: 0.976727 LUMOS for 0.00003 XRP, and the
+  // orange Swap button did nothing. feeInXrp answers in XRP; the ledger is paid in DROPS, and toDrops
+  // ROUNDS. 0.2% of 0.00003 XRP is 0.00000006 XRP -- six hundredths of one drop -- so toDrops returns
+  // the string "0". Every guard in this file asked feeXrp > 0, which 0.00000006 satisfies, so the
+  // "nothing to charge" skip never fired and we built a Payment of ZERO drops and sent it to the
+  // wallet. The dialog's own fee row was already admitting it: "Swap fee (0.2%)  0 XRP".
+  //
+  // So ask in the unit that is actually submitted. Returns the drops string, or null when there is
+  // genuinely nothing to charge -- which is a legitimate outcome for a dust swap, not an error.
+  function feeDrops(feeXrp) {
+    if (!(feeXrp > 0)) return null;
+    var d = lxx().toDrops(feeXrp);
+    return (d && +d > 0) ? d : null;
   }
 
   function feeInXrp(amount) {
@@ -1205,10 +1378,11 @@
         var raw = [];
         // The outer Batch consumes this account's next sequence, so the inners start one later.
         var s = seq + 1;
-        if (feeXrp > 0) {
+        var fd = feeDrops(feeXrp);
+        if (fd) {
           raw.push(innerTx({
             TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-            Amount: lxx().toDrops(feeXrp),
+            Amount: fd,
             Memos: [feeMemo(from.code, to.code, 1, 1)]
           }, s++));
         }
@@ -1241,7 +1415,14 @@
   }
 
   function doSwap() {
-    if (sw.busy) return;
+    // SILENCE WAS THE WORST PART OF THIS BUG. A tap that hits a busy flag told the user nothing at
+    // all, so a stuck swap was indistinguishable from a dead button. Say what is happening and how
+    // to get out of it.
+    if (sw.busy) {
+      swapSay('A wallet confirmation for this swap is already open. Finish or dismiss it in your '
+        + 'wallet, then try again — or reload this page if it is no longer there.');
+      return;
+    }
     var go = $('#swapGo');
     if (!addr()) { connect(); return; }
     if (!sw.quote || (go && go.getAttribute('data-lxdis') === '1')) return;
@@ -1251,7 +1432,12 @@
     // The trust line used to be signed first; "Deduct fees / Set trustline / Swap" puts it second,
     // which also matches the fee-first rule from 2026-09-17 that the rest of this file follows.
     var needLine = !!to.issuer && !hasLine(to);
+    // Provisional: it assumes a fee is charged. A dust swap whose fee rounds below one drop has no
+    // fee transaction at all, so the count is settled below, once feeDrops has answered, and the
+    // prompts are numbered off a running counter rather than hardcoded positions — otherwise a
+    // skipped fee makes the trust line and the swap both announce themselves as "2 of 2".
     var steps = needLine ? 3 : 2;
+    var stepNo = 0;
 
     // WHEN THE QUOTE IS AN ESTIMATE THE TRANSACTION CANNOT BE BUILT YET, and that is the whole reason
     // the order matters. Without a trust line `ripple_path_find` has nothing to answer, so the figure
@@ -1283,12 +1469,15 @@
     // 1. THE FEE (RAZA 2026-09-17), with a memo naming it.
     function runSequential() {
       return feeInXrp(q.amt).then(function (feeXrp) {
-      if (!(feeXrp > 0)) return null;
-      setGo(false, 'Approve the platform fee (1 of ' + steps + ')…');
+      var fd = feeDrops(feeXrp);
+      steps = (fd ? 1 : 0) + (needLine ? 1 : 0) + 1;
+      if (!fd) return null;
+      stepNo += 1;
+      setGo(false, 'Approve the platform fee (' + stepNo + ' of ' + steps + ')…');
       return window.lxc.submit({
         TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-        Amount: lxx().toDrops(feeXrp),
-        Memos: [feeMemo(from.code, to.code, 1, steps)]
+        Amount: fd,
+        Memos: [feeMemo(from.code, to.code, stepNo, steps)]
       }).catch(function (e) {
         var m = (e && e.message) || '';
         throw new Error(/reject|denied|cancel/i.test(m) ? 'The platform fee was not approved, so nothing was swapped.' : m);
@@ -1297,7 +1486,8 @@
     //    and it cannot answer until the line is actually on the account.
     }).then(function () {
       if (!needLine) return null;
-      setGo(false, 'Approve the ' + to.code + ' trust line (2 of ' + steps + ')…');
+      stepNo += 1;
+      setGo(false, 'Approve the ' + to.code + ' trust line (' + stepNo + ' of ' + steps + ')…');
       return window.lxc.submit({
         TransactionType: 'TrustSet', Account: me,
         LimitAmount: { currency: to.currency, issuer: to.issuer, value: '1000000000' },
@@ -1329,7 +1519,8 @@
         return tx2;
       });
     }).then(function (tx) {
-      setGo(false, 'Approve the swap (' + steps + ' of ' + steps + ')…');
+      stepNo += 1;
+      setGo(false, 'Approve the swap (' + stepNo + ' of ' + steps + ')…');
       return window.lxc.submit(tx).then(function (hash) {
         setGo(false, 'Confirming…');
         return waitValidated(hash);
@@ -1405,7 +1596,7 @@
             // holdings too, and leaving one of the two unfiltered is the kind of difference that comes
             // back as its own bug report.
             var mine = H.hold.filter(function (a) { return !same(a, lim.b); });
-            if (!mine.length) menuHead(m, 'No assets in this wallet yet');
+            if (!mine.length) menuHead(m, emptyWhy());
             else filterInto(m, mine, pick);
           } else {
             searchInto(m, lim.s, pick);
@@ -1769,6 +1960,11 @@
     resetForms();
     Promise.all([loadAccount(true), loadUsd()]).then(function () {
       defaults();
+      // REPAINT THE CHIPS NOW THE BALANCES ARE REAL. paintChip prints a dash until H.who matches the
+      // address (see its note), and this path previously went straight to quoteSwap() — which quotes
+      // but does not touch the balance line. Without this the dialog would hold "Balance: —" for as
+      // long as it stayed open, which is a worse bug than the false zero it replaces.
+      paintSwap();
       quoteSwap();
       var lp = $('#swapModal .lxo-pane[data-pane="limit"]');
       if (lp && !lp.hidden) limitSync();

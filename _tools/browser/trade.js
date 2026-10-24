@@ -284,6 +284,27 @@
 
     // 0: asset
     var c0 = el('td');
+    // THE WHOLE PAIR CELL IS THE LINK, not just the ticker (RAZA 2026-10-16: "I cant open assets and
+    // pools in new tabs with ctrl enter or right click like i do on stellar").
+    //
+    // Ctrl-click already worked — claimRowClicks() opens a tab for any row, with or without an
+    // anchor. RIGHT-CLICK is the half that did not, and it cannot be fixed by a handler: the
+    // browser only offers "Open link in new tab" when the pointer is over a real <a href>. Measured
+    // against lumoscore.com, which is what "like i do on stellar" means:
+    //
+    //   Stellar  a.dex-mk-pair-link  231px wide  — 18% of the row, wraps rank + icon + name
+    //   XRPL     a.dex-mk-pair-head   79px wide  —  6% of the row, wraps the ticker text alone
+    //
+    // A target three times smaller, so most right-clicks on a row landed on no link at all and got
+    // the plain page menu. Nothing was broken in code; the link was just too small to hit.
+    //
+    // Stellar's own class is NOT reused here: `.dex-mk-pair-link` appears zero times in this build's
+    // stylesheet, so it would have styled nothing. The three properties it needs are set inline.
+    var link = el('a', 'dex-mk-pair-link');
+    link.href = '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i);
+    link.style.color = 'inherit';
+    link.style.textDecoration = 'none';
+    link.style.display = 'block';
     var cell = el('div', 'dex-mk-pair-cell');
     cell.appendChild(el('span', 'dex-mk-rank', '#' + rank));
     var ic = logoEl(t.n, t.m, 32);
@@ -300,9 +321,27 @@
     //
     // It needs claimRowClicks() to stand aside — see the note there; a plain href alone is not enough
     // on this build, because the design's own router claims the click first and cancels it.
-    var head = el('a', 'dex-mk-pair-head');
-    head.href = '/trade/xrpl/' + encodeURIComponent(t.n + '-' + t.i);
-    head.textContent = t.n;
+    //
+    // THE ANCHOR MOVED OUT to wrap the whole cell (see the note above); this is a span now, because
+    // anchors cannot be nested. The href it used to carry is on `link`, unchanged and identical, so
+    // nothing a crawler or a reader can reach has changed.
+    //
+    // IT CARRIES THE LOGO-HEALER OPT-OUTS, and that is not optional. The healer walks every
+    // span/div/i/b on the page, takes any element whose trimmed text is 1-5 characters, resolves it
+    // as a ticker and REPLACES THE TEXT WITH A LOGO — see _xrpllogoguard.js, which exists because it
+    // ate the $LUMOS supply figure. It does not walk <a>, so being an anchor is what has been
+    // protecting these tickers all along; "RLUSD" is exactly five characters and resolves. Demoting
+    // the tag without these three guards would have blanked the ticker column on a timer.
+    var head = el('span', 'dex-mk-pair-head');
+    head.textContent = t.n;                      // BEFORE the guard: textContent wipes child nodes
+    head.setAttribute('data-lxc', '');
+    head.setAttribute('data-logoed', '1');
+    // The third guard is an inert zero-size child, the same shape _lumosparent.js uses on its chain
+    // cards: the healer's looksLikeIcon() skips an element that already contains one.
+    var g = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    g.setAttribute('width', '0'); g.setAttribute('height', '0'); g.setAttribute('aria-hidden', 'true');
+    g.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden');
+    head.appendChild(g);
     // Colour and underline set explicitly rather than left to the cascade. `.dex-mk-pair-head` only
     // carries layout (display:flex), and every anchor rule in this build is scoped to some other
     // component — so what a bare <a> would inherit here is not knowable from the stylesheet. Stating
@@ -327,9 +366,11 @@
     // nobody has vouched for them, and ticking them said otherwise (RAZA 2026-10-11).
     if (t.vf) head.appendChild(vtick());
     nm.appendChild(head);
-    if (t.u) nm.appendChild(el('div', 'sub', t.u));
+    var sub1 = subLine(t);
+    if (sub1) nm.appendChild(el('div', 'sub', sub1));
     cell.appendChild(nm);
-    c0.appendChild(cell);
+    link.appendChild(cell);                      // the anchor wraps rank + icon + name, as Stellar's does
+    c0.appendChild(link);
     tr.appendChild(c0);
 
     // 1: last price. The denomination toggle SWAPS the headline and the sub-line rather than hiding
@@ -447,7 +488,8 @@
     // The phone card lists the same rows, so it ticks on the same rule — see the desktop note above,
     // including the vf gate: a mint must not be marked here either, or the two layouts disagree.
     if (t.vf) nameRow.appendChild(vtick());
-    if (t.u) nameRow.appendChild(el('span', 'mdx-mk-domain', t.u));
+    var sub2 = subLine(t);
+    if (sub2) nameRow.appendChild(el('span', 'mdx-mk-domain', sub2));
     meta.appendChild(nameRow);
     // THE PHONE IGNORED THE DENOMINATION AND DISAGREED WITH THE DESKTOP. This card hard-coded the
     // XRP price and the XRP-denominated change while the table honoured DEN, so at the same moment
@@ -486,7 +528,8 @@
     var ic = logoEl(t.n, t.m, 32);
     head.appendChild(ic);
     var pair = el('div', 'dex-mover-pair', t.n);
-    if (t.u) pair.appendChild(el('span', 'sub', ' ' + t.u));
+    var sub3 = subLine(t);
+    if (sub3) pair.appendChild(el('span', 'sub', ' ' + sub3));
     head.appendChild(pair);
     var p = el('span', 'dex-mover-pct', pct(t.d) || '—');
     if (t.d != null) p.style.color = t.d >= 0 ? 'var(--green,#22c55e)' : '#e5484d';
@@ -630,7 +673,11 @@
   [
     ['rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De', 'RLUSD'],   // Ripple
     ['rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE', 'USDC'],    // Circle
-    ['rcEGREd8NmkKRE8GE424sksyt1tJVFZwu', 'USDC'],     // GateHub
+    // GateHub's USDC (rcEGREd8…FZwu) was here and is deliberately GONE — RAZA 2026-10-16: "let
+    // remove gatehub usdc from the curated on XRPL and let only keep circle usdc". Two rows reading
+    // USDC with a tick on each is the exact confusion the issuer-keying everywhere else exists to
+    // prevent, and of the two only Circle's is Circle's. GateHub's USDT below stays: it is the only
+    // USDT in this set, so it is not competing with a first-party issuance for the same name.
     ['rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq', 'USDT'],     // GateHub
     ['rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B', 'USD'],      // Bitstamp
     ['rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq', 'USD'],     // GateHub
@@ -651,7 +698,7 @@
     st.textContent = ''
       + '.lx-modewrap{position:relative;display:inline-flex}'
       + '.lx-modecaret{margin-left:6px;opacity:.75;font-size:10px;line-height:1}'
-      + '.lx-modemenu{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:196px;'
+      + '.lx-modemenu{position:fixed;z-index:1000;min-width:196px;'
       + 'padding:6px;border:1px solid var(--border,#26262c);border-radius:12px;'
       + 'background:var(--surface,#131317);box-shadow:0 18px 40px -22px rgba(0,0,0,.8)}'
       + '.lx-modemenu button{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;'
@@ -667,6 +714,54 @@
   function closeModeMenu() {
     var m = document.querySelector('.lx-modemenu');
     if (m && m.parentNode) m.parentNode.removeChild(m);
+  }
+
+  // THE MENU LIVES ON BODY, NOT INSIDE THE CHIP. NO BACKTICKS IN THIS COMMENT.
+  //
+  // RAZA 2026-10-20, phones on BOTH chains: "when tapping on curated all, it's not opening the
+  // dropdown". It was opening. Measured in a 375px viewport right after the tap, the menu existed,
+  // was display:block, visibility:visible, z-index 60, 196x122 at a sensible position — and not one
+  // pixel of it could be seen, because the phone filter row scrolls sideways:
+  //
+  //     clipping ancestor: .mdx-mk-filters  overflow:auto
+  //     wrap bottom 178.3   menu top 184.3 -> bottom 307.1
+  //
+  // An absolutely positioned child cannot escape a scrolling ancestor, and the row is only 33px tall,
+  // so the whole menu was cut off. The desktop row does not scroll, which is why it only ever failed
+  // on a phone. Note what this is NOT: the window-capture listener added on 2026-10-11 works fine. A
+  // control that "does nothing" can be a control that does everything into a clipped box, and the
+  // check that tells them apart is querySelector plus getBoundingClientRect, not more listener work.
+  //
+  // So the menu is appended to document.body and positioned fixed against the chip's own rect, which
+  // no ancestor overflow can touch. Clamped to the viewport on both axes, and flipped above the chip
+  // when there is no room below.
+  function placeModeMenu(menu, chip) {
+    var r = chip.getBoundingClientRect();
+    var vw = window.innerWidth || document.documentElement.clientWidth;
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var mw = menu.offsetWidth || 196;
+    var mh = menu.offsetHeight || 0;
+    var left = Math.min(r.left, vw - mw - 8);
+    if (left < 8) left = 8;
+    var top = r.bottom + 6;
+    if (mh && top + mh > vh - 8) {
+      var above = r.top - 6 - mh;
+      top = above >= 8 ? above : Math.max(8, vh - mh - 8);
+    }
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  // Fixed means it no longer travels with the chip, so any scroll or resize puts it away rather than
+  // leaving it stranded. Capture catches scrolls on the filter row itself, which do not bubble.
+  function watchModeMenu() {
+    var off = function () {
+      closeModeMenu();
+      window.removeEventListener('scroll', off, true);
+      window.removeEventListener('resize', off, true);
+    };
+    window.addEventListener('scroll', off, true);
+    window.addEventListener('resize', off, true);
   }
 
   // The label lives in the chip's own text node, beside the icon the design put there — rewriting the
@@ -755,7 +850,7 @@
       e.preventDefault(); e.stopImmediatePropagation();
       if (document.querySelector('.lx-modemenu')) { closeModeMenu(); return; }
 
-      var w = c.closest('.lx-modewrap'); if (!w) return;
+      if (!c.closest('.lx-modewrap')) return;
       var menu = document.createElement('div');
       menu.className = 'lx-modemenu';
       menu.setAttribute('role', 'listbox');
@@ -775,7 +870,9 @@
         b.appendChild(tick); b.appendChild(txt);
         menu.appendChild(b);
       });
-      w.appendChild(menu);
+      document.body.appendChild(menu);
+      placeModeMenu(menu, c);
+      watchModeMenu();
     }, true);
   }
 
@@ -819,6 +916,18 @@
   // of the sub-line is to say WHICH one this is.
   function subDom(iss, user) {
     return (iss === LUMOS_ISS) ? 'lumoscore.com' : (user || '');
+  }
+
+  // What that line should say, now that there IS a domain to say it with. The roster endpoint resolves
+  // each issuer's AccountRoot Domain off the ledger and sends it as `dom`, so the market table can
+  // finally print "circle.com" rather than "Circle" — which is what the comment above always described
+  // (RAZA 2026-10-17: "Still shown the company/project name instead of the homedomain").
+  //
+  // The NAME remains the fallback, for an issuer that publishes no domain or whose lookup did not
+  // resolve in time. Saying "Fuzzybear" is worse than saying "fuzzyxrp.com" and much better than
+  // saying nothing at all in a row whose job is to identify WHICH token this is.
+  function subLine(t) {
+    return (t && t.dom) || subDom(t && t.i, t && t.u);
   }
 
   // Enough TOML for this file's shape: [[TOKENS]] blocks with issuer and currency. Not a general
@@ -910,6 +1019,10 @@
   }
 
   function paintSortHeads() {
+    // The phone sheet reads the same SORT as the desktop headers, so it repaints from the same call
+    // — but FIRST, ahead of the table guard below. The phone page has no .dex-mk-table at all, so a
+    // call placed after that early return would never run on the only layout that has a sheet.
+    paintSortSheet();
     var tbl = $('.dex-mk-table');
     if (!tbl) return;
     COLS.forEach(function (c) {
@@ -936,6 +1049,132 @@
       if (!th.querySelector('.lx-sarrow')) th.appendChild(el('span', 'lx-sarrow', '⇅'));
     });
     paintSortHeads();
+  }
+
+  // ======================================================= THE PHONE'S SORT SHEET
+  //
+  // RAZA 2026-10-20, XRPL Trade-main on a phone, against Stellar: "the dropdown in filter curated
+  // pairs on the right — it should be exactly like Stellar." It was absent here entirely.
+  //
+  // The phone list has no column headers to click, so Stellar puts a button in the search row that
+  // opens a small sheet (_tools/_mobdex.js, ensureSortUi). This build INHERITS that file's
+  // stylesheet — .lx-msort, .lx-msheet, .lx-mreset and .lx-mdsec are all present in the frozen base,
+  // measured — and even the string "Default order". What it does not get is the pass that BUILDS the
+  // control: Stellar's mobile renderer stands down on this chain because the data layer is ours, so
+  // ensureSortUi() is never reached and nothing is ever appended. Inherited CSS with no builder is
+  // exactly the shape that makes a missing control look like a styling bug.
+  //
+  // So the control is built here, against OUR state, with the same five fields, the same wording and
+  // the same rules: biggest first on the first tap, tap again to flip, a missing figure sinks in both
+  // directions. The denomination lives in the sheet because on a phone it is the only control surface
+  // the pair list has, and it is the same kind of choice as the sort — how the list is expressed.
+  // XRP where Stellar says XLM, and nothing else differs.
+  var MSORTS = [['p', 'Last price'], ['d', '24H change'], ['v', 'Volume (24H)'], ['x', 'Trades (24H)'], ['t', 'Liquidity']];
+  var MSORT_IC = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M7 4v16"/><path d="M4 8l3-4 3 4"/><path d="M17 20V4"/><path d="M14 16l3 4 3-4"/></svg>';
+
+  function closeSortSheet() {
+    var s = $('.lx-msheet'); if (s) s.classList.remove('open');
+    var b = $('.lx-msort'); if (b) b.classList.remove('on');
+  }
+
+  // Kept in step with SORT and DEN on every render, so the sheet cannot disagree with the list it
+  // just sorted — the desktop headers are repainted from the same state for the same reason.
+  function paintSortSheet() {
+    var bt = $('.lx-msort');
+    if (bt) bt.classList.toggle('act', !!SORT.key);
+    var sh = $('.lx-msheet');
+    if (!sh) return;
+    [].slice.call(sh.querySelectorAll('button[data-dn]')).forEach(function (o) {
+      var on = (o.getAttribute('data-dn') === DEN);
+      o.classList.toggle('on', on);
+      var i = o.querySelector('i');
+      if (i) i.textContent = on ? '✓' : '';
+    });
+    [].slice.call(sh.querySelectorAll('button[data-sk]')).forEach(function (o) {
+      var k = o.getAttribute('data-sk'), on = !!k && k === SORT.key;
+      o.classList.toggle('on', on);
+      var i = o.querySelector('i');
+      if (i) i.textContent = on ? (SORT.dir < 0 ? '▼' : '▲') : '';
+    });
+  }
+
+  function ensureSortUi() {
+    var box = $('.mdx-mk-search');
+    if (!box || box.__lxs) return;
+    box.__lxs = 1;
+    box.classList.add('lx-mkq');                 // the inherited rule that makes the row the anchor
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lx-msort';
+    b.setAttribute('aria-label', 'Sort pairs');
+    b.innerHTML = MSORT_IC;                      // an svg child, so the ticker-logo healer skips it
+    box.appendChild(b);
+    var sh = document.createElement('div');
+    sh.className = 'lx-msheet';
+    sh.innerHTML = MSORTS.map(function (s) {
+      return '<button type="button" data-sk="' + s[0] + '"><span>' + s[1] + '</span><i></i></button>';
+    }).join('')
+      + '<button type="button" data-sk="" class="lx-mreset"><span>Default order</span><i></i></button>'
+      + '<div class="lx-mdsec">Change shown in</div>'
+      + '<button type="button" data-dn="usd"><span>US dollars</span><i></i></button>'
+      + '<button type="button" data-dn="xrp"><span>XRP</span><i></i></button>';
+    box.appendChild(sh);
+    paintSortSheet();
+  }
+
+  // Window capture, for the reason everything on this page needs it: the design ships a delegated
+  // click router that claims the tap before an element-level listener ever runs.
+  function installSortUi() {
+    if (window.__lxxMsort) return;
+    window.__lxxMsort = 1;
+    function repaint() {
+      var h = host(), d = window.__lxxTradeData;
+      if (h && d && d.rows) renderPage(h, d, 1);
+      paintSortHeads(); paintSortSheet();
+    }
+    window.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var bt = t.closest('.lx-msort');
+      if (bt) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        var s = $('.lx-msheet');
+        if (s) {
+          var open = !s.classList.contains('open');
+          s.classList.toggle('open', open);
+          bt.classList.toggle('on', open);
+        }
+        return;
+      }
+      // Matched BEFORE the sort options and separately: a [data-sk] lookup would not see these, and
+      // letting them reach the tap-outside branch would shut the sheet without changing anything.
+      var dn = t.closest('.lx-msheet button[data-dn]');
+      if (dn) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        var dv = dn.getAttribute('data-dn');
+        if (DEN !== dv) { DEN = dv; paintDenToggle(); headers(); }
+        closeSortSheet(); repaint();
+        // Switching to dollars with no XRP move in hand is the one case that renders a column of
+        // em dashes. Ask again here rather than leaving it blank until the next page load.
+        if (DEN === 'usd') ensureXrp24(repaint);
+        return;
+      }
+      var op = t.closest('.lx-msheet button[data-sk]');
+      if (op) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        var k = op.getAttribute('data-sk');
+        // "Default order" restores the DEFAULT, which is volume high-to-low — not "no sorting".
+        // Clearing the key would leave the roster order, which no label on screen describes.
+        if (!k) { SORT.key = 'v'; SORT.dir = -1; }
+        else if (SORT.key === k) SORT.dir = -SORT.dir;
+        else { SORT.key = k; SORT.dir = -1; }
+        closeSortSheet(); repaint();
+        return;
+      }
+      if (!t.closest('.lx-msheet')) closeSortSheet();   // a tap anywhere else puts the sheet away
+    }, true);
   }
 
   function onSortClick(th) {
@@ -1075,6 +1314,42 @@
     return ((1 + d / 100) * (1 + XRP24 / 100) - 1) * 100;
   }
 
+  // ONE FETCH WITH A SWALLOWED FAILURE WAS A PERMANENT WRONG ANSWER. NO BACKTICKS IN THIS COMMENT.
+  //
+  // RAZA 2026-10-20, phone, production: "when i change to $, the percentage change disappears."
+  // Every row showed an em dash. Not reproducible — the same switch on the same build a minute
+  // later printed -0.15%, +24.67%, -0.01% — and the endpoint answered 8 of 8 in 40-130ms. It did
+  // not need to be reproducible: XRP24 came from a single un-retried fetch whose rejection went
+  // into an empty catch, so ONE dropped request left every dollar change blank for the life of the
+  // page, with nothing to retry it and nothing said.
+  //
+  // Two changes. It retries, the way the roster fetch a few lines below already does. And the
+  // denomination switch asks again when the value is missing, which is the exact moment the reader
+  // is looking at the empty column — so the page repairs itself at the only point anyone notices.
+  var _x24busy = false;
+  function ensureXrp24(after) {
+    if (XRP24 != null || _x24busy) { if (after) after(); return; }
+    _x24busy = true;
+    (function ask(tries) {
+      return fetch('/lxapi/xrplprices?codes=XRP')
+        .then(function (r) { return r.json(); })
+        .then(function (pj) {
+          var e = pj && pj.t && pj.t.XRP;
+          if (e && isFinite(e[1])) { XRP24 = Number(e[1]); return; }
+          throw new Error('no XRP entry');
+        })
+        .catch(function (err) {
+          if (tries > 1) return new Promise(function (go) { setTimeout(go, 600); }).then(function () { return ask(tries - 1); });
+          // Still nothing. The column keeps its em dashes — the one thing that must never happen is
+          // printing the XRP move under a dollar heading — but it is no longer SILENT.
+          try { console.warn('[lumoscore] XRP 24h move unavailable; $ change stays blank:', err && err.message); } catch (_) {}
+        });
+    })(3).then(function () {
+      _x24busy = false;
+      if (after) after();
+    });
+  }
+
   function denomLabel() { return DEN === 'usd' ? '($)' : '(XRP)'; }
 
   function buildDenToggle(h, d) {
@@ -1109,6 +1384,8 @@
         paintDenToggle();
         headers();
         renderPage(h, d, pageNo);              // same page, re-denominated
+        // Same repair as the phone sheet: a dollar view with no XRP move is a column of dashes.
+        if (DEN === 'usd') ensureXrp24(function () { renderPage(h, d, pageNo); });
       });
       return b;
     }
@@ -1179,17 +1456,31 @@
       }
     }
 
-    var chipImg = $('.dex-mk-filter img');
-    if (chipImg && /xlm\.png/i.test(chipImg.getAttribute('src') || '')) {
-      chipImg.setAttribute('src', XRP_LOGO);
-      chipImg.setAttribute('alt', '');
-    }
+    // BOTH LAYOUTS, NOT THE FIRST ONE FOUND. NO BACKTICKS IN THIS COMMENT.
+    //
+    // Until 2026-10-20 this read a single desktop-class img through the querySelector helper —
+    // one element, and only the desktop class. Every page of this build ships
+    // the desktop AND the phone markup together (CSS decides which is seen), so it always matched the
+    // desktop chip and the phone chip kept Stellar's /assets/tokens/xlm.png. RAZA saw the Stellar mark
+    // on the XRPL trade page on a phone.
+    //
+    // Every other statement in this block already spells both classes, which is exactly why the chip's
+    // TEXT read "Curated — All" correctly on mobile while its icon did not: paintModeLabel/makeModeChip
+    // use '.dex-mk-filter, .mdx-mk-filter'. A wrong icon beside right text is the signature of one
+    // selector left behind, so check the neighbours when it shows up again.
+    //
     // SAME BOX, SMALLER MARK. Both builds draw this image at 22px, but Stellar's xlm.png is a thin glyph
     // with room around it while xrpl.to's XRP thumb is a solid disc edge to edge — so at the same size the
     // XRP mark reads visibly bigger (RAZA 2026-09-15). Inset to 16px inside the unchanged 22px slot.
-    if (chipImg && chipImg.getAttribute('src') === XRP_LOGO) {
-      chipImg.style.cssText = 'width:16px!important;height:16px!important;margin:3px;border-radius:50%';
-    }
+    [].slice.call(document.querySelectorAll('.dex-mk-filter img, .mdx-mk-filter img')).forEach(function (chipImg) {
+      if (/xlm\.png/i.test(chipImg.getAttribute('src') || '')) {
+        chipImg.setAttribute('src', XRP_LOGO);
+        chipImg.setAttribute('alt', '');
+      }
+      if (chipImg.getAttribute('src') === XRP_LOGO) {
+        chipImg.style.cssText = 'width:16px!important;height:16px!important;margin:3px;border-radius:50%';
+      }
+    });
 
     // "CURATED", AS ON STELLAR — RAZA 2026-09-15, reversing the earlier "All". The chip's text is the
     // text node after its icon, so only that node is rewritten and the icon stays.
@@ -1203,8 +1494,26 @@
     });
     paintModeLabel();
 
-    var search = $('#dexMkSearch input') || $('#dexMkSearch');
-    if (search && 'placeholder' in search) search.placeholder = 'Filter curated pairs';
+    // EVERY SEARCH BOX, NOT THE FIRST ONE FOUND. NO BACKTICKS IN THIS COMMENT.
+    //
+    // RAZA 2026-10-20: the phone still read "Filter pairs - ticker or address" where Stellar reads
+    // "Filter curated pairs". Same shape as the chip icon above — this looked up #dexMkSearch, the
+    // DESKTOP id, through a single-element helper, so on the phone page it matched nothing and the
+    // design's own placeholder survived. Stellar's labelFilterInput() sweeps five selectors with
+    // querySelectorAll; matched here so the two chains say the same thing.
+    //
+    // The wording matters: this field only ever searched the CURATED list, and "ticker or address"
+    // implies the whole ledger — which is how someone concludes their asset is missing when it was
+    // never in scope.
+    var WANT_PH = 'Filter curated pairs';
+    [].slice.call(document.querySelectorAll(
+      '.mdx-mk-search input,.dex-mk-search input,.search-box.inline-filter input,input.lx-mkq,.lx-mkq input,#dexMkSearch input,#mdxMkSearch input'
+    )).forEach(function (i) {
+      if (i.getAttribute('placeholder') !== WANT_PH) i.setAttribute('placeholder', WANT_PH);
+    });
+
+    ensureSortUi();
+    installSortUi();
   }
 
   // ---- 7d sparklines ------------------------------------------------------------------------------
@@ -1487,34 +1796,45 @@
       // the market's top hundred by volume and LUMOS does not trade its way in yet, so it was simply absent from the page
       // that lists what this platform trades. Its row is fetched on its own and folded in — the same fields, from the same
       // upstream, so it sorts and prices exactly like every other row rather than being pinned on top as a special case.
-      if (!d.rows.some(function (t) { return t.i === LUMOS_ISS; })) {
+      //
+      // THIS IS NOW A FALLBACK, NOT THE MECHANISM (2026-10-20). The split it used to describe —
+      // curated is the tick, pinned is a seat in the table (RAZA 2026-10-17: "ohh wait. pinning atom
+      // is not necessary. making it curated is") — produced its own bug report three days later:
+      // "ATOM is a curated asset but its not in the assets list on Trade-main page." Vouching and
+      // listing are one statement again, and it is made at the EDGE, in xrpltokens.js, so the wallet
+      // and the swap pickers get the same answer as this table.
+      //
+      // The loop stays because it costs one guarded comparison and it is a second chance: if the
+      // edge's own lookup for LUMOS misses its 2.5s ceiling, this still puts our token in the table.
+      // The guard below means it never duplicates a row the edge already sent.
+      [
+        { i: LUMOS_ISS, c: LUMOS_CUR, n: 'LUMOS' },
+      ].forEach(function (pin) {
+        if (d.rows.some(function (t) { return t.i === pin.i && String(t.c).toUpperCase() === pin.c; })) return;
         // The endpoint keys on the upstream's own id form, "issuer-currencyHex" — it takes no iss/cur pair.
-        fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(LUMOS_ISS + '-' + LUMOS_CUR))
+        fetch('/lxapi/xrpltoken?id=' + encodeURIComponent(pin.i + '-' + pin.c))
           .then(function (r) { return r.json(); })
           .then(function (lt) {
             if (!lt || !lt.ok || !(lt.price > 0)) return;
             d.rows.push({
-              c: lt.currency, i: lt.issuer, n: lt.name || 'LUMOS', u: subDom(lt.issuer, lt.user),
+              c: lt.currency, i: lt.issuer, n: lt.name || pin.n, u: subDom(lt.issuer, lt.user),
               p: lt.price, d: lt.p24, w: lt.p7, v: lt.vol24, t: lt.tvl, x: lt.trades24,
               hi: lt.hi, lo: lt.lo,
-              m: lt.md5 || '', h: lt.holders, vf: 1, o: lt.origin || ''
+              // THE ENDPOINT'S ANSWER, not a hardcoded 1. `verified` there is already vouched() —
+              // the same curated list every other surface reads — so a pinned row's tick now comes
+              // from the one place that decides it instead of being asserted here. LUMOS is in that
+              // list, so this is not a change for it.
+              m: lt.md5 || '', h: lt.holders, vf: lt.verified ? 1 : 0, o: lt.origin || ''
             });
             renderPage(h, d, pageNo);
           })
           .catch(function () {});
-      }
+      });
 
       // XRP's own 24h move, for the dollar-denominated change column. Fire-and-forget: the toggle
       // is usable immediately in XRP mode, and if this never lands the $ column shows em dashes
       // rather than the XRP number wearing a $ heading.
-      fetch('/lxapi/xrplprices?codes=XRP')
-        .then(function (r) { return r.json(); })
-        .then(function (pj) {
-          var e = pj && pj.t && pj.t.XRP;
-          if (e && isFinite(e[1])) XRP24 = Number(e[1]);
-          if (DEN === 'usd') renderPage(h, d, pageNo);
-        })
-        .catch(function () {});
+      ensureXrp24(function () { if (DEN === 'usd') renderPage(h, d, pageNo); });
 
       buildDenToggle(h, d);
       wireSearch(h, d);

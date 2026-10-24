@@ -130,11 +130,32 @@ for (const dev of ['desktop', 'mobile']) {
     // The block is not deleted, because it is shared. Only the two lookups are made safe, which
     // leaves the dead trending code inert. It deserves to be inert: renderTrending('7d') did not
     // read a 7-day figure at all, it MULTIPLIED the 24h change by 2.3 and added 4.2.
+    // THE renderTrending GUARD IS GONE FROM HERE, and the strip below cleans up what it left.
+    //
+    // It used to be the second rule in this list, and _xrpltrendguard -- which runs 80 transforms
+    // later -- guards the SAME function at the SAME anchor, inserting `if (!tList) return;` directly
+    // after the opening brace. Each transform's idempotence gate is anchored to that brace, so each
+    // one's guard moved the other's out of reach of its own strip. Both then re-applied, every build,
+    // for as long as both have existed: 111 copies of this line were sitting in the containers on
+    // 2026-10-23, one per build, and the same 111 were shipping on every page that carries the
+    // dashboard script. Each is an identical early return, so nothing ever misbehaved -- the only
+    // thing that finds this is the two-run diff, which is why that check exists.
+    //
+    // Two correct guards cannot share one anchor, so one of them goes. _xrpltrendguard's is the one
+    // that stays, and it is the better of the two: renderTrending opens by dereferencing the CAPTURED
+    // `tList`, not a fresh lookup, so guarding the lookup -- as this did -- left the throw one line
+    // further down. Stellar measured exactly that before writing its own fix. Nothing is left
+    // unguarded: _xrpltrendguard aborts the build if renderTrending is not found in either container,
+    // so this cannot quietly become a rule nobody applies.
+    const DEAD_GUARD = "\n    if (!document.getElementById('trendingList')) return;";
+    if (h.indexOf(DEAD_GUARD) >= 0) {
+      while (h.indexOf(DEAD_GUARD) >= 0) h = h.split(DEAD_GUARD).join('');
+      orphansFixed++;
+    }
+
     for (const [bad, good] of [
       ["document.getElementById('trendingList').closest('.market-card')",
         "(document.getElementById('trendingList')||{closest:function(){return null;}}).closest('.market-card')"],
-      ['function renderTrending(period) {',
-        "function renderTrending(period) {\n    if (!document.getElementById('trendingList')) return;"],
     ]) {
       // IDEMPOTENCE. The second rule's replacement CONTAINS its own search string — it appends a
       // guard to a function opening — so on the next build it matched again and appended a SECOND

@@ -272,12 +272,42 @@
   // The heading is rewritten to say so. "Platform Activity" would still be a claim this data does
   // not support: these are pool events on the ledger, not actions taken on LumosCore.
 
+  // A CALL THAT NEVER ANSWERS USED TO WAIT FOREVER (RAZA 2026-10-17: "Platform activity on landing
+  // page takes ages to appear and sometimes doesn't appear until i refresh the page"). This is a
+  // direct browser call to xrplcluster.com -- not through our edge, so it is uncached, and the
+  // dashboard makes two dozen of them on a cold load. With no timeout, one hung socket left the card
+  // blank until the reader reloaded, which is precisely what he described.
+  //
+  // Eight seconds: longer than the slowest honest answer measured (833ms from here, and his round
+  // trip is several times that), short enough that a stall becomes a message rather than a wait.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and the two dozen calls below can spend the quota on their own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params) {
-    return fetch(RPC, {
+    var ctl = null;
+    try { ctl = new AbortController(); } catch (e) {}
+    var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, 8000);
+    // The 8s ceiling stays whole-call on purpose and still outranks the retry: this card's bug was a
+    // hung socket leaving it blank, so "give up and say so" beats "keep waiting" here. A short
+    // throttle is now ridden out inside the budget; one quoting longer than 8s still aborts, which
+    // is the deliberate trade rather than an oversight.
+    return lxpost(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
-    }).then(function (r) { return r.json(); });
+      signal: ctl ? ctl.signal : undefined,
+    }).then(function (j) {
+      clearTimeout(timer);
+      return j;
+    }, function (e) { clearTimeout(timer); throw e; });
   }
 
   // The RAW currency and the issuer are kept, not just the display name. The logo lookup is keyed on
@@ -577,6 +607,24 @@
     return 'hsl(' + h + ',62%,58%)';
   }
 
+  // The waiting row's own rule. Injected once by id so a re-render cannot stack copies, and it reuses
+  // `lxdbxshim` — the shimmer keyframe the stat pills already define on this page, confirmed present
+  // in the built output — rather than declaring a second animation that would drift from it.
+  function skelCss() {
+    if (document.getElementById('lx-actskel-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-actskel-css';
+    st.textContent = '.lx-actskel{display:inline-block;height:15px;border-radius:6px;vertical-align:-2px;'
+      + 'background-image:linear-gradient(90deg,rgba(140,140,150,.10),rgba(140,140,150,.22),rgba(140,140,150,.10));'
+      + 'background-size:200% 100%;animation:lxdbxshim 1.2s ease-in-out infinite}'
+      + '.lx-actskel-s{height:11px;border-radius:5px}'
+      // The mark slot, so the row does not start with a hole where every real row has a logo.
+      + '.lx-actwait .lx-fg{display:inline-block;width:28px;height:28px;border-radius:50%;'
+      + 'background:rgba(127,127,140,.14)}'
+      + '@media(prefers-reduced-motion:reduce){.lx-actskel{animation:none}}';
+    (document.head || document.documentElement).appendChild(st);
+  }
+
   function activityRow(entry) {
     // rippled's v1 and v2 shapes differ: v1 nests the transaction under `tx`, v2 under `tx_json`
     // with the timestamp lifted to the envelope. Reading only one of them yields an empty feed
@@ -770,16 +818,63 @@
   // The window now spans both sides of the fee and takes the nearest self-payment, which is correct for transactions
   // made before today as well as after.
   var COLLECTOR_ACCT = 'rBDV4nwHzg5ByAYJtPWrbBZnuUXSUtFr94';
+  // THIS CARD'S READS GO THROUGH THE EDGE, CACHED, because they are the same for every visitor.
+  //
+  // RAZA 2026-10-18, user report: "platform activity takes extremely long to appear. And sometimes it
+  // doesnt even load", with the card showing "Could not read the XRP Ledger."
+  //
+  // The cost is the reason: one account_tx for the collector plus one AT limit 200 per fee-paying
+  // account, up to twelve — thirteen of the heaviest read the ledger offers, from the reader's own
+  // browser, against a node that meters by UNITS not requests. One dashboard load can spend that
+  // budget alone, and whatever the node then refuses is the error on the card.
+  //
+  // None of it is personal data: every visitor was paying thirteen metered calls for an identical
+  // list. /lxapi/xrpltx asks Ripple's node from the edge and caches for 60s, so the first reader pays
+  // once and everyone behind them is served from cache, off their own IP.
+  //
+  // Falls back to the direct call, so a missing or unhappy endpoint behaves exactly as before.
+  function txOf(account, limit) {
+    var direct = function () {
+      return rpc('account_tx', { account: account, limit: limit, binary: false, ledger_index_min: -1, ledger_index_max: -1 });
+    };
+    var ctl = null, timer = null, o = {};
+    try {
+      ctl = new AbortController(); o.signal = ctl.signal;
+      timer = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 9000);
+    } catch (e) {}
+    var done = function () { if (timer) { clearTimeout(timer); timer = null; } };
+    return fetch('/lxapi/xrpltx?a=' + encodeURIComponent(account) + '&n=' + limit, o).then(function (r) {
+      done();
+      if (!r.ok) return direct();
+      return r.json().then(function (j) {
+        if (!j || !j.ok || !j.result) return direct();
+        // The same envelope the node's rpc() returns, so every reader below is unchanged.
+        return { result: j.result };
+      }, direct);
+    }, function () { done(); return direct(); });
+  }
+
   function platformSwaps() {
     // Filled from the same per-account windows the swap pairing already reads — see the note there.
     var pools = [];
-    return rpc('account_tx', { account: COLLECTOR_ACCT, limit: 20, binary: false, ledger_index_min: -1, ledger_index_max: -1 })
+    return txOf(COLLECTOR_ACCT, 20)
       .then(function (j) {
-        var list = (j && j.result && j.result.transactions) || [];
+        // A LEDGER THAT DID NOT ANSWER IS NOT A PLATFORM WITH NO ACTIVITY. Without this the card
+        // read "No recent activity." whenever this first call failed -- the same sentence it shows
+        // when the platform genuinely has none. Stating an unverified negative, which is the mistake
+        // [[never-cache-a-failure-as-an-answer]] records in its other form.
+        if (!j || !j.result || j.result.error) throw new Error('ledger unavailable');
+        var list = (j.result.transactions) || [];
+        // SIXTY, NOT EIGHT (RAZA 2026-10-17: "Platform activity on dashboard is showing less number
+        // of recent transactions if compared to Stellar. Please make sure its showing the same number
+        // of recent transactions on XRPL too"). Measured side by side on production: Stellar's feed
+        // renders 50 rows, this one rendered 9. The cap was never a judgement about how much history
+        // is worth showing -- it was protection against the request-per-fee pairing below, which is
+        // gone. See the note there.
         var fees = list.filter(function (e) {
           var t = e.tx || e.tx_json || {}, m = e.meta || e.metaData || {};
           return t.TransactionType === 'Payment' && t.Destination === COLLECTOR_ACCT && m.TransactionResult === 'tesSUCCESS';
-        }).slice(0, 8);
+        }).slice(0, 60);
 
         // THE POOL ACTIONS NEED THEIR OWN PASS, and piggybacking on the fee windows was my mistake.
         // Those windows span L-10 to L+30 around a FEE PAYMENT, which is right for finding the swap a
@@ -797,10 +892,24 @@
           var a = (e.tx || e.tx_json || {}).Account;
           if (a && accts.indexOf(a) < 0) accts.push(a);
         });
-        var freeScan = Promise.all(accts.slice(0, 5).map(function (a) {
-          return rpc('account_tx', { account: a, limit: 40, binary: false, ledger_index_min: -1, ledger_index_max: -1 })
+        // ONE REQUEST PER ACCOUNT, AND THE SWAP PAIRING NOW READS THE SAME LIST.
+        //
+        // The pairing below used to spend an `account_tx` PER FEE to find the swap each fee belonged
+        // to -- so showing more history meant more requests, one per row, which is why the fee list
+        // was capped at eight. But the account's own transaction list already contains that swap: it
+        // is the same account, and we are already fetching it here for the free actions. Pairing in
+        // memory makes the cost 1 + accounts instead of 1 + accounts + fees, and lets the caps rise.
+        //
+        // Measured before and after on the same dashboard: 14 ledger requests for 9 rows, against 13
+        // for the full history. Fewer requests, five times the feed.
+        var byAcct = {};
+        var freeScan = Promise.all(accts.slice(0, 12).map(function (a) {
+          // The twelve heavy ones. These are what actually exhausted the visitor's unit budget, and
+          // they cache best: a fee-paying account's history is identical for every reader of this card.
+          return txOf(a, 200)
             .then(function (jr) {
               var l = (jr && jr.result && jr.result.transactions) || [];
+              byAcct[a] = l;
               for (var i = 0; i < l.length; i++) {
                 var x = l[i].tx || l[i].tx_json || {}, mm = l[i].meta || l[i].metaData || {};
                 if (mm.TransactionResult !== 'tesSUCCESS') continue;
@@ -812,32 +921,99 @@
                 if (!hasLumosMemo(x)) continue;
                 pools.push(l[i]);
               }
-            }, function () {});
+            }, function () { byAcct[a] = []; });
         }));
 
-        return freeScan.then(function () { return Promise.all(fees.map(function (e) {
-          var t = e.tx || e.tx_json || {};
-          var L = e.ledger_index || t.ledger_index;
-          if (!L) return null;
-          return rpc('account_tx', {
-            account: t.Account, ledger_index_min: L - 10, ledger_index_max: L + 30,
-            limit: 20, binary: false, forward: true,
-          })
-            .then(function (j2) {
-              var l2 = (j2 && j2.result && j2.result.transactions) || [];
-              var best = null, bestGap = 1e9;
-              for (var k = 0; k < l2.length; k++) {
-                var x = l2[k].tx || l2[k].tx_json || {}, mm = l2[k].meta || l2[k].metaData || {};
-                if (x.TransactionType !== 'Payment' || x.Account !== t.Account || x.Destination !== t.Account) continue;
-                if (mm.TransactionResult !== 'tesSUCCESS') continue;
-                var lg = l2[k].ledger_index || x.ledger_index || 0;
-                // Ledgers after the fee are the current shape and win ties; before it covers swaps made before today.
-                var gap = (lg >= L) ? (lg - L) : ((L - lg) + 0.5);
-                if (gap < bestGap) { bestGap = gap; best = l2[k]; }
+        // PAIRED IN MEMORY, from the lists freeScan already fetched. The matching rule is unchanged
+        // -- a self-payment by the same account nearest the fee's ledger, those after it winning ties
+        // -- only the source of the transactions is. The ±window stays: it is what makes the match a
+        // match rather than "some swap this account once did".
+        //
+        // A fee whose account was not scanned (beyond the 12) simply finds nothing and is skipped,
+        // which is the same outcome the old code had for a request that failed.
+        return freeScan.then(function () {
+          var used = {};
+          return fees.map(function (e) {
+            var t = e.tx || e.tx_json || {};
+            var L = e.ledger_index || t.ledger_index;
+            if (!L) return null;
+            var l2 = byAcct[t.Account] || [];
+
+            // A BRIDGE FEE IS NOT A SWAP FEE, and treating it as one was wrong twice over.
+            //
+            // RAZA 2026-10-20: "Why is this cross chain trx missing from dashboard. its showing up in
+            // bridge recent activity but didnt appear in platform activity". Measured on his account:
+            //
+            //   fee       0.0021 XRP -> collector      memo "lx:ni"   (MemoType empty)
+            //   transfer  2.0979 XRP -> rwJLZfPyVTry…  memos: []
+            //
+            // The transfer carries nothing, so bridgeOf() could not admit it in the freeScan above and
+            // the loop below could not find it either -- that loop wants a SELF-payment, which is what
+            // an XRPL swap is, and a bridge pays a third party. The row simply never existed.
+            //
+            // Worse, it did not fail silently: his account has a 0.00001 XRP self-payment twenty
+            // seconds after that fee, well inside the L-10..L+30 window, so the lx:ni fee was free to
+            // pair with it and publish a bridge as a dust swap.
+            //
+            // So a marked fee is handled by route and never falls through to the swap search:
+            //   NEAR Intents -- find the partner HERE, as the payment to a third party, and stamp it.
+            //   Axelar / THORChain -- the transfer states its own route, so the freeScan already has
+            //     it; pairing again would only duplicate the row or mis-pair the fee.
+            var route = feeRoute(t);
+            if (route) {
+              if (route !== 'NEAR Intents') return null;
+              var bb = null, bbGap = 1e9;
+              for (var q = 0; q < l2.length; q++) {
+                var y = l2[q].tx || l2[q].tx_json || {}, ym = l2[q].meta || l2[q].metaData || {};
+                if (y.TransactionType !== 'Payment' || y.Account !== t.Account) continue;
+                if (ym.TransactionResult !== 'tesSUCCESS') continue;
+                // Neither us nor the collector: the deposit address is a stranger, and that is the
+                // whole test. An address list would be wrong within a day -- every 1Click deposit
+                // address is per-quote -- which is the same reason the two routes above are read
+                // from memos rather than from destinations.
+                if (!y.Destination || y.Destination === t.Account || y.Destination === COLLECTOR_ACCT) continue;
+                var yl = l2[q].ledger_index || y.ledger_index || 0;
+                if (yl < L - 10 || yl > L + 30) continue;
+                var yh = y.hash || l2[q].hash || '';
+                if (yh && used[yh]) continue;
+                var ygap = (yl >= L) ? (yl - L) : ((L - yl) + 0.5);
+                if (ygap < bbGap) { bbGap = ygap; bb = l2[q]; }
               }
-              return best;
-            }, function () { return null; });
-        })); });
+              if (!bb) return null;
+              var bbh = (bb.tx || bb.tx_json || {}).hash || bb.hash || '';
+              if (bbh) used[bbh] = 1;
+              // The chain is deliberately left blank. The transfer names no destination and the
+              // ledger holds nothing that does, so the row reads "2.0979 XRP · CROSS-CHAIN · via NEAR
+              // Intents" and stops there -- the same rule the THORChain branch follows when its memo
+              // abbreviates to a letter we cannot resolve. A row naming the wrong chain is worse than
+              // one naming none.
+              try { (bb.tx || bb.tx_json || {}).__lxRoute = { via: 'NEAR Intents', chain: '' }; } catch (_) {}
+              return bb;
+            }
+
+            var best = null, bestGap = 1e9;
+            for (var k = 0; k < l2.length; k++) {
+              var x = l2[k].tx || l2[k].tx_json || {}, mm = l2[k].meta || l2[k].metaData || {};
+              if (x.TransactionType !== 'Payment' || x.Account !== t.Account || x.Destination !== t.Account) continue;
+              if (mm.TransactionResult !== 'tesSUCCESS') continue;
+              var lg = l2[k].ledger_index || x.ledger_index || 0;
+              if (lg < L - 10 || lg > L + 30) continue;
+              var hs = x.hash || l2[k].hash || '';
+              // ONE SWAP PER FEE. Reading whole account histories instead of a window per fee means
+              // the same swap is now visible to every fee that account ever paid; without this the
+              // feed would repeat one trade as many times as there are fees near it.
+              if (hs && used[hs]) continue;
+              // Ledgers after the fee are the current shape and win ties; before it covers swaps made before today.
+              var gap = (lg >= L) ? (lg - L) : ((L - lg) + 0.5);
+              if (gap < bestGap) { bestGap = gap; best = l2[k]; }
+            }
+            if (best) {
+              var bh = (best.tx || best.tx_json || {}).hash || best.hash || '';
+              if (bh) used[bh] = 1;
+            }
+            return best;
+          });
+        });
       })
       // RETURNS the rows rather than inserting them. The feed is written once, by loadActivity, from both sources at
       // the same time — inserting here is what made the newest entries appear seconds after the rest.
@@ -849,7 +1025,11 @@
           return { entry: s, label: null };
         }).concat(pools.map(function (p) { return { entry: p, label: null }; }));
       })
-      .catch(function () { return []; });
+      // NULL, NOT []. An empty array is an answer -- "nothing has happened here" -- and this catch
+      // was handing that answer out for every network hiccup, so a reader who hit one was told the
+      // platform was idle and only found out otherwise by reloading. The caller now tells the two
+      // apart and says which it is.
+      .catch(function () { return null; });
   }
 
   // Does this transaction carry LumosCore's own memo? The mark is written as hex, so the test is on the
@@ -900,8 +1080,27 @@
     }
     return out;
   }
+  // WHICH ROUTE A FEE PAYMENT IS FOR, read off the marker the three send sites write. The mark rides
+  // the FEE, never the transfer (see the note in nibridge.js), and it is plain MemoData with no
+  // MemoType -- unlike our swap fees, which carry MemoType "LumosCore".
+  function feeRoute(tx) {
+    var ms = (tx && tx.Memos) || [];
+    for (var i = 0; i < ms.length; i++) {
+      var d = memoText(((ms[i] || {}).Memo || {}).MemoData || '');
+      if (d === 'lx:ni') return 'NEAR Intents';
+      if (d === 'lx:ax') return 'Axelar';
+      if (d === 'lx:th') return 'THORChain';
+    }
+    return null;
+  }
+
   function bridgeOf(tx) {
     if (!tx || tx.TransactionType !== 'Payment') return null;
+    // STAMPED BY THE FEE PAIRING, for the one route that cannot be recognised from the transfer.
+    // NEAR Intents sends a plain payment to a per-quote deposit address with NO memo of ours on it,
+    // so there is nothing here to test -- the evidence is the lx:ni fee beside it, and the pairing
+    // below is what finds the pair. Checked first because the two tests underneath would both miss.
+    if (tx.__lxRoute) return tx.__lxRoute;
     if (!tx.Destination || tx.Destination === tx.Account) return null;   // a self-payment is a swap
     var ms = tx.Memos || [];
     var byType = {}, datas = [];
@@ -1014,7 +1213,37 @@
     // ledger' so please dont show that on XRPL as well"). The design's mock rows still have to go — they are another
     // chain's transactions — but what replaces them is nothing at all until the real rows arrive. The failure and
     // empty-feed notes below stay: those are answers, not waiting.
-    host.innerHTML = '';
+    //
+    // …AND "NOTHING AT ALL" IS WHAT RAZA REPORTED ON 2026-10-20: "Platform activity is taking too long
+    // to show up." NO BACKTICKS IN THIS COMMENT.
+    //
+    // Measured on production first, because the obvious suspect was wrong. The ledger is fast: nine
+    // account_tx calls, all started by 302ms and all finished by 632ms, none failed. The feed is not
+    // stuck and the gate is not the problem — ready() runs on the success path. What he was looking at
+    // is this line. The card renders its heading, then shows an empty box for as long as the slowest
+    // of those calls takes, which on a warm desktop is half a second and on a phone against a metered
+    // node is several times that, with retries.
+    //
+    // So: SKELETON ROWS, not a message and not partial data. Both of those were rejected before and
+    // for good reasons — the message was noise Stellar does not show, and painting one source then
+    // inserting the other made the feed rearrange itself under the reader (2026-09-17, "First it
+    // doesn't show new data then it suddenly does"). A skeleton is neither: it claims nothing, it is
+    // replaced wholesale by the real list, and it is exactly what Stellar's own feed grew today.
+    //
+    // It also overwrites the design's mock rows on the first tick, which is what the gate below was
+    // protecting against — so the gate can open immediately and the card stops being a blank box.
+    skelCss();
+    var _sk = '';
+    for (var _s = 0; _s < 8; _s++) {
+      _sk += '<div class="activity-feed-row lx-actwait">'
+        + '<span class="lx-fg" aria-hidden="true"></span>'
+        + '<div class="info">'
+        + '<div class="type"><span class="lx-actskel" style="width:62%"></span></div>'
+        + '<div class="meta"><span class="lx-actskel lx-actskel-s" style="width:84px"></span></div>'
+        + '</div></div>';
+    }
+    host.innerHTML = _sk;
+    ready();
 
     // BOTH SOURCES BEFORE ANYTHING IS DRAWN (RAZA 2026-09-17: "First it doesn't show new data then it suddently does").
     // The pool's own transactions answer in well under a second; the LumosCore swaps take a walk through the fee
@@ -1037,9 +1266,13 @@
       Promise.resolve([]),
       platformSwaps(),
     ]).then(function (both) {
-      var pool = both[0], mine = both[1] || [];
-      if (pool === null && !mine.length) { note('Could not read the XRP Ledger.'); return; }
-      var all = (pool || []).concat(mine);
+      var pool = both[0], mine = both[1];
+      // THIS TEST USED TO BE UNREACHABLE. `pool` is `Promise.resolve([])` on this build -- never
+      // null -- so `pool === null` was false on every load and the failure message could not be
+      // shown at all. Every failure fell through to "No recent activity." below. The signal that
+      // matters now is `mine`, which is null only when the ledger could not be read.
+      if (mine === null) { note('Could not read the XRP Ledger.'); return; }
+      var all = (pool || []).concat(mine || []);
       // One row per transaction: a LumosCore swap routed through the LUMOS pool arrives from both sources, and the copy
       // that knows it was made here is the one that keeps its name.
       var seen = {}, rows = [];
@@ -1053,6 +1286,11 @@
         rows.push(r);
       });
       rows.sort(function (a, b) { return timeOf(b.entry) - timeOf(a.entry); });
+      // FIFTY, THE SAME NUMBER STELLAR'S FEED RENDERS -- counted on production rather than assumed.
+      // There is no pager on this card and phones render every row, so an unbounded list is a DOM
+      // that grows with the platform's whole history; the cap is what makes "the same as Stellar"
+      // mean the same thing on both chains instead of "whatever the ledger returned".
+      rows = rows.slice(0, 50);
       if (!rows.length) { note('No recent activity.'); return; }
       host.innerHTML = '';
       rows.forEach(function (r) {

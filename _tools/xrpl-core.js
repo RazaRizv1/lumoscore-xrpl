@@ -105,16 +105,95 @@ function b58decode(str) {
   return bytes.reverse();
 }
 
-// A CLASSIC XRPL ACCOUNT ADDRESS, by shape. Deliberately NOT a checksum check: verifying the trailing
-// 4 bytes needs double-SHA256, which is async in a browser (crypto.subtle) and would make every caller
-// async for a case that barely happens -- a wallet does not hand back a one-character typo of its own
-// address. What DOES happen, and what this catches, is a value of the wrong KIND: a Stellar 'G...'
-// address left in shared storage by the Stellar build, an EVM '0x...', an empty string, an X-address.
-// Connect confirms the account against the ledger separately, which is the real check.
+// SHA-256, synchronously, in about forty lines.
+//
+// WHY NOT crypto.subtle: it is async, and isAddress() is called synchronously from twelve places —
+// search-as-you-type, a paste handler, a row filter. Making it async would mean making those async
+// too, which is a large change to hot paths for the sake of four bytes. WHY NOT the vendored
+// xrpl.js: it is 1.1MB and only loaded on the pages that sign, while addresses are validated
+// everywhere.
+//
+// Verified in xrpl-core.test.js against node's own crypto over random inputs of every length that
+// crosses a block boundary, plus the two standard vectors. A hash that is subtly wrong here would
+// reject every valid address and make the site unable to send at all, so it is tested against an
+// implementation nobody doubts rather than against itself.
+const K256 = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+
+// Takes a byte array (b58decode returns a plain Array), returns a 32-byte Uint8Array.
+function sha256(input) {
+  const len = input.length;
+  // Pad to a multiple of 64 with room for the 0x80 marker and an 8-byte length.
+  const padded = new Uint8Array(((((len + 8) >> 6) + 1) << 6));
+  padded.set(input);
+  padded[len] = 0x80;
+  const dv = new DataView(padded.buffer);
+  const bits = len * 8;
+  dv.setUint32(padded.length - 8, Math.floor(bits / 4294967296));
+  dv.setUint32(padded.length - 4, bits >>> 0);
+
+  const H = [0x6a09e667 | 0, 0xbb67ae85 | 0, 0x3c6ef372 | 0, 0xa54ff53a | 0,
+             0x510e527f | 0, 0x9b05688c | 0, 0x1f83d9ab | 0, 0x5be0cd19 | 0];
+  const w = new Array(64);
+
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getInt32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const x = w[i - 15], y = w[i - 2];
+      const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+      const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+      w[i] = (((w[i - 16] + s0) | 0) + ((w[i - 7] + s1) | 0)) | 0;
+    }
+    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (((((h + S1) | 0) + ch) | 0) + ((K256[i] + w[i]) | 0)) | 0;
+      const S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+  const out = new Uint8Array(32);
+  const odv = new DataView(out.buffer);
+  for (let i = 0; i < 8; i++) odv.setInt32(i * 4, H[i]);
+  return out;
+}
+
+// A CLASSIC XRPL ACCOUNT ADDRESS, shape AND checksum.
+//
+// IT USED TO BE SHAPE ONLY, and the reasoning written here was sound for the case it was written
+// for: a wallet does not hand back a one-character typo of its own address, so checking the version
+// byte was enough to reject a value of the wrong KIND — a Stellar 'G...' left in shared storage, an
+// EVM '0x...', an X-address.
+//
+// That stopped being the whole story once this same function became the gate on a RECIPIENT that a
+// human types or pastes (write.js parseDest). There, one wrong character is the common case and the
+// consequence is a payment, so the threat model is not the same one the old comment described.
+// RAZA 2026-10-16, after the send bug: "add the checksum".
+//
+// A bad checksum was never going to move funds — the ledger rejects it with actMalformed and the
+// send is blocked either way. What it bought was a WRONG REASON: "Account malformed." from the node,
+// several seconds and a round trip later, for what is a typo. Now it is caught in this browser,
+// instantly, and parseDest's own sentence is the one the reader gets.
+//
+// The last four bytes are the first four of sha256(sha256(version + accountID)).
 function isAddress(a) {
   if (typeof a !== 'string' || a.length < 25 || a.length > 35 || a[0] !== 'r') return false;
   const b = b58decode(a);
-  return !!b && b.length === 25 && b[0] === 0;             // 0x00 = the classic account-ID version
+  if (!b || b.length !== 25 || b[0] !== 0) return false;   // 0x00 = the classic account-ID version
+  const sum = sha256(sha256(b.slice(0, 21)));
+  return sum[0] === b[21] && sum[1] === b[22] && sum[2] === b[23] && sum[3] === b[24];
 }
 
 // ---- team wallets --------------------------------------------------------------------------------
@@ -161,8 +240,19 @@ function excludeTeam(rows, accountKey) {
 // reserves come from server_info; never assume them.
 function spendableXrp(balanceDrops, ownerCount, reserve) {
   const bal = Number(balanceDrops) / XRP_DROPS;
-  const base = Number(reserve && reserve.base);
-  const inc = Number(reserve && reserve.inc);
+  // `reserve && reserve.base` yields null for a null reserve, and Number(null) is 0 -- which is
+  // FINITE, so the guard below waved it through and the function returned the whole balance as
+  // spendable. The exact opposite of what the next line promises, and in the dangerous direction: it
+  // offers money that is locked, so Max builds a transaction the ledger rejects for insufficient
+  // reserve and the sender still pays the fee.
+  //
+  // Latent rather than live when found (2026-10-20): all three callers construct the object, and a
+  // failed server_info leaves base/inc undefined, which is NaN and does trip the guard. Closed anyway
+  // -- the contract is stated right here, and a future caller reading it would be entitled to rely on
+  // it. Cannot affect a caller passing a valid reserve.
+  if (!reserve || typeof reserve !== 'object') return null;
+  const base = Number(reserve.base);
+  const inc = Number(reserve.inc);
   if (!isFinite(bal)) return null;
   if (!isFinite(base) || !isFinite(inc)) return null;      // unknown reserve: say so, do not guess
   const locked = base + inc * (Number(ownerCount) || 0);
@@ -459,7 +549,132 @@ function simulateSwap(rpc, opts) {
   });
 }
 
+// THE LEDGER NAMES ITS OWN RETRY DELAY AND EVERY CALLER USED TO THROW IT AWAY.
+//
+// xrplcluster meters by UNITS, not requests -- "rate limit: units quota (2000 per 10s) exhausted,
+// retry in ~8591ms" -- and one trade-asset page load spends 24 calls on it, so a reload or a second
+// tab lands on the ceiling. Twenty-three browser scripts each grew their own rpc() and every one of
+// them read that reply as a dead ledger. The visible result was the Orderbook panel keeping the
+// design's Aptos mock under "Could not read the order book." for as long as the page stayed open
+// (RAZA 2026-10-17). It looked token-specific and was not: LUMOS reproduces it once the quota is
+// spent, which is why a single cold load never showed it.
+//
+// This owns the TRANSPORT and nothing else. It resolves with the parsed envelope exactly as
+// fetch().then(r => r.json()) did -- error results included -- so the callers that map result.error
+// ("actNotFound" -> unfunded), return null, return {}, or throw all keep their contracts untouched.
+// The one difference: a throttle is waited out instead of reported as an answer.
+//
+// Deliberately narrow. Only an explicit throttle is retried; a network failure still rejects on the
+// first attempt, because making genuine offline take three seconds to say so is its own bug.
+const THROTTLED = /rate limit|too many|quota|slow down|try again|overloaded/i;
+
+function retryAfter(msg) {
+  // honour the interval the ledger quotes, capped so one long one cannot stall a page
+  const m = /retry in ~?(\d+)\s*ms/i.exec(String(msg || ''));
+  return m ? Math.min(Number(m[1]) + 250, 10000) : 1500;
+}
+
+function ledgerPost(url, opts, tries) {
+  tries = (tries == null) ? 2 : tries;
+  const again = (wait) => new Promise((go) => setTimeout(go, wait))
+    .then(() => ledgerPost(url, opts, tries - 1));
+
+  // A timeout PER ATTEMPT, not for the whole call -- a caller who wrapped the lot in one budget
+  // would have it eaten by the deliberate waiting between retries and abort a retry that was about
+  // to succeed. A caller that brought its own signal keeps it (dashboard.js wants a whole-call
+  // ceiling on purpose); otherwise a stalled socket is cut loose here so it cannot hang forever.
+  let ctl = null, timer = null;
+  const o = Object.assign({}, opts);
+  if (!o.signal) {
+    try {
+      ctl = new AbortController();
+      o.signal = ctl.signal;
+      timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 12000);
+    } catch (e) {}
+  }
+  const done = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+  return fetch(url, o).then((r) => {
+    done();
+    // A throttle can arrive as a STATUS carrying a non-JSON body, where r.json() rejects with a
+    // parse error that says nothing about why.
+    if (tries && (r.status === 429 || r.status === 503)) return again(1500);
+    return r.json().then((j) => {
+      const res = j && j.result;
+      const msg = res && (res.error_message || res.error);
+      if (tries && msg && THROTTLED.test(String(msg))) return again(retryAfter(msg));
+      noteLedger(res);
+      return j;
+    });
+  }, (e) => { done(); throw e; });   // clear the timer on a rejected fetch too, or it leaks an abort
+}
+
+// WHERE THE LEDGER IS, LEARNED FOR FREE FROM READS WE ALREADY MAKE.
+//
+// Needed so a transaction can carry a LastLedgerSequence without the page first going and asking for
+// one — see the stamp in connect.js's submit(). Almost every rippled response carries its ledger
+// index, so this costs nothing: no extra call, no poll, no quota.
+//
+// Two names because rippled is not consistent about which it sends: `ledger_current_index` on reads
+// against the open ledger, `ledger_index` on validated ones.
+let LEDGER_SEQ = 0, LEDGER_AT = 0;
+function noteLedger(res) {
+  if (!res) return;
+  const n = Number(res.ledger_current_index || res.ledger_index || 0);
+  // Monotonic: a validated read is a few ledgers behind an open one, and taking the smaller of the
+  // two would walk this backwards.
+  if (n > LEDGER_SEQ) { LEDGER_SEQ = n; LEDGER_AT = Date.now(); }
+}
+// { seq, age } — age in ms since it was last seen, so a caller can refuse a stale one rather than
+// stamping a deadline computed from a number nobody has checked in minutes.
+function currentLedger() {
+  return { seq: LEDGER_SEQ, age: LEDGER_SEQ ? (Date.now() - LEDGER_AT) : Infinity };
+}
+
+// ROUTE A PATH-FIND THROUGH OUR OWN EDGE, because the node this page can reach is 18x slower at it.
+//
+// Measured 2026-10-18 on the identical request (RLUSD -> XRP, an amount the account can fund):
+// xrplcluster.com 29.1s, s2.ripple.com:51234 1.6s, both returning the same single alternative. Every
+// caller's deadline is shorter than 29s, so the lookup always expired — which is what produced both
+// "Finding the best route..." forever and the Custom Swap popup's "No route between those two assets
+// right now". There IS a route; nobody waited long enough to see it.
+//
+// The fast node cannot be called from here (s2 answers `Failed to fetch` cross-origin), and
+// xrplcluster cannot be called from a Worker (418). /lxapi/xrplpath is the only bridge between those
+// two facts; see the long note in that file.
+//
+// FALLBACK IS THE OLD BEHAVIOUR, EXACTLY. `direct` is the caller's own rpc('ripple_path_find', …)
+// thunk, so if the endpoint is missing, slow or refuses, this degrades to precisely what shipped
+// before rather than to an error. Nothing here can make a swap quote worse than it already was.
+//
+// Returns the `result` object, the same thing a node's rpc() hands back, so callers read
+// `.alternatives` without knowing which road it came by.
+function pathFind(params, direct) {
+  const fall = () => (typeof direct === 'function' ? direct() : Promise.reject(new Error('no route source')));
+  let ctl = null, timer = null;
+  const o = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ params }) };
+  try {
+    ctl = new AbortController();
+    o.signal = ctl.signal;
+    // Comfortably past the 1.6s the fast node takes, far short of the 29s that caused this.
+    timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 9000);
+  } catch (e) {}
+  const done = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  return fetch('/lxapi/xrplpath', o).then((r) => {
+    done();
+    if (!r.ok) return fall();
+    return r.json().then((j) => {
+      if (!j || !j.ok || !j.result) return fall();
+      return j.result;
+    }, fall);
+  }, () => { done(); return fall(); });
+}
+
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
+  ledgerPost, retryAfter,                   // the retrying transport every browser rpc() now routes through
+  pathFind,                                 // ripple_path_find via our edge; falls back to the caller's own rpc
+  currentLedger,                            // where the ledger is, free, for stamping LastLedgerSequence
+  sha256,                                   // exported so the tests can hold it against node's crypto
   simulateSwap,
   TEAM_WALLETS, isTeamWallet, excludeTeam,
   toDrops, amountFor, assetOf, minAfterSlippage, feeOf,

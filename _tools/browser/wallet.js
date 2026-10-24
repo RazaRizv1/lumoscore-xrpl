@@ -37,12 +37,23 @@
   // of a simultaneous burst. The symptom is the whole asset list replaced by 'Could not read the XRP
   // Ledger' while the very same request succeeds by hand a second later. A transient failure that
   // leaves a permanent empty state is the worst kind, because it looks like a broken page.
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params, attempt) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
       return res;
@@ -57,6 +68,41 @@
   function addr() {
     try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
   }
+
+  // THE INHERITED ANTI-FLASH GATES, WHICH NOTHING IN THIS BUILD WAS LIFTING.
+  //
+  // RAZA 2026-10-17: "the portfolio still doesnt load", with a phone screenshot of grey bars where the
+  // address and the total should be. The data was never missing. Measured on production at 375px:
+  //
+  //   .portfolio-value  text="1,466.41 XRP"   color=rgba(0, 0, 0, 0)
+  //   .portfolio-sub    text="≈ $1,906 USD"   color=rgba(0, 0, 0, 0)
+  //
+  // Correct figures, painted on time, rendered in transparent ink. Stellar ships two gates that hold
+  // a value invisible until its painter says it is real —
+  //
+  //   html:not(.lx-adrdone) .wallet-chip .text,.chip .text            {color:transparent!important}
+  //   html:not(.lx-pvdone)  .portfolio-value,.portfolio-sub,.portfolio-usd {color:transparent!important}
+  //
+  // — and the layers that ADD those classes are Stellar's, stripped from this fork. Grepped across
+  // every source file in the XRPL build: both classes are set in zero of them. So the gates closed at
+  // first paint and never opened, on every XRPL wallet page this fork has ever shipped.
+  //
+  // MOBILE ONLY, which is why it survived this long: .portfolio-value exists only in the phone layout.
+  // The desktop hero uses .value-side .value, gated on :not(.lxp) instead, and paintTotal has always
+  // added that one. Every check I ran at desktop width passed. See [[verify-on-production]] and
+  // [[browser-pane-viewport-is-not-375]] — reading textContent proves a value was written, never that
+  // anyone can see it.
+  //
+  // AND IT CANNOT STICK, for the same reason the open-orders gate carries a timer: a gate whose lifter
+  // can fail is just a slower way to hide the page. If the ledger read never lands, the honest outcome
+  // is the em dashes clearTotalMock() already wrote — visible — not an endless grey bar.
+  // NOT named lift(): this file already has one, 900 lines down, and the second declaration of a
+  // hoisted function silently wins. That is [[lumoscore-silent-failures]] exactly.
+  function liftGate(cls) {
+    try { document.documentElement.classList.add(cls); } catch (e) {}
+  }
+  window.__lxxLiftGate = liftGate;
+  setTimeout(function () { liftGate('lx-adrdone'); liftGate('lx-pvdone'); }, 3500);
 
   function fmt(n, dp) {
     if (n == null || !isFinite(n)) return '—';
@@ -611,6 +657,50 @@
   function menuSvg(inner) {
     return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
   }
+  // THE MENU'S OWN STYLING EXISTS ONLY ON THE DESKTOP PAGE.
+  //
+  // RAZA 2026-10-19: "On mobile, wallet -> my assets -> dropdown on 3 dots icon is breaking." His
+  // screenshot shows the three items as bare white pills sitting side by side across the card — a
+  // <div> of <button>s with no panel, no rows, no dividers.
+  //
+  // Measured on the built pages: the desktop wallet carries 12 `.row-menu` rules including the two
+  // that matter --
+  //     .row-menu        { position:absolute; min-width:180px; background:var(--surface); border:...;
+  //                        border-radius:11px; padding:6.6px; display:none }
+  //     .row-menu button { display:flex; width:100%; padding:9.9px 12.1px; ... }
+  // -- and the MOBILE wallet carries four, none of them these. So the menu has never had a look on a
+  // phone; nothing styled it and nothing ever has.
+  //
+  // THIS IS MY REGRESSION, in the sense that it is now reachable: the kebab was added to the phone's
+  // asset cards on 2026-10-18, and that is what put an unstyled menu in front of anyone. The missing
+  // CSS predates it. Same shape as the .qa-row-btn gap found in that same change, where every rule
+  // was scoped to #assetsTable -- see [[lumoscore-stripped-layer-css]].
+  //
+  // DETECTED BY MEASUREMENT, NOT BY GUESSING THE PAGE. A button in a styled menu computes to
+  // display:flex; an unstyled one does not. So this asks the DOM what it got rather than testing the
+  // viewport or the filename, and on any page that already has the design's rules it does nothing.
+  function rowMenuCss(m) {
+    if (document.getElementById('lx-rowmenu-base-css')) return;
+    var b = m.querySelector('button');
+    if (b && getComputedStyle(b).display === 'flex') return;   // the design's own rules are present
+    var st = document.createElement('style');
+    st.id = 'lx-rowmenu-base-css';
+    // Scoped to .lx-rowmenu -- the class THIS file puts on the menus it builds -- so it cannot
+    // restyle anything of the design's own. Values mirror the desktop rules above; only the type is
+    // sized for a phone rather than carrying the desktop build's +10% scale.
+    st.textContent = '.lx-rowmenu{min-width:200px;background:var(--surface,#14141b);'
+      + 'border:1px solid var(--border,#2a2a35);border-radius:11px;padding:6px;'
+      + 'box-shadow:0 12px 28px rgba(0,0,0,.28);z-index:100;display:block}'
+      + '.lx-rowmenu button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;'
+      + 'border-radius:7px;border:none;background:transparent;cursor:pointer;font-family:inherit;'
+      + 'font-size:15px;font-weight:500;color:var(--text,#e8e8ee);text-align:left}'
+      + '.lx-rowmenu button svg{flex-shrink:0;color:var(--text-soft,#9aa0aa)}'
+      + '.lx-rowmenu button:hover{background:var(--surface-2,#1c1c25);color:var(--accent,#ea6a2c)}'
+      + '.lx-rowmenu button:hover svg{color:var(--accent,#ea6a2c)}'
+      + '.lx-rowmenu .divider{height:1px;background:var(--border,#2a2a35);margin:4px 0}';
+    document.head.appendChild(st);
+  }
+
   function openRowMenu(btn) {
     var open = document.querySelector('.lx-rowmenu');
     var again = open && open.__lxFor === btn;
@@ -634,6 +724,7 @@
     m.style.position = 'fixed';
     m.style.visibility = 'hidden';
     document.body.appendChild(m);
+    rowMenuCss(m);                 // BEFORE measuring: the fallback changes the panel's size
     var r = btn.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 170;
     var top = r.bottom + 6;
     if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
@@ -683,6 +774,7 @@
     m.style.position = 'fixed';
     m.style.visibility = 'hidden';
     document.body.appendChild(m);
+    rowMenuCss(m);                 // these are .lx-rowmenu panels too, and equally unstyled here
     var r = btn.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 96;
     var top = r.bottom + 6;
     if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
@@ -750,6 +842,7 @@
     m.style.position = 'fixed';
     m.style.visibility = 'hidden';
     document.body.appendChild(m);
+    rowMenuCss(m);                 // these are .lx-rowmenu panels too, and equally unstyled here
     var r = btn.getBoundingClientRect(), mw = m.offsetWidth || 190, mh = m.offsetHeight || 96;
     var top = r.bottom + 6;
     if (top + mh > window.innerHeight - 8) top = Math.max(8, r.top - mh - 6);
@@ -770,8 +863,14 @@
     if (what === 'swap') {
       // The one swap implementation on this page. If it is not wired yet — a cold load — the DEX page
       // is the honest fallback rather than a button that does nothing.
+      // The asset this menu was opened on is passed through, so the dialog starts on the row the
+      // reader picked instead of its own defaults (RAZA 2026-10-19: Swap on the XLM row opened
+      // XRP -> RLUSD). The menu already carries both halves of the identity for its other items.
       var opened = false;
-      try { opened = typeof window.__lxxOpenSwap === 'function' && window.__lxxOpenSwap(); } catch (e) {}
+      try {
+        opened = typeof window.__lxxOpenSwap === 'function'
+          && window.__lxxOpenSwap({ code: code, issuer: iss });
+      } catch (e) {}
       if (!opened) window.location.href = iss ? ('/trade/xrpl/' + encodeURIComponent(code + '-' + iss)) : '/trade/xrpl';
       return;
     }
@@ -790,14 +889,34 @@
     }
   }
   // Pinned rows go to the top of My Assets, newest pin first, each with Stellar's star badge.
+  // BOTH LAYOUTS, because the phone has no #assetsTable and this used to give up on not finding one.
+  //
+  // RAZA 2026-10-19: "mobile - wallet : my assets -> 3 dots icon -> pin to top: it doesn't pin the
+  // asset to top". The pin itself was being stored correctly — his menu already read "Unpin" on the
+  // second open — so the preference was saved and then nothing on screen moved. A control that
+  // records a choice and shows no result is indistinguishable from a broken one.
+  //
+  // The desktop table and the phone's card list are the same operation over different markup, so the
+  // badge pass and the reorder now run over whichever hosts are present. The key is identical on both
+  // (card() stamps the same data-lxkey tableRow() does); only the element and the name node differ.
   function applyPins() {
-    var tb = document.getElementById('assetsTable');
-    if (!tb) return;
     var list = pinnedList();
-    [].forEach.call(tb.querySelectorAll('tr[data-lxkey]'), function (tr) {
+    var hosts = [];
+    var tb = document.getElementById('assetsTable');
+    if (tb) hosts.push({ host: tb, sel: 'tr[data-lxkey]' });
+    var al = document.getElementById('assetList');
+    if (al) hosts.push({ host: al, sel: '.asset-row[data-lxkey]' });
+    if (!hosts.length) return;
+    hosts.forEach(function (H) { pinPass(H.host, H.sel, list); });
+  }
+
+  function pinPass(tb, sel, list) {
+    [].forEach.call(tb.querySelectorAll(sel), function (tr) {
       var on = list.indexOf(tr.getAttribute('data-lxkey')) >= 0;
       tr.classList.toggle('lx-pinned', on);
-      var nm = tr.querySelector('.nm'), bd = nm && nm.querySelector('.lx-pin-badge');
+      // `.nm` on the desktop row, `.asset-name` on the phone's card: the badge hangs off whichever
+      // this layout calls the name.
+      var nm = tr.querySelector('.nm, .asset-name'), bd = nm && nm.querySelector('.lx-pin-badge');
       if (on && nm && !bd) {
         bd = document.createElement('span');
         bd.className = 'lx-pin-badge';
@@ -809,10 +928,24 @@
         bd.parentNode.removeChild(bd);
       }
     });
-    for (var i = list.length - 1; i >= 0; i--) {
-      var row = tb.querySelector('tr[data-lxkey="' + String(list[i]).replace(/"/g, '') + '"]');
-      if (row) tb.insertBefore(row, tb.firstChild);
-    }
+    // A SORT, NOT A SHUFFLE. This used to walk the pin list back-to-front moving each row to the very
+    // top, which promotes correctly and can never undo itself: on unpin the row kept the position the
+    // pin had given it until something repainted the whole list.
+    //
+    // Sorting on (pin position, original position) does both jobs with one rule — pinned rows lead in
+    // pin order, everything else falls back to where the ledger put it, so a row returns home the
+    // moment it stops being pinned. data-lxord is stamped by paint(); a row without one sorts as 0,
+    // which is the old behaviour rather than a crash.
+    var rows = [].slice.call(tb.querySelectorAll(sel));
+    rows.sort(function (a, b) {
+      var pa = list.indexOf(a.getAttribute('data-lxkey'));
+      var pb = list.indexOf(b.getAttribute('data-lxkey'));
+      if (pa < 0) pa = Infinity;
+      if (pb < 0) pb = Infinity;
+      if (pa !== pb) return pa - pb;
+      return (+a.getAttribute('data-lxord') || 0) - (+b.getAttribute('data-lxord') || 0);
+    });
+    rows.forEach(function (el) { tb.appendChild(el); });
   }
   try { window.__lxxApplyPins = applyPins; } catch (e) {}
   var ICON_COPY = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
@@ -876,6 +1009,9 @@
 
   function card(name, sub, right, rightSub, frozen, tok) {
     var row = el('div', 'asset-row');
+    // The same key the desktop row carries, so applyPins can find this card. Without it the phone's
+    // "Pin to top" stored the pin and reordered nothing (RAZA 2026-10-19).
+    row.setAttribute('data-lxkey', tok ? (name + '-' + tok.issuer) : 'XRP');
     var top = el('div', 'asset-top');
     // EVERY ROW'S BADGE READ "L". This builder wrote the token's first two letters, but the page's
     // logo layer repaints any short-text element from the surrounding words, and those words include
@@ -909,7 +1045,49 @@
     if (rightSub) bal.appendChild(el('div', 'v2', rightSub));
     top.appendChild(bal);
     row.appendChild(top);
+
+    // THE PHONE'S CARD HAD NO ACTIONS AT ALL (RAZA 2026-10-18, user report: "Missing action buttons
+    // (Trade / Send / Swap) on the mobile 'My Assets' page. Unlike the desktop interface...").
+    //
+    // rowActions() had exactly one caller — tableRow(), the DESKTOP builder. This card builder is the
+    // phone's, and it simply never called it, so every holding on a phone was read-only: no Trade, no
+    // Send, no row menu, no "remove trust line" on an empty holding. The same two-renderers-disagree
+    // shape as the verified tick a few lines above, which was fixed here for the same reason.
+    //
+    // The buttons are delegated (data-lxtrade / data-lxsend / data-lxmenu / data-lxrmtl), so the
+    // handlers that already serve the desktop rows pick these up with no extra wiring.
+    cardActionCss();
+    row.appendChild(rowActions(name, tok));
     return row;
+  }
+
+  // ...AND THE PHONE HAS NONE OF THE STYLING EITHER, which is the half that would have shipped broken.
+  //
+  // Every `.qa-row-btn` rule in the mobile container is scoped to `#assetsTable` — the desktop table —
+  // and the base `.qa-row-btn` look (padding, radius, border, muted colour, hover) lives only in the
+  // DESKTOP page's stylesheet. Measured: 5 rules in lumoscore-wallet-mobile.html, all `#assetsTable…`,
+  // and no bare `.qa-row-btn` rule anywhere in it. Appending the buttons alone would have put three
+  // browser-default grey boxes on every card. See [[lumoscore-stripped-layer-css]].
+  //
+  // So the base look is restated here, scoped to the card list, matching the desktop rule rather than
+  // inventing a second visual language. Sizes are the phone's, not the desktop's 17.6px.
+  function cardActionCss() {
+    if (document.getElementById('lx-cardact-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-cardact-css';
+    st.textContent = '#assetList .asset-row .row-quick-actions{display:flex;align-items:center;gap:8px;'
+      + 'margin-top:10px;padding-top:10px;border-top:1px solid var(--border,rgba(255,255,255,.08))}'
+      + '#assetList .asset-row .qa-row-btn{flex:1 1 0;padding:8px 10px;border-radius:8px;'
+      + 'border:1px solid var(--border,rgba(255,255,255,.12));background:transparent;color:var(--text,#16171b);'
+      + 'font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;'
+      + 'display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:all .12s}'
+      + '#assetList .asset-row .qa-row-btn:hover{border-color:var(--accent,#ea6a2c);color:var(--accent,#ea6a2c)}'
+      // The kebab keeps its square footprint instead of stretching to a third of the card.
+      + '#assetList .asset-row .qa-row-btn.icon-only{flex:0 0 38px;width:38px;padding:8px 0}'
+      // Same red trash glyph the desktop row gets, which is scoped to #assetsTable over there.
+      + '#assetList .asset-row .qa-row-btn.lx-rmtrust svg{stroke:var(--red,#ea3943)}'
+      + '#assetList .asset-row .qa-row-btn svg{width:15px;height:15px;flex:0 0 auto}';
+    document.head.appendChild(st);
   }
 
   // BOTH containers exist on every wallet page -- the design keeps a table and a card list and shows
@@ -1029,6 +1207,16 @@
       h.node.appendChild(make(t.display, short(t.issuer), balTxt(t.balance) + ' ' + t.display, '', t.frozen, t));
     }
 
+    // THE ORDER THE LEDGER GAVE US, recorded before anything reorders it.
+    //
+    // applyPins only ever PROMOTES a pinned row to the top; it has no idea where a row came from, so
+    // unpinning cleared the badge and left the row sitting where the pin had put it (RAZA 2026-10-19).
+    // Stamping the natural position here — the one place every row passes through, in the order the
+    // balances arrived — lets the pin pass sort rather than shuffle, so unpinning puts a row back.
+    [].forEach.call(h.node.children, function (el, i) {
+      if (el.setAttribute) el.setAttribute('data-lxord', i);
+    });
+
     if (!data.held.length && !data.xrp) note(h, 'Nothing held on this account yet.');
     hideSparkHead();
     claimRowActions();
@@ -1052,8 +1240,25 @@
   //
   // Safe to call broadly: this only clears an opacity gate. An element hidden for a real reason —
   // display:none on the inactive Liq Pools panel — stays hidden, because that is a different rule.
+  // THE ORDERS BLOCKS ARE DELIBERATELY NOT IN THIS LIST.
+  //
+  // revealAll() runs from paint(), which fires the moment the ledger balances land. paintOrders()
+  // runs AFTER it and does its own fetch first, so there is a window — measured at about two seconds
+  // on a phone — where the balances are painted but the orders panel still holds the design's three
+  // Aptos mock cards with their red Cancel buttons.
+  //
+  // reveal() stamps data-lcm-done, which is the exact attribute the open-orders flash gate keys on.
+  // So including these two here meant paint() threw the gate open over the mock and then waited for
+  // the real orders to arrive: the gate was not failing to work, it was being unlocked early by a
+  // different painter. RAZA 2026-10-17, after the gate shipped: "the apt flash bug still shows up for
+  // split seconds when i refresh the page".
+  //
+  // paintOrders() calls reveal(block) itself on BOTH of its endings — rendered rows and the "no open
+  // orders" note — so these blocks still get stamped, just at the point the content is actually real.
+  // And if that never happens, the gate's own 3s timer in _xrplwallet.js releases them anyway, so
+  // nothing can stay hidden. Dropping them here costs no reveal and closes the window.
   function revealAll() {
-    var SEL = '.hero, .insight-card, .assets-card, .lp-card, .orders-block, .orders-stack';
+    var SEL = '.hero, .insight-card, .assets-card, .lp-card';
     [].forEach.call(document.querySelectorAll(SEL), reveal);
   }
 
@@ -1129,6 +1334,10 @@
     // `.hero-id-row .wallet-chip .text:not(.lxp)` is hidden by the inherited sheet — which is the
     // "wallet address is empty" top left (RAZA 2026-09-15). Written correctly, never released.
     if (chip) chip.classList.add('lxp');
+    // The address is real and written, so open the gate that was holding every .wallet-chip/.chip
+    // .text in transparent ink. .lxp alone was never enough: the hero pill carried .lxp and was still
+    // invisible, because these are two independent gates and this build only ever lifted one.
+    liftGate('lx-adrdone');
     // "COPIED TO CLIPBOARD", as lumoscore.com says (RAZA 2026-09-15). The design's copy handler builds its toast from
     // data-copy-label — "Wallet address copied to clipboard" — so the label is removed from the address controls.
     [].forEach.call(document.querySelectorAll('.wallet-chip [data-copy-label], .hero-id-row [data-copy-label]'), function (b) {
@@ -1496,7 +1705,11 @@
         var block = $('.lx-wcpanel-orders .orders-block') || $('.lx-wcpanel-orders .orders-stack')
           || $('.orders-block') || $('.orders-stack');
         if (!block) return;
-        var rowT = block.querySelector('.order-row, .order-card');
+        // The panel may have been emptied by the flash gate's 3s safety net before this returned —
+        // on a cold phone that is the normal case, not the exception. It stashes the row template on
+        // window before clearing precisely so this clone still has something to work from; without
+        // the fallback, a slow ledger read would end in a permanently empty Open Orders.
+        var rowT = block.querySelector('.order-row, .order-card') || window.__lxOrdTpl;
         if (!rowT) return;
         rowT = rowT.cloneNode(true);
         block.innerHTML = '';
@@ -1516,6 +1729,11 @@
           || document.querySelector('.order-cancel-all,[data-cancel-all]');
         if (cah) {
           cah.style.display = offers.length ? '' : 'none';
+          // Lifts the <head> gate that has been holding this hidden since the first frame. Stamped
+          // here, in the same breath as the display decision, so the control can never be on screen
+          // before this line has decided whether there is anything for it to cancel. With no orders
+          // the display:none above keeps it hidden anyway; the attribute only ends the blanket hide.
+          cah.setAttribute('data-lxca', '1');
           // -webkit-text-fill-color AS WELL AS color, because that property wins over color for the
           // rendered text and the UA sets it on a link. Measured on a fresh load: font-weight and
           // text-decoration from this very same inline style applied, and color alone did not --

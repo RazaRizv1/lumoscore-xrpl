@@ -71,7 +71,7 @@ const STYLE = '<style id="' + CSS_ID + '">'
   + '</' + 'style>';
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + chart + '\n</' + 'script>';
 
-let files = 0, pages = 0, stripped = 0, idFixes = 0;
+let files = 0, pages = 0, stripped = 0, idFixes = 0, liveTags = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -92,6 +92,16 @@ for (const dev of ['desktop', 'mobile']) {
     }
 
     if (h.indexOf('lumos-hero-row') < 0 && h.indexOf('lh-stats') < 0) { json[key] = h; continue; }
+
+    // NO "LIVE" BADGES ON THE UTILITY CARDS (RAZA 2026-10-20: "remove green live tag in 'What you can
+    // do with LUMOS' section", both chains, both layouts). Four per page -- fee waivers, Native LP,
+    // Ecosystem LP, Whale Holder -- and the word marks no distinction, because every card in that
+    // grid is live. Removed from the MARKUP rather than hidden in CSS so there is no first paint
+    // showing them. The sibling `<span class="u-tag">Hold 250K+</span>` chips are a different tag and
+    // stay. Idempotent: after one pass the string is gone. Mirrors _lumostoken.js on Stellar, which
+    // is where the same markup comes from.
+    const liveWas = h.split('<span class="u-tag live">Live</span>').length - 1;
+    if (liveWas) { h = h.split('<span class="u-tag live">Live</span>').join(''); liveTags += liveWas; }
 
     const gone = stripById(h, 'lx-ltdata');
     h = gone.html;
@@ -147,5 +157,6 @@ for (const dev of ['desktop', 'mobile']) {
 
 console.log('xrpl $LUMOS: injected on ' + pages + ' page key(s) across ' + files
   + ' container(s); stripped the Stellar layer from ' + stripped
-  + '; repaired ' + idFixes + ' broken id reference(s)');
+  + '; repaired ' + idFixes + ' broken id reference(s)'
+  + '; removed ' + liveTags + ' Live badge(s)');
 if (!pages) console.error('  ! no page carried the $LUMOS hero — nothing was wired');

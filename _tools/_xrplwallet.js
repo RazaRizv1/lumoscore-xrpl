@@ -35,7 +35,102 @@ for (const src of [core, xp, page, px, wr]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + xp + '\n' + page + '\n' + px + '\n' + wr + '\n</' + 'script>';
 
-let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0, mockCards = 0;
+// THE OPEN ORDERS PANEL SHIPS THREE APTOS ORDERS BAKED INTO THE MARKUP — "APT / USDT, 10K USDT,
+// 42% filled", a red Cancel Order under each — and they are on screen from the first frame until
+// wallet.js clears the block and rebuilds it from the ledger (RAZA 2026-10-17: "Wallet page, there's
+// a flash bug when the page is refreshed. It's showing APT").
+//
+// IN <head>, because the fix has to beat the first paint and the script that fills the panel rides at
+// the end of <body> — a <style> the script creates arrives far too late to stop what the parser has
+// already drawn. Same shape as the other gates on this site: hide the contents until the layer that
+// owns them marks the container, and nothing else.
+//
+// Gated on an attribute WE set, never on a class the design also uses, so a redraw by the design
+// cannot accidentally satisfy it.
+//
+// Visibility, not display: the cards keep their box, so the panel does not collapse and re-expand as
+// the real orders arrive.
+//
+// If the render bails — markup missing, ledger unreachable — the panel stays empty rather than
+// lifting back to the mock. Empty is a poor answer; three invented Aptos orders on a wallet page is a
+// wrong one, and the reader cannot tell it is wrong.
+// IT KEYS ON THE ATTRIBUTE THE PAINTER ALREADY SETS, not a new one of its own.
+//
+// paintOrders() ends every successful path — the rendered rows AND the "no open orders" note — with
+// reveal(block), and reveal() stamps data-lcm-done. So the release signal already exists and is
+// already written in both places; inventing a second attribute would have meant editing wallet.js to
+// set it, and two attributes that must agree is how one of them ends up forgotten.
+//
+// AND IT CANNOT STICK. reveal.js sweeps every card it owns after 2.6s precisely so a reveal that
+// never fires leaves things VISIBLE rather than invisible — but its selector list is
+// .kpi-card/.quick-card/.product-card/.market-card/.activity-card, which does not include these
+// blocks. Nothing would ever lift this gate if the ledger read failed, and a permanently blank panel
+// is a worse bug than the flash it replaces. So the gate ships with its own copy of that safety net:
+// after 3s the blocks are released whatever happened, which is the failure mode worth having.
+const GATE_ID = 'lx-xordgate';
+const GATE_JS = 'lx-xordgate-js';
+// "CANCEL ALL" IS GATED SEPARATELY, BECAUSE IT IS NOT IN THE PANEL.
+//
+// It lives in the section header, OUTSIDE .orders-block, so the `>*` rule above never covered it —
+// which is why it kept flashing after the APT cards stopped (RAZA 2026-10-17: "cancel all text link
+// in blue color is still appearing as flash bug").
+//
+// It flashes BLUE because the design ships it as `<a href="#" id="cancelAllBtn">` with no class, so
+// until a painter touches it the browser renders a bare anchor: default blue, underlined. Both the
+// de-bluing and the hiding currently happen inside paintOrders()'s .then, i.e. only once the ledger
+// has answered — seconds on a cold phone, and never at all if that read fails.
+//
+// So the rule does both jobs up front, in <head>, before the first frame:
+//   * hidden until paintOrders stamps data-lxca, which it does in the same breath as deciding whether
+//     there is anything to cancel;
+//   * styled in the accent colour regardless, so it cannot render blue even in the frame it appears.
+//
+// NO SAFETY TIMER ON THIS ONE, deliberately. For the orders panel, stuck-hidden would be a bug worth
+// guarding against; here hidden IS the correct resting state — with no orders loaded there is nothing
+// to cancel, and the design already hides it in that branch. A failed ledger read leaves no button
+// rather than a live "Cancel all" above an empty list.
+//
+// -webkit-text-fill-color as well as color: the UA sets it on a link and it WINS over color, which is
+// the measured reason an earlier colour-only fix left the anchor blue. Same lesson as the inline
+// styles in paintOrders.
+const CA_SEL = '#cancelAllBtn,.order-cancel-all,[data-cancel-all]';
+const GATE = '<style id="' + GATE_ID + '">'
+  + '.orders-block:not([data-lcm-done])>*,.orders-stack:not([data-lcm-done])>*{visibility:hidden}'
+  + '#cancelAllBtn:not([data-lxca]),.order-cancel-all:not([data-lxca]),[data-cancel-all]:not([data-lxca])'
+  + '{visibility:hidden!important}'
+  + CA_SEL + '{color:var(--accent,#ea6a2c)!important;-webkit-text-fill-color:var(--accent,#ea6a2c)!important;'
+  + 'text-decoration:none!important;font-weight:600}'
+  + '</' + 'style>'
+  // THE SAFETY NET MUST NOT BE A SLOW RELEASE OF THE MOCK.
+  //
+  // The first version of this timer simply stamped data-lcm-done after 3s, which lifts the gate over
+  // WHATEVER is in the panel — and at 3s on a cold phone that is still the three Aptos cards, because
+  // paintOrders has not come back yet. So the net did not protect against the flash, it produced one:
+  // RAZA 2026-10-17, with the gate already shipped, "APT flash bug in open orders still appear on
+  // staging when wallet page is refreshed".
+  //
+  // It now EMPTIES the panel instead of revealing it. The mock never becomes visible on any timeline.
+  //
+  // THE TEMPLATE IS RESCUED FIRST, and that is the whole reason this cannot just delete the markup at
+  // build time. paintOrders() builds every real row by cloning a mock card out of the panel
+  // (`block.querySelector('.order-row, .order-card')`) — the mock is not only scenery, it is the row
+  // template. Clearing the panel without keeping a copy would leave paintOrders with nothing to clone
+  // and it would bail at `if (!rowT) return;`, trading a flash for a permanently empty Open Orders.
+  // So one card is stashed on window first, and paintOrders falls back to it.
+  //
+  // Only untouched panels are cleared: reveal() stamps data-lcm-done the moment paintOrders finishes,
+  // so a panel that already holds REAL orders is skipped and never wiped.
+  + '<script id="' + GATE_JS + '">setTimeout(function(){try{'
+  + 'var n=document.querySelectorAll(".orders-block,.orders-stack");'
+  + 'for(var i=0;i<n.length;i++){var b=n[i];'
+  + 'if(!b.getAttribute("data-lcm-done")){'
+  + 'var t=b.querySelector(".order-row,.order-card");'
+  + 'if(t&&!window.__lxOrdTpl)window.__lxOrdTpl=t.cloneNode(true);'
+  + 'b.innerHTML="";}'
+  + 'b.setAttribute("data-lcm-done","1");}'
+  + '}catch(e){}},3000);</' + 'script>';
+
+let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0, mockCards = 0, gated = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -199,7 +294,20 @@ for (const dev of ['desktop', 'mobile']) {
     h = h.replace(re, '');
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
-    json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
+    h = h.slice(0, bi) + SCRIPT + h.slice(bi);
+
+    // Stripped first and /g, as everywhere else here: one strip against two stale copies leaves a
+    // duplicate competing at equal specificity for ever.
+    const gre = new RegExp('<style id="' + GATE_ID + '">[\\s\\S]*?<\\/style>', 'g');
+    h = h.replace(gre, '');
+    const gjs = new RegExp('<script id="' + GATE_JS + '">[\\s\\S]*?<\\/script>', 'g');
+    h = h.replace(gjs, '');
+    if (h.indexOf('</head>') >= 0 && /orders-block|orders-stack/.test(h)) {
+      h = h.replace('</head>', GATE + '</head>');
+      gated++;
+    }
+
+    json[key] = h;
     pages++;
   }
 
@@ -210,5 +318,5 @@ for (const dev of ['desktop', 'mobile']) {
 
 console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); disabled '+mockCharts
   + ' random-walk chart(s); blanked ' + mockHeadlines + ' mock insight figure(s); hid '
-  + mockCards + ' tab-replaced card(s); data layer on '
+  + mockCards + ' tab-replaced card(s); open-orders flash gate on ' + gated + ' page key(s); data layer on '
   + pages + ' page key(s) across ' + files + ' container(s)');

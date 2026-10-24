@@ -152,7 +152,29 @@ const SCRIPT = '<script id="lx-xrplchainswitch">(function(){'
   + 'var CHEVR=\'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>\';'
   // THE PHONE: one row in the slide menu's footer, beside Theme. Returns false if this page has no such
   // menu, so the desktop path is still tried and a page with neither simply gets nothing.
+  // REMOVED 2026-10-20 — RAZA: "On mobile menu, why do we have network switching. We dont have that
+  // on desktop. Remove it."
+  //
+  // He is right, and the note at the top of this file already said so without drawing the conclusion:
+  // the desktop chip was taken out, and "nor does Stellar's, which is why neither had a switcher on
+  // mobile". This row was then added to the phone to make up for the chip — so the phone ended up
+  // with a control neither desktop nor Stellar has, which is the opposite of the parity rule.
+  //
+  // AND THE PREMISE THIS ROW WAS BUILT ON IS WRONG. RAZA, same day, correcting my first answer:
+  // "chain switching doesn't exist. its just that the other chain pages are viewable in read only."
+  //
+  // So there is no feature here to preserve or relocate. A reader on an XRPL page can open a Stellar
+  // page and look at it; that is not a mode the product switches between, and a button offering to
+  // "Switch to Stellar" described something the site does not do. The hub pages are not a switcher
+  // either — they are how someone picks which chain's page to VIEW. Nothing is lost by removing this
+  // because there was never a state to leave.
+  //
+  // The builder is kept and disabled at its first line rather than deleted, because everything below
+  // it — the section map asserted against Stellar's own _redirects at build time, and the
+  // window-capture note explaining why a normal listener cannot work here — is the expensive part and
+  // would have to be rediscovered if the row is ever wanted again.
   + 'function buildRow(){'
+  + 'return false;'
   + 'if(document.getElementById("lxmcrow"))return true;'
   + 'var foot=document.querySelector(".menu-foot");'
   + 'if(!foot)return false;'

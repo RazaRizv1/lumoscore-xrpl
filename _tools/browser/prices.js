@@ -193,6 +193,15 @@
     var sub = vs.sub;
     if (sub) sub.textContent = '≈ ' + money(totUsd) + ' USD';
 
+    // OPEN THE PHONE'S PORTFOLIO GATE. `html:not(.lx-pvdone)` paints .portfolio-value, .portfolio-sub
+    // and .portfolio-usd in transparent ink until this class exists, and the Stellar layer that used
+    // to add it is not in this fork — so on mobile the total was written correctly and shown as a grey
+    // bar, every time, for every XRPL wallet. See the long note in wallet.js's liftGate.
+    //
+    // Set here rather than borrowing window.__lxxLiftGate so this does not depend on wallet.js having
+    // run first; both are idempotent and adding a class twice costs nothing.
+    try { document.documentElement.classList.add('lx-pvdone'); } catch (e) {}
+
     if (ch7 == null || !isFinite(ch7)) return;
     var pill = vs.pill;
     if (pill) {
@@ -356,7 +365,29 @@
     var slugs = held.map(function (h) { return slug(h.issuer, h.currency); });
     fetchPrices(slugs).then(function (j) {
       if (!j) {
-        if (attempt < 4) setTimeout(function () { start(attempt + 1); }, attempt * 1500);
+        // FOUR TRIES IN NINE SECONDS WAS NOT A RETRY BUDGET, IT WAS A COIN FLIP.
+        //
+        // RAZA 2026-10-17: "wallet portfolio is not loading at all". Reproduced on production with a
+        // 55-asset account: the first COLD load left the headline blank permanently, and the next
+        // three reloads were all correct at 1,465.91 XRP. The tell was the attribution line — it is
+        // written the instant `data` lands, and it was absent, so no response had ever arrived.
+        //
+        // Measured cold vs warm, same account, same colo:
+        //
+        //   /lxapi/xrplprices   cold 2.26s   warm 0.10s
+        //   account_lines       cold 2.15s   warm 0.33s
+        //
+        // Prices only start once wallet.js has published __lxxData, so on a cold phone the old
+        // schedule (1.5s + 3s + 4.5s) could spend its whole budget while the edge was still warming
+        // — and then stop forever, with no later recovery on that page view. The page was one
+        // reload away from correct and had no way to get there on its own. This is the same shape as
+        // [[never-cache-a-failure-as-an-answer]]: a transient miss became the permanent answer.
+        //
+        // So the gap widens to a ceiling instead of ending: ~70s of attempts, the last ones 8s apart.
+        // Bounded, still silent, and cheap — every attempt after the first is a conditional GET
+        // against an edge that is warm by then. A wallet that genuinely has no prices still ends with
+        // dashes and a blank total, which remains the honest outcome.
+        if (attempt < 12) setTimeout(function () { start(attempt + 1); }, Math.min(attempt * 1500, 8000));
         return;                                              // then leave the dashes; say nothing false
       }
       data = j;

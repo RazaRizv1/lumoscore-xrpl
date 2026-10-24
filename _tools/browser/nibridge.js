@@ -89,6 +89,19 @@
   // time.
   var TH = null;                    // {pools[], e8, xrpTradeable}
   var TH_NATIVE = {};               // THORChain chain id -> its native pool asset, e.g. BTC -> BTC.BTC
+  // WHICH THORCHAIN CHAINS ARE PAUSED, or null when the endpoint could not tell us (RAZA 2026-10-23:
+  // "As soon as i pasted in the solana address, thorchain automatically got deselected and Near
+  // intents got selected").
+  //
+  // It had not deselected anything. THORChain's SOL pool is `Available` with real depth, so the route
+  // was offered -- and SOL trading is HALTED, which only the quote could reveal. This route's quote
+  // needs a destination address, because THORChain builds the memo itself; so the refusal could not
+  // arrive until the address did, and the page withdrew an offer it should never have made. Measured
+  // the same day: SOL, GAIA and ZEC all halted, BTC quoting fine.
+  //
+  // null is "we do not know", never "nothing is halted" -- see the note on the endpoint. A route is
+  // refused only when the list exists and names its chain.
+  var TH_HALT = null;
   var THQ = null;                   // the THORChain quote for the current pair
   var BEST = '';                    // which route the page is currently showing: ni | th | ax
   var QUOTING = false;              // a quote is in flight -- distinct from having been refused one
@@ -104,6 +117,14 @@
   var AXQ = null;                   // the Axelar gas estimate for the current pair
   var QUOTE = null;                 // the last live dry quote
   var LAST_NOTE = '';               // why there is no quote, in words the user can act on
+
+  // WITHDRAWING A REFUSING ROUTE'S CARD WAS TRIED HERE, AND REVERTED 2026-10-19, the same day and for
+  // the same reason as the Stellar half in _lzusdt0.js. RAZA asked why a route that cannot serve a pair
+  // is offered at all; a learned, TTL'd suppression answered that literally, and on the page it read as
+  // the route having been removed from the product ("you've entirely removed NEAR Intents"). Telling
+  // someone a route is gone is worse than telling them one pair cannot be priced today. This file
+  // already had the better answer -- data-lxnoquote keeps the card visible, selectable and explaining
+  // itself -- and it stays.
   // ONE NOTE PER ROUTE, because a shared one gets ATTRIBUTED TO THE WRONG ROUTE. Measured on the
   // live page: THORChain answered "trading is halted, can't process swap" and NEAR Intents answered
   // something else entirely, and because both wrote LAST_NOTE the route panel printed THORChain's
@@ -392,9 +413,24 @@
   // Destination TOKEN logos ship too (assets/tokens/ni/SYMBOL.png, the same files the Stellar build
   // fetched from the coingeckoId 1Click itself gives each asset -- so the art is keyed on the identity
   // being delivered, not on a ticker guess).
+  // A WRAPPER WEARS THE FACE OF WHAT IT WRAPS, and this is the right level to say so (RAZA
+  // 2026-10-24: "In recent trxs, where's wXRP logo? its the same as XRP").
+  //
+  // I first patched txChip(), which looked like the function that draws those rows and is not —
+  // txAmt() below builds them and calls symLogo() in two more places, and paintReviewLegs() in a
+  // third. Patching call sites meant finding all of them, and I did not. There is exactly one
+  // question being asked — "what picture goes with this ticker" — so it is answered once, here, and
+  // every caller present and future gets it.
+  //
+  // Only where Axelar says the ticker CHANGES across the bridge: wXRP resolves to XRP's mark, while
+  // USDC and WETH keep their own because they keep their names. Nothing is invented — if the registry
+  // has not loaded, or the ticker is unknown, this returns '' exactly as it always did.
   function symLogo(sym) {
     var s = String(sym || '').replace(/[^A-Za-z0-9._-]/g, '');
-    return s && NI_TOKEN[s] ? ('/assets/tokens/ni/' + s + '.png?v=' + ICONV) : '';
+    if (s && NI_TOKEN[s]) return '/assets/tokens/ni/' + s + '.png?v=' + ICONV;
+    var o = s ? String(axOriginSym(s)).replace(/[^A-Za-z0-9._-]/g, '') : '';
+    if (o && o !== s && NI_TOKEN[o]) return '/assets/tokens/ni/' + o + '.png?v=' + ICONV;
+    return '';
   }
   // `placeKey` lets a NATIVE asset fall back to its own chain's mark (RAZA 2026-10-04: "for aptos, its
   // asset logo on destination is missing"). APT has no file under /assets/tokens/ni and its CoinGecko
@@ -603,12 +639,23 @@
   // xrplcluster.com is what account.js, wallet.js and createpool.js all use, and the shape they use:
   // POST, params wrapped in an array, result unwrapped by the caller.
   var RPC = 'https://xrplcluster.com/';
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpcB(method, params) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
-    }).then(function (r) { return r.json(); });
+    });
   }
   function loadSpendable() {
     var me = addr();
@@ -715,6 +762,19 @@
   // 0.4% while the page says 0.2%.
   var SWAP_SLIP = 0.005;
   var SWAPQ = null;                 // {from, amt, out, paths} — the live IOU -> XRP quote
+  // WHAT THE READER PICKED, taken before the swap replaces it (RAZA 2026-10-23: "i used near intents
+  // from LUMOS (XRPL) to USDC (Avalanche) ... i wanna show what a user actually selected as source
+  // token. In my case it was LUMOS, not XRP").
+  //
+  // srcLeg() was written to answer exactly this and could not, because of the order things happen in:
+  // swapThenBridge() sets `SRC = directAssets()[0]` the moment the swap lands, and rewrites the amount
+  // field with the XRP that arrived. By the time record() runs, both of its inputs describe the XRP
+  // leg -- SRC.native is true, so srcLeg() returned null and the row fell back to "2.012872 XRP". The
+  // fix was in place and the evidence had already been overwritten.
+  //
+  // Captured once, before the first signature, and cleared when the transfer finishes or the source
+  // changes -- so a later plain-XRP bridge cannot inherit the name of a token it never touched.
+  var SWAP_LEG = null;              // {srcSym, srcAmt} — the issued token sold to XRP for this transfer
 
   function xrpAmountObj(v) { return window.lxx.toDrops(v); }
   function iouAmountObj(a, v) {
@@ -730,11 +790,11 @@
     try { ctl = new AbortController(); } catch (e) {}
     var limit = ms || (method === 'ripple_path_find' ? 12000 : 20000);
     var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, limit);
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
       signal: ctl ? ctl.signal : undefined,
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       clearTimeout(timer);
       var res = j && j.result;
       if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'ledger unavailable');
@@ -879,6 +939,93 @@
       if (p.symbol.indexOf('-') >= 0) return;
       if (!TH_NATIVE[p.chain]) TH_NATIVE[p.chain] = p.asset;
     });
+  }
+
+  // WHAT AXELAR IS ACTUALLY HANDED (RAZA 2026-10-24: "Trying to swap on XRPL, from LUMOS (XRPL) to
+  // Hedera using Axelar. But why in the world its showing LUMOS as destination asset. LUMOS doesn't
+  // even exist on Hedera").
+  //
+  // It does not, and Axelar has never heard of it either: its ITS list is 18 assets -- XRP, WETH,
+  // USDC.axl, WBTC, the Midas set, SHX, SOIL, PAXG -- and LUMOS is not one of them. Measured against
+  // the live endpoint the same day; that is why the form carried a red "unknown asset", which is this
+  // page asking for a relay price on a symbol Axelar cannot name.
+  //
+  // The ROUTE is sound. An issued token reaches an Axelar-only destination by being sold to XRP on the
+  // XRP Ledger first -- routesFor() checks AX_BY_SYM.XRP's chains, not the token's, precisely because
+  // XRP is what the bridge receives. What was wrong is everything that DESCRIBED that leg: it read
+  // SRC, which is still the pre-swap token, so the page named LUMOS as the asset arriving on Hedera
+  // and asked Axelar to price a LUMOS relay.
+  //
+  // The same mistake the comment in paintDestAsset already warns about -- "the first version assumed
+  // [the asset that arrives] was always the one being sent" -- fixed there for THORChain and left
+  // standing for a swapped source. One function now answers it, so the seven places that describe this
+  // leg cannot drift apart again.
+  function axLeg() {
+    if (SRC && SRC.viaSwap) return { sym: 'XRP', dp: 6 };
+    return { sym: (SRC && SRC.symbol) || '', dp: SRC ? SRC.decimals : 6 };
+  }
+
+  // ...AND WHAT IT IS CALLED WHERE IT LANDS, which is a different question again (RAZA 2026-10-24:
+  // "you should show wXRP as the destination asset because its wrapped XRP and not actual XRP").
+  //
+  // Axelar is an ITS bridge: it burns on one chain and mints the registered representation on the
+  // other, so what arrives is usually a wrapped token with its own ticker. Not always, though, and
+  // that is why this is a lookup and not a "w" prefix -- from the registry the same day:
+  //     XRP   xrpl-evm → XRP (the native gas token there)   hedera → wXRP ("Wrapped XRP")
+  // Prefixing everything would have been wrong on XRPL EVM, which is the destination this route
+  // exists for in the first place.
+  //
+  // Falls back to the sent symbol whenever the registry has nothing to say, so a chain Axelar adds
+  // tomorrow reads as it does today rather than as a blank.
+  // Split in two so the HISTORY can ask the same question. A stored row has no SRC and no place key —
+  // only the symbol that was sent and Axelar's own chain id — and it is the rows written before any
+  // of this existed that most need answering: they carry the sent symbol and nothing else, so the
+  // table went on saying "1.948635 XRP" for a transfer that delivered wXRP on Hedera. Resolving at
+  // paint time rather than only at write time fixes those too, without rewriting anybody's storage.
+  function axRecvSym(sentSym, axChainId) {
+    var a = AX_BY_SYM[sentSym];
+    var r = a && a.recv && axChainId ? a.recv[axChainId] : null;
+    return (r && r.sym) || sentSym || '';
+  }
+  function axRecv(key) {
+    return axRecvSym(axLeg().sym, axId(key));
+  }
+
+  // WHAT A WRAPPER IS A WRAPPER OF (RAZA 2026-10-24: "In recent trxs, where's wXRP logo? its the same
+  // as XRP").
+  //
+  // symLogo() answers from NI_TOKEN, the 96 marks this build actually ships, and "wXRP" is not one of
+  // them — so the history chip rendered an empty disc next to a real figure. The asset is XRP, and the
+  // registry is the only thing that knows that: it is the same ITS token, listed under XRP on the
+  // XRPL side and wXRP on Hedera.
+  //
+  // Derived rather than written down, so a ticker Axelar adds tomorrow is covered without an edit, and
+  // ONLY where the name actually changes — a chain that keeps the ticker needs no mapping, and
+  // recording one would let an unrelated asset win a collision on a common symbol like USDC.
+  // Rebuilt whenever AX_BY_SYM is, because it is a view of it and nothing else.
+  var AX_ORIGIN = null;
+  function axOriginSym(sym) {
+    if (!sym) return '';
+    if (!AX_ORIGIN) {
+      AX_ORIGIN = {};
+      Object.keys(AX_BY_SYM).forEach(function (x) {
+        var a = AX_BY_SYM[x];
+        if (!a || !a.recv) return;
+        Object.keys(a.recv).forEach(function (c) {
+          var d = a.recv[c] && a.recv[c].sym;
+          if (d && d !== x && !AX_ORIGIN[d]) AX_ORIGIN[d] = x;
+        });
+      });
+    }
+    return AX_ORIGIN[sym] || '';
+  }
+
+  // Is THORChain's leg to this place paused right now? Asked of the PLACE, so the caller never has to
+  // know THORChain's own chain names. False whenever we have no halt list at all, because a route that
+  // might work must not be refused on a read that failed.
+  function thHalted(key) {
+    var p = PLACES[key];
+    return !!(TH_HALT && p && p.th && TH_HALT[p.th]);
   }
 
   // EVERY route that can carry this pair, not one. Where more than one can, the price decides -- see
@@ -1381,15 +1528,26 @@
       var p = PLACES[key];
       var thSym = (routes.indexOf('th') >= 0 && p && p.th && TH_NATIVE[p.th])
         ? (String(TH_NATIVE[p.th]).split('.')[1] || '') : '';
-      var label = thSym || (SRC ? SRC.symbol : '—');
+      // axRecv(), not SRC and not axLeg(): two corrections in one line. A swapped source arrives as
+      // XRP, not as the token sold on the ledger (this said LUMOS over Hedera); and on a chain that
+      // wraps, what arrives carries the wrapped ticker (XRP over Hedera is really wXRP).
+      var label = thSym || (routes.indexOf('ax') >= 0 ? axRecv(key) : (SRC ? SRC.symbol : '—')) || '—';
       var nmAx = as.querySelector('.nm');
       if (nmAx) nmAx.textContent = label;
       // THE ARRIVING ASSET'S OWN MARK. This only ever offered XRP_LOGO, and only when the route was
       // NOT THORChain -- so every THORChain destination showed a grey letter disc beside a real
       // figure (ATOM on Cosmos Hub, measured 2026-09-29). The shipped file is asked for by symbol,
       // which covers the natives THORChain swaps into, and letters remain the fallback.
+      // WRAPPED XRP STILL WEARS THE XRP MARK. The fallback asked whether the SOURCE was native XRP,
+      // which is the wrong question twice over now: a swapped source is not native yet still arrives
+      // as XRP, and "wXRP" has no shipped logo of its own, so both cases fell through to a grey
+      // letter disc. Asked of the Axelar leg instead, which is what the mark is actually depicting.
+      // symLogo() now resolves a wrapper to the mark of what it wraps, so "wXRP" finds XRP's art
+      // without a special case here. The XRP_LOGO fallback stays for the case symLogo cannot answer
+      // at all — the registry not having loaded yet.
+      var axXrp = routes.indexOf('ax') >= 0 && axLeg().sym === 'XRP';
       setIcon(as.querySelector('.br-ic'),
-        symLogo(label) || ((!thSym && SRC && SRC.native) ? XRP_LOGO : ''), label);
+        symLogo(label) || ((!thSym && ((SRC && SRC.native) || axXrp)) ? XRP_LOGO : ''), label);
       setPickable(as, false);
       DEST = null;
       return;
@@ -1527,6 +1685,26 @@
         && String(a.issuer || '') === String(b.issuer || '');
     };
     var keep = SRC && list.filter(function (a) { return same(a, SRC); })[0];
+    // ...AND THE PICKER OFFERS MORE THAN sourceAssets() CONTAINS, which is what silently undid the
+    // user's choice. RAZA 2026-10-19: "In cross-chain, From asset dropdown, i selected usdc. but
+    // after i selected it, it changed to XRP (native asset)."
+    //
+    // sourceAssets() is built from what the wallet HOLDS. The menu deliberately lists two kinds of
+    // asset beyond that: swap-first holdings, and the CURATED majors "held or not" — whose balance is
+    // 0 and which exist precisely so someone can pick a token before they own any. His screenshot
+    // shows the split second of state this produced: the chip had snapped back to XRP while the line
+    // beside it already read "0 USDC", because the balance writer honoured the pick and this did not.
+    //
+    // Picking one of those meant `keep` was undefined, and `|| list[0]` is XRP — so the selection was
+    // thrown away a frame after it was made, with no error and no way to tell why.
+    //
+    // The rebind above still runs FIRST and still wins, so the reason it exists is untouched: a direct
+    // asset is always re-bound to the fresh entry carrying its `ax` registry data. This only catches
+    // the case where the chosen asset is real and offered but simply not held.
+    if (!keep && SRC) {
+      var offered = (labelHoldings(otherHoldings()) || []).concat(CURATED || []);
+      keep = offered.filter(function (a) { return same(a, SRC); })[0];
+    }
     SRC = keep || list[0];
     var nm = as.querySelector('.nm');
     if (nm && nm.textContent !== SRC.symbol) {
@@ -1800,8 +1978,27 @@
 
       b.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
-        onPick(a);
-        closeSrcMenu();
+        // THE MENU CLOSES EVEN IF THE PICK THROWS.
+        //
+        // RAZA 2026-10-18, from a user report: "UI hangs when selecting assets other than XRP (e.g.
+        // USDC, SHX, LUMOS) ... The asset dropdown remains stuck open, and the interface becomes
+        // completely unresponsive."
+        //
+        // NOT REPRODUCED, and this is a guard rather than a fix — said plainly so nobody later reads
+        // it as the cure. Tried on production against a 60-line account: Base and Ethereum
+        // destinations, with and without an amount typed, picking USDC, SHX, RLUSD and LUMOS. Every
+        // pick returned in 107-386ms, closed the menu and raised no error.
+        //
+        // What IS true without needing a repro: onPick runs before closeSrcMenu, so anything it
+        // throws leaves the dropdown open over a page that cannot be dismissed — which is precisely
+        // the reported shape. `finally` makes that state unreachable. The error is deliberately NOT
+        // caught: it still reaches window.onerror, because a swallowed exception here would be the
+        // next silent failure ([[lumoscore-silent-failures]]).
+        //
+        // If the hang is instead a synchronous loop further down (refreshDestinations/paintSteps/
+        // requote), this changes nothing and the report stands open — a frozen page cannot repaint,
+        // so a closed menu would still LOOK open. Needs the reporter's exact steps.
+        try { onPick(a); } finally { closeSrcMenu(); }
         refreshDestinations();
         paintSteps(); requote();
       });
@@ -1816,6 +2013,9 @@
         shown++;
         listHost.appendChild(optRow(a, function (picked) {
           SRC = picked; QUOTE = null; AXQ = null;
+          // Choosing a source is choosing what the history will name, so a capture left over from a
+          // transfer that did not complete is discarded here rather than carried into this one.
+          SWAP_LEG = null;
         }));
       });
 
@@ -1827,7 +2027,7 @@
           SRC = sourceAssets().filter(function (x) {
             return x.viaSwap && x.currency === o.currency && x.issuer === o.issuer;
           })[0] || SRC;
-          QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
+          QUOTE = null; AXQ = null; THQ = null; SWAPQ = null; SWAP_LEG = null;
         });
         row.title = o.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
         listHost.appendChild(row);
@@ -1843,7 +2043,7 @@
         if (held[String(t.currency) + '|' + String(t.issuer)]) return;
         shown++;
         var row = optRow(t, function (picked) {
-          SRC = picked; QUOTE = null; AXQ = null; THQ = null; SWAPQ = null;
+          SRC = picked; QUOTE = null; AXQ = null; THQ = null; SWAPQ = null; SWAP_LEG = null;
         });
         row.title = t.symbol + ' is swapped to XRP on the XRP Ledger, then bridged';
         listHost.appendChild(row);
@@ -2157,7 +2357,18 @@
     var dst = $('[data-rv="dst"]');
     var host = dst && dst.parentElement && dst.parentElement.parentElement;
     if (!host || host.querySelector('[data-rv="fee"]')) return;
-    [['route', 'Route'], ['fee', 'LumosCore fee'], ['eta', 'Estimated time']].forEach(function (p) {
+    // A ROW OF ITS OWN FOR AXELAR'S RELAY FEE (RAZA 2026-10-19: "why is it costing over 6%"). Sending
+    // 1 XRP to Hedera delivered 0.938823, and nothing on this screen accounted for the missing
+    // 0.060177 -- the fee row showed LumosCore's 0.001 and the relay fee was simply not printed, so
+    // three fee-ish rows were on screen and none of them was the number that explained the total.
+    //
+    // It is not our charge and it is not a percentage: Axelar's validators split the payment,
+    // transfer_amount = Amount - gas_fee_amount, to pay for execution on the destination chain. Flat,
+    // so it is 6% of 1 XRP and 0.06% of 100. That is exactly why it has to be stated rather than
+    // folded into a rate -- a reader cannot infer a fixed cost from a percentage.
+    //
+    // Hidden on the other two routes, where there is no such fee to name.
+    [['route', 'Route'], ['fee', 'LumosCore fee'], ['relay', 'Axelar relay fee'], ['eta', 'Estimated time']].forEach(function (p) {
       var r = document.createElement('div');
       r.className = 'r';
       var k = document.createElement('span');
@@ -2382,10 +2593,17 @@
     // NOTE.* is per route and is only ever written by a route about itself. NEAR Intents first: when
     // both decline it is the one carrying a number the reader can act on ("Minimum 2 XRP") while
     // THORChain's is a flat refusal.
-    var reason = NOTE.ni || NOTE.th || NOTE.ax
+    paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : quoteReason());
+  }
+
+  // WHY THERE IS NO FIGURE, in the words of whichever route declined. Extracted because settle() was
+  // not the only place that needed it and the other place passed '' instead — see the route-pick
+  // handler, which wiped LAST_NOTE on every click and left the button reading "Waiting for a quote"
+  // for good. A reason computed in one place cannot drift from a reason computed in another.
+  function quoteReason() {
+    return NOTE.ni || NOTE.th || NOTE.ax
       || (LAST_NOTE && LAST_NOTE.indexOf('…') < 0 ? LAST_NOTE : '')
       || 'No route for this amount';
-    paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : reason);
   }
 
   // Axelar prices the RELAY, not the trade: there is no exchange here, the same asset comes out the
@@ -2406,19 +2624,23 @@
     var seq = ++qSeq;
     QUOTING = true;
     paintQuote(null, 'Pricing the relay…');
-    fetch(API_AX + '?op=gas&symbol=' + encodeURIComponent(SRC.symbol) + '&dest=' + encodeURIComponent(chain))
+    // THE SWAPPED LEG, NOT THE TOKEN. Asking for a LUMOS relay price returned the endpoint's own
+    // "unknown asset" and put it in the red banner under the form — correct of Axelar, and a question
+    // this page should never have asked.
+    var leg = axLeg();
+    fetch(API_AX + '?op=gas&symbol=' + encodeURIComponent(leg.sym) + '&dest=' + encodeURIComponent(chain))
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (seq !== qSeq) return;
         if (!j || !j.ok) { done(String((j && j.error) || 'No relay price for this pair')); return; }
-        var dp = SRC.decimals;
+        var dp = leg.dp;
         var sent = axUnits(amt, dp);
         if (sent == null) { done('Amount is out of range'); return; }
         var gas = j.gas;
         if (!(Number(gas) < Number(sent))) {
           // Stated as the real reason, with the real number, because "try a larger amount" without one
           // is a guessing game -- the relay fee to Ethereum is over a whole XRP.
-          done('Relay fee is ' + fmt(axFromUnits(gas, dp), 6) + ' ' + SRC.symbol + ' — send more');
+          done('Relay fee is ' + fmt(axFromUnits(gas, dp), 6) + ' ' + leg.sym + ' — send more');
           return;
         }
         AXQ = { chain: chain, gas: gas, dp: dp, sent: sent,
@@ -2440,6 +2662,26 @@
     var amt = bridgeXrp(), to = recipient();
     var p = PLACES[key];
     var asset = p && p.th && TH_NATIVE[p.th];
+    // AHEAD OF THE AMOUNT AND ADDRESS CHECKS, because the halt does not depend on either and the
+    // reader is owed the reason whether or not they have finished filling the form. Below them it
+    // would have gone unsaid on Cosmos Hub -- served by THORChain alone, so there is no second route
+    // whose note the banner could fall back to.
+    //
+    // Not asked at all while the chain is paused -- the answer is already known, and the round trip
+    // only exists to be refused.
+    //
+    // NOTE.th IS STILL WRITTEN, and skipping that was a bug in the first draft of this. On Cosmos Hub,
+    // which THORChain serves alone, a halt means NOTHING can carry the transfer -- and formBanner()
+    // builds the red bar under the form out of exactly these notes. Returning early without one left
+    // the Review button dead and the bar empty, which this file elsewhere calls out as its own bug: a
+    // disabled button with no reason is how somebody concludes the site is broken.
+    //
+    // Our own sentence rather than THORChain's ("trading is halted, can't process swap"), because it
+    // names the chain the reader chose.
+    if (thHalted(key)) {
+      NOTE.th = 'THORChain has paused ' + (p ? p.label : 'this chain') + ' transfers.';
+      return Promise.resolve();
+    }
     if (!amt || !asset || !to) return Promise.resolve();
     var n = netDrops(amt);                       // LumosCore's cut comes off first, as on NEAR Intents
     // THORChain denominates everything in 1e8 regardless of the asset's own precision, so XRP's six
@@ -2525,8 +2767,10 @@
         return { amt: (netDrops(xrp).net / 1e6) * px / dpx, sym: DEST.token.symbol };
       };
       if (AXQ) {
-        if (v) v.textContent = recvUnit(AXQ.delivered, 6, SRC ? SRC.symbol : '');
-        if (u) u.textContent = 'after ' + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee';
+        // The RECEIVE line names what arrives; the relay fee below it stays in the sent asset,
+        // because that is the denomination it is actually deducted in before the bridge mints.
+        if (v) v.textContent = recvUnit(AXQ.delivered, 6, axRecv(destChain()));
+        if (u) u.textContent = 'after ' + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + axLeg().sym + ' relay fee';
       } else if (BEST === 'th' && THQ) {
         // NAMED, because the page has just chosen on the reader's behalf. When both routes answered,
         // saying which one won and that it was the better price is the difference between a decision
@@ -2578,7 +2822,11 @@
     set('[data-rv="send"]', amt ? (fmt(amt, 6) + ' ' + sym) : ('0 ' + sym));
     if (AXQ) {
       // Same asset in and out; what changes is the amount.
-      set('[data-rv="recv"]', fmt(AXQ.delivered, 6) + ' ' + sym);
+      // axLeg(), not `sym`: `sym` is the SOURCE, which is what the send row above wants and what the
+      // receive row wants only when Axelar was handed the token itself. A swapped source arrives as
+      // XRP. (The send row for that case is rewritten with the typed token lower down, so it keeps
+      // naming what the reader actually chose.)
+      set('[data-rv="recv"]', fmt(AXQ.delivered, 6) + ' ' + axRecv(destChain()));
     } else if (BEST === 'th' && THQ) {
       set('[data-rv="recv"]', fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8) + ' ' + THQ.symbol);
     } else {
@@ -2602,13 +2850,33 @@
         // "LumosCore fee" and printing Axelar's relay fee under that label was always a little wrong.
         // Token sources still pay us nothing, so for those it keeps naming the relay fee instead of
         // showing a zero that looks like an error.
-        if (SRC && SRC.native && amt) {
+        // OUR CUT ONLY, now that the relay fee has a row of its own below. A token source pays us
+        // nothing -- the collector holds no trust lines, so a percentage of a WETH transfer could only
+        // be taken at a rate nobody quoted -- and that is said in words rather than as a zero, which
+        // reads as a figure that failed to load.
+        // A SWAPPED SOURCE PAYS IT TOO. The "None on this route" case is for an ISSUED TOKEN handed
+        // straight to Axelar; a token sold to XRP first reaches sendAx as plain XRP and is charged
+        // like any other XRP transfer, so saying "None" here understated the cost on the last screen
+        // before a signature.
+        if (SRC && (SRC.native || SRC.viaSwap) && amt) {
           f.textContent = fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)';
         } else {
-        f.textContent = fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + sym + ' relay fee';
+          f.textContent = 'None on this route';
         }
       } else {
         f.textContent = amt ? (fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)') : '—';
+      }
+    }
+    // The relay row: shown with its real figure on Axelar, removed from the list entirely on the other
+    // routes rather than left saying "—", which would imply a charge that was not quoted yet.
+    var rl = $('[data-rv="relay"]');
+    if (rl) {
+      var rlRow = rl.closest ? rl.closest('.r') : null;
+      if (AXQ) {
+        rl.textContent = fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + axLeg().sym;
+        if (rlRow) rlRow.style.display = '';
+      } else if (rlRow) {
+        rlRow.style.display = 'none';
       }
     }
     keep('[data-rv="eta"]', AXQ ? 'a few minutes'
@@ -2672,7 +2940,7 @@
     var place = key && PLACES[key] ? PLACES[key].label : '';
     // What ARRIVES, by the same rule paintDestAsset uses -- never assumed to be what was sent.
     var recvSym = '';
-    if (AXQ) recvSym = SRC ? SRC.symbol : '';
+    if (AXQ) recvSym = axRecv(key);
     else if (BEST === 'th' && THQ) recvSym = THQ.symbol;
     else if (DEST && DEST.token) recvSym = DEST.token.symbol;
 
@@ -2725,6 +2993,30 @@
   // '~30 seconds'`). It is a property of the route rather than of a quote, which is why Stellar can
   // print it before anything has been priced and this build was showing a dash.
   var NI_ETA = '~30 seconds';
+  // THE OTHER TWO ROUTES HAVE A TIME TOO (RAZA 2026-10-23: "Why doesnt thor chian mention the estimated
+  // time", and "Why doesn't Axelar bridge on the right shide showing bridge fees and estimated time").
+  //
+  // Both printed a dash until a quote landed, and on THORChain a quote cannot land until an address has
+  // been pasted -- so the row was empty for the whole time anybody was reading it. The dash was a
+  // deliberate refusal to invent a figure, and that part was right: neither route publishes a single
+  // number the way NEAR Intents publishes ~30 seconds.
+  //
+  // What they do have is a range, and the page already says it for Axelar once it is quoting -- "a few
+  // minutes" is this file's own existing wording for that row. Said before the quote as well as after
+  // it, so the row answers the question whenever it is asked, and the real figure still replaces it the
+  // moment one arrives. THORChain's inbound confirmation plus its outbound delay puts it in the same
+  // bracket: measured to BTC the same day, its own quote came back with 6 seconds, and the slow chains
+  // run to several minutes, so the range is the honest form and a single number would not be.
+  var ROUTE_ETA = { th: 'a few minutes', ax: 'a few minutes' };
+  // Seconds, as a reader would say them. THORChain returns `total_swap_seconds` and it is a real spread
+  // -- 6 on one pair, several hundred on another -- so "~420s" would be arithmetic shown to someone who
+  // wanted a sentence. Under 90 stays in seconds, which is how NEAR Intents' ~30s already reads.
+  function etaWords(s) {
+    var n = Number(s);
+    if (!(n > 0)) return '';
+    if (n < 90) return '~' + Math.round(n) + 's';
+    return '~' + Math.round(n / 60) + ' min';
+  }
   var ROUTE_META = {
     // THE GREEN NEAR MARK, which is the one Stellar draws (RAZA 2026-10-04: "On Stellar the near
     // intents logo color is green"). Stellar's LZ_MARK points at /assets/tokens/ni/NEAR.png -- NEAR's
@@ -2847,6 +3139,17 @@
           var p = PLACES[key];
           return (p && p.th && TH_NATIVE[p.th]) ? (String(TH_NATIVE[p.th]).split('.')[1] || '') : '';
         })();
+        // THE PAUSE IS SAID BEFORE ANYTHING IS TYPED, which is the whole point of knowing it. Same
+        // shape as the line below it: a standing fact about the route on this pair, stated on the
+        // card, in a state the panel will not mark as the default. Checked FIRST, because a halted
+        // chain cannot deliver its native coin either and naming the asset would be beside the point.
+        if (thHalted(key)) {
+          o.state = 'none';
+          o.error = 'THORChain has paused ' + (PLACES[key] ? PLACES[key].label : 'this chain')
+            + ' transfers.';
+          o.halted = 1;
+          return o;
+        }
         if (DEST && DEST.token && DEST.token.contractAddress) {
           o.state = 'none';
           o.error = 'Delivers ' + (thNat || 'the native coin') + ', not ' + DEST.token.symbol + '.';
@@ -2854,10 +3157,10 @@
         }
         if (THQ) {
           o.recv = fmt(Number(THQ.expected) / (THQ.e8 || 1e8), 8) + ' ' + THQ.symbol;
-          if (THQ.seconds != null) o.eta = '~' + THQ.seconds + 's';
+          if (THQ.seconds != null) o.eta = etaWords(THQ.seconds);
         } else o.state = QUOTING ? 'wait' : 'none';
       } else {
-        if (AXQ) { o.recv = fmt(AXQ.delivered, 6) + ' ' + SRC.symbol; o.eta = 'a few minutes'; }
+        if (AXQ) { o.recv = fmt(AXQ.delivered, 6) + ' ' + axRecv(key); o.eta = 'a few minutes'; }
         else o.state = QUOTING ? 'wait' : 'none';
       }
       // ITS OWN ANSWER, never the last one anybody gave.
@@ -2876,9 +3179,28 @@
   function routeFee(r) {
     var pct = +(feeRate() * 100).toFixed(2) + '%';
     if (r === 'ax') {
-      // No LumosCore cut on this route -- the collector holds no trust lines, so it cannot take a
-      // percentage of an issued token. See the note in paintReview.
-      return AXQ ? (fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + SRC.symbol + ' relay fee') : 'destination gas';
+      // THE PLATFORM FEE BELONGS ON THIS ROW TOO WHEN WE ACTUALLY CHARGE IT (RAZA 2026-10-23, on an
+      // XRP -> Hedera transfer: "Why doesn't Axelar bridge on the right shide showing bridge fees").
+      //
+      // The old line was written when Axelar charged nothing at all, and that stopped being true on
+      // 2026-10-12: an XRP source now pays the same percentage as the other two routes, because the
+      // collector receives XRP perfectly well. sendAx() takes it, paintReview prints it on step 3 --
+      // and this card, on step 2, still said the only cost was gas. Two screens of the same wizard
+      // disagreeing about what a transfer costs, with step 2 being the one you read first.
+      //
+      // Token sources are untouched and still pay us nothing -- the collector holds no trust lines, so
+      // a cut of a WETH transfer could only be taken at a rate nobody quoted -- so for those the row
+      // goes on naming the relay fee alone, exactly as it did.
+      // ...AND ON A SWAPPED SOURCE TOO, which the first version of this line missed. The exemption is
+      // for ISSUED TOKENS -- the collector holds no trust lines, so a cut of a WETH transfer could
+      // only be taken at a rate nobody quoted. A swapped source is not that case: by the time sendAx
+      // runs, the swap has already made SRC plain XRP and the fee IS charged, so the card was quoting
+      // "Destination gas only" on a transfer that costs 0.2% more than it said.
+      var ours = (SRC && (SRC.native || SRC.viaSwap)) ? (pct + ' + ') : '';
+      // "Destination gas" rather than "destination gas": it is the whole of the row on a token source,
+      // and a sentence fragment in lower case reads like a label that failed to load.
+      return AXQ ? (ours + fmt(axFromUnits(AXQ.gas, AXQ.dp), 6) + ' ' + axLeg().sym + ' relay fee')
+        : (ours ? (ours + 'destination gas') : 'Destination gas only');
     }
     if (r === 'th') return pct + ' + THORChain’s swap rate';
     // NAMED AND NUMBERED, as Stellar states it (RAZA 2026-10-04: "The bridge fees and estimated time
@@ -3033,6 +3355,20 @@
       // the amount field is the thing it points at, three inches to the left and already empty.
       h += '<' + '/button>';
     });
+    // SAY SO WHEN THE PAGE OVERRULES A HAND-PICK (RAZA 2026-10-19: "as soon as i enter any value, it
+    // automatically changes to Thorchain instead of Near Intents").
+    //
+    // It is not a bug -- BEST is the route that will actually carry the transfer, and settle() honours
+    // PICKED only while that route has a quote, precisely so the page can never name one route and send
+    // by another (his own 2026-10-04 report: NEAR Intents badged "IN USE" above THORChain's figure).
+    // What was wrong is that the border moved in silence, so the only way to learn why was to ask.
+    //
+    // Display only. Nothing here changes which route is chosen or when.
+    if (PICKED && BEST && BEST !== PICKED && ROUTE_META[PICKED] && ROUTE_META[BEST]) {
+      h += '<div class="lx-brs-note" style="padding:9px 2px 0">'
+        + esc2(ROUTE_META[PICKED].name) + ' can’t price this transfer, so '
+        + esc2(ROUTE_META[BEST].name) + ' is being used.</div>';
+    }
     if (host.innerHTML !== h) host.innerHTML = h;
 
     // SHOWN FOR THE MARKED ROUTE, QUOTED OR NOT (RAZA 2026-10-04: "receive, bridge fee, Estimated time
@@ -3066,12 +3402,23 @@
         // deployment, which settled, and this one, which did not.
         var p = PLACES[destChain()];
         recvAsset = (p && p.th && TH_NATIVE[p.th]) ? (String(TH_NATIVE[p.th]).split('.')[1] || '—') : '—';
-      } else recvAsset = SRC ? SRC.symbol : '—';
+      // THE AXELAR BRANCH, and the one site the helper did not reach on the first pass: this panel
+      // computes its own Receive symbol rather than reading routeRows()' `o.recv`, so fixing that
+      // left the card saying "Receive XRP" beside a destination chip reading "wXRP" — the two halves
+      // of one answer disagreeing on screen. Caught on the deploy, not in the source.
+      } else recvAsset = axRecv(destChain()) || '—';
       // THE ROUTE'S OWN TIME when no quote has given one. Stellar prints "~30 seconds" for NEAR
       // Intents before anything is priced, because that is a property of the route; this printed a
       // dash. THORChain's figure comes from its quote and has no published default, so it keeps the
       // dash until the quote arrives rather than being given an invented one.
-      var eta = cur.eta || (cur.route === 'ni' ? NI_ETA : '—');
+      // The quote's own figure first, then the route's published one, and only then a dash -- which is
+      // now reached solely by NEAR Intents' siblings having no range at all, i.e. never.
+      // NOT ON A PAUSED ROUTE, which is the one case where the range would be a claim rather than a
+      // fact: Cosmos Hub is served by THORChain alone, so a halted leg can still be the marked card,
+      // and "a few minutes" above "THORChain has paused Cosmos Hub transfers" is the panel arguing
+      // with itself. The dash is the honest figure for a transfer that cannot start.
+      var eta = cur.halted ? '—'
+        : (cur.eta || (cur.route === 'ni' ? NI_ETA : (ROUTE_ETA[cur.route] || '—')));
       // Stellar's wording, with the asset and the chain filled in: "Delivered as ETH to your address
       // automatically — no claim, and no gas needed on Arbitrum."
       var place = placeLabel(destChain());
@@ -3100,6 +3447,12 @@
     var r = b.getAttribute('data-lxroutepick');
     var key = destChain();
     if (!r || !key || routesFor(SRC, key).indexOf(r) < 0) return;
+    // A PAUSED ROUTE IS NOT A PREFERENCE THE PAGE CAN HONOUR. The no-disabling rule above exists for a
+    // route that cannot price THIS AMOUNT -- type a smaller figure and it works again, so freezing the
+    // choice there was the trap. A halted chain is not that: nothing the reader types makes it
+    // quotable, so recording the pick would only guarantee the silent swap this whole change exists to
+    // stop. The card stays visible, clickable and explaining itself; the click just does not take.
+    if (r === 'th' && thHalted(key)) return;
     PICKED_FOR = key; PICKED = r;
     // BEST ONLY WHEN THAT ROUTE ACTUALLY ANSWERED. The card can now be chosen while it is refusing
     // this amount, and BEST is what the page sends by -- so setting it from a click alone would hand
@@ -3111,7 +3464,20 @@
     // it.
     var answered = (r === 'ni' && QUOTE) || (r === 'th' && THQ) || (r === 'ax' && AXQ);
     if (answered) BEST = r;
-    paintQuote(BEST === 'ni' ? QUOTE : null, '');
+    // THE EMPTY NOTE HERE WAS THE BUG, and it was a one-character kind of wrong.
+    //
+    // paintQuote sets LAST_NOTE to whatever note it is given whenever there is no quote — so picking
+    // a route that has not answered passed '', erased the real reason, and left blockReason() with
+    // nothing to say but its generic fallback. The button then read "Waiting for a quote" with no
+    // quote coming, because nothing on this page re-quotes until an input changes. Permanent, and
+    // worded as if it were temporary.
+    //
+    // Found by the daily bot (XRP → XLM, "Failing since 2026-10-15") and missed by hand twice,
+    // because reproducing it needs the route CARD to be clicked after the quotes have settled — a
+    // step a person testing the form does not naturally take.
+    //
+    // Same expression settle() uses, so the click and the quote cycle cannot disagree about why.
+    paintQuote(BEST === 'ni' ? QUOTE : null, BEST ? '' : quoteReason());
   }, true);
 
   // ---- recent transactions -------------------------------------------------------------------------
@@ -3139,6 +3505,371 @@
   // {inAmt, out, sym, chain, status}. Normalising here rather than branching in the renderer is what
   // keeps "what arrived" from being read off the wrong field for one route -- the same mistake that
   // put "4.137837 XRP" under a figure that was ATOM.
+  // HISTORY FOLLOWS THE WALLET, NOT THE BROWSER (RAZA 2026-10-17: "Why isnt XRPL showing recent
+  // bridge trxs. We've made some during testing. Please show those.").
+  //
+  // Every row here came from localStorage, written by the tab that sent the transfer -- which is
+  // exactly what the empty state said, "No transfers from this browser yet", and exactly why his
+  // table was blank. localStorage is per ORIGIN as well as per browser, so transfers made while
+  // testing on lumoscore-staging.pages.dev cannot be seen from lumoscore.com at all. Nothing was
+  // broken; the history was simply keyed on the wrong thing. A bridge transfer belongs to the
+  // WALLET, and the wallet's transfers are on the ledger.
+  //
+  // RECOVERABLE BECAUSE WE MARK OUR OWN. Each route stamps a marker memo on the payment it submits
+  // -- lx:ax, lx:th, lx:ni, written at the three send sites in this file -- so a payment of ours is
+  // identifiable on the ledger without guessing from destination addresses, which rotate per quote
+  // and per vault and would be wrong within a day.
+  //
+  // THE LEDGER KNOWS LESS THAN THE SENDER DID, and the row says so rather than inventing it: it has
+  // the time, the hash, what left this account and where it went, but the destination chain and the
+  // amount delivered there live in the quote, not in the transaction. Those read "—" on a recovered
+  // row. A local row carries all of it, so when both exist the local one wins the dedupe below.
+  var LEDGER_TXS = [];
+  var ROUTE_MEMO = { 'lx:ax': 'ax', 'lx:th': 'th', 'lx:ni': 'ni' };
+
+  function memoAscii(hx) {
+    var s = '';
+    try {
+      var h = String(hx || '');
+      for (var k = 0; k + 1 < h.length; k += 2) {
+        var b = parseInt(h.slice(k, k + 2), 16);
+        if (b >= 0x20 && b <= 0x7e) s += String.fromCharCode(b);
+      }
+    } catch (e) {}
+    return s;
+  }
+
+  function memoTexts(tx) {
+    var ms = (tx && tx.Memos) || [], out = [];
+    for (var i = 0; i < ms.length; i++) {
+      var d = ((ms[i] && ms[i].Memo) || {}).MemoData;
+      if (!d) continue;
+      var s = memoAscii(d);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+
+  // Ripple epoch (2000-01-01) to ms, the same conversion the dashboard feed uses.
+  function rippleMs(sec) { return (Number(sec) + 946684800) * 1000; }
+
+  // THE MARKER IS ON THE FEE, NOT ON THE TRANSFER, and getting that wrong would have put the fee in
+  // the amount column. The three send sites each submit TWO payments: the bridge itself, to a
+  // gateway / vault / deposit address, and a separate platform fee to COLLECTOR -- and it is the FEE
+  // that carries lx:ax, lx:th or lx:ni. Reading the marked payment as the transfer would have shown
+  // every bridge as a few drops sent to our own fee account. Caught by scanning the Axelar gateway
+  // for marked payments and finding none: the mark was never there to find.
+  //
+  // So two ways in, both from one account_tx:
+  //   DIRECTLY -- an Axelar transfer carries MemoType "type" = interchain_transfer, and a THORChain
+  //     transfer's memo starts "=:". Those identify the transfer itself, no pairing needed.
+  //   BY ITS FEE -- NEAR Intents sends a plain payment to a per-quote deposit address with no memo
+  //     of ours at all, so the only evidence is the lx:ni fee beside it. The transfer is the other
+  //     payment from this account in the same handful of ledgers, to someone who is neither us nor
+  //     the collector.
+  function amtOf(a) {
+    if (typeof a === 'string') return { v: Number(a) / 1e6, sym: 'XRP' };
+    if (a && a.value != null) {
+      // decodeCurrency returns { code, display, kind }, never a string -- using it directly is what
+      // once rendered "[object Object]" as a ticker in this very file.
+      var dc = null;
+      try { dc = (window.lxx && window.lxx.decodeCurrency) ? window.lxx.decodeCurrency(a.currency) : null; } catch (e) {}
+      return { v: Number(a.value), sym: (dc && dc.display) || String(a.currency).slice(0, 6) };
+    }
+    return { v: null, sym: '' };
+  }
+
+  // THORChain shortens the chain in its memo -- an Avalanche transfer reads '=:a:0x…'. The single
+  // letters are from THORChain's own memo-length-reduction table, not inferred. Same table the
+  // dashboard feed uses; anything not in it stays unnamed, because a row naming the wrong
+  // destination is worse than one naming none.
+  var TH_ABBR = { a: 'AVAX', b: 'BTC', c: 'BCH', e: 'ETH', g: 'GAIA', s: 'BSC', d: 'DOGE', r: 'THOR' };
+
+  // THE TRANSFER NAMES ITS OWN DESTINATION, and it was being thrown away. The Platform Activity feed
+  // reads these same memos and renders "4 XRP → Hedera · VIA AXELAR", while this page showed the row
+  // with an em dash (RAZA 2026-10-17: "as you can now see in platform activity on XRPL, there have
+  // been some cross chain trxs here. show them on XRPL bridge recent transaction since you can now
+  // identify those"). Everything needed is in the transaction:
+  //
+  //   Axelar      MemoType 'type' = 'interchain_transfer', and MemoType 'destination_chain' = the
+  //               chain, e.g. 'hedera'. Measured on a real transfer: memo data was
+  //               ["interchain_transfer", "0.0.10229748", "hedera", "57310"].
+  //   THORChain   '=:CHAIN.ASSET:address' -- the chain is the first segment, abbreviated.
+  //
+  // Returns the route AND the place, so a recovered row reads like a locally recorded one.
+  function routeInfo(tx) {
+    var ms = (tx && tx.Memos) || [], byType = {};
+    for (var i = 0; i < ms.length; i++) {
+      var m = (ms[i] && ms[i].Memo) || {};
+      if (m.MemoType) byType[memoAscii(m.MemoType)] = memoAscii(m.MemoData || '');
+    }
+    if (byType.type === 'interchain_transfer') {
+      var dc = byType.destination_chain || '';
+      // `asset` left empty: Axelar hands out the SAME asset it took, so the caller fills this from
+      // what was sent -- the one place that knows it. Same fact the local-row mapping relies on.
+      //
+      // THE RAW CHAIN ID TRAVELS WITH IT NOW. "Axelar hands out the same asset it took" is true of the
+      // TOKEN and not of its NAME: the same ITS token is XRP on the XRP Ledger and wXRP on Hedera. The
+      // caller needs Axelar's own id ("hedera"), not the display label ("Hedera"), to ask the registry
+      // which -- so it is carried rather than re-derived from a name that has already been localised.
+      return { route: 'ax', place: AX_NAME[dc] || NI_CHAIN[dc] || dc || '', asset: '', axChain: dc };
+    }
+    var ds = memoTexts(tx);
+    for (var k = 0; k < ds.length; k++) {
+      if (ds[k].indexOf('=:') !== 0) continue;
+      var seg = (ds[k].split(':')[1] || '').split('.')[0] || '';
+      var code = TH_ABBR[seg.toLowerCase()] || seg.toUpperCase();
+      // The short memo form names a chain, and on THORChain that means its NATIVE asset: '=:a:' is
+      // AVAX on Avalanche. So the delivered asset is known even though the amount is not.
+      return { route: 'th', place: TH_NAME[code] || '', asset: code || '' };
+    }
+    return null;
+  }
+
+  // ASKED AGAIN WHEN THE LEDGER DOES NOT ANSWER, and this caught me out in my own new code. Testing
+  // one of the wallets that has demonstrably bridged, `account_tx` returned ZERO transactions, and
+  // the obvious reading -- "this wallet has never bridged" -- was wrong: the very next call returned
+  // 71, including an Axelar transfer to Hedera. An empty list and a failed read look identical from
+  // here, and the silent `.catch` below turned the second into the first. Exactly the mistake fixed
+  // in the dashboard feed and in the health bot earlier today, made a third time.
+  //
+  // Three tries with a short gap. The guard is only set on SUCCESS, so a run that never gets an
+  // answer is retried by the next paint rather than being remembered as "this wallet has nothing".
+  function askLedger(me, tries) {
+    return rpcB('account_tx', { account: me, limit: 200, binary: false, ledger_index_min: -1, ledger_index_max: -1 })
+      .then(function (j) {
+        var l = (j && j.result && j.result.transactions) || [];
+        if (l.length || tries <= 1) return j;
+        return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return askLedger(me, tries - 1); });
+      }, function (e) {
+        if (tries <= 1) throw e;
+        return new Promise(function (r) { setTimeout(r, 1200); }).then(function () { return askLedger(me, tries - 1); });
+      });
+  }
+
+  // Every LumosCore bridge in one account's transaction list. Pulled out of the loader because the
+  // loader now runs it over several accounts, not just the connected one.
+  function extractBridges(acct, list) {
+    var outs = [], fees = [];
+    (list || []).forEach(function (e) {
+      var tx = e.tx || e.tx_json || {}, mm = e.meta || e.metaData || {};
+      if (tx.TransactionType !== 'Payment') return;
+      if (mm.TransactionResult !== 'tesSUCCESS') return;
+      if (tx.Account !== acct) return;
+      if (!tx.Destination) return;
+      var L = e.ledger_index || tx.ledger_index || 0;
+      var rec = { tx: tx, L: L, at: rippleMs(tx.date != null ? tx.date : e.date), hash: tx.hash || e.hash || '' };
+      var mark = null;
+      memoTexts(tx).forEach(function (s) { if (ROUTE_MEMO[s]) mark = ROUTE_MEMO[s]; });
+      // THE MARKER IS CHECKED BEFORE THE SELF-PAYMENT RULE, and that order is load-bearing when the
+      // account being scanned IS the fee collector -- which is how RAZA tests. Its fee payments go
+      // from rBDV4n…Fr94 to rBDV4n…Fr94, so a "self-payment is a swap" test placed first silently
+      // threw away every marker on the one account that collects them.
+      if (mark && tx.Destination === COLLECTOR) { rec.route = mark; fees.push(rec); return; }
+      if (tx.Destination === acct) return;                        // a self-payment is a swap
+      outs.push(rec);
+    });
+
+    var rows = [], used = {};
+    var push = function (rec, route, place, asset, axChain) {
+      if (!rec || !rec.hash || used[rec.hash]) return;
+      used[rec.hash] = 1;
+      var a = amtOf(rec.tx.Amount);
+      rows.push({
+        at: rec.at, hash: rec.hash, route: route,
+        sent: a.v, sentSym: a.sym,
+        // THE DELIVERED ASSET IS KNOWN EVEN WHEN THE AMOUNT IS NOT, and carrying it is what gives
+        // these rows the asset-in-front, chain-in-corner mark the NEAR rows already had (RAZA
+        // 2026-10-17: "why doesn't it show that smaller asset icon in To column for Axelar and
+        // ThorChain trxs"). Axelar returns no asset of its own because it delivers what it was
+        // given, so the sent symbol is it.
+        //
+        // ...UNDER THE NAME THE FAR CHAIN USES FOR IT (RAZA 2026-10-24, on these rows reading only
+        // "Hedera"). Same token, different ticker: XRP leaves the ledger and lands as wXRP. This is a
+        // registry lookup, not an inference -- Axelar publishes the symbol per chain, and where it
+        // publishes no change (XRPL EVM, USDC, WETH) the sent symbol stands exactly as before. With no
+        // registry loaded it also falls back to the sent symbol, so a cold page is no worse than it
+        // was. The AMOUNT stays unknown and stays unshown: the relay fee comes out of it and the
+        // ledger cannot say how much, which is a different question from what the asset is called.
+        recv: null,
+        recvSym: (route === 'ax' ? axRecvSym(a.sym, axChain) : (asset || '')),
+        place: place || '',
+        from: acct, to: rec.tx.Destination || '', status: '',
+      });
+    };
+
+    // 1. Transfers that name their own route, and their destination chain with it.
+    outs.forEach(function (rec) {
+      var r = routeInfo(rec.tx);
+      if (r) push(rec, r.route, r.place, r.asset, r.axChain);
+    });
+
+    // 2. Whatever a marked fee points at. Nearest unclaimed payment within five ledgers either way --
+    //    the two are submitted back to back, so anything further apart is a different action that
+    //    happened to be nearby.
+    fees.forEach(function (f) {
+      var best = null, gap = 1e9;
+      outs.forEach(function (rec) {
+        if (used[rec.hash] || rec.tx.Destination === COLLECTOR) return;
+        var d = Math.abs((rec.L || 0) - (f.L || 0));
+        if (d <= 5 && d < gap) { gap = d; best = rec; }
+      });
+      if (best) push(best, f.route);
+    });
+    return rows;
+  }
+
+  // A NEAR INTENTS ROW CAN BE ASKED ABOUT (RAZA 2026-10-17: "why some trxs have their TO column
+  // still empty. fix it").
+  //
+  // Axelar and THORChain stamp their destination into the XRPL transaction, so those rows resolve
+  // from the ledger alone. NEAR Intents does not: the transfer is a plain payment to a per-quote
+  // deposit address with no marker on it, which is why those three rows read "—" and why I said the
+  // ledger could not know. The ledger cannot -- but 1Click can, and this page already talks to it:
+  // `?op=status&depositAddress=` is the same endpoint the post-send poll uses, and it returns the
+  // whole quote back. Measured on all three of the real transfers, every one answered SUCCESS with
+  // its destination asset, its recipient and the exact amount delivered.
+  //
+  // So these rows end up carrying MORE than the Axelar and THORChain ones: the delivered figure as
+  // well as the chain. The destination column becomes the recipient on the far chain rather than
+  // the XRPL deposit address, which is what Stellar's table shows and what the reader means by
+  // "where did it go".
+  //
+  // The chain name comes from the SAME token list the destination picker is built from, looked up
+  // by assetId -- not by parsing '43114' out of a NEP-245 id. One request per unresolved row, and
+  // only for rows that have no chain yet, so a locally recorded transfer costs nothing.
+  function enrichNi(rows, done) {
+    var pend = (rows || []).filter(function (r) { return r.route === 'ni' && !r.place && r.to; });
+    if (!pend.length) { done(); return; }
+    var left = pend.length;
+    var finish = function () { if (--left <= 0) done(); };
+    pend.forEach(function (r) {
+      fetch(API + '?op=status&depositAddress=' + encodeURIComponent(r.to))
+        .then(function (x) { return x.json(); })
+        .then(function (j) {
+          var qr = j && j.quoteResponse && j.quoteResponse.quoteRequest;
+          var q = j && j.quoteResponse && j.quoteResponse.quote;
+          if (!qr || !qr.destinationAsset) return;
+          var tok = null, L = TOKENS || [];
+          for (var i = 0; i < L.length; i++) {
+            if (L[i] && L[i].assetId === qr.destinationAsset) { tok = L[i]; break; }
+          }
+          if (tok) {
+            r.place = NI_CHAIN[tok.blockchain] || tok.blockchain || '';
+            if (q && q.amountOutFormatted != null && isFinite(Number(q.amountOutFormatted))) {
+              r.recv = Number(q.amountOutFormatted);
+              r.recvSym = tok.symbol || '';
+            }
+          }
+          if (qr.recipient) r.to = String(qr.recipient);
+        })
+        .then(finish, finish);
+    });
+  }
+
+  // IS THE LEDGER READ STILL IN FLIGHT? Read by paintTxs to choose between "reading" and "none".
+  //
+  // `_busy` is set for the duration of the read and cleared when it lands or fails, so it answers
+  // exactly the question asked. The address test matters as much: with no wallet connected nothing is
+  // ever fetched, so an empty table there genuinely means none and must not sit on "Reading…" for
+  // ever. The _for check keeps a finished read from reporting itself as pending on a later repaint.
+  function loadingTxs() {
+    var me = addr();
+    if (!me) return false;
+    return loadLedgerTxs._busy === me && loadLedgerTxs._for !== me;
+  }
+
+  function loadLedgerTxs() {
+    var me = addr();
+    // TWO guards, not one. `_for` says "this address is done" and is set only when an answer lands;
+    // `_busy` says "an answer is on its way". Without the second, every repaint between the request
+    // and its reply would start another one -- and paintTxs() calls this on every paint.
+    if (!me || loadLedgerTxs._for === me || loadLedgerTxs._busy === me) return;
+    loadLedgerTxs._busy = me;
+    // TWO HUNDRED, NOT EIGHTY. Measured against the three wallets that have actually bridged: at 80
+    // every one of them returned zero marked fees, because a bridge is a handful of transactions in
+    // an account that also swaps and adds liquidity, and the history RAZA wanted to see was already
+    // outside the window. At 200 the same replay recovers 1 transfer from one wallet and 3 from
+    // another. One request either way.
+    // PLATFORM-WIDE, NOT JUST THIS WALLET (RAZA 2026-10-17: "as you can now see in platform
+    // activity on XRPL, there have been some cross chain trxs here. show them on XRPL bridge recent
+    // transaction since you can now identify those").
+    //
+    // Keyed on the wallet, this table was correctly empty for him and would stay that way: he tests
+    // connected as the fee COLLECTOR, which receives every bridge fee and has never sent a bridge --
+    // verified against its complete 57-transaction history, twice. The transfers he can see on the
+    // dashboard were made from three other wallets.
+    //
+    // So this reads what the Platform Activity feed reads: the collector names every account that
+    // has paid a bridge fee, and each of those accounts is scanned for its transfers. Same data,
+    // same page, now agreeing with each other. The SOURCE ADDRESS column carries the real sender
+    // rather than "me" -- these are other people's transfers and the row must not imply otherwise.
+    //
+    // EIGHT ACCOUNTS. One request each on top of the collector's, which is the same budget the
+    // dashboard feed already spends on this page's sibling.
+    askLedger(COLLECTOR, 3)
+      .then(function (cj) {
+        var cl = (cj && cj.result && cj.result.transactions) || [];
+        var accts = [];
+        cl.forEach(function (e) {
+          var tx = e.tx || e.tx_json || {};
+          if (tx.TransactionType !== "Payment" || tx.Destination !== COLLECTOR) return;
+          var marked = memoTexts(tx).some(function (s2) { return ROUTE_MEMO[s2]; });
+          if (!marked) return;
+          if (tx.Account && accts.indexOf(tx.Account) < 0) accts.push(tx.Account);
+        });
+        // The connected wallet is always scanned, even if it has never paid a bridge fee -- a
+        // transfer of its own must never be missing from its own screen.
+        if (me && accts.indexOf(me) < 0) accts.unshift(me);
+        accts = accts.slice(0, 8);
+        // PAINTED AS THEY LAND, NOT WHEN THE SLOWEST DOES (RAZA 2026-10-20, same report as the
+        // message above). These eight requests already run in parallel, but Promise.all held every
+        // row behind the last of them. Measured on production: eight `account_tx limit:200` calls
+        // returning between ~0.3s and ~1.4s each, in two waves -- so the table sat empty for 8.1s
+        // cold while the first account's rows had been in hand almost from the start.
+        //
+        // Each scan now appends its own rows and repaints. Promise.all still gates the FINAL state
+        // below, because `_for` must not be set -- and the read must not be declared done -- until
+        // every account has reported.
+        //
+        // Accumulated into one array that is reassigned rather than pushed into, so txRecords() never
+        // sees a half-built list: LEDGER_TXS is replaced by a new array each time, and its dedupe by
+        // hash makes a row arriving twice harmless.
+        var partial = [];
+        return Promise.all(accts.map(function (a) {
+          return askLedger(a, 2).then(function (j) {
+            var got = extractBridges(a, (j && j.result && j.result.transactions) || []);
+            if (got && got.length) {
+              partial = partial.concat(got);
+              LEDGER_TXS = partial.slice();
+              try { paintTxs(); } catch (_) {}
+            }
+            return got;
+          }, function () { return []; });
+        })).then(function (lists) {
+          var rows = [];
+          lists.forEach(function (l) { rows = rows.concat(l); });
+          LEDGER_TXS = rows;
+          loadLedgerTxs._for = me;
+          loadLedgerTxs._busy = null;
+          // Painted twice on purpose: once with what the ledger gave us, so the table is not held
+          // behind a second round trip, and again when the NEAR rows have been resolved.
+          //
+          // UNCONDITIONAL NOW, and that is load-bearing rather than tidying. `if (rows.length)` was
+          // safe while an empty result left the table showing the same empty state it already had.
+          // With the loading message above, a wallet that genuinely has no transfers gets no repaint
+          // after `_busy` clears -- so it would sit on "Reading the XRP Ledger…" for ever, which is
+          // the original bug with a nicer wording. The last word has to be painted either way.
+          paintTxs();
+          enrichNi(rows, function () { if (rows.length) paintTxs(); });
+        });
+      })
+      // AND ON FAILURE TOO. Same reason: clearing _busy without repainting strands the table on the
+      // loading message. A failed read falls back to the empty state, which is the honest answer the
+      // page can give -- it has nothing, and it is no longer waiting.
+      .catch(function () { loadLedgerTxs._busy = null; try { paintTxs(); } catch (_) {} });
+  }
+
   function txRecords() {
     var read = function (k) { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch (e) { return []; } };
     var out = [];
@@ -3152,9 +3883,17 @@
         to: r.to || '', status: r.status || '' });
     });
     read('lumos.ax.txs').forEach(function (r) {
-      // Axelar hands the same asset out the other side, so sent and received share a symbol.
-      out.push({ at: r.at, hash: r.hash, route: 'ax', sent: r.sent, sentSym: r.sym,
-        recv: r.delivered, recvSym: r.sym, place: AX_NAME[r.chain] || r.chain || '',
+      // Axelar hands the same asset out the other side, so sent and received share a symbol — unless
+      // the source was sold to XRP first, in which case srcSym/srcAmt name what the reader chose and
+      // `sym` is still right for what arrived. Rows written before this carry neither and fall back
+      // to exactly what they showed before.
+      out.push({ at: r.at, hash: r.hash, route: 'ax',
+        sent: (r.srcAmt > 0 ? r.srcAmt : r.sent), sentSym: (r.srcSym || r.sym),
+        // The stored symbol first (written since 2026-10-24 and fixed at the moment of the transfer,
+        // so a later re-registration cannot rewrite history); otherwise resolved from the registry
+        // now, which is what repairs every row written before that.
+        recv: r.delivered, recvSym: (r.recvSym || axRecvSym(r.sym, r.chain)),
+        place: AX_NAME[r.chain] || r.chain || '',
         to: r.to || '', status: '' });
     });
     read('lumos.th.txs').forEach(function (r) {
@@ -3164,6 +3903,13 @@
         recv: r.expected, recvSym: p[1] || '', place: TH_NAME[p[0]] || p[0] || '',
         to: r.to || '', status: '' });
     });
+    // LOCAL FIRST, THEN THE LEDGER, deduped by hash. The order matters: a locally recorded row knows
+    // the destination chain and the amount delivered, which the ledger cannot tell us, so when the
+    // same transfer appears in both the richer copy is the one kept.
+    var seen = {};
+    out.forEach(function (r) { if (r && r.hash) seen[r.hash] = 1; });
+    LEDGER_TXS.forEach(function (r) { if (r && r.hash && !seen[r.hash]) { seen[r.hash] = 1; out.push(r); } });
+
     return out.filter(function (r) { return r && r.hash; })
       .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
   }
@@ -3203,9 +3949,56 @@
   // the build's own list of files that exist, so a missing one would be a broken-image cross in a
   // 12px circle.
   function txAmt(v, sym, place) {
-    var n = Number(v);
+    // UNKNOWN IS NOT ZERO. Number(null) is 0 and isFinite(0) is true, so a row recovered from the
+    // ledger -- which cannot know what was delivered on the far chain -- printed a confident "0" in
+    // the received column. Only an actual number is formatted; absence reads as a dash.
+    var n = (v === null || v === undefined || v === '') ? NaN : Number(v);
     var shown = isFinite(n) ? fmt(n, (n > 0 && n < 1) ? 8 : 6) : '—';
     var nu = netFile(place);
+
+    // NO AMOUNT? THEN THE CHAIN IS THE ANSWER (RAZA 2026-10-17: "TO column is broken on XRPL bridge
+    // recent transactions"). A row recovered from the ledger cannot know what was delivered on the
+    // far side -- that figure lives in the quote, not in the XRPL transaction -- so this rendered a
+    // dash on the amount line with the chain name underneath it, which reads as an empty cell with
+    // a stray caption. Stellar's column leads with the delivered amount because Stellar's rows were
+    // all recorded locally and have one.
+    //
+    // So when the amount is unknown the chain moves up into the primary line and takes the network
+    // mark as its own icon rather than a corner badge on an empty disc. The column asks "to where",
+    // and "Hedera" answers it; the dash answered nothing. With neither amount nor chain -- a NEAR
+    // Intents deposit address carries no destination -- a single dash is all there is to say.
+    if (!isFinite(n)) {
+      if (!place && !sym) return '<span class="br-asschip"><span><span class="am">—</span></span></span>';
+      // THE ASSET LEADS, THE CHAIN SITS IN THE CORNER -- the same mark the NEAR rows carry, now that
+      // the delivered asset is known for Axelar and THORChain too. When we have no asset the chain
+      // takes the main circle instead, which is better than an empty disc with a badge stuck to it.
+      var main = symLogo(sym) || (sym ? '' : nu);
+      var corner = (main && main !== nu) ? nu : '';
+      return '<span class="br-asschip">'
+        + '<span class="br-ic lx-netic" data-logo="" data-logoed="1" style="position:relative;overflow:visible">'
+        + (main ? ('<img loading="lazy" decoding="async" src="' + esc2(main) + '" alt=""'
+          + ' style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block">') : '')
+        + (corner ? ('<img loading="lazy" decoding="async" src="' + esc2(corner) + '" alt="" style="position:absolute;'
+          + 'right:-2px;bottom:-2px;width:14px!important;height:14px!important;min-width:0!important;'
+          + 'border-radius:50%;object-fit:cover;display:block;box-shadow:0 0 0 2px var(--surface)">') : '')
+        // NAME THE ASSET WHEN THERE IS ONE, with the chain under it — the same two-line shape every
+        // other row in this table uses. This printed `place || sym`, so a known asset was replaced by
+        // its chain: an Axelar row to Hedera read "Hedera" and nothing else, with XRP's mark beside
+        // it and no word for what had arrived. The chain still stands alone when the asset genuinely
+        // is unknown, which is the case the fallback was written for.
+        + '</span><span><span class="am">' + esc2(sym || place) + '</span>'
+        + (sym && place ? ('<span class="nt">' + esc2(place) + '</span>') : '')
+        + '</span></span>';
+    }
+
+    // FOURTEEN PIXELS, BECAUSE THAT IS WHAT STELLAR'S TABLE USES (RAZA 2026-10-17: "why do i feel
+    // like XRPL bridge recent transactions is kinda smaller... something feels off"). Measured both
+    // tables at the same 1400px viewport rather than trusting two screenshots taken at different
+    // widths: font 16.5px, header 14.3px, chain note 13.8px, row height 84px, table width 1069px and
+    // every padding were IDENTICAL on the two chains. The one real difference was this badge --
+    // Stellar's `.lx-tnet` renders 14x14, this rendered 12x12 -- so the instinct was right even
+    // though almost everything it was attributed to was not.
+    //
     // !important ON THE BADGE'S OWN SIZE, and it is not belt-and-braces. The inherited stylesheet
     // carries `.br-txwrap .br-table .br-asschip .br-ic img{width:100%!important;height:100%!important}`
     // — written for the single asset mark that used to be the only image in here. A second <img> in
@@ -3214,7 +4007,7 @@
     // page: width 26, not 12. An inline !important is the only thing that outranks it.
     var badge = nu
       ? ('<img loading="lazy" decoding="async" src="' + esc2(nu) + '" alt="" style="position:absolute;'
-        + 'right:-2px;bottom:-2px;width:12px!important;height:12px!important;min-width:0!important;'
+        + 'right:-2px;bottom:-2px;width:14px!important;height:14px!important;min-width:0!important;'
         + 'border-radius:50%;object-fit:cover;display:block;box-shadow:0 0 0 2px var(--surface)">')
       : '';
     return '<span class="br-asschip">'
@@ -3270,6 +4063,11 @@
     + '<th class="br-xph" aria-label="Explorer">Explorer</th></tr>';
 
   function paintTxs() {
+    // At boot there is usually no wallet yet, so the ledger pass above finds no address and does
+    // nothing. Re-asking from here picks it up the moment a connect repaints this table, and the
+    // `_for` guard means it costs one request per address rather than one per paint. The call it
+    // makes back into paintTxs cannot loop: by then `_for` already matches.
+    try { loadLedgerTxs(); } catch (_) {}
     var all = txRecords();
     var pages = Math.max(1, Math.ceil(all.length / TX_PER));
     if (TX_PAGE > pages) TX_PAGE = pages;
@@ -3287,15 +4085,36 @@
         if (!all.length) {
           // AN EMPTY TABLE IS NOT AN EMPTY STATE. It was a header row over nothing, which reads as a
           // page that failed to load rather than one with no history yet.
-          h = '<tr><td colspan="7" style="padding:26px 12px;text-align:center;color:var(--text-soft)">'
-            + 'No transfers from this browser yet. Bridge something and it will be listed here.</td></tr>';
+          //
+          // AND "NOTHING YET" IS NOT "NOTHING" (RAZA 2026-10-20: "its taking too long for the trxs to
+          // appear on bridge"). Measured on production with a wallet that has nine transfers: this
+          // table said "No bridge transfers yet. Bridge something and it will be listed here." for
+          // 8.1 seconds on a cold load, then filled. The wait was real, but what made it a bug rather
+          // than slowness is that the page ANSWERED while it was still asking -- and the answer told
+          // the reader to go and bridge something they had already bridged.
+          //
+          // One display meaning both "none" and "don't know yet" is the same fault as the pending
+          // claims that reset a connection, so the two states are now separate strings.
+          h = loadingTxs()
+            ? ('<tr><td colspan="7" style="padding:26px 12px;text-align:center;color:var(--text-soft)">'
+               + 'Reading the XRP Ledger…</td></tr>')
+            : ('<tr><td colspan="7" style="padding:26px 12px;text-align:center;color:var(--text-soft)">'
+               + 'No bridge transfers yet. Bridge something and it will be listed here.</td></tr>');
         } else {
           slice.forEach(function (r) {
             h += '<tr>'
               + '<td>' + esc2(txWhen(r.at)) + '</td>'
               + '<td>' + txAmt(r.sent, r.sentSym, 'XRP Ledger') + '</td>'
-              + '<td class="mono">' + (me ? ('<a class="lx-txaddr" href="https://bithomp.com/explorer/'
-                + encodeURIComponent(me) + '" target="_blank" rel="noopener">' + esc2(short(me)) + '</a>') : '—') + '</td>'
+              // THE ROW'S OWN SENDER. This printed the connected wallet on every row, which was
+              // harmless while the table only ever held this browser's transfers and is a false
+              // statement now that it holds the platform's: it would have put your address on
+              // somebody else's transfer. Falls back to `me` for a locally recorded row, which has
+              // no `from` because it was by definition sent from here.
+              + (function () {
+                var src = r.from || me;
+                return '<td class="mono">' + (src ? ('<a class="lx-txaddr" href="https://bithomp.com/explorer/'
+                  + encodeURIComponent(src) + '" target="_blank" rel="noopener">' + esc2(short(src)) + '</a>') : '—') + '</td>';
+              })()
               + '<td>' + txAmt(r.recv, r.recvSym, r.place) + '</td>'
               + '<td class="mono">' + (r.to ? esc2(short(r.to)) : '—') + '</td>'
               + '<td class="lx-buse">' + txRoute(r) + '</td>'
@@ -3342,8 +4161,10 @@
     if (host) {
       var mh = '';
       if (!all.length) {
+        // The phone gets the same distinction as the table above -- the layout differs, the honesty
+        // of the message must not.
         mh = '<div style="padding:22px 12px;text-align:center;color:var(--text-soft);font-size:13.5px">'
-          + 'No transfers from this browser yet.</div>';
+          + (loadingTxs() ? 'Reading the XRP Ledger…' : 'No bridge transfers yet.') + '</div>';
       } else {
         slice.forEach(function (r) {
           mh += '<div class="brm-txc lx-brmtx">'
@@ -3561,6 +4382,16 @@
     }
     return '';
   }
+  // DO NOT CALL paintQuote() FROM HERE. It ends by calling setCta(), so this function and that one
+  // are a cycle: a guard added here on 2026-10-16 ("a figure on screen must have a quote behind it")
+  // recursed until the stack blew, and because the call was wrapped in try/catch the RangeError was
+  // swallowed and the page went on looking fine. It reached production before the cycle was spotted.
+  //
+  // The guard was also answering a question that was not being asked. The daily bot reported step 2
+  // disabled with "~ 72.99645 XLM" on screen and read that as a stale quote. It is not: when there is
+  // no quote this page deliberately shows an INDICATIVE estimate — `est = q ? null : estimate()`
+  // below — priced from 1Click's own token list, exactly as Stellar does. A figure here does not mean
+  // a quote exists, and the button refusing beside it is the two halves agreeing, not disagreeing.
   function setCta() {
     // The banner is written here because this runs on every repaint and every quote, so it appears and
     // clears with the state rather than on a timer. Only the balance goes in it: a route's own note
@@ -3681,8 +4512,19 @@
         try {
           var k = 'lumos.ax.txs';
           var list = JSON.parse(localStorage.getItem(k) || '[]');
+          // THE LEG IS RECORDED HERE TOO. srcLeg()'s note says Axelar "moves the ITS token itself, so
+          // its record already names the asset that was sent" — true of a direct transfer, and not of
+          // a token sold to XRP first, which this route now carries to Axelar-only destinations like
+          // Hedera. Without it that row reads "2.01 XRP" for a 10,000 LUMOS transfer, which is the
+          // same complaint the other two stores were fixed for.
+          var axLegRec = srcLeg();
           list.unshift({ at: Date.now(), hash: hash, route: 'axelar', chain: chain,
-            sym: SRC.symbol, sent: typedRaw(), delivered: AXQ.delivered, to: to });
+            sym: SRC.symbol, sent: typedRaw(), delivered: AXQ.delivered, to: to,
+            // Recorded at write time, because the registry lookup needs AX_BY_SYM and the history
+            // table is painted from storage alone -- and because what a row says arrived should not
+            // change if Axelar re-registers the token later.
+            recvSym: axRecv(destChain()),
+            srcSym: axLegRec && axLegRec.srcSym, srcAmt: axLegRec && axLegRec.srcAmt });
           localStorage.setItem(k, JSON.stringify(list.slice(0, 50)));
           try { paintTxs(); } catch (_) {}
         } catch (e) {}
@@ -3785,6 +4627,12 @@
     var tx = swapTx(q);
     if (!tx) { busy = false; say('That amount is too small for the ledger'); setCta(); return; }
 
+    // BEFORE THE FIRST SIGNATURE, because nothing after it still knows. See SWAP_LEG's own note: the
+    // swap reassigns SRC to XRP and rewrites the amount field, so this is the last moment at which the
+    // page can say what the reader actually chose.
+    SWAP_LEG = (SRC && !SRC.native && amountXrp() > 0)
+      ? { srcSym: SRC.symbol || '', srcAmt: amountXrp() } : null;
+
     say('Step 1 of 2 — approve the swap to XRP…');
     // A DRY RUN BEFORE THE WALLET IS ASKED. On a thin book the price can move past the 0.5% floor in
     // the seconds between quote and signature, and the ledger will say so without a fee or a
@@ -3814,6 +4662,9 @@
       })
       .catch(function (e) {
         busy = false;
+        // Nothing was bridged, so nothing will be recorded -- and leaving the capture set would hand
+        // the token's name to whatever transfer is attempted next.
+        SWAP_LEG = null;
         say(String((e && e.message) || 'The swap could not be completed.'));
         setTimeout(function () { busy = false; setCta(); }, 5000);
       });
@@ -3961,6 +4812,9 @@
   // Axelar is deliberately not touched: it moves the ITS token itself, so its record already names the
   // asset that was sent.
   function srcLeg() {
+    // The captured leg first: on a swapped transfer it is the only surviving record of what was
+    // chosen, and by the time this is called SRC and the amount field both describe the XRP leg.
+    if (SWAP_LEG) return SWAP_LEG;
     if (!SRC || SRC.native) return null;          // XRP in, XRP to the bridge: nothing to remember
     var a = amountXrp();
     return a > 0 ? { srcSym: SRC.symbol || '', srcAmt: a } : null;
@@ -3989,11 +4843,43 @@
     try {
       var ai = amtInput(); if (ai) ai.value = '';
       SWAPQ = null; SIMQ = null; QUOTE = null; THQ = null; AXQ = null; BEST = '';
+      // The hand-pick belonged to the transfer that just finished. Left standing it would silently
+      // steer the next one, on a route the reader chose for a pair they may not be sending again.
+      PICKED = ''; PICKED_FOR = '';
+      SWAP_LEG = null;
       NOTE = { ni: '', th: '', ax: '' };
       try { paintSourceUsd(); } catch (_) {}
       try { paintSteps(); setCta(); } catch (_) {}
       var back = $('.br-step[data-step="3"] .br-back[data-go="2"]') || $('.br-back[data-go="2"]');
       if (back) back.click();
+      // ...AND ON TO STEP 1, which is where Stellar lands (RAZA 2026-10-23: "This swap is already done
+      // successfully, so why didn't it take to cross-chain step 1 and refreshed everything").
+      //
+      // _cctp.js's lxBrResetWizard clicks step 3 -> 2, then step 2 -> 1 on a 140ms timer, and clears
+      // the amount AND the address. This stopped at step 2 and deliberately kept the address, on the
+      // reasoning that re-pasting it is friction rather than safety. That reasoning was mine, it is not
+      // what the other chain does, and a finished transfer leaving the form half-populated is exactly
+      // the state he is pointing at. Same two clicks, same 140ms, same fields cleared.
+      //
+      // The step move goes through the design's own .br-back buttons rather than a transform written
+      // here -- each .br-step carries its own slide and driving it by hand is how this layer has broken
+      // the wizard before.
+      setTimeout(function () {
+        try {
+          var s2 = $('.br-step[data-step="2"]');
+          var b1 = s2 && s2.querySelector('.br-back[data-go="1"]');
+          if (!b1) b1 = $('.br-back[data-go="1"]');
+          if (b1) b1.click();
+          var ad = $('.br-addr-in'); if (ad) ad.value = '';
+          step2Err('');
+          // THE BALANCE IS PART OF "refreshed everything", and it is the one figure that is certainly
+          // now wrong: the money has left. Without this, "Available to send" goes on showing the
+          // pre-transfer number until something else happens to re-read the account.
+          try { loadSpendable(); } catch (_) {}
+          try { loadHoldings(); } catch (_) {}
+          try { paintSteps(); setCta(); } catch (_) {}
+        } catch (_) {}
+      }, 140);
     } catch (e) {}
   }
 
@@ -4142,10 +5028,14 @@
     }
 
     // Before anything is fetched: the artwork is shipped, so the marks can be right on the first
-    // paint rather than after two registries have answered. The history is local, so it can be drawn
-    // now too -- it does not depend on a single registry answering.
+    // paint rather than after two registries have answered. The local history can be drawn now too --
+    // it does not depend on a single registry answering.
     paintOptionCss();
     try { paintTxs(); } catch (_) {}
+    // ...and then the wallet's own transfers are recovered from the ledger and merged in. Separate
+    // and later on purpose: it needs a connected address and a round trip, and the rows already in
+    // localStorage should not wait behind either.
+    try { loadLedgerTxs(); } catch (_) {}
 
     // BOTH REGISTRIES, and the page waits for both before deciding what it offers. Settling them
     // separately would paint a destination list from one route and then rebuild it when the other
@@ -4175,25 +5065,60 @@
           return null;
         });
     }
-    Promise.all([
-      regFetch(API + '?op=tokens', 3),
-      regFetch(API_AX + '?op=assets', 3),
-      regFetch(API_TH + '?op=pools', 3),
-    ]).then(function (res) {
+    // THE LIST DOES NOT WAIT FOR ALL THREE (RAZA 2026-10-19: "its taking too long to load destination
+    // networks dropdown"). Measured on the live page, from the moment the three registry reads started:
+    //
+    //     /lxapi/xrploneclick?op=tokens     3,771 ms     ~30 destinations
+    //     /lxapi/xrplaxelar?op=assets      11,345 ms     Hedera and XRPL EVM, and nothing else
+    //     /lxapi/thorchain?op=pools         4,608 ms
+    //
+    // Promise.all waits for the slowest, so eleven seconds bought two chains, and the menu sat on
+    // "Loading networks…" the whole time. The code below already treats a missing registry as a normal
+    // state -- "ANY ONE route alone is a usable page", and NOTE.ax names what is absent when Axelar
+    // fails -- so there was never a reason to hold the other thirty back.
+    //
+    // NEAR Intents' registry paints on its own the moment it lands; the full pass still runs when all
+    // three are in and rebuilds the list with whatever else arrived. applyNi is shared so the early
+    // paint and the authoritative one cannot drift apart.
+    function applyNi(d) {
+      if (!(d && d.ok && Array.isArray(d.tokens))) return false;
+      TOKENS = d.tokens; NATIVES = d.natives || {}; KEYED = !!d.keyed;
+      BY_CHAIN = {};
+      TOKENS.forEach(function (t) { (BY_CHAIN[t.blockchain] = BY_CHAIN[t.blockchain] || []).push(t); });
+      ORIGIN = (BY_CHAIN.xrp || [])[0] || null;
+      delete BY_CHAIN.xrp;                        // never a destination
+      return true;
+    }
+    function repaintAll() {
+      try { paintSourceAsset(); title(wireDestinations()); paintSteps(); setCta(); } catch (_) {}
+    }
+    var pNi = regFetch(API + '?op=tokens', 3),
+        pAx = regFetch(API_AX + '?op=assets', 3),
+        pTh = regFetch(API_TH + '?op=pools', 3);
+    pNi.then(function (d) { if (applyNi(d)) repaintAll(); }, function () {});
+    Promise.all([pNi, pAx, pTh]).then(function (res) {
       var d = res[0], a = res[1], t = res[2];
-      if (d && d.ok && Array.isArray(d.tokens)) {
-        TOKENS = d.tokens; NATIVES = d.natives || {}; KEYED = !!d.keyed;
-        BY_CHAIN = {};
-        TOKENS.forEach(function (t) { (BY_CHAIN[t.blockchain] = BY_CHAIN[t.blockchain] || []).push(t); });
-        ORIGIN = (BY_CHAIN.xrp || [])[0] || null;
-        delete BY_CHAIN.xrp;                      // never a destination
-      }
+      applyNi(d);
       if (a && a.ok && Array.isArray(a.assets)) {
         AX = a;
         AX_BY_SYM = {};
+        AX_ORIGIN = null;                       // a view of AX_BY_SYM; rebuilt on first use
         a.assets.forEach(function (x) { AX_BY_SYM[x.symbol] = x; });
+        // THE HISTORY TABLE READS THIS REGISTRY NOW, and it is painted from localStorage the moment
+        // the page loads — well before this fetch returns. Without a repaint here, a row resolved
+        // against an empty AX_BY_SYM keeps the sent symbol forever and the fix silently does nothing
+        // on exactly the reload where it matters. Cheap: it is a re-render of rows already in hand.
+        try { paintTxs(); } catch (_) {}
       }
-      if (t && t.ok && Array.isArray(t.pools) && t.xrpTradeable) { TH = t; buildThNative(); }
+      if (t && t.ok && Array.isArray(t.pools) && t.xrpTradeable) {
+        TH = t; buildThNative();
+        // Kept null when the endpoint omitted the key, which it does when that read failed. Mapped so
+        // the lookup is a property test rather than an indexOf on every repaint.
+        if (Array.isArray(t.halted)) {
+          TH_HALT = {};
+          t.halted.forEach(function (c) { TH_HALT[c] = 1; });
+        }
+      }
       // ANY ONE route alone is a usable page. All three down is not.
       if (!ORIGIN && !AX && !TH) { say('Routes unavailable — try again shortly'); return; }
       // NAMED, not silent. Axelar is the only way to Hedera and XRPL EVM, so when it is the one that
@@ -4205,15 +5130,17 @@
       window.__lxxNiChains = Object.keys(BY_CHAIN).filter(function (c) { return NI_CHAIN[c]; });
       window.__lxxAxAssets = AX ? AX.assets.map(function (x) { return x.symbol; }) : [];
       window.__lxxThChains = Object.keys(TH_NATIVE);
+      // AND IT DOES NOT WAIT FOR THE WALLET EITHER. loadHoldings reads the ledger for this account's
+      // balances and took a further nine seconds on the same measurement -- but which CHAINS exist is a
+      // property of the registries, not of what the reader happens to hold. Paint now, then paint again
+      // when the holdings land and the source asset can be rebound properly.
+      repaintAll();
       return loadHoldings().then(function () {
         // SOURCE FIRST, THEN DESTINATIONS. The destination list is a function of the chosen source, so
         // building it before SRC has been rebound against the freshly-loaded registries shows the list
         // for whatever SRC was left holding -- which, on first load, is a source that knew nothing
         // about Axelar.
-        paintSourceAsset();
-        title(wireDestinations());
-        paintSteps();
-        setCta();
+        repaintAll();
       });
     });
   }

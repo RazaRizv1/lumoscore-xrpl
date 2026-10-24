@@ -110,18 +110,38 @@
   // would not settle — and a reader with no reason to wait presses refresh, which is the shape of the
   // complaint this page keeps attracting. 15s is well past the ~300ms a healthy amm_info takes
   // (measured across 32 consecutive calls while chasing RAZA's 2026-10-08 "pool not found" report).
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params, ms) {
     var ctl = null;
     try { ctl = new AbortController(); } catch (e) {}
     var timer = setTimeout(function () { try { ctl && ctl.abort(); } catch (e) {} }, ms || 15000);
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] }),
       signal: ctl ? ctl.signal : undefined
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       clearTimeout(timer);
       var res = j && j.result;
-      if (!res || res.error) throw new Error((res && (res.error_message || res.error)) || 'no pool');
+      if (!res || res.error) {
+        // THE LEDGER'S OWN ERROR CODE TRAVELS WITH THE ERROR. The message is written for a human and
+        // the wording is the upstream's to change; the code is a contract. Callers need to tell
+        // "this account is not an AMM" (actNotFound — final, however long you wait) from "the cluster
+        // is busy" (tooBusy / slowDown — try again shortly), and matching that on prose would be a
+        // guess that breaks the day the upstream rephrases itself.
+        var err = new Error((res && (res.error_message || res.error)) || 'no pool');
+        err.code = (res && res.error) || '';
+        throw err;
+      }
       return res;
     }, function (e) {
       clearTimeout(timer);
@@ -574,7 +594,22 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (gen !== tvlGen) return;
-        if (!d || !d.ok || !d.pts || d.pts.length < 2) { chartNote('No liquidity history for this pool yet.'); return; }
+        // OUR REQUEST FAILING IS NOT THE POOL HAVING NO HISTORY (RAZA 2026-10-20, on the XRP/RLUSD
+        // pool: "Why its not loading the pool activity chart"). That pool holds $4.81M across 1,406
+        // liquidity providers and the page told him it had no history yet -- a statement anyone
+        // looking at the cards above it can see is false.
+        //
+        // The endpoint answers HTTP 200 with { ok:false, error } when the upstream refuses, so a
+        // failure never reaches the .catch below, which already words this correctly. Lumping !d.ok
+        // in with the empty case is what turned a fetch problem into a claim about the pool. Measured
+        // the same day against production: /lxapi/xrplammchart returned ok=true with 31 points for 1m,
+        // 179 for 1w and 629 for all -- the data exists and the code is right; something environmental
+        // was refusing, and the page had no way to say so.
+        //
+        // Same distinction the price chart above already draws in its own catch, and the same fault as
+        // the bridge table that said "No bridge transfers yet" while it was still reading.
+        if (!d || !d.ok) { chartNote('Could not load the liquidity history.'); return; }
+        if (!d.pts || d.pts.length < 2) { chartNote('No liquidity history for this pool yet.'); return; }
         var v = d.pts.map(function (q) { return [q[0], q[1], 0, 0, 0, +q[2] || 0]; });
         if (v.length > 180) {
           // Thinned to 180 points: each keeps its last TVL and the SUM of its volume.
@@ -1764,7 +1799,11 @@
     clearChart();
   }
 
-  function fail(msg) {
+  // `headline` is what the page CLAIMS, and it is separate from `msg` because the two were saying
+  // different things at once. The header read "Pool not found" — an assertion that the pool does not
+  // exist — while the card right under it read "Could not read the pool", which was the truth. A read
+  // that failed must not report the thing missing; only the ledger answering actNotFound may do that.
+  function fail(msg, headline) {
     // THE MESSAGE HAS TO BE VISIBLE (RAZA 2026-09-16: "[still happening. What the hell. FIX IT ALREADY] Sometimes Pools-pool
     // page is taking forever to load. But when i refresh, it loads up"). THIS IS THE CAUSE: liftPage() — which lifts the
     // design's `html:not(.lx-ammready) .pool-header{visibility:hidden}` gate — was only ever called from paint(), the success
@@ -1773,7 +1812,7 @@
     liftPage();
     releaseGates();
     var name = $('.ph-name');
-    if (name) name.textContent = 'Pool not found';
+    if (name) name.textContent = headline || 'Could not load this pool';
     var pv = $('.ph-price .v');
     if (pv) pv.textContent = '—';
     var ps = $('.ph-price .s');
@@ -1869,21 +1908,39 @@
         window.console.error('[lx pooldetail] the pool read fine; drawing it threw', e);
       }
     }
-    // THREE ATTEMPTS, BACKING OFF, and the retry stays attached to the READ alone — which is the
-    // whole point of the split below. One retry was not much of a safety net for a public cluster:
-    // it turned two unlucky moments a second apart into a page that says the pool does not exist.
-    // An account the ledger genuinely does not know is not retried at all, since the answer will not
-    // change and the reader should hear it straight away.
-    function readPool(tries) {
+    // A BUSY CLUSTER GETS A MUCH LONGER WAIT THAN ANY OTHER FAILURE.
+    //
+    // This was three attempts over about 3.1 seconds. Measured against xrplcluster under load on
+    // 2026-10-15, every amm_info came back tooBusy or slowDown and the first success arrived about
+    // TEN seconds later — so the ladder ran out while the ledger was merely busy, and a live pool
+    // reported itself missing to whoever happened to arrive at a peak. That is the same failure the
+    // note this replaces describes; raising one retry to three narrowed the window without closing it.
+    //
+    // Three ladders, because the three cases deserve different patience:
+    //   actNotFound  — the ledger is certain. Do not wait at all; the answer will not change.
+    //   tooBusy etc. — the ledger is fine and we are being paced. Wait properly: five attempts, ~16.5s.
+    //   anything else (timeout, network, bad JSON) — keep the old short ladder.
+    var BUSY = { tooBusy: 1, slowDown: 1, noNetwork: 1, noCurrent: 1, amendmentBlocked: 0 };
+    var BUSY_WAIT = [1000, 2500, 5000, 8000];
+    var OTHER_WAIT = [900, 2200];
+    function readPool(n) {
+      n = n || 0;
       return rpc('amm_info', { amm_account: acct }).catch(function (e) {
-        var msg = String(e && e.message);
-        if (/not found|actNotFound/i.test(msg) || tries <= 1) throw e;
-        return new Promise(function (res) { setTimeout(res, tries === 3 ? 900 : 2200); })
-          .then(function () { return readPool(tries - 1); });
+        var code = (e && e.code) || '';
+        // Fall back to the message only when no code travelled — a transport failure has no code.
+        if (code === 'actNotFound' || (!code && /not found/i.test(String((e && e.message) || '')))) throw e;
+        var wait = (BUSY[code] ? BUSY_WAIT : OTHER_WAIT)[n];
+        if (wait === undefined) throw e;
+        return new Promise(function (res) { setTimeout(res, wait); })
+          .then(function () { return readPool(n + 1); });
       });
     }
-    readPool(3).then(function (r) {
-      if (!r || !r.amm) { fail('That account is not an AMM.'); return; }
+    // readPool now counts UP from 0 as an index into the backoff ladders; the old signature counted
+    // tries DOWN from 3. Left as readPool(3) it would have started at the last rung and given up
+    // after two attempts — a shorter retry than the one being replaced, from a change meant to
+    // lengthen it, and nothing about the page would have looked different.
+    readPool(0).then(function (r) {
+      if (!r || !r.amm) { fail('That account is not an AMM.', 'Pool not found'); return; }
       try {
         paint(acct, r.amm);
         // The LP token's holder list is public after all — xrpl.to keeps it — so the list is real now.
@@ -1894,7 +1951,13 @@
         txLoad.then(renderTx, renderFailed);
       } catch (e) { renderFailed(e); }
     }, function (e) {
-      fail((e && e.message) === 'no pool' ? 'That account is not an AMM.' : 'Could not read the pool.');
+      // Only the ledger's own verdict gets the "not found" headline. A busy cluster says so plainly,
+      // and says it is temporary, because the reader's next move is different: wait and reload, not
+      // conclude the pool is gone.
+      var code = (e && e.code) || '', emsg = String((e && e.message) || '');
+      if (code === 'actNotFound' || emsg === 'no pool') { fail('That account is not an AMM.', 'Pool not found'); return; }
+      if (BUSY[code]) { fail('The XRP Ledger is busy right now, so this pool could not be read. It has not gone anywhere — reload in a moment.', 'Could not load this pool'); return; }
+      fail('Could not read the pool.', 'Could not load this pool');
     });
   }
 

@@ -200,7 +200,53 @@ function isLaunchpad(h) {
     || h.indexOf('lumos.launch.draft') >= 0;
 }
 
-let files = 0, pages = 0, stripped = 0, typeRemoved = 0, faqs = 0, lds = 0;
+let files = 0, pages = 0, stripped = 0, typeRemoved = 0, faqs = 0, lds = 0, mocks = 0;
+
+// THE COST FIGURES SHIP AS ANOTHER CHAIN'S, AND NO SCRIPT CAN UN-SHOW THEM IN TIME.
+//
+// RAZA 2026-10-23, on the phone: "It shows apt for split seconds when the page is refreshed". The
+// design bakes four cells -- "34.70 APT", "69.40 APT", "69.40 APT", "173.50 APT" -- and
+// browser/launchpad.js repaints them from the live XRP rate once that rate arrives.
+//
+// A STYLESHEET INJECTED BY THAT SCRIPT CANNOT COVER THE GAP, which is what I tried first. Measured in
+// the built page: the mock is at byte 183,670 and the gate is appended at byte 676,296. The bar is
+// painted roughly half a megabyte of parsing before the rule that would hide it exists. The gate is
+// still worth having for the panel once the script HAS run -- it stops a slow rate leaving a stale
+// figure -- but it was never going to win a race it starts 490KB behind.
+//
+// So the figure is taken out of the markup at build time. The em dash is this page's own "not
+// available yet" (the script's 8s timeout writes the same character), and nothing here is a number
+// anybody could act on.
+//
+// THE USD SIDE IS KEPT, because it is TRUE: USD = { create: 5, liq: 10, pool: 10 } in
+// browser/launchpad.js, which is exactly the $5 / $10 / $10 / $25 the design already had. So the first
+// frame carries the real price in dollars and the XRP amount fills in a moment later -- strictly
+// better than hiding the row, which would paint an empty bar and read as broken.
+//
+// Idempotent by construction: the search requires a digit before the ticker, and the replacement has
+// none, so a second pass matches nothing.
+const COST_CELLS = ['costCreation', 'costLiquidity', 'costNetwork', 'costTotal'];
+// The REVIEW page's panel carries the same four figures with no ids at all, matched by their label
+// instead -- browser/launchpad.js's costCell() falls back to exactly these strings, so both halves
+// read from one list and cannot drift. Only cells that function repaints are blanked: the review
+// page's "Balance 842.16 APT" is deliberately left alone, because nothing writes it and an em dash
+// there would be permanent, which is the failure the 8s timeout note already warns about.
+const COST_LABELS = ['Token creation', 'Initial liquidity', 'Liq. pool &amp; network', 'Liq. pool & network', 'Total Cost'];
+function dropMockCosts(h) {
+  const AMT = '[0-9][0-9.,]*\\s*[A-Z]{2,5}\\s';
+  for (const id of COST_CELLS) {
+    // Anchored on the id so it cannot touch prose, a comment, or a cell belonging to something else;
+    // the amount is whatever sits between the opening tag and the USD span.
+    const re = new RegExp('(id="' + id + '">)' + AMT, 'g');
+    h = h.replace(re, function (_m, open) { mocks++; return open + '— '; });
+  }
+  for (const label of COST_LABELS) {
+    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(class="k">' + esc + '</span>\\s*<span class="v"[^>]*>)' + AMT, 'g');
+    h = h.replace(re, function (_m, open) { mocks++; return open + '— '; });
+  }
+  return h;
+}
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -294,6 +340,9 @@ for (const dev of ['desktop', 'mobile']) {
       }
     }
 
+    // Before the script is appended, so the regex above can never reach into the script's own text.
+    h = dropMockCosts(h);
+
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
     json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
@@ -307,5 +356,6 @@ for (const dev of ['desktop', 'mobile']) {
 console.log('xrpl launchpad: injected on ' + pages + ' page key(s) across ' + files
   + ' container(s); stripped the Stellar issuance layer from ' + stripped
   + '; removed the project-type block from ' + typeRemoved
-  + '; mint-cost FAQ rewritten on ' + faqs + ', structured data rebuilt on ' + lds);
+  + '; mint-cost FAQ rewritten on ' + faqs + ', structured data rebuilt on ' + lds
+  + '; ' + mocks + ' baked cost figure(s) in another chain\'s asset blanked');
 if (!pages) console.error('  ! no page carried the launchpad — nothing was wired');

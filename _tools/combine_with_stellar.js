@@ -34,13 +34,24 @@ const FN_OUT = ROOT_OUT + '/functions';
 function die(m) { console.error('  ABORT: ' + m); process.exit(1); }
 function rm(p) { try { fs.rmSync(p, { recursive: true, force: true }); } catch (e) {} }
 
-function copyDir(src, dst, skip) {
+// THE SKIP GETS THE DEPTH, because without it a name match reaches the whole tree.
+//
+// RAZA 2026-10-16, deploying the FLR and SHX logo overrides: they live in
+// dist/assets/tokens/xrpl/, and the Stellar copy below skips anything named 'xrpl' so that XRPL's
+// own pages own the top-level /xrpl folder. That rule was written for ONE directory and silently
+// applied to every level, so a legitimate subfolder that happened to share the name was dropped —
+// two files, no warning, and a logo fix that would have 404'd in production while every check short
+// of listing the deployed tree said it had shipped. Caught by the file count: 989 built, 987 copied.
+//
+// Depth 0 is the only level the rule was ever about.
+function copyDir(src, dst, skip, depth) {
+  depth = depth || 0;
   fs.mkdirSync(dst, { recursive: true });
   let n = 0;
   for (const e of fs.readdirSync(src, { withFileTypes: true })) {
-    if (skip && skip(e.name)) continue;
+    if (skip && skip(e.name, depth)) continue;
     const s = path.join(src, e.name), d = path.join(dst, e.name);
-    if (e.isDirectory()) n += copyDir(s, d, skip);
+    if (e.isDirectory()) n += copyDir(s, d, skip, depth + 1);
     else { fs.copyFileSync(s, d); n++; }
   }
   return n;
@@ -67,7 +78,7 @@ if (WRITE) { rm(ROOT_OUT); }
 let sN = 0, xN = 0;
 if (WRITE) {
   // Stellar first, whole and unmodified — including its _redirects, which is rewritten below.
-  sN = copyDir(STELLAR + '/dist', OUT, (n) => n === 'xrpl');
+  sN = copyDir(STELLAR + '/dist', OUT, (n, d) => d === 0 && n === 'xrpl');
   // then XRPL's pages into /xrpl. Its own _redirects/_headers/_routes.json are NOT carried: the
   // deployment reads those from the root only, and XRPL's would be ignored at best.
   xN = copyDir(XRPL + '/dist/xrpl', OUT + '/xrpl',

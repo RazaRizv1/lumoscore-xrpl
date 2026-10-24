@@ -241,10 +241,27 @@
     // THE HOME DOMAIN, as lumoscore.com's rows show it (RAZA 2026-09-15: "Its not showing homedomains in search").
     // The issuer's display name stands in only where no domain is published; a FirstLedger toml host is where a
     // file is stored, not whose token it is.
+    // A DOMAIN OR NOTHING (RAZA 2026-10-16: "instead of homedomain, why its showing the company
+    // name, for eg: gatehub. Fix it" — then, once it was clear there is nothing better to show:
+    // "show nothing when theres no real domain").
+    //
+    // The fallback used to be `dom || t.u`, the issuer's DISPLAY NAME from the market data. That is
+    // why rows read "GateHub", "Flare Network", "Sunflower" where lumoscore.com shows a domain — and
+    // it reads as though we had checked something we had not. A name is not a domain and does not
+    // point anywhere.
+    //
+    // THERE IS NO THIRD SOURCE, which is what settled it. Checked against both: the ledger's own
+    // Domain field is EMPTY on these issuers (GateHub's FLR and USDC accounts, Xahau's XAH, DROP),
+    // and xrpl.to returns "" for every one of them too — so the name was never a stand-in for a
+    // domain we could have fetched, it was all there ever was. An empty pill is the honest answer;
+    // see the note in _issuerdomain.js on why a wrong badge is worse than no badge.
+    //
+    // The name is NOT lost to the reader: it is on the row either way, under the ticker.
     var dom = t.i === LUMOS_ISS ? 'lumoscore.com' : rootDomain(t.d);
-    var pillTxt = dom || t.u;
-    // A pill that only repeats the token's own name says nothing ("Atom" beside "Atom").
-    if (pillTxt && pillTxt.toLowerCase() !== String(t.n || '').toLowerCase()) {
+    // The name-repeat guard stays. It was written for the display-name fallback ("Atom" beside
+    // "Atom") and costs nothing now, but a token whose code IS its domain would still trip it.
+    if (dom && dom.toLowerCase() !== String(t.n || '').toLowerCase()) {
+      var pillTxt = dom;
       nameRow.appendChild(document.createTextNode(' '));
       var pill = el('span', 'sp-domain', pillTxt);
       // SHORT PILLS WERE EMPTIED ("x.com"). The search icon painter stamps the row's ticker on any 1-5 character
@@ -261,8 +278,22 @@
     // The issuer is part of the answer, not decoration: it is the only thing separating two tokens
     // that share a ticker.
     // The issuer address shows once, on the right. It was appearing twice per row.
-    // Stellar's second line: the code, then the holders.
-    info.appendChild(el('div', 'sp-sub', [codeOf(t.c) || t.n, holders(t.h)].filter(Boolean).join(' · ')));
+    // Stellar's second line: the code, the ISSUER, then the holders.
+    //
+    // THE ISSUER NAME WAS NEVER ON THIS ROW (RAZA 2026-10-17: "why aren't you mentioning that its
+    // gatehub usdc besides it"). The only thing distinguishing two rows both reading USDC was the
+    // domain pill above — and that pill is the issuer's DOMAIN, which GateHub does not publish on
+    // the ledger, so its row had nothing on it at all while Circle's wore "circle.com". Two
+    // identical-looking USDCs, one of them anonymous, which is the exact confusion this whole
+    // issuer-first design exists to prevent. xrpl.to supplies the name and we were dropping it.
+    //
+    // Skipped when it only repeats the ticker — plenty of tokens are issued by an account named
+    // after them, and "LOVE · LOVE · 266 holders" is noise rather than an answer.
+    var iss = String(t.u || '').trim();
+    var code = codeOf(t.c) || t.n;
+    if (iss && (iss.toLowerCase() === String(code || '').toLowerCase()
+             || iss.toLowerCase() === String(t.n || '').toLowerCase())) iss = '';
+    info.appendChild(el('div', 'sp-sub', [code, iss, holders(t.h)].filter(Boolean).join(' · ')));
     a.appendChild(info);
 
     var right = el('div', 'sp-right');
@@ -328,6 +359,12 @@
         if (d && d.ok) return d;
         // A RATE LIMIT IS NOT A WOBBLE. Retrying a 429 four times only makes the reader wait six seconds for the same
         // answer (RAZA 2026-09-17, "batman"). It is reported as-is so the message can say what actually happened.
+        //
+        // THE EDGE NOW SENDS A FLAG, and this string sniff is kept only for a cached old response.
+        // /lxapi/xrplsearch answers a rate-limited miss with ok:true, rows:[], partial:1, rate:1 —
+        // an empty result rather than a failure, because the search did run: the ranked index was
+        // consulted and did not hold the word. Parsing someone's error prose for "429" was always a
+        // guess; `rate` is a contract.
         if (d && /429/.test(String(d.error || ''))) { d.__rate = 1; return d; }
         throw new Error('retry');
       })
@@ -427,11 +464,22 @@
       return new Promise(function (res) { setTimeout(res, 700); }).then(function () { return rpcS1(method, params); });
     });
   }
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpcS1(method, params) {
-    return fetch('https://xrplcluster.com/', {
+    return lxpost('https://xrplcluster.com/', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) { return j && j.result; }).catch(function () { return null; });
+    }).then(function (j) { return j && j.result; }).catch(function () { return null; });
   }
   function sideName(s) { if (!s || !s.i || s.c === 'XRP') return 'XRP'; return codeOf(s.c) || s.c; }
   function sideThumb(s) {
@@ -647,7 +695,28 @@
   function render(list, d) {
     list.innerHTML = '';
     watchFilters();
-    if (!d.rows.length) { note(list, 'No XRP Ledger token matches that.'); setCount(0); return; }
+    // AN EMPTY ANSWER SAYS WHICH KIND OF EMPTY IT IS. "No XRP Ledger token matches that" is a claim
+    // about the whole ledger, and it is only true when the whole ledger was actually searched. When
+    // the market data provider is refusing (d.rate), what was really searched is the ranked index,
+    // and a token outside it could not be checked at all. Saying "no match" there states a fact
+    // nobody verified; the old behaviour instead showed a rate-limit error, which is alarming and
+    // talks about our plumbing rather than their question. This says what was covered and what was not.
+    //
+    // THE NUMBER WAS WRONG, AND IT WAS THE ONLY THING THE READER WAS TOLD (RAZA 2026-10-17: "we're
+    // not searching just 1000 assets. we're searching for assets throughout the XRPL network"). The
+    // index asks for 1,000 and the API caps `limit` at 100 — it has always been a hundred. He is
+    // also right about the intent: the full-ledger lookup DOES reach all ~20,000 tokens, it is
+    // simply the thing that gets rate-limited. So the note now names the real depth and says the
+    // rest is temporarily unreachable rather than implying it does not exist.
+    if (!d.rows.length) {
+      note(list, d.rate
+        ? 'Only the top 100 by volume could be searched just now — the full-ledger lookup is rate-limited. Try again in a minute.'
+        : (d.partial
+          ? 'No match in the top 100 by volume.'
+          : 'No XRP Ledger token matches that.'));
+      setCount(0);
+      return;
+    }
     for (var i = 0; i < d.rows.length; i++) list.appendChild(rowFor(d.rows[i]));
     setCount(d.rows.length);
   }

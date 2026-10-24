@@ -42,11 +42,22 @@
   };
   window.__lxFeeTierSet = pub;
 
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    }).then(function (j) {
       var res = j && j.result;
       if (!res || res.error) return null;
       return res;
@@ -148,6 +159,47 @@
     window.__lxFrFor = '';
     resolve(true);
   };
+
+  // THE REVIEW MODAL HAS ITS OWN NUDGE, AND IT ASKS NOBODY ANYTHING.
+  //
+  // RAZA 2026-10-18: "Promotional fee banner still displays in the Order Review modal despite the
+  // connected wallet holding >250K LUMOS and already receiving the 0.1% discounted trading fee."
+  // His screenshot shows "Trading fee 0.1%" with "Hold 250,000 LUMOS to lower your fee to 0.1%"
+  // directly beneath it — the panel behind it was correct the whole time.
+  //
+  // There are TWO nudge emitters in the inherited build, and the 2026-10-16 fix only reached one:
+  //   * `.lx-ft-*`   the pane's fee-tier card — fixed via _xrplfeebanner.js (addRows' early return)
+  //   * `.lx-rv-lumos` the REVIEW modal's own banner — hardcoded into that modal's HTML template
+  //     with no holder test of any kind, so it shows for everyone, always.
+  // Fixing the first could never have fixed the second. Same shape as every "second surface" bug in
+  // this project: querySelector-style thinking where two places print the same fact.
+  //
+  // Done here rather than by patching the inherited script, because this file already OWNS the tier
+  // and publishes it; the modal is markup that appears later, so a rule that re-applies whenever the
+  // tier or the DOM changes is the honest fit. It only ever HIDES a promo — it cannot invent a
+  // discount, and it never touches the fee figure itself.
+  //
+  // THE LINK IS WRONG-CHAIN TOO: the template points at lumoscore.com/lumos/stellar on an XRP Ledger
+  // page. Repointed for anyone who does NOT qualify and still sees the banner. See
+  // [[lumoscore-xrpl-wrong-chain-copy]].
+  function applyNudge() {
+    var qualified = Number(window.__lxFeeRate) <= 0.001;
+    var n = document.querySelectorAll('.lx-rv-lumos');
+    for (var i = 0; i < n.length; i++) {
+      n[i].style.display = qualified ? 'none' : '';
+      if (qualified) continue;
+      var a = n[i].querySelector('a.lx-rv-buy');
+      if (a && /\/lumos\/stellar/.test(a.getAttribute('href') || '')) a.setAttribute('href', '/lumos/xrpl');
+    }
+  }
+  window.addEventListener('lx:feetier', applyNudge);
+  // The modal is built on demand, long after the tier is known, so watch for it rather than hoping
+  // the order works out. Cheap: one subtree observer, and applyNudge is a querySelectorAll on a
+  // class that exists at most once.
+  try {
+    new MutationObserver(applyNudge).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+  applyNudge();
 
   resolve();
   window.addEventListener('storage', function (e) {

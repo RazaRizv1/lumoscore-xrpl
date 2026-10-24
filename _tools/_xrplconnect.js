@@ -50,6 +50,38 @@ if (!/var XAMAN_KEY = '[0-9a-f-]{36}'/.test(page)) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + batch + '\n</' + 'script>';
 
+// DO NOT PAINT A PAGE WE ARE ABOUT TO LEAVE.
+//
+// A phone comes back from the Xaman app at XAMAN_RETURN ('/trade/xrpl') because that address is
+// registered in the Xaman app and cannot be chosen from here. The connect layer rides at the END of
+// <body>, so by the time it can adopt the session and hop to the landing, the trade page has already
+// parsed and painted — RAZA sees the market table for a moment on the way through, which is what he
+// reported after the landing fix itself was working ("that bug ... where it takes to trade main page
+// for split seconds is still here").
+//
+// So this sits in <head> and hides the document for the handful of frames between arriving and
+// leaving. It changes no part of the sign-in: the SDK still completes exactly as before, the handshake
+// parameters are untouched, and the only difference is that nothing is drawn meanwhile.
+//
+// THREE GUARDS, because a page hidden by mistake is far worse than a flash:
+//   * only on XAMAN_RETURN, and only when the URL carries Xaman's own return parameters or a
+//     sign-in started here in the last fifteen minutes — the same staleness window backTarget() uses
+//   * a timer reveals the page regardless after five seconds, so a sign-in that never completes
+//     leaves a usable trade page rather than a blank one
+//   * visibility, not display, so layout is unaffected and nothing reflows when it lifts
+const RETURN_ID = 'lx-xreturn';
+const RETURN_HEAD = '<script id="' + RETURN_ID + '">(function(){try{'
+  + 'if(location.pathname!=="/trade/xrpl")return;'
+  + 'var back=null;try{back=JSON.parse(localStorage.getItem("lumos.xamanBack")||"null");}catch(_){}'
+  + 'var fresh=!!(back&&back.t&&(Date.now()-back.t)<900000);'
+  + 'var ret=/xumm|xApp|access_token|authorization_code/i.test(location.href);'
+  + 'if(!ret&&!fresh)return;'
+  + 'var st=document.createElement("style");st.id="' + RETURN_ID + '-css";'
+  + 'st.textContent="html{visibility:hidden!important}";'
+  + '(document.head||document.documentElement).appendChild(st);'
+  + 'setTimeout(function(){try{st.parentNode&&st.parentNode.removeChild(st);}catch(_){}} ,5000);'
+  + '}catch(_){}})();</' + 'script>';
+
 // ---- the design's OTHER connect modal ------------------------------------------------------------
 // `#lcConnectModal` is a second, separate inherited modal (the `lc-*` family — not the `lxw-*` one
 // that designConnected() still mounts for the connected screen). Its list is seven STELLAR wallets:
@@ -117,7 +149,7 @@ function stripWalletList(h) {
   return { h: out, cut, title };
 }
 
-let files = 0, pages = 0, stripped = 0, wrows = 0, wpages = 0, titles = 0;
+let files = 0, pages = 0, stripped = 0, wrows = 0, wpages = 0, titles = 0, headPages = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -139,7 +171,15 @@ for (const dev of ['desktop', 'mobile']) {
 
     const bi = h.lastIndexOf('</' + 'body>');
     if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
-    json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
+    h = h.slice(0, bi) + SCRIPT + h.slice(bi);
+
+    // The paint guard goes in <head>, where it can act before the first frame. Stripped first, /g, for
+    // the same reason as the block above: one strip against two stale copies leaves a duplicate.
+    const oldRet = new RegExp('<script id="' + RETURN_ID + '">[\\s\\S]*?<\\/script>', 'g');
+    h = h.replace(oldRet, '');
+    if (h.indexOf('</head>') >= 0) { h = h.replace('</head>', RETURN_HEAD + '</head>'); headPages++; }
+
+    json[key] = h;
     pages++;
   }
 
@@ -148,7 +188,7 @@ for (const dev of ['desktop', 'mobile']) {
   fs.writeFileSync(file, data.slice(0, s) + serialized + data.slice(e), 'utf8');
 }
 
-console.log('xrpl connect: injected on ' + pages + ' page key(s) across ' + files + ' container(s); '
+console.log('xrpl connect: injected on ' + pages + ' page key(s) (' + headPages + ' with the paint guard) across ' + files + ' container(s); '
   + 'stripped the Stellar flow from ' + stripped
   + '; removed ' + wrows + ' Stellar wallet row(s) from ' + wpages + ' page key(s)'
   + ', neutralised ' + titles + ' connecting-screen placeholder(s)');

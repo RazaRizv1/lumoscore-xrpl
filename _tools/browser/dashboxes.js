@@ -161,15 +161,26 @@
     return out.filter(function (t) { return t.currency && t.issuer; });
   }
 
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function firstSeen(addr) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         method: 'account_tx',
         params: [{ account: addr, limit: 1, forward: true, ledger_index_min: -1, ledger_index_max: -1 }]
       })
-    }).then(function (r) { return r.json(); }).then(function (d) {
+    }).then(function (d) {
       var tx = ((d.result || {}).transactions || [])[0] || {};
       var t = tx.tx || tx.tx_json || {};
       var date = t.date;

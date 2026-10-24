@@ -55,6 +55,14 @@ const SCRIPT = '<script id="lx-xrplchoosenet">(function(){'
   + 'window.lxChooseNetwork=function(target){'
   + 'var addr=null; try{ addr=window.lxc&&window.lxc.address&&window.lxc.address(); }catch(_){}'
   + 'if(addr){ go(target); return; }'                     // connected: the gate will let them through
+  // THE NETWORK SCREEN, NOT THE WALLET LIST (RAZA 2026-10-20: "Tapping Launch app should bring the
+  // network selection popup instead of directly bringing the wallet popup").
+  //
+  // openNetworks() starts the flow from nothing; open() shows wallets because its OTHER caller --
+  // Stellar's chooser, which injects this layer into Stellar's pages -- has already settled the
+  // network. Calling open() here asked a second time on Stellar pages, which is how the duplicate
+  // popup appeared. The fallback keeps older bundles working rather than dead-ending on them.
+  + 'try{ if(window.lxc&&window.lxc.openNetworks){ window.lxc.openNetworks(); return; } }catch(_){}'
   + 'try{ if(window.lxc&&window.lxc.open){ window.lxc.open(); return; } }catch(_){}'
   + 'go(target);'                                          // no connect layer on this page — try anyway
   + '};'

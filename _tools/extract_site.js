@@ -937,9 +937,25 @@ class HtmlSetter {
   element(el){ if (this.html) el.setInnerContent(this.html, { html: true }); }
 }
 
+// PREPENDED, NOT APPENDED. NO BACKTICKS IN THIS COMMENT.
+//
+// RAZA 2026-10-20, a WhatsApp share of /trade/xrpl unfurling as a bare icon. The card and the tags
+// were both correct and both served correctly to every preview crawler; they simply sat too late in
+// the document. el.append puts them at the END of head, behind the inline CSS and script, and
+// measured on production og:image was at 324 KB on /trade/xrpl against 194 KB on the landing page —
+// which is why only some pages were affected and it looked like an XRPL fault.
+//
+// Preview fetchers read a prefix of the document, not all of it. Prepending puts every social tag in
+// the first kilobyte. Charset leads the block so the document stays self-describing; a later
+// duplicate is ignored, the first declaration wins. The same change is in the Stellar repo's copy of
+// this file, where the long-form note lives.
 class HeadInjector {
   constructor(html){ this.html = html; this.done = false; }
-  element(el){ if (this.done) return; this.done = true; el.append(this.html, { html: true }); }
+  element(el){
+    if (this.done) return;
+    this.done = true;
+    el.prepend('<meta charset="utf-8">' + this.html, { html: true });
+  }
 }
 class TitleSetter {
   constructor(t){ this.t = t; }

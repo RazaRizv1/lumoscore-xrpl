@@ -42,7 +42,7 @@ const ROOT = path.join(__dirname, '..');
 const STELLAR = 'C:' + path.sep + 'LumosCore';
 
 const CHAIN = [
-  '_xrplnav', '_xrplconnect', '_xrplwhead', '_xrplfeerate', '_xrplaunchpad', '_xrpldash', '_xrpldashtop', '_xrpltrade',
+  '_xrplnosw', '_xrplnav', '_xrplconnect', '_xrplwhead', '_xrplfeerate', '_xrplaunchpad', '_xrpldash', '_xrpldashtop', '_xrpltrade',
   '_xrpldexasset', '_xrplpools', '_xrplpoolsmock', '_xrplcreatepool', '_xrplqorders', '_xrplpooldetail',
   // Beside _xrplpoolsmock and for the same reason, one page further in: the detail page shipped the
   // design's sample pool baked into the markup -- 847 participants, "Pool ID: a468d4…", a price in
@@ -149,6 +149,29 @@ const CHAIN = [
   // would hand back a head without it. It strips its own block before inserting, so running it here
   // cannot stack copies.
   '_xrplzoomfloor',
+  // The wrong-chain notice (RAZA 2026-10-16). After _xrplzoomfloor rather than before it only so the
+  // list keeps reading in the order things were added; it is independent of everything above, strips
+  // its own three blocks by id before inserting, and so cannot stack copies or be stacked on.
+  //
+  // IT IS IN THIS LIST BECAUSE OF THE BRIDGE. _xrplbridge's note above records what happens when a
+  // transform is run by hand and not written down here: the real bridge reached production that way,
+  // and the documented rebuild command would quietly have replaced it with an older layer. A
+  // `--base` run re-copies the Stellar containers and re-applies only what this array names, so a
+  // layer missing from it is a layer that silently disappears on the next full rebuild.
+  '_xrplwrongchain',
+  // Patches the INHERITED lx-feemodal so the fee banner repaints when the tier resolves. It edits
+  // markup that arrives with the Stellar base rather than injecting its own block, so it has to run
+  // after anything that could replace that base — in practice nothing does, but last is the safe
+  // place for a patch of someone else's script. Gated on the unpatched marker, so a re-run is a
+  // no-op rather than a second brace.
+  '_xrplfeebanner',
+  // Patches the INHERITED lx-walletlogo so the mark beside the connected address follows the WALLET
+  // rather than the page, and stays hidden until that is decided (RAZA 2026-10-17: "there's still a
+  // flash on some pages that shows Stellar logo for split seconds"). Same shape as the fee banner
+  // above — someone else's script, edited in place, keyed on markers that vanish when applied — so
+  // it belongs beside it at the end. _xrplwrongchain used to do the chain half of this; it does not
+  // any more, and the two must not both come back, because two writers on that node is the flash.
+  '_xrplwalletlogo',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {

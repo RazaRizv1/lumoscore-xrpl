@@ -103,6 +103,54 @@ eq('one char too many', C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymVX'), fals
 eq('bitcoin-alphabet char rejected', C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiym0'), false);
 
 console.log('');
+console.log('=== sha256, against node\'s own crypto ===');
+// isAddress now verifies the trailing checksum, which means a hand-written sha256 decides whether
+// anything can be sent at all. One wrong constant would reject EVERY valid address -- a total
+// outage that no address-shaped test would catch, because the shape would still be right. So it is
+// checked against an implementation nobody doubts, not against itself.
+const nodeSha = (buf) => require('crypto').createHash('sha256').update(Buffer.from(buf)).digest('hex');
+const mySha = (buf) => Buffer.from(C.sha256([...buf])).toString('hex');
+eq('empty input', mySha(Buffer.alloc(0)), nodeSha(Buffer.alloc(0)));
+eq('"abc"', mySha(Buffer.from('abc')), nodeSha(Buffer.from('abc')));
+// The lengths where padding decides whether a second block is needed. 55/56 and 119/120 are where a
+// naive implementation breaks, and a 21-byte account id would never reach either on its own.
+let shaMismatch = 0;
+for (const n of [1, 54, 55, 56, 57, 63, 64, 65, 118, 119, 120, 121, 200]) {
+  const buf = require('crypto').randomBytes(n);
+  if (mySha(buf) !== nodeSha(buf)) shaMismatch++;
+}
+eq('block-boundary lengths all agree', shaMismatch, 0);
+
+console.log('');
+console.log('=== address checksum (RAZA 2026-10-16: "add the checksum") ===');
+// Until this landed, isAddress checked length and version byte only, so a single mistyped character
+// produced a structurally valid address that only the LEDGER could refuse -- several seconds and a
+// round trip later, as "Account malformed.", for what is a typo. These are the same real addresses
+// as above with one character changed; every one must now be caught here instead.
+eq('LUMOS issuer, one char off',
+   C.isAddress('rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Hb'), false);
+eq('holder account, one char off',
+   C.isAddress('rhxjPUUPwxLJxT68bhS2GqPyPonFNNiymW'), false);
+eq('two chars transposed',
+   C.isAddress('rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6aH'), false);
+// Exhaustive rather than illustrative: every single-character substitution of a known-good address,
+// across the whole alphabet. 1881 of them, and none may survive.
+const ALPHA58 = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
+const GOOD = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';
+let slipped = 0, tried = 0;
+for (let i = 1; i < GOOD.length; i++) {
+  for (const ch of ALPHA58) {
+    if (ch === GOOD[i]) continue;
+    tried++;
+    if (C.isAddress(GOOD.slice(0, i) + ch + GOOD.slice(i + 1))) slipped++;
+  }
+}
+eq('every single-character typo is rejected (' + tried + ' of them)', slipped, 0);
+// ...and the real thing still passes, which is the half that matters more: a checksum that rejects
+// everything would also score zero slips.
+eq('the unmodified address still passes', C.isAddress(GOOD), true);
+
+console.log('');
 console.log('=== team wallets (excluded from reward maths) ===');
 // A mistyped address here does not throw -- it silently stops excluding a treasury wallet, or
 // excludes a real holder. Both are payout errors nobody would notice. So every entry must at least

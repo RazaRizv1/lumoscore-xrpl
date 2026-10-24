@@ -87,8 +87,20 @@
   // The old script added .lxlt once it had a price; its stylesheet outlived it. Without this the
   // hero shows the right price, invisibly.
   function lift() {
-    var h = $('.hero-price-block');
-    if (h) h.classList.add('lxlt');
+    // TWELFTH GATE, AND THE PHONE'S CONTAINER HAS A DIFFERENT NAME. NO BACKTICKS IN THIS COMMENT.
+    //
+    // RAZA 2026-10-20: "Big font price is missing" on the XRPL phone page. It was not missing, it was
+    // INVISIBLE — the stylesheet carries two gates of the same shape and this lifted only one:
+    //     .hero-price-block:not(.lxlt) .price ...   desktop
+    //     .hero-price:not(.lxlt) .price ...         phone
+    // Measured on the page: no .hero-price-block at all on that layout, .price sitting inside
+    // .price-row holding the design's mock $0.00320 at visibility:hidden. The painter below missed
+    // it for the same reason, so even the right number would never have been written.
+    //
+    // Exactly the trap the notes on this file already describe twice — a gate whose element was
+    // renamed between layouts stays shut for ever, and the DOM looks perfect while the screen is
+    // blank. Both names are lifted now.
+    $$('.hero-price-block, .hero-price').forEach(function (h) { h.classList.add('lxlt'); });
 
     // Eleventh gate, same stylesheet, same shape, different element:
     //     .cstat:not(.lxlt) .val, .cstat:not(.lxlt) .sub { visibility: hidden }
@@ -204,11 +216,68 @@
 
   // STELLAR'S HERO: the flame mark, the network chip with its logo, the issuer address (behind an inherited
   // .addr-row:not(.lxlt) gate, which is why it read blank), the explorer link and the home-domain link.
+  // THE HEADER IS MISSING ONE EMPTY DIV. NO BACKTICKS IN THIS COMMENT.
+  //
+  // RAZA 2026-10-20: "Launch app, search, and menu in header is not alligned as on other mobile XRPL
+  // pages." Measured against /pools/xrpl at the same width — same classes, same padding, same gap,
+  // same heights, and the controls 94px to the left:
+  //
+  //     pools   Launch App x=144   search x=273   menu x=326
+  //     lumos   Launch App x=50    search x=178   menu x=231
+  //
+  // The appbar is a flex row and every other page carries a <div class="grow"> between the logo and
+  // the buttons, flex 1 1 0%, which eats the slack and pushes the group to the right edge. This page
+  // does not have it, so the buttons sit immediately after the logo. Nothing is styled differently;
+  // one element is absent.
+  //
+  // Added only when missing, and only here: this is a defect in one page's markup, not a rule about
+  // appbars, and a blanket fix would push the group on any layout that leaves it out on purpose.
+  function fixAppbar() {
+    var bar = $('.appbar');
+    if (!bar || bar.querySelector(':scope > .grow')) return;
+    var logo = bar.querySelector(':scope > .logo');
+    var sp = document.createElement('div');
+    sp.className = 'grow';
+    sp.setAttribute('aria-hidden', 'true');
+    // THE CLASS IS INERT ON THIS PAGE, so the flex is set directly. Adding the element alone moved
+    // the buttons by six pixels and no further: measured, there is no .grow rule in any stylesheet
+    // this page loads — the appbar markup and the rule that makes it work were stripped together.
+    // Relying on the class here would have been a fix that looks right in the DOM and does nothing,
+    // which is the same stripped-layer trap the price gate above was.
+    sp.style.flex = '1 1 0%';
+    if (logo && logo.nextSibling) bar.insertBefore(sp, logo.nextSibling);
+    else if (logo) bar.appendChild(sp);
+    else bar.insertBefore(sp, bar.firstChild);
+  }
+
   function paintHeroExtras() {
-    $$('.lumos-icon').forEach(function (ic) {
+    fixAppbar();
+    // BOTH LAYOUTS. NO BACKTICKS IN THIS COMMENT.
+    //
+    // RAZA 2026-10-20: "LUMOS logo is missing and instead there's this orange placeholder" — on the
+    // PHONE only. This read .lumos-icon, which is the desktop mark; the phone's is .lumos-big-icon.
+    // The selector matched nothing there, so the design's own letter avatar — an orange disc with an
+    // L — was left exactly as shipped. The same one-layout habit as the Trade chip, the search
+    // placeholder, the sort sheet and the exchange-row address.
+    //
+    // The phone mark also CONTAINS that letter, so a background alone would have sat behind it. The
+    // contents are replaced with an img, which is both the fix and the escape the ticker-logo healer
+    // honours — it repaints any one-to-five-character element that looks like an icon, and "L" in a
+    // round box is exactly that.
+    $$('.lumos-icon, .lumos-big-icon').forEach(function (ic) {
       ic.setAttribute('data-lxlogo', '1');
-      [['background-image', 'url("/assets/favicon.png")'], ['background-color', 'transparent'], ['background-size', 'contain'],
-        ['background-repeat', 'no-repeat'], ['background-position', 'center center'], ['box-shadow', 'none']]
+      ic.setAttribute('data-logoed', '1');
+      if (!ic.querySelector('img[data-lxlogoimg]')) {
+        ic.textContent = '';
+        var fi = document.createElement('img');
+        fi.src = '/assets/favicon.png';
+        fi.alt = '';
+        fi.setAttribute('data-lxlogoimg', '1');
+        fi.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block';
+        ic.appendChild(fi);
+      }
+      [['background-image', 'none'], ['background-color', 'transparent'],
+        ['box-shadow', 'none'], ['overflow', 'hidden']]
         .forEach(function (kv) { ic.style.setProperty(kv[0], kv[1], 'important'); });
     });
     $$('.addr-row').forEach(function (row) {
@@ -401,7 +470,9 @@
     lift();
     paintChainLabels();
     // ---- hero -------------------------------------------------------------------------------
-    var price = $('.hero-price-block .price');
+    // Both layouts, for the reason spelled out in lift(): the phone's hero is .hero-price, not
+    // .hero-price-block, so this wrote nothing there and the design's mock stayed under the gate.
+    var price = $('.hero-price-block .price') || $('.hero-price .price') || $('.price-row .price');
     if (price) price.textContent = d ? usd(d.usd) : '—';
 
     var native = $('.price-native');
@@ -419,15 +490,78 @@
     }
 
     // ---- stat cells --------------------------------------------------------------------------
-    setStat('market cap', d ? usd(d.marketcap != null && d.usd != null && d.price
-      ? d.marketcap * (d.usd / d.price) : null) : '—',
-      d && d.circulating != null ? ('on ' + big(d.circulating) + ' circulating') : null);
+    // THE SAME RULE AS THE TRADE-ASSET PAGE: issued x price (RAZA 2026-10-17: "This is not the
+    // correct marketcap of LUMOS that shows on lumos token page. It shows correctly on Trade-asset
+    // page"). The two pages described the same token with figures three and a half times apart --
+    // $12.8K here against $44,221 one click away -- because this one used the upstream `marketcap`,
+    // which is price x CIRCULATING, while dexasset.js settled on issued x price back on 2026-10-12
+    // ("just multiply the supply with price") so that a page cannot show its workings and then
+    // contradict them.
+    //
+    // For LUMOS the gap is the whole question: xrpl.to treats 710.55M held across four wallets as
+    // non-circulating, leaving 289.40M. The issuer is blackholed, so the issued figure is fixed and
+    // is the one the ledger agrees with -- and it is what the supply box on both pages already shows.
+    //
+    // USD DIRECTLY from issued x the USD price, rather than computing an XRP market cap and then
+    // converting it. One multiplication instead of three, and no division by `price` that could be
+    // zero. The old expression is kept only as the fallback for a reply with no `issued`.
+    var mcapUsd = (d && d.issued != null && d.usd != null)
+      ? d.issued * d.usd
+      : ((d && d.marketcap != null && d.usd != null && d.price) ? d.marketcap * (d.usd / d.price) : null);
+    setStat('market cap', d ? usd(mcapUsd) : '—',
+      d && d.issued != null ? ('on ' + big(d.issued) + ' issued')
+        : (d && d.circulating != null ? ('on ' + big(d.circulating) + ' circulating') : null));
 
-    // Fully diluted uses the ISSUED total, which differs from circulating: 999,955,353 against
-    // 705,205,451. Quoting one as the other is a 42% overstatement.
-    // On the round billion, as lumoscore.com's card reads ("on 1.00B total supply").
-    var fdv = (d && d.usd != null) ? d.usd * 1e9 : null;
-    setStat('diluted', usd(fdv), 'on 1.00B total supply');
+    // THE FULLY DILUTED CELL IS GONE (RAZA 2026-10-17: "We dont need fully diluted val. Remove that
+    // box"), and he is right that it says nothing here. Dilution is a forecast about tokens that
+    // might still be minted; this issuer is blackholed, so no more can ever exist and the issued
+    // total can only FALL as tokens are burned back to it. A "fully diluted" figure for a fixed
+    // supply is just the market cap with a different divisor, printed beside it.
+    //
+    // REMOVED FROM THE DOM, not blanked. setStat only rewrites text, so leaving it out would have
+    // left the design's baked mock figure sitting in the cell -- the hidden-mock trap this codebase
+    // has hit before. The cell itself has to go.
+    (function () {
+      var cells = $$('.cstat');
+      for (var i = 0; i < cells.length; i++) {
+        var lbl = cells[i].querySelector('.lbl') || cells[i].firstElementChild;
+        if (!lbl) continue;
+        // "FDV" AND "diluted" ARE THE SAME CARD WEARING TWO LABELS. NO BACKTICKS IN THIS COMMENT.
+        //
+        // This matched only "diluted", which is the DESKTOP wording. The phone card is labelled
+        // "FDV", so the removal above has never fired there and RAZA still had the box on mobile
+        // (2026-10-20, "Remove FDV box"). Matching both, and not breaking after the first hit, so a
+        // layout carrying both spellings loses both.
+        var lt = lbl.textContent.trim().toLowerCase();
+        if (lt.indexOf('diluted') < 0 && lt.indexOf('fdv') < 0) continue;
+        if (cells[i].parentNode) cells[i].parentNode.removeChild(cells[i]);
+      }
+
+      // AND THE LAST CARD STOPS SPANNING BOTH COLUMNS (RAZA 2026-10-20: "Pools and 24h volume section
+      // should be right below Market cap and Holders boxs just like on Stellar").
+      //
+      // `.lh-stats` is a two-column grid and the design puts an INLINE style="grid-column: 1 / -1"
+      // on its last card. With the five cards it shipped that is correct -- 2 + 2 + 1, and the odd
+      // one out fills the row. Removing the FDV box above leaves four, so the span turns a clean
+      // 2x2 into 2 + 1 + 1 with a hole beside Pools. Measured on the phone before this fix:
+      //
+      //     Market Cap 151 | Holders 151 | Pools 151 | 24h Volume 303   (grid 151.3px 151.3px)
+      //
+      // A STYLESHEET RULE WOULD HAVE DONE NOTHING -- the span is inline, so it outranks any selector
+      // we could add short of !important, and nothing in the cascade matches these cards anyway.
+      // The inline property has to be removed from the element.
+      //
+      // Keyed on the COUNT, not on which card it is: clear the span whenever an even number of cards
+      // survives, leave it when an odd number does. So this stays right if the FDV removal above ever
+      // stops matching, and right again if a card is added later. Same fix, same reasoning, as
+      // Stellar's _lumostoken.js -- the two pages inherit the one design.
+      var kept = $$('.cstat');
+      if (kept.length % 2 === 0) {
+        for (var j = 0; j < kept.length; j++) {
+          try { kept[j].style.removeProperty('grid-column'); } catch (_) {}
+        }
+      }
+    })();
 
     setStat('holder', d && d.holders != null ? Math.round(d.holders).toLocaleString('en-US') : '—',
       d && d.trustlines != null ? (Math.round(d.trustlines).toLocaleString('en-US') + ' trustlines') : null);
@@ -745,11 +879,22 @@
   // seen from the issuer, which owes them, so the balances come back negative. Paged, because there
   // are more than one page of them.
   var RPC = 'https://xrplcluster.com/';
+  // Every ledger read here goes through the shared retrying transport (xrpl-core: ledgerPost), so a
+  // throttle is waited out instead of reported as a dead ledger. xrplcluster meters by units, not
+  // requests, and one busy page can spend the quota on its own.
+  //
+  // It resolves with the same parsed envelope fetch().json() did, errors included, so the handling
+  // below is unchanged. The fallback keeps the old behaviour exactly if lxx has not loaded.
+  function lxpost(u, o) {
+    try { return window.lxx.ledgerPost(u, o); }
+    catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
+  }
+
   function rpc(method, params) {
-    return fetch(RPC, {
+    return lxpost(RPC, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ method: method, params: [params || {}] })
-    }).then(function (r) { return r.json(); });
+    });
   }
 
   function shortAddr(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
