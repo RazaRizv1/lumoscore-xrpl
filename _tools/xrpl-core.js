@@ -568,14 +568,83 @@ function simulateSwap(rpc, opts) {
 // first attempt, because making genuine offline take three seconds to say so is its own bug.
 const THROTTLED = /rate limit|too many|quota|slow down|try again|overloaded/i;
 
+const WAIT_CAP = 10000;
+
+// How long the ledger says to wait, or 0 when it did not say.
+function quotedWait(msg) {
+  const m = /retry in ~?(\d+)\s*ms/i.exec(String(msg || ''));
+  return m ? Number(m[1]) + 250 : 0;
+}
+
 function retryAfter(msg) {
   // honour the interval the ledger quotes, capped so one long one cannot stall a page
-  const m = /retry in ~?(\d+)\s*ms/i.exec(String(msg || ''));
-  return m ? Math.min(Number(m[1]) + 250, 10000) : 1500;
+  const w = quotedWait(msg);
+  return w ? Math.min(w, WAIT_CAP) : 1500;
+}
+
+// ...AND DO NOT RETRY INTO A WAIT WE HAVE ALREADY DECIDED NOT TO HONOUR (RAZA 2026-10-24, on a
+// THORChain send: "rate limit: units quota (10000 per 60s) exhausted, retry in ~28792ms").
+//
+// The cap above exists so one long throttle cannot stall a page, and that is right. What was wrong is
+// what happened next: the wait was clamped from 28.8s to 10s and the call was retried ANYWAY — at a
+// moment the ledger had just said would still be inside the quota. Every such retry is guaranteed to
+// fail, and on a meter that counts UNITS rather than requests it spends more of the budget that is
+// already exhausted, pushing the recovery further away.
+//
+// So a quote longer than the cap means stop, not hurry. The envelope is returned as the final answer
+// and the caller reports it, which is both faster and cheaper than three doomed attempts.
+function worthRetrying(msg) {
+  return quotedWait(msg) <= WAIT_CAP;
+}
+
+// The same throttle in a sentence a reader can act on. Returns '' for anything that is not one, so a
+// caller can use it as a test as well as a translation.
+//
+// This exists because the raw text reached a BUTTON. nibridge's say() writes the CTA's label, so
+// "rate limit: units quota (10000 per 60s) exhausted, retry in ~28792ms" became the button — a
+// paragraph of infrastructure jargon where the verb used to be, on the screen where someone is trying
+// to send money. The seconds are kept because they are the one part the reader can use.
+function ledgerBusyNote(msg) {
+  const s = String((msg && msg.message) || msg || '');
+  if (!THROTTLED.test(s)) return '';
+  const w = quotedWait(s);
+  return w ? ('Ledger busy — try again in ~' + Math.ceil(w / 1000) + 's')
+    : 'Ledger busy — try again in a moment';
+}
+
+// ONE THROTTLE SILENCES EVERY CALLER UNTIL IT CLEARS (RAZA 2026-10-24: "why the hell does it say
+// ledger busy try again in 42s").
+//
+// Because it was 42 seconds, and it was partly our own doing. xrplcluster meters by UNITS and the
+// quota is per IP, so every tab and every layer draws on one budget. When it runs out, each caller
+// discovers that SEPARATELY — and this transport retries twice — so a page that is already over
+// quota immediately spends three times as much finding out, which pushes the recovery further away.
+// A dozen components doing that in parallel is how a brief throttle turns into most of a minute.
+//
+// So the deadline the ledger names is remembered ONCE, here, and every call made before it passes is
+// refused locally without touching the network. Nothing is retried into a closed window and nothing
+// new is spent while it is shut. The ledger's own interval decides when it reopens; we never invent
+// one, and a successful reply clears it immediately.
+//
+// This is the whole point of having a single transport. See [[xrplcluster-meters-units]].
+let QUOTA_UNTIL = 0;
+
+function quotaShut() { return QUOTA_UNTIL > Date.now(); }
+function quotaLeft() { return Math.max(0, QUOTA_UNTIL - Date.now()); }
+function noteQuota(msg) {
+  const w = quotedWait(msg);
+  if (w > 0) QUOTA_UNTIL = Math.max(QUOTA_UNTIL, Date.now() + w);
 }
 
 function ledgerPost(url, opts, tries) {
   tries = (tries == null) ? 2 : tries;
+
+  // Refused before the fetch, not after it: a call made inside the window cannot succeed and would
+  // only deepen the hole. The message carries the remaining seconds so the caller can say something
+  // true, and ledgerBusyNote() turns it into the same sentence a real throttle reply produces.
+  if (quotaShut()) {
+    return Promise.reject(new Error('rate limit: units quota exhausted, retry in ~' + quotaLeft() + 'ms'));
+  }
   const again = (wait) => new Promise((go) => setTimeout(go, wait))
     .then(() => ledgerPost(url, opts, tries - 1));
 
@@ -602,7 +671,14 @@ function ledgerPost(url, opts, tries) {
     return r.json().then((j) => {
       const res = j && j.result;
       const msg = res && (res.error_message || res.error);
-      if (tries && msg && THROTTLED.test(String(msg))) return again(retryAfter(msg));
+      if (msg && THROTTLED.test(String(msg))) {
+        // Recorded BEFORE deciding whether to retry, so even the attempt we are about to make shuts
+        // the window for everybody else rather than racing them into it.
+        noteQuota(msg);
+        if (tries && worthRetrying(msg)) return again(retryAfter(msg));
+      } else if (res) {
+        QUOTA_UNTIL = 0;                 // a real answer means the budget is open again
+      }
       noteLedger(res);
       return j;
     });
@@ -671,7 +747,7 @@ function pathFind(params, direct) {
 }
 
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
-  ledgerPost, retryAfter,                   // the retrying transport every browser rpc() now routes through
+  ledgerPost, retryAfter, ledgerBusyNote,   // the retrying transport every browser rpc() now routes through
   pathFind,                                 // ripple_path_find via our edge; falls back to the caller's own rpc
   currentLedger,                            // where the ledger is, free, for stamping LastLedgerSequence
   sha256,                                   // exported so the tests can hold it against node's crypto

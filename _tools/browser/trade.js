@@ -484,10 +484,23 @@
 
     var meta = el('div', 'mdx-mk-meta');
     var nameRow = el('div', 'mdx-mk-name-row');
-    nameRow.appendChild(el('span', 'mdx-mk-name', t.n));
+    // THE TICK GOES INSIDE THE NAME, NOT BESIDE IT (RAZA 2026-10-26: "on XRPL, its not structured
+    // properly. Make it like Stellar").
+    //
+    // Stellar's row builds `<span class="mdx-mk-name">LUMOS<tick></span><span class="mdx-mk-domain">`
+    // — two flex children in the name row. This appended the tick to the ROW, making three, and the
+    // extra item plus its gap was enough to push the domain chip past the available width on a
+    // phone. The chip wrapped to its own line, which left the 32px logo standing beside the second
+    // line instead of the first and turned a two-line card into three.
+    //
+    // Same markup as Stellar now, so the inherited `.mdx-mk-name-row .lx-vtick` rules land exactly
+    // as they do there: the descendant selector still matches, and `flex:0 0 13px` stops applying
+    // because the tick is no longer a flex item of the row — which is what Stellar has always had.
+    var nameEl = el('span', 'mdx-mk-name', t.n);
     // The phone card lists the same rows, so it ticks on the same rule — see the desktop note above,
     // including the vf gate: a mint must not be marked here either, or the two layouts disagree.
-    if (t.vf) nameRow.appendChild(vtick());
+    if (t.vf) nameEl.appendChild(vtick());
+    nameRow.appendChild(nameEl);
     var sub2 = subLine(t);
     if (sub2) nameRow.appendChild(el('span', 'mdx-mk-domain', sub2));
     meta.appendChild(nameRow);

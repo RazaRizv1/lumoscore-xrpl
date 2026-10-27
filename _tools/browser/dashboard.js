@@ -513,9 +513,14 @@
       // A payment into or out of a pool with two different assets is a swap; the same asset in and out is a transfer, and
       // it gets the green tag rather than the purple one.
       var isSwap = !!(got && spent && spent.c && spent.c !== got.c);
+      // `skip` follows Stellar, which stopped publishing plain transfers on 2026-10-27 for privacy:
+      // a wallet-to-wallet payment names both ends and the amount, and it is not a platform action.
+      // Swaps and bridges are not transfers and are not touched. The shape is kept intact rather
+      // than removed so the row can come back if transfers are ever shown differently.
       return {
         cls: isSwap ? 'swap' : 'transfer', tag: isSwap ? 'Swap' : 'Transfer',
         type: 'Swap through the LUMOS pool', meta: text, parts: pp,
+        skip: isSwap ? 0 : 1,
       };
     }
 
@@ -566,8 +571,12 @@
         parts: (pays && gets) ? [{ a: gets }, ' → ', { a: pays }] : [],
       };
     }
-    if (type === 'OfferCancel') return { cls: 'order', tag: 'Order cancelled', type: 'DEX offer cancelled', meta: '' };
-    if (type === 'TrustSet') return { cls: '', tag: 'Trust line', type: 'Trust line set', meta: '' };
+    // Both skipped, as on Stellar. Neither carries an amount or a trade: a cancellation is an offer
+    // withdrawn and a trust line is an account declaring which asset it is willing to hold. They name
+    // an account and nothing else, and one wallet opening five trust lines fills the card with five
+    // identical rows. "Order placed" above keeps its row, because that one has a real size.
+    if (type === 'OfferCancel') return { cls: 'order', tag: 'Order cancelled', type: 'DEX offer cancelled', meta: '', skip: 1 };
+    if (type === 'TrustSet') return { cls: '', tag: 'Trust line', type: 'Trust line set', meta: '', skip: 1 };
     return { cls: '', tag: (type || 'Ledger').replace(/([a-z])([A-Z])/g, '$1 $2'), type: type || 'Ledger transaction', meta: '' };
   }
 
@@ -1284,6 +1293,18 @@
         }
         if (h) seen[h] = r;
         rows.push(r);
+      });
+      // FILTERED BEFORE THE CAP, not after, so the fifty rows that render are fifty rows that count.
+      // Dropping them after the slice would leave a card that shows twenty rows and calls it fifty.
+      //
+      // A LABELLED ROW IS NEVER DROPPED. `r.label` is set by the fee-pairing pass, which only tags a
+      // transaction once it has matched it to a LumosCore platform fee -- that is a swap on this site
+      // whatever `describe` made of the payment on its own, and those are the rows the card exists for.
+      rows = rows.filter(function (r) {
+        if (r.label) return true;
+        var e = r.entry || {};
+        var d = describe(e.tx || e.tx_json || {}, e.meta || e.metaData);
+        return !(d && d.skip);
       });
       rows.sort(function (a, b) { return timeOf(b.entry) - timeOf(a.entry); });
       // FIFTY, THE SAME NUMBER STELLAR'S FEED RENDERS -- counted on production rather than assumed.

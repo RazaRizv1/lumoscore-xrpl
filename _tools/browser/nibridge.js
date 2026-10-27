@@ -150,6 +150,9 @@
     return s ? (s.charAt(0).toUpperCase() + s.slice(1)) : s;
   }
   var XRP_SPEND = null;
+  // '' while the figure is simply not in yet; a short sentence once a read has actually FAILED. The
+  // two are different states and a bare dash was being used for both.
+  var XRP_SPEND_ERR = '';
   var busy = false;
 
   function addr() { try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; } }
@@ -671,7 +674,24 @@
     ])
       .then(function (r) {
         var acc = r[0] && r[0].result && r[0].result.account_data;
-        if (!acc) { XRP_SPEND = null; return; }
+        // WHY there is no figure, not just that there is none (RAZA 2026-10-24: "why my xrp balance
+        // not showing up", minutes after the ledger throttled him). A failed read and a read that
+        // has not happened yet both left XRP_SPEND null and both drew a bare dash, so the row could
+        // not tell him the difference — the same conflation that made the Custom Swap list say
+        // "Loading your assets…" for ever. See [[absent-has-many-causes]].
+        //
+        // A throttle is not an answer about this account, so it is recorded and RETRIED once the
+        // quota the ledger quoted has cleared. Nothing else re-reads this on its own, so without
+        // that the dash stays until the page is reloaded — and a reload inside the throttle window
+        // fails again, which is exactly how it looks broken rather than busy.
+        if (!acc) {
+          XRP_SPEND = null;
+          var em = (r[0] && r[0].result && (r[0].result.error_message || r[0].result.error)) || '';
+          XRP_SPEND_ERR = busyNote(em);
+          if (XRP_SPEND_ERR) retrySpendable(em);
+          return;
+        }
+        XRP_SPEND_ERR = '';
         var v = r[1] && r[1].result && r[1].result.info && r[1].result.info.validated_ledger;
         var base = Number(v && v.reserve_base_xrp);
         var inc = Number(v && v.reserve_inc_xrp);
@@ -681,7 +701,34 @@
         var reserve = base + inc * Number(acc.OwnerCount || 0);
         XRP_SPEND = Math.max(0, bal - reserve);
       })
-      .catch(function () { XRP_SPEND = null; });
+      .catch(function (e) {
+        XRP_SPEND = null;
+        XRP_SPEND_ERR = busyNote(e);
+        if (XRP_SPEND_ERR) retrySpendable(e);
+      });
+  }
+
+  // The throttle in a sentence, borrowed from xrpl-core so the bridge and the transport cannot word
+  // it differently. Empty for anything that is not one.
+  function busyNote(e) {
+    try {
+      var s = String((e && e.message) || e || '');
+      return (window.lxx && window.lxx.ledgerBusyNote && window.lxx.ledgerBusyNote(s)) || '';
+    } catch (_) { return ''; }
+  }
+
+  // ONE re-read, after the interval the ledger itself named. Not a loop: if the second attempt is
+  // throttled too, its own handler schedules the next, so the backoff always comes from the ledger
+  // rather than from a timer we invented. Guarded so several failing calls cannot stack timers.
+  var SPEND_RETRY = 0;
+  function retrySpendable(e) {
+    if (SPEND_RETRY) return;
+    var m = /retry in ~?(\d+)\s*ms/i.exec(String((e && e.message) || e || ''));
+    var wait = Math.min(Math.max(m ? Number(m[1]) + 500 : 5000, 2000), 45000);
+    SPEND_RETRY = setTimeout(function () {
+      SPEND_RETRY = 0;
+      loadSpendable().then(function () { try { paintSteps(); } catch (_) {} });
+    }, wait);
   }
 
   // ---- what the wallet is actually holding ---------------------------------------------------------
@@ -3061,7 +3108,19 @@
   // outranks whatever a route has to say about the same amount, and both now say it.
   function srcBalance() {
     return {
-      bal: (SRC && SRC.balance != null) ? SRC.balance : ((!SRC || SRC.native) ? XRP_SPEND : null),
+      // THE LIVE FIGURE FOR XRP, NEVER THE SNAPSHOT (RAZA 2026-10-24: "still not showing my
+      // available to send XRP balance", with the account reading perfectly well — 9.599567 XRP,
+      // OwnerCount 20, so 4.599567 spendable — at the same moment the row showed a dash).
+      //
+      // directAssets() builds the XRP entry with `balance: XRP_SPEND`, which is a COPY taken when
+      // the object is made. SRC is normally built before the account read lands, so that copy is
+      // null — and nothing ever rebuilds SRC, so it stays null for the life of the page while
+      // XRP_SPEND goes on to hold the right number. Preferring the copy therefore meant preferring
+      // the one value guaranteed to be stale.
+      //
+      // Native asks XRP_SPEND directly; an issued token still uses its own balance, which is read
+      // in the same pass that builds it and has no such gap.
+      bal: (!SRC || SRC.native) ? XRP_SPEND : (SRC.balance != null ? SRC.balance : null),
       sym: (SRC && SRC.symbol) || 'XRP',
     };
   }
@@ -4184,6 +4243,10 @@
   window.__lxxPaintTxs = paintTxs;
 
   function paintSteps() {
+    // Step 1's gate rides the general repaint, which is the only thing that runs on every route into
+    // this page — first paint, a destination pick, a chain switch, a reset after delivery. Hanging it
+    // off the picker alone would have missed the ones that do not go through a click.
+    try { gateNetwork(); } catch (_) {}
     var s2 = $('.br-step[data-step="2"]');
     if (s2) {
       var sides = s2.querySelectorAll('.br-side'), src = sides[0], dst = sides[1];
@@ -4196,15 +4259,22 @@
           var mx = bal.querySelector('.max');
           // The balance of whatever is SELECTED, not always XRP -- the source can now be any ITS
           // asset the wallet holds.
-          var sb = SRC ? SRC.balance : XRP_SPEND;
-          var ssym = SRC ? SRC.symbol : 'XRP';
+          // srcBalance(), not SRC.balance: the two had different answers for XRP and this row was
+          // reading the stale one. One definition now serves the row, the overspend guard and the
+          // red banner, so they cannot disagree about what the wallet holds.
+          var sbb = srcBalance();
+          var sb = sbb.bal;
+          var ssym = sbb.sym;
           var have = sb != null && sb >= 0;
           // NO "Balance:" PREFIX. The row already carries its own label — _xrplbridgepolish.js sets
           // .lx-balrow::before to "Available to send", exactly as the Stellar build does — so writing
           // "Balance:" in here as well printed the figure under a heading that already named it, and
           // read nothing like Stellar's. (RAZA 2026-10-01: "Balance is written incorrectly, please
           // check how it looks on Stellar.") The value alone is what the CSS expects in .bal.
-          var txt = (have ? fmt(sb, 6) + ' ' + ssym : '—') + ' ';
+          // A dash still means "not in yet". Once the read has failed we say so instead, and the
+          // retry above puts the real figure back without the reader doing anything.
+          var txt = (have ? fmt(sb, 6) + ' ' + ssym
+            : ((!SRC || SRC.native) && XRP_SPEND_ERR ? XRP_SPEND_ERR : '—')) + ' ';
           [].slice.call(bal.childNodes).forEach(function (nd) { if (nd.nodeType === 3) bal.removeChild(nd); });
           bal.insertBefore(document.createTextNode(txt), bal.firstChild);
           if (mx) {
@@ -4233,6 +4303,7 @@
     paintReview(QUOTE, '');
     setCta();
     gateReview();
+    gateNetwork();
   }
 
   // "Review transfer" must not look ready while the form is not. Stellar disables the same control —
@@ -4262,6 +4333,29 @@
     b.classList.toggle('lx-disabled', !ok);
     b.setAttribute('aria-disabled', ok ? 'false' : 'true');
     if (ok) b.removeAttribute('title'); else b.title = why;
+  }
+
+  // STEP 1's "Next" HAS THE SAME JOB AS STEP 2's "Review transfer" (RAZA 2026-10-24: "Please disable
+  // the next button untill the destination network is selected").
+  //
+  // It was the only control in the wizard with no gate: pressing it with "Select Network" still showing
+  // moved the reader to a step whose every figure depends on a destination, so the assets screen opened
+  // with no route, no quote and no receive asset — a dead end reached by pressing the one button the
+  // page was offering. destChain() already answers the question (null until a real option is picked),
+  // so this is the toggling, not a new rule.
+  //
+  // Same three marks as gateReview(), because the inherited stylesheet styles all three and using fewer
+  // leaves a control that looks live and is not: `disabled` stops the click, `.lx-disabled` is what
+  // `.br-actions .br-next.lx-disabled` dims, and aria-disabled is what a screen reader reads.
+  function gateNetwork() {
+    var s1 = $('.br-step[data-step="1"]');
+    var b = s1 && s1.querySelector('.br-next');
+    if (!b) return;
+    var ok = !!destChain();
+    b.disabled = !ok;
+    b.classList.toggle('lx-disabled', !ok);
+    b.setAttribute('aria-disabled', ok ? 'false' : 'true');
+    if (ok) b.removeAttribute('title'); else b.title = 'Choose a destination network first';
   }
 
   // ---- the terminal action -------------------------------------------------------------------------
@@ -4406,6 +4500,7 @@
     // 2 stayed disabled for good with a quote on screen. Found by the daily bot 2026-10-09; reproduced
     // in a plain browser on Bitcoin and Stellar destinations.
     gateReview();
+    gateNetwork();
     var b = ctaButton();
     if (!b || busy) return;
     var why = blockReason();
@@ -4425,9 +4520,26 @@
     }
   }
 
+  // THE CTA'S LABEL IS NOT AN ERROR LOG (RAZA 2026-10-24, with the whole of it on the button:
+  // "rate limit: units quota (10000 per 60s) exhausted, retry in ~28792ms").
+  //
+  // Every send path reports through say(), and say() writes the BUTTON. So any upstream string that
+  // reaches a catch becomes the button's text — a paragraph of infrastructure jargon where the verb
+  // used to be, on the screen where someone is trying to send money.
+  //
+  // A ledger throttle is the common one and it is translated by xrpl-core, which owns the transport
+  // that produced it; the seconds survive because they are the part a reader can act on. Anything
+  // else long enough to wrap is clipped rather than left to reflow the control.
   function say(msg) {
     var b = ctaButton();
-    if (b) b.textContent = msg;
+    if (!b) return;
+    var s = String(msg == null ? '' : msg);
+    try {
+      var busy = window.lxx && window.lxx.ledgerBusyNote && window.lxx.ledgerBusyNote(s);
+      if (busy) s = busy;
+    } catch (e) {}
+    if (s.length > 64) s = s.slice(0, 61).replace(/[\s,;:.—-]+$/, '') + '…';
+    b.textContent = s;
   }
 
   // An integer of smallest units back to an exact decimal string, WITHOUT going through a float.
