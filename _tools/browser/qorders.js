@@ -1784,13 +1784,30 @@
     return '<div class="lxo-empty">' + title + (sub ? '<span class="sub">' + sub + '</span>' : '') + '</div>';
   }
 
+  // A dead end needs a way out. Closing and reopening the dialog was the only retry this pane offered,
+  // and the Orders tab is rebuilt once (pane.__b) so even that did not always re-run the load.
+  function failState() {
+    return '<div class="lxo-empty">Could not load your orders'
+      + '<span class="sub">The ledger did not answer in time. Your orders are safe — this only failed to read them.</span>'
+      + '<button type="button" class="lxo-retry" data-lxoretry="1">Try again</button></div>';
+  }
+
   function ordersUi() {
     var pane = $('#swapModal .lxo-pane[data-pane="orders"]');
     if (!pane || pane.__b) return;
     pane.__b = 1;
     pane.innerHTML = '<div class="lxo-list">' + emptyState('Loading…') + '</div>';
     pane.addEventListener('click', function (e) {
-      var b = e.target && e.target.closest ? e.target.closest('[data-off]') : null;
+      var t = e.target && e.target.closest ? e.target : null;
+      if (!t) return;
+      if (t.closest('[data-lxoretry]')) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        var l = oEl('.lxo-list');
+        if (l) l.innerHTML = emptyState('Loading…');
+        loadOrders();
+        return;
+      }
+      var b = t.closest('[data-off]');
       if (!b) return;
       e.preventDefault(); e.stopImmediatePropagation();
       cancelOrder(b);
@@ -1810,13 +1827,54 @@
     return col;
   }
 
+  // RAZA hit "Orders tab taking too long to load" on STELLAR 2026-10-28, and the faults behind it are
+  // shared by every fork of this dialog -- see _swapcalc.js for the Horizon measurements (the same
+  // request answering in 282ms and in 21.8s). XRPL already had the important half: it goes straight to
+  // the data, and rpc() bounds the wait. It was still missing the other three.
+  var ordersSeq = 0;
   function loadOrders() {
     var list = oEl('.lxo-list');
     if (!list) return;
     var me = addr();
     if (!me) { list.innerHTML = emptyState('Connect a wallet', 'Your open orders across every pair will show here.'); return; }
+    var seq = ++ordersSeq;
+    // The paint must belong to the NEWEST load. A cancel reloads the list, so with a 20s deadline a slow
+    // request can outlive the one that replaced it, and the loser must not paint its stale list over the
+    // winner's.
+    function stale() { return seq !== ordersSeq || !oEl('.lxo-list'); }
+    // Only speaks up while a placeholder is showing. With rows painted there is nothing to reassure
+    // anyone about, and the note would replace real data with a status message.
+    var slow = setTimeout(function () {
+      if (stale()) return;
+      var em = oEl('.lxo-empty');
+      if (em) em.innerHTML = 'Still loading…<span class="sub">The XRP Ledger is answering slowly. This can take up to half a minute.</span>';
+    }, 4000);
+    // One failure path for both ways this can go wrong: a rejection, and a resolved-but-unreadable reply
+    // (which is how rpc() reports everything). A FAILED REFRESH MUST NOT WIPE ROWS ALREADY ON SCREEN --
+    // this loader runs again after a cancel, with the list painted, and wiping it tells the user their
+    // orders cannot be read while they are right there and correct.
+    function fail() {
+      var el = oEl('.lxo-list');
+      if (!el) return;
+      if (el.querySelector('.lxo-o')) { toast('Could not refresh your orders. The list below may be out of date.', true); return; }
+      el.innerHTML = failState();
+    }
     rpc('account_offers', { account: me, limit: 200, ledger_index: 'validated' }).then(function (r) {
-      var offers = ((r && r.offers) || []).filter(function (o) { return !cancelled[String(o.seq)]; });
+      clearTimeout(slow);
+      if (stale()) return;
+      // "NO OPEN ORDERS" MUST MEAN THE LEDGER SAID SO. rpc() resolves {} for EVERY failure -- a dead
+      // node, a 20s abort, a malformed reply -- and `(r && r.offers) || []` read that as an empty list,
+      // so an outage told the user, as fact, that they hold no orders. The catch below could never fire,
+      // because nothing ever rejected. A trader who believes it places the order again.
+      //
+      // A real account_offers reply always carries an offers ARRAY; a bare {} never does. actNotFound is
+      // the one error that IS an answer: an unfunded account cannot hold an offer.
+      if (r && r.error === 'actNotFound') {
+        list.innerHTML = emptyState('No open orders', 'A limit order stays here until it fills or you cancel it.');
+        return;
+      }
+      if (Object.prototype.toString.call(r && r.offers) !== '[object Array]') { fail(); return; }
+      var offers = r.offers.filter(function (o) { return !cancelled[String(o.seq)]; });
       if (!offers.length) { list.innerHTML = emptyState('No open orders', 'A limit order stays here until it fills or you cancel it.'); return; }
       list.innerHTML = '';
       offers.forEach(function (o) {
@@ -1840,7 +1898,11 @@
         row.appendChild(top); row.appendChild(ft);
         list.appendChild(row);
       });
-    }).catch(function () { list.innerHTML = emptyState('Could not load your orders.'); });
+    }).catch(function () {
+      clearTimeout(slow);
+      if (stale()) return;
+      fail();
+    });
   }
 
   function cancelOrder(btn) {
