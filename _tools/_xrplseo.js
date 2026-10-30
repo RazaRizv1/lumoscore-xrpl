@@ -200,9 +200,23 @@ function setDesc(html, desc) {
 //   lumoscore-signin        /signin             nothing to rank for
 //   lumoscore-launch-review /launchpad/review   mid-flow wizard state
 //   lumoscore-launch-confirm /launchpad/confirm mid-flow wizard state
+// THE ACCOUNT PAGE IS THE ONE EXCEPTION TO THE MIRROR RULE ABOVE, and it is deliberate.
+//
+// RAZA 2026-10-31, platform-wide: an account page shows SOMEBODY ELSE'S wallet -- balances, pool
+// positions, recent activity -- read off the public ledger. Public on the ledger is not the same as
+// being the first search result for an address, and we are not going to be the ones who make it that.
+// Shipped on Stellar the same day in _accountpage.js, where the full reasoning lives.
+//
+// IT IS NOT IN SITEMAP_SKIP and must not be added there to "restore" the mirror. SITEMAP_SKIP removes
+// STATIC routes from the sitemap; /account/xrpl/:address is DYNAMIC, and extract_site.js already skips
+// every pattern containing ':' before SITEMAP_SKIP is ever consulted. It has never been listed, so
+// there is nothing there to skip. The mirror rule governs the five gated pages below; this is a sixth
+// page kept out of search for a different reason, and the count check still works -- the account keys
+// are simply expected to change on the first run after this line was added.
 const NOINDEX = new Set([
   'lumoscore-home', 'lumoscore-wallet',
   'lumoscore-signin', 'lumoscore-launch-review', 'lumoscore-launch-confirm',
+  'lumoscore-account',
 ]);
 
 function setRobots(html, noindex) {
