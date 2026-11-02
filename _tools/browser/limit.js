@@ -266,7 +266,19 @@
       + '.mdxa-trade-asset.lxmt-chip[data-lxxc]::before{background-image:var(--lxx-logo,none)!important}'
       + '.lxx-limit-note{margin:8px 2px 0;font-size:13px;line-height:1.5;text-align:center;opacity:.85}'
       + '.lxx-limit-note[data-tone="bad"]{color:var(--down,#ef4444);opacity:1}'
-      + '.lxx-limit-note[data-tone="good"]{color:var(--up,#16a34a);opacity:1}';
+      + '.lxx-limit-note[data-tone="good"]{color:var(--up,#16a34a);opacity:1}'
+      // A third tone, for a caution that is NOT a refusal: a swap that would leave an open order
+      // short of what it promised still goes ahead, because this ledger reserves nothing behind an
+      // offer (xrpl-core.js, offerCommitments). The rule lives here because this is the stylesheet
+      // behind the shared note class, which dxaswap.js writes into as well as this file.
+      //
+      // TWO RULES, BECAUSE --yellow IS NOT DEFINED ON THIS PAGE. The design's caution colour is
+      // #d97706 light / #ffb547 dark, but measured on the built trade-asset page the variable
+      // resolves to nothing at all — so a single `var(--yellow,#d97706)` painted the LIGHT amber on
+      // a #0a0a0b ground. The dark rule gives that theme its own fallback; where --yellow does exist
+      // it still wins in both, so this costs nothing on the pages that define it.
+      + '.lxx-limit-note[data-tone="warn"]{color:var(--yellow,#d97706);opacity:1}'
+      + 'html[data-theme="dark"] .lxx-limit-note[data-tone="warn"]{color:var(--yellow,#ffb547)}';
     document.head.appendChild(st);
   }
 

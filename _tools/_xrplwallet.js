@@ -93,12 +93,29 @@ const GATE_JS = 'lx-xordgate-js';
 // -webkit-text-fill-color as well as color: the UA sets it on a link and it WINS over color, which is
 // the measured reason an earlier colour-only fix left the anchor blue. Same lesson as the inline
 // styles in paintOrders.
-const CA_SEL = '#cancelAllBtn,.order-cancel-all,[data-cancel-all]';
+// TWO LAYOUTS, AND ONLY THE PHONE'S WAS EVER WIRED (RAZA 2026-11-03: "why is it showing cancell all
+// button on open orders when there's no open order", with no orders on the account).
+//
+// The phone ships `<a href="#" id="cancelAllBtn">Cancel all</a>` — matched by every selector here,
+// which is the layout this gate was tested on. The DESKTOP ships
+// `<button class="ctrl-btn"> ✕ Cancel all </button>`: no id, no class to hook, nothing in common with
+// any of the three selectors. So this rule and paintOrders' hide branch had both been matching
+// NOTHING on desktop since the day they were written (2026-10-11), and nobody could see it because
+// the phone did the right thing. The same two-layouts trap the orders list itself hit.
+//
+// The fix is a build-time `data-cancel-all` stamp (stampCancelAll, below) giving the desktop control
+// the hook the rest of this layer already expects — not a second mechanism beside the one that was
+// supposed to do the job.
+//
+// THE COLOUR RULE IS DELIBERATELY NOT EXTENDED TO IT. De-bluing exists for the bare anchor, which the
+// browser paints link-blue because it carries no class at all. The desktop control is an already
+// styled .ctrl-btn pill; repainting it accent-orange would be a change nobody asked for.
+const CA_HIDE = '#cancelAllBtn:not([data-lxca]),.order-cancel-all:not([data-lxca]),[data-cancel-all]:not([data-lxca])';
+const CA_BLUE = '#cancelAllBtn,.order-cancel-all';
 const GATE = '<style id="' + GATE_ID + '">'
   + '.orders-block:not([data-lcm-done])>*,.orders-stack:not([data-lcm-done])>*{visibility:hidden}'
-  + '#cancelAllBtn:not([data-lxca]),.order-cancel-all:not([data-lxca]),[data-cancel-all]:not([data-lxca])'
-  + '{visibility:hidden!important}'
-  + CA_SEL + '{color:var(--accent,#ea6a2c)!important;-webkit-text-fill-color:var(--accent,#ea6a2c)!important;'
+  + CA_HIDE + '{visibility:hidden!important}'
+  + CA_BLUE + '{color:var(--accent,#ea6a2c)!important;-webkit-text-fill-color:var(--accent,#ea6a2c)!important;'
   + 'text-decoration:none!important;font-weight:600}'
   + '</' + 'style>'
   // THE SAFETY NET MUST NOT BE A SLOW RELEASE OF THE MOCK.
@@ -130,7 +147,29 @@ const GATE = '<style id="' + GATE_ID + '">'
   + 'b.setAttribute("data-lcm-done","1");}'
   + '}catch(e){}},3000);</' + 'script>';
 
-let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0, mockCards = 0, gated = 0;
+// Gives the desktop "Cancel all" the hook every selector above already looks for.
+//
+// SCRIPTS ARE CUT OUT BEFORE THE SCAN, and that is not caution — the first version matched `<button`
+// anywhere and hit the word "<button>" inside this project's OWN javascript comment ("…the <button>,
+// its .active state and its .cnt badge…"), pairing it with a `</button>` hundreds of lines further
+// down and claiming a hit on 55 pages. A comment is not markup, the same way a comment is not copy.
+//
+// Bounded by `(?!<\/button>)` so the content cannot run past the element it belongs to, and skipped
+// where the attribute is already present, so a second pass over a built container adds nothing.
+const CA_STAMP = /<button(?![^>]*data-cancel-all)([^>]*)>((?:(?!<\/button>)[\s\S])*?Cancel all(?:(?!<\/button>)[\s\S])*?)<\/button>/gi;
+function stampCancelAll(html) {
+  let hits = 0;
+  const out = html.split(/(<script[\s\S]*?<\/script>)/i).map(function (part) {
+    if (/^<script/i.test(part)) return part;
+    return part.replace(CA_STAMP, function (m, attrs, inner) {
+      hits++;
+      return '<button data-cancel-all' + attrs + '>' + inner + '</button>';
+    });
+  }).join('');
+  return { html: out, hits };
+}
+
+let files = 0, pages = 0, stellarLayers = 0, mockCharts = 0, mockHeadlines = 0, mockCards = 0, gated = 0, stamped = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -302,6 +341,10 @@ for (const dev of ['desktop', 'mobile']) {
     h = h.replace(gre, '');
     const gjs = new RegExp('<script id="' + GATE_JS + '">[\\s\\S]*?<\\/script>', 'g');
     h = h.replace(gjs, '');
+    // Before the gate is written, so the attribute the gate's selector needs is already on the
+    // element in the same build rather than one release later.
+    { const st = stampCancelAll(h); h = st.html; stamped += st.hits; }
+
     if (h.indexOf('</head>') >= 0 && /orders-block|orders-stack/.test(h)) {
       h = h.replace('</head>', GATE + '</head>');
       gated++;
@@ -318,5 +361,6 @@ for (const dev of ['desktop', 'mobile']) {
 
 console.log('xrpl wallet: stripped '+stellarLayers+' Stellar layer(s); disabled '+mockCharts
   + ' random-walk chart(s); blanked ' + mockHeadlines + ' mock insight figure(s); hid '
-  + mockCards + ' tab-replaced card(s); open-orders flash gate on ' + gated + ' page key(s); data layer on '
+  + mockCards + ' tab-replaced card(s); open-orders flash gate on ' + gated + ' page key(s); '
+  + 'desktop Cancel all stamped on ' + stamped + '; data layer on '
   + pages + ' page key(s) across ' + files + ' container(s)');

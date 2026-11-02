@@ -183,6 +183,48 @@ eq('held excludes LP and obligations', r.held.map(h => h.display), ['CSC', 'LUMO
 eq('pool shares separated', r.pools.length, 1);
 eq('issuer obligation not a holding', r.obligations.length, 1);
 
+// ---- what open offers promise --------------------------------------------------------------------
+// The vectors are RAZA's own account, rKt1DrESP2ssLM5CQpR4aBkvyg5v7WTijK, read off mainnet on
+// 2026-11-03: one open offer selling 20,000,000 LUMOS for 1,000 XRP, against a balance of
+// 18,180,172.1391575. It was fully covered when placed and a later payment took the balance under it.
+// The whole point of these functions is that this ledger will not tell you that.
+console.log('');
+console.log('=== open offers vs balance (RAZA\'s account, read off mainnet 2026-11-03) ===');
+
+const LUM = { currency: '4C554D4F53000000000000000000000000000000', issuer: 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha' };
+const RAZA_OFFER = { seq: 91538148, taker_pays: '1000000000', taker_gets: { ...LUM, value: '20000000' } };
+const RAZA_BAL = 18180172.1391575;
+
+eq('XRP is keyed by the STRING form', C.offerAssetKey('1000000000'), 'XRP');
+eq('a token is keyed currency:issuer', C.offerAssetKey(RAZA_OFFER.taker_gets), LUM.currency + ':' + LUM.issuer);
+eq('an unreadable amount keys to nothing', C.offerAssetKey({ value: '5' }), '');
+
+const cm = C.offerCommitments([RAZA_OFFER]);
+eq('the sold side is taker_gets, not taker_pays', cm[LUM.currency + ':' + LUM.issuer], { amount: 20000000, count: 1 });
+eq('selling XRP is counted in XRP, not drops',
+   C.offerCommitments([{ taker_gets: '1000000000', taker_pays: { ...LUM, value: '1' } }]).XRP,
+   { amount: 1000, count: 1 });
+eq('offers on one asset are summed, and counted',
+   C.offerCommitments([RAZA_OFFER, { taker_gets: { ...LUM, value: '5000000' }, taker_pays: '1' }])[LUM.currency + ':' + LUM.issuer],
+   { amount: 25000000, count: 2 });
+
+// The finding itself: 20,000,000 promised, 18,180,172.1391575 deliverable, 1,819,827.8608425 that
+// cannot be. Subtraction checkable by hand, which is why the real figures are used.
+const cov = C.offerCoverage(cm[LUM.currency + ':' + LUM.issuer], RAZA_BAL);
+eq('not funded',        cov.funded, false);
+eq('promised',          cov.promised, 20000000);
+eq('deliverable is the BALANCE, not the order', cov.covered, RAZA_BAL);
+eq('short by the difference', +cov.short.toFixed(7), 1819827.8608425);
+
+// Equal is funded, not short: an order for exactly what is held can fill in full.
+eq('exactly covered is funded', C.offerCoverage({ amount: 20000000, count: 1 }, 20000000).funded, true);
+eq('exactly covered is not short', C.offerCoverage({ amount: 20000000, count: 1 }, 20000000).short, 0);
+// A caller may hand in whatever the map gave it for an asset, including nothing at all.
+eq('no commitment is funded', C.offerCoverage(undefined, 5).funded, true);
+eq('no commitment promises nothing', C.offerCoverage(undefined, 5).promised, 0);
+// A balance cannot go negative here, and a negative one must never read as coverage.
+eq('a negative balance covers nothing', C.offerCoverage({ amount: 10, count: 1 }, -3).covered, 0);
+
 // ---- amounts -------------------------------------------------------------------------------------
 // The arithmetic that decides how much money a transaction moves. Every case here is one that would
 // have shipped a wrong number, not a wrong type — a bad amount is accepted by the ledger.

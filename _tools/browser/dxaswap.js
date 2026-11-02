@@ -80,6 +80,11 @@
     return Number(n).toLocaleString('en-US', { maximumFractionDigits: d == null ? 6 : d });
   }
   function floorTo(n, dp) { var k = Math.pow(10, dp); return Math.floor(n * k) / k; }
+  // Decimals follow the magnitude — the same rule the order rows and the Send dialog use.
+  function covDp(n) {
+    n = Math.abs(Number(n) || 0);
+    return n >= 1e4 ? 0 : n >= 1e2 ? 2 : n >= 1 ? 4 : 6;
+  }
   function plainNum(n) { return n > 0 ? (lxx().iouValue(Number(Number(n).toPrecision(12))) || '') : ''; }
   function currencyOf(code) { try { return lxx().encodeCurrency(code); } catch (e) { return code; } }
   function feeRate() { return typeof window.__lxFeeRate === 'number' ? window.__lxFeeRate : 0.002; }
@@ -213,6 +218,71 @@
   function payBalance(p) {
     if (!addr() || acct.key == null) return null;
     return side(p) === 'sell' ? acct.bal : acct.spend;
+  }
+
+  // ---- open orders this swap would leave short -----------------------------------------------------
+  //
+  // THE XRP LEDGER RESERVES NOTHING BEHIND AN OFFER AND STELLAR DOES, which is the whole of it. On
+  // Stellar the protocol holds the tokens and Horizon publishes `selling_liabilities`, so a balance
+  // can never fall under what an open order promised. Here it can, and the order simply goes on
+  // advertising a size it can no longer deliver.
+  //
+  // RAZA 2026-11-03: an open order for 20,000,000 LUMOS over a balance of 18,180,172 — covered when
+  // placed, taken under by a later payment, with nothing anywhere saying so. See xrpl-core.js,
+  // offerCommitments. This WARNS and does not refuse: spending below an open order is legal here and
+  // is sometimes meant, so Stellar's hard stop is the protocol's behaviour and not ours to copy onto
+  // a ledger that does not share it.
+  var COMMIT = { who: '', map: null, loading: null };
+
+  function loadCommitments() {
+    var me = addr();
+    if (!me) { COMMIT.who = ''; COMMIT.map = null; return Promise.resolve(null); }
+    if (COMMIT.who === me && COMMIT.map) return Promise.resolve(COMMIT.map);
+    if (COMMIT.loading) return COMMIT.loading;
+    COMMIT.loading = lxx().allOffers(rpc, me).then(function (r) {
+      COMMIT.map = lxx().offerCommitments(r.offers);
+      COMMIT.who = me;                                    // set only on success, so a failure retries
+      COMMIT.loading = null;
+      return COMMIT.map;
+    }).catch(function () {
+      // Left null, never {}. An empty map reads as "nothing is committed", which is the one wrong
+      // answer available here because it understates ([[never-cache-a-failure-as-an-answer]]).
+      COMMIT.loading = null;
+      return null;
+    });
+    return COMMIT.loading;
+  }
+
+  // The sentence, or '' when there is nothing true to say. Measured against the SAME balance the
+  // panel already shows, so the two numbers on screen cannot disagree.
+  function underfundNote(p, amt) {
+    if (!COMMIT.map) return '';
+    var pay = sides(p).pay;
+    var bal = payBalance(p);
+    if (bal == null) return '';
+    var c = COMMIT.map[pay.currency === 'XRP' ? 'XRP' : (pay.currency + ':' + pay.issuer)];
+    if (!c || !(c.amount > 0)) return '';
+    var left = bal - (Number(amt) || 0);
+    if (left >= c.amount) return '';
+    // Worded and rounded exactly as the Send dialog and the order rows do — one shortfall, one voice.
+    return 'This leaves ' + fmt(Math.max(0, left), covDp(left)) + ' ' + pay.code + '. Your '
+      + (c.count > 1 ? (c.count + ' open ' + pay.code + ' orders need ') : 'open order needs ')
+      + fmt(c.amount, covDp(c.amount)) + ', so ' + (c.count > 1 ? 'they' : 'it')
+      + ' could not fill in full. You can still swap.';
+  }
+
+  // Said on the quote, not on the button. By the time the wallet is asking for a signature the reader
+  // has already decided; the note belongs beside the figure while they are still choosing it.
+  function sayCoverage(p, amt) {
+    loadCommitments().then(function () {
+      if (pane() !== p) return;                           // panel swapped out mid-read
+      var note = underfundNote(p, amt);
+      // Only ever writes into an EMPTY line. say(p,'') is what used to be at each of these call sites,
+      // and a real error raised in the meantime — no route, too small — must outrank this caution.
+      var n = $('.lxx-limit-note', p);
+      if (n && n.textContent) return;
+      if (note) say(p, note, 'warn');
+    });
   }
 
   // THE TRADING FEE ROW'S FIGURE (RAZA 2026-09-15: "why's the trading fees not showing up"). lx-feemodal writes
@@ -607,6 +677,10 @@
       if (d && d.price > 0) applyQuote(p, amt, s.pay.currency === 'XRP' ? amt / d.price : amt * d.price, null, true);
       simQuote(p, s, amt, my);
       say(p, '');
+      // This branch RETURNS, so without the call here a swap into a token the account does not yet
+      // hold would never reach the coverage check below — and buying a new token is one of the
+      // likelier ways to spend a balance an open order was counting on.
+      sayCoverage(p, amt);
       return;
     }
     // AN ESTIMATE STRAIGHT AWAY (RAZA 2026-09-15: "Its taking forever to calculate you receive"). The ledger's route
@@ -642,6 +716,7 @@
       if (!(out > 0)) { clearQuote(p); say(p, tooSmallMsg(p, s, amt) || 'No route for that amount right now.', 'bad'); return; }
       applyQuote(p, amt, out, alt.paths_computed && alt.paths_computed.length ? alt.paths_computed : null);
       say(p, '');
+      sayCoverage(p, amt);
     }).catch(function () {
       if (my !== seq) return;
       inflight = 0;

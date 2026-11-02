@@ -113,6 +113,43 @@
     return p.join('.');
   }
 
+  // TRUNCATES WHERE fmt() ROUNDS. fmt uses toFixed, and toFixed rounds up — so a coverage figure put
+  // through it can claim an order will deliver more than the balance allows, which is the exact error
+  // the coverage line exists to stop. Same reasoning as the MAX button: cut the number, never round
+  // it. Safe in doubles here because an XRPL issued amount has at most 15 significant digits.
+  function fmtDown(n, dp) {
+    if (n == null || !isFinite(n)) return '—';
+    var f = Math.pow(10, dp || 0);
+    return fmt(Math.floor(Number(n) * f) / f, dp);
+  }
+
+  // A fill figure is READ, not audited: ".139158" on an eighteen-million-token number is noise, while
+  // on a fraction of one token it is the entire value. So the decimals follow the magnitude instead
+  // of being fixed at six, which is what made the first version of this row unreadable.
+  //
+  // Roughly six significant digits across the range. Measured against the real case: his 909.008607
+  // XRP total came out at six decimals under a coarser rule, which is the same unreadability one
+  // bracket lower down.
+  function covDp(n) {
+    n = Math.abs(Number(n) || 0);
+    return n >= 1e4 ? 0 : n >= 1e2 ? 2 : n >= 1 ? 4 : 6;
+  }
+
+  // Rewrites one column's figure and hangs a second, quieter line beneath it.
+  //
+  // The sub-line is appended to the .col, NOT written into .v. .v is the element every other layer
+  // reads when it wants the number — the confirm dialog's summary builder reads
+  // `cols[1].querySelector('.v').textContent` — and putting a sentence in there would hand them a
+  // figure they cannot parse.
+  function subCol(col, main, sub) {
+    if (!col) return;
+    var v = col.querySelector('.v');
+    if (main != null && v) v.textContent = main;
+    var old = col.querySelector('.lx-ordsub');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    if (sub) col.appendChild(el('div', 'lx-ordsub', sub));
+  }
+
   function short(a) { return a && a.length > 12 ? a.slice(0, 5) + '…' + a.slice(-4) : (a || ''); }
 
   // textContent everywhere for ledger-supplied values: a currency name is arbitrary bytes off a public
@@ -1475,10 +1512,10 @@
     // the tabs. Re-parented, not restyled — the design's own button, at the end of the row the tabs are on.
     // Searched across the page, not inside the panel: the control lives in its own `.section-heading .right`, a sibling of
     // the orders list rather than a child of it, so looking only within the panel found nothing.
-    var cancel = null;
-    [].slice.call(document.querySelectorAll('.section-heading .ctrl-btn, .section-heading button, .section-heading a')).forEach(function (b) {
-      if (!cancel && /cancel all/i.test(b.textContent || '')) cancel = b;
-    });
+    // findCancelAll(), not a second scan of its own: the two scans that used to live here and in
+    // paintOrders disagreed on desktop, which is how the control ended up moved into place and then
+    // never hidden.
+    var cancel = findCancelAll();
     if (cancel) {
       bar.style.display = 'flex';
       bar.style.alignItems = 'center';
@@ -1563,8 +1600,74 @@
     }, true);
   }
 
-  function orderRow(tpl, o) {
+  // What this account could actually hand a taker, right now, for the asset an offer is selling.
+  //
+  // Read from the balances THIS PAGE already has rather than fetched again, so the warning below can
+  // never disagree with the My Assets list a few hundred pixels under it — that pair of numbers
+  // disagreeing silently is the entire bug this answers.
+  //
+  // XRP is compared on its SPENDABLE figure, not its balance: reserved XRP cannot reach a taker any
+  // more than XRP you do not have. A token with no trust line is a real zero. A missing __lxxData is
+  // NOT a zero — it is "not read yet", and returns null so the caller stays quiet rather than
+  // accusing a perfectly funded order ([[never-cache-a-failure-as-an-answer]]).
+  function deliverable(asset) {
+    var d = window.__lxxData;
+    if (!d || !asset) return null;
+    if (asset.code === 'XRP' || !asset.issuer) return d.xrp ? d.xrp.spendable : null;
+    var hit = (d.held || []).filter(function (t) {
+      return t.currency === asset.currency && t.issuer === asset.issuer;
+    })[0];
+    return hit ? hit.balance : 0;
+  }
+
+  // A STYLESHEET RATHER THAN AN INLINE COLOUR, because the fallback has to know the theme.
+  //
+  // --yellow is the design's own caution colour and exists in both themes (#d97706 light, #ffb547
+  // dark) — but only on SOME pages. Measured across this build: the wallet and dashboard keys define
+  // both, the trade-asset page defines only the light one, and the LUMOS token page does not define
+  // it at all. An inline `color:var(--yellow,#d97706)` therefore painted the LIGHT amber on a
+  // #0a0a0b dark page wherever the variable was missing — readable (about 6:1) but not the colour
+  // the design picked, and inconsistent with the same warning two pages away.
+  //
+  // One literal cannot fix that, and an inline style cannot ask what the theme is without going
+  // stale when the reader toggles it. A rule can: --yellow still wins wherever it is defined, and
+  // where it is not, each theme falls back to its own value and keeps doing so after a toggle.
+  function ordWarnCss() {
+    if (document.getElementById('lx-ordwarn-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lx-ordwarn-css';
+    st.textContent = '.lx-ordwarn{grid-column:1/-1;margin-top:9px;font-size:12px;font-weight:600;'
+      + 'line-height:1.45;color:var(--yellow,#d97706)}'
+      + 'html[data-theme="dark"] .lx-ordwarn{color:var(--yellow,#ffb547)}'
+      // The second line under a column's figure. Quieter than .v and in the warning colour, so the
+      // pair reads as one fact — "this is what happens, that is what you asked for" — rather than as
+      // two competing numbers. --yellow is undefined on some keys, hence the literal fallback and the
+      // dark twin; an inline style cannot be theme-conditional and goes stale on a toggle.
+      + '.lx-ordsub{margin-top:3px;font-size:11px;font-weight:600;line-height:1.3;'
+      + 'color:var(--yellow,#d97706)}'
+      + 'html[data-theme="dark"] .lx-ordsub{color:var(--yellow,#ffb547)}';
+    document.head.appendChild(st);
+  }
+
+  function orderRow(tpl, o, cm) {
     var row = tpl.cloneNode(true);
+
+    // THE TEMPLATE IS OFTEN A ROW THIS FUNCTION ALREADY FILLED.
+    //
+    // paintOrders takes it from the panel — `block.querySelector('.order-row, .order-card')` — and
+    // only the FIRST paint finds the design's mock there. Every later paint finds a real, rendered
+    // row, so the clone arrives carrying whatever was appended to it last time: a coverage sub-line,
+    // a shortfall note, and the .lx-ameta block holding the PREVIOUS token's home domain and its
+    // "View asset" link. None of that is overwritten below, because each is added conditionally and
+    // the conditions are about THIS order.
+    //
+    // Measured: after an underfunded 20,000,000 LUMOS order, a fully covered 1,000,000 one still read
+    // "of 20,000,000 placed". The asset meta is the worse half — it points at the wrong asset page.
+    //
+    // So everything this layer adds is stripped from the clone before anything is written into it.
+    [].forEach.call(row.querySelectorAll('.lx-ordsub,.lx-ordwarn,.lx-ameta'), function (n) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+    });
 
     // data-oid IS WHAT MAKES THE ROW VISIBLE, and its absence is invisible in every way that matters.
     // The design ships an anti-flash gate:
@@ -1639,6 +1742,63 @@
       if (v) v.textContent = vals[i];
     }
 
+    // WHETHER THE ORDER CAN ACTUALLY BE HONOURED, which the three columns above cannot say.
+    //
+    // RAZA 2026-11-03: "If all i have is 18.18M LUMOS, how do i have an open order of 20M LUMOS."
+    // Both figures were correct, both on this screen, and nothing joined them up.
+    //
+    // This ledger does not reserve what an offer sells (xrpl-core.js, offerCommitments), so a balance
+    // can be spent out from under an open order — his was, by a payment one sequence after the
+    // OfferCreate — and the offer carries on advertising a size it can no longer deliver. The Stellar
+    // build needs no line like this, because there the protocol holds the tokens and the situation
+    // cannot arise.
+    //
+    // Placed as a grid child spanning all three columns: .order-details is `1fr 1fr 1fr` in BOTH
+    // layouts, while .order-row itself is a non-wrapping flex, so appending to the row would have put
+    // a paragraph next to the Cancel button and squeezed it.
+    // THE COLUMNS CARRY IT, RATHER THAN A SENTENCE UNDERNEATH THEM.
+    //
+    // The first version of this kept AMOUNT reading "20,000,000.000000 LUMOS" and bolted an
+    // explanation below it. RAZA 2026-11-03: "this message 'only… order.' looks very weird […] if i
+    // dont have 20M so why is there a sell order of 20M LUMOS in first place. that was the whole
+    // point." He is right — leaving the misleading figure in the largest type on the row and
+    // explaining it in small print underneath is not a fix, it is a footnote on a wrong number.
+    //
+    // So the figure becomes WHAT WILL HAPPEN and the placed size drops to a second line:
+    //
+    //     AMOUNT   18,180,172 LUMOS        TOTAL   909.00 XRP
+    //              of 20,000,000 placed            of 1,000 XRP
+    //
+    // Both lines are true, the big one is the one that matters, and nothing has to be explained.
+    var cov = null;
+    var have = deliverable(gets);
+    if (have != null) cov = window.lxx.offerCoverage(cm && cm[window.lxx.offerAssetKey(o.taker_gets)], have);
+    if (cov && !cov.funded) {
+      ordWarnCss();
+      if (cov.count === 1 && gets && pays && gets.value > 0) {
+        // TOTAL IS SCALED, NOT RECOMPUTED. The ledger fills an offer pro rata at its own price, so
+        // what arrives is the placed total times the fraction that can actually be delivered —
+        // deriving it from price × covered instead would re-round the price and disagree with the
+        // PRICE column standing next to it.
+        var part = cov.covered / gets.value;
+        var tot = pays.value * part;
+        subCol(cols[1], fmtDown(cov.covered, covDp(cov.covered)) + ' ' + gc,
+          'of ' + fmt(gets.value, covDp(gets.value)) + ' placed');
+        subCol(cols[2], fmtDown(tot, covDp(tot)) + ' ' + pc,
+          'of ' + fmt(pays.value, covDp(pays.value)) + ' ' + pc);
+      } else {
+        // SEVERAL ORDERS ON ONE TOKEN SHARE ONE BALANCE, and the book decides which of them fills
+        // first — so "how much of THIS one can fill" genuinely has no answer, and inventing a split
+        // across them would be a number the ledger never agreed to. The columns keep this order's own
+        // size and one full-width line states the pair of facts that stay true whatever the book does.
+        var det = row.querySelector('.order-details');
+        if (det) det.appendChild(el('div', 'lx-ordwarn',
+          'Your ' + cov.count + ' open ' + gc + ' orders need '
+          + fmt(cov.promised, covDp(cov.promised)) + ' — you hold '
+          + fmtDown(cov.covered, covDp(cov.covered)) + '.'));
+      }
+    }
+
     // The design shows "42% filled" over a progress bar. The XRP Ledger does not publish that: an
     // offer on the books reports only what REMAINS of it, so there is no original size to measure a
     // fill against. A bar with a number nobody can derive is worse than no bar, so it is removed.
@@ -1669,6 +1829,33 @@
       node.setAttribute('data-lcm-done', '1');
       node.classList.add('lcm-on');
     } catch (e) {}
+  }
+
+  // ONE FINDER FOR ONE CONTROL, because there were two and they quietly disagreed.
+  //
+  // The layer that moves Cancel all onto the tab row matched any button or anchor under
+  // .section-heading whose TEXT reads "cancel all". The branch below that hides it when there are no
+  // orders looked for #cancelAllBtn / .order-cancel-all / [data-cancel-all]. On the phone, where the
+  // control ships as `<a href="#" id="cancelAllBtn">`, both found it. On the DESKTOP, where it ships
+  // as a bare `<button class="ctrl-btn"> ✕ Cancel all </button>`, only the mover did — so it was put
+  // in place and then never hidden, and it sat above "No open orders on this account." offering to
+  // cancel nothing (RAZA 2026-11-03; the same thing he reported on 2026-10-11, fixed on the phone
+  // only). A selector that silently matches nothing looks exactly like a feature that works.
+  //
+  // The build now stamps data-cancel-all on the desktop button (_xrplwallet.js), so the attribute
+  // lookup alone would be enough. The text scan stays as the backstop.
+  //
+  // SCOPED, not a page-wide scan: .section-heading is where the control ships, .lx-wctabs is where
+  // this layer moves it to. Scanning every button would also match the confirm dialog's own
+  // "Cancel all (3)" label, which is a different control entirely.
+  function findCancelAll() {
+    var direct = document.querySelector('#cancelAllBtn,.order-cancel-all,[data-cancel-all]');
+    if (direct) return direct;
+    var hit = null;
+    [].slice.call(document.querySelectorAll(
+      '.section-heading .ctrl-btn, .section-heading button, .section-heading a, .lx-wctabs button, .lx-wctabs a'
+    )).forEach(function (b) { if (!hit && /cancel all/i.test(b.textContent || '')) hit = b; });
+    return hit;
   }
 
   function paintOrders(me) {
@@ -1725,8 +1912,7 @@
         // blue". Styled here rather than in a stylesheet because the element is the design's and
         // carries an id, not a class, so there is nothing to hook a rule onto that would not be
         // inventing one.
-        var cah = document.getElementById('cancelAllBtn')
-          || document.querySelector('.order-cancel-all,[data-cancel-all]');
+        var cah = findCancelAll();
         if (cah) {
           cah.style.display = offers.length ? '' : 'none';
           // Lifts the <head> gate that has been holding this hidden since the first frame. Stamped
@@ -1734,16 +1920,24 @@
           // before this line has decided whether there is anything for it to cancel. With no orders
           // the display:none above keeps it hidden anyway; the attribute only ends the blanket hide.
           cah.setAttribute('data-lxca', '1');
+          // DE-BLUING IS FOR THE ANCHOR, AND ONLY THE ANCHOR. The phone ships this as <a href="#">
+          // with no class at all, so until something paints it the browser renders a bare link:
+          // default blue, underlined. The desktop ships an already styled .ctrl-btn pill, and
+          // repainting that accent-orange at 13px would be a restyle nobody asked for — which is
+          // what this block did to it the moment the finder above started succeeding there.
+          //
           // -webkit-text-fill-color AS WELL AS color, because that property wins over color for the
           // rendered text and the UA sets it on a link. Measured on a fresh load: font-weight and
           // text-decoration from this very same inline style applied, and color alone did not --
           // computed color stayed rgb(0,0,238) with -webkit-text-fill-color matching it. Setting one
           // without the other leaves the anchor default-blue however loudly the color is declared.
-          cah.style.color = 'var(--accent, #ea6a2c)';
-          cah.style.setProperty('-webkit-text-fill-color', 'var(--accent, #ea6a2c)');
-          cah.style.textDecoration = 'none';
-          cah.style.fontWeight = '600';
-          cah.style.fontSize = '13px';
+          if (cah.tagName === 'A') {
+            cah.style.color = 'var(--accent, #ea6a2c)';
+            cah.style.setProperty('-webkit-text-fill-color', 'var(--accent, #ea6a2c)');
+            cah.style.textDecoration = 'none';
+            cah.style.fontWeight = '600';
+            cah.style.fontSize = '13px';
+          }
           cah.style.cursor = 'pointer';
         }
 
@@ -1753,8 +1947,11 @@
           reveal(block);
           return;
         }
+        // Totalled ONCE for the whole list, not per row: two offers selling the same token draw on
+        // one balance, so each row has to be judged against the pair of them, not against itself.
+        var cm = window.lxx.offerCommitments(offers);
         offers.forEach(function (o) {
-          block.appendChild(orderRow(rowT, o));
+          block.appendChild(orderRow(rowT, o, cm));
         });
         reveal(block);
       }).catch(function () { /* leave the design's block rather than empty it on a dropped request */ });
@@ -2548,6 +2745,24 @@
     // thrown inside load() and taken the whole wallet page down with it.
     [].forEach.call(document.querySelectorAll('.field-label .meta'), function (m) {
       if (/Balance:/i.test(m.textContent || '')) m.textContent = 'Balance: —';
+    });
+    // AND THE SEND DIALOG'S OWN ROW, which the selector above never reached (2026-10-27). It is
+    // `.field-meta > span > strong`, not `.field-label .meta`, so this function cleared 7 rows and
+    // left the one inside the dialog that moves money. Measured on production with Send OPEN and a
+    // balance that could not be read: "Balance: 25,420.18 APT" beside Max, on an XRP Ledger wallet —
+    // the raw Aptos figure, ticker and all. The comment above called this "one selector change away
+    // from being read"; it was already being read, by the selector being wrong rather than narrow.
+    //
+    // The same near-miss hid it from the markup pass: _xrplcopy2.js carries the pair
+    // ['Balance: 25,420.18 APT', 'Balance: —'], which cannot match here because the value sits in a
+    // <strong> and the string is not contiguous in the container.
+    //
+    // Only the <strong> is blanked, because that is exactly what owns the value: write.js does
+    // `$('.field-meta strong', m).textContent = fmt(a.spendable,6)+' '+a.code` and the "Balance: "
+    // prefix is a sibling text node. It writes unconditionally — no digit pattern to satisfy — so a
+    // dash here cannot stop the real spendable balance landing when a dialog opens.
+    [].forEach.call(document.querySelectorAll('.field-meta strong'), function (s) {
+      if (/[\d.,]/.test(s.textContent || '')) s.textContent = '—';
     });
   }
 

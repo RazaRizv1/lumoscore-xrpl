@@ -76,6 +76,13 @@
     return p.join('.');
   }
 
+  // Decimals follow the magnitude, roughly six significant digits across the range. Same rule as the
+  // order rows in wallet.js, so one shortfall is never described with two different precisions.
+  function covDp(n) {
+    n = Math.abs(Number(n) || 0);
+    return n >= 1e4 ? 0 : n >= 1e2 ? 2 : n >= 1 ? 4 : 6;
+  }
+
   function short(a) { return a && a.length > 12 ? a.slice(0, 5) + '…' + a.slice(-4) : (a || ''); }
 
   // EVERY READ HAS A DEADLINE (RAZA 2026-09-17: a swap that "just stucks there"). Measured the same day: `ripple_path_find`
@@ -568,7 +575,9 @@
 
     var fee = $('.modal-body strong[style*="JetBrains"]', m);
     if (fee) fee.textContent = '~0.000012 XRP';
-    say('');
+    // Re-judged rather than blanked: switching asset with an amount already typed used to clear this
+    // line, and the open orders it warns about belong to the NEW asset, not the old one.
+    sendWarn();
   }
 
   // The asset menu. Built from the design's own field styling and anchored under the picker button,
@@ -669,8 +678,102 @@
       body.appendChild(box);
     }
     box.textContent = text || '';
-    box.style.color = tone === 'bad' ? '#e5484d' : (tone === 'good' ? 'var(--green,#22c55e)' : 'var(--text-muted,#9aa)');
+    // 'warn' is the third state this line needed: not an error (nothing has failed, and the send is
+    // allowed to go ahead) and not neutral either.
+    box.style.color = tone === 'bad' ? '#e5484d'
+      : (tone === 'good' ? 'var(--green,#22c55e)'
+      : (tone === 'warn' ? warnColor() : 'var(--text-muted,#9aa)'));
     box.style.display = text ? '' : 'none';
+  }
+
+  // The design's caution colour, with the fallback the CURRENT THEME would want.
+  //
+  // --yellow is #d97706 light / #ffb547 dark, and the wallet pages define both — but this dialog also
+  // rides the LUMOS token page, which does not define the variable at all. A fixed
+  // `var(--yellow,#d97706)` therefore painted the light amber on a dark ground there. These two lines
+  // are set inline by say()/swapSay(), so unlike the order-row rule they cannot be theme-conditional
+  // in CSS; reading the theme per call is the next best thing, and these messages are rewritten on
+  // every keystroke anyway, so a theme toggle is picked up almost immediately.
+  function warnColor() {
+    var dark = true;
+    try {
+      var t = document.documentElement.getAttribute('data-theme');
+      // The design keys its WHOLE palette off this attribute, so in practice it is always stamped.
+      // The matchMedia arm is for the case where it somehow is not, rather than guessing dark.
+      if (t === 'light' || t === 'dark') dark = (t === 'dark');
+      else dark = !(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches);
+    } catch (e) {}
+    return 'var(--yellow,' + (dark ? '#ffb547' : '#d97706') + ')';
+  }
+
+  // ---- what the connected account's open orders have promised --------------------------------------
+  //
+  // THIS LEDGER RESERVES NOTHING BEHIND AN OFFER, AND STELLAR DOES. On Stellar the protocol holds the
+  // tokens: Horizon publishes `selling_liabilities`, the sibling repo spends `balance - liabilities`
+  // everywhere, and a send that would break an open offer is simply impossible. Here the balance stays
+  // entirely spendable, so the send goes through and leaves the offer UNFUNDED — still in the book,
+  // still advertising its full size, able to deliver only what is left.
+  //
+  // RAZA 2026-11-03, on his own account: an open order for 20,000,000 LUMOS over a balance of
+  // 18,180,172. The order was fully covered when placed; a 3,000,000 payment one sequence later took
+  // it under, from this very dialog, and nothing said a word. No write path here had ever read
+  // account_offers at all.
+  //
+  // So this WARNS and does not block. Spending below an open order is legal on the XRP Ledger and is
+  // sometimes exactly what someone means to do — Stellar's hard refusal is the protocol's, not a
+  // product decision we get to copy onto a ledger that does not share it.
+  var COMMIT = { who: '', map: null, loading: null };
+
+  function loadCommitments() {
+    var me = addr();
+    if (!me) { COMMIT.who = ''; COMMIT.map = null; return Promise.resolve(null); }
+    if (COMMIT.who === me && COMMIT.map) return Promise.resolve(COMMIT.map);
+    if (COMMIT.loading) return COMMIT.loading;
+    COMMIT.loading = window.lxx.allOffers(rpc, me).then(function (r) {
+      COMMIT.map = window.lxx.offerCommitments(r.offers);
+      COMMIT.who = me;                                   // set only on success, so a failure retries
+      COMMIT.loading = null;
+      return COMMIT.map;
+    }).catch(function () {
+      // Left null on purpose. A read that did not come back knows nothing about what is promised, and
+      // an empty map would read as "nothing is committed" — the one wrong answer available here,
+      // because it understates ([[never-cache-a-failure-as-an-answer]]).
+      COMMIT.loading = null;
+      return null;
+    });
+    return COMMIT.loading;
+  }
+
+  // RE-READ WHENEVER THE PAGE RE-READS THE ACCOUNT. Both halves of this comparison move: a send or a
+  // swap changes the balance, and placing or cancelling an order changes what is promised. wallet.js
+  // fires this event every time it reloads balances, including the first time, so the map is warm
+  // before the reader has typed anything and is never answering for a balance that has since changed.
+  try {
+    window.addEventListener('lxx:walletdata', function () {
+      COMMIT.who = ''; COMMIT.map = null;
+      loadCommitments();
+    });
+  } catch (e) {}
+
+  // The sentence, or '' when there is nothing true to say.
+  //
+  // `asset.spendable` is what this dialog already shows as the balance, so the arithmetic below is the
+  // reader's own: what is on screen now, minus what they have typed, against what their orders promise.
+  function underfundNote(asset, amount) {
+    if (!COMMIT.map || !asset) return '';
+    var key = (asset.code === 'XRP' || !asset.issuer) ? 'XRP' : (asset.currency + ':' + asset.issuer);
+    var c = COMMIT.map[key];
+    if (!c || !(c.amount > 0)) return '';
+    var left = (Number(asset.spendable) || 0) - (Number(amount) || 0);
+    if (left >= c.amount) return '';                      // still covers every order: nothing to say
+    // "need", and decimals that follow the magnitude — the same two changes the order rows got, so
+    // the Send dialog and the row describing the same shortfall do not word it two different ways.
+    // Six fixed decimals on an eighteen-million-token figure is part of what made the first version
+    // of this read badly.
+    return 'This leaves ' + fmt(Math.max(0, left), covDp(left)) + ' ' + asset.code + '. Your '
+      + (c.count > 1 ? (c.count + ' open ' + asset.code + ' orders need ') : 'open order needs ')
+      + fmt(c.amount, covDp(c.amount)) + ', so ' + (c.count > 1 ? 'they' : 'it')
+      + ' could not fill in full. You can still send.';
   }
 
   // A DESTINATION TAG FIELD, because without one this wallet cannot pay an exchange at all.
@@ -825,7 +928,12 @@
 
     preflight(dest, a, amount).then(function (chk) {
       if (chk && chk.err) { go.disabled = false; say(chk.err, 'bad'); return; }
-      say((chk && chk.warn ? chk.warn + ' ' : '') + 'Approve the payment in your wallet…');
+      // Said once more at the moment of signing, alongside the activation warning that already rides
+      // this line. The live notice under the amount is the one that gives the reader a choice; this
+      // one is so the sentence is still on screen while the wallet asks them to approve.
+      var un = underfundNote(a, amount);
+      say((un ? un + ' ' : '') + (chk && chk.warn ? chk.warn + ' ' : '') + 'Approve the payment in your wallet…',
+          un ? 'warn' : undefined);
 
       // AND IF THE WALLET NEVER ANSWERS, SAY SO. A refusal that the extension reports lands in the catch below and is
       // shown; dismissing the popup WITHOUT answering reports nothing at all, and the dialog sat on "Approve the payment
@@ -962,10 +1070,37 @@
         // has no headroom and was offering a figure doSend() would refuse.
         var v = a.code === 'XRP' ? Math.max(0, a.spendable - 0.0002) : a.spendable;
         amtIn.value = String(floorDp(v, 6));
-        say('');
+        sendWarn();
       });
     }
+    // SAID WHILE THERE IS STILL A DECISION TO MAKE, not after it. The warning is worth nothing on the
+    // wallet's approval screen — by then the reader has already decided — so it is written under the
+    // amount as they type, where the balance row it contradicts is sitting two lines up.
+    //
+    // say('') rather than a stale notice when there is nothing to report: this shares the status line
+    // with the error messages, and a cleared field must clear the sentence with it.
+    amtIn.addEventListener('input', sendWarn);
     go.addEventListener('click', function (e) { e.preventDefault(); doSend(); });
+  }
+
+  // The live notice under the Send amount. Deliberately quiet about everything except this one thing:
+  // the real errors are doSend()'s to report when the button is pressed.
+  function sendWarn() {
+    var m = sendModal();
+    if (!m) return;
+    var amtIn = $('.field-amt input', m);
+    var a = sendPick || held()[0];
+    var amount = amtIn ? parseFloat(String(amtIn.value).replace(/,/g, '')) : NaN;
+    if (!a || !(amount > 0)) { say(''); return; }
+    // Fire-and-forget: the offers are read once per account and cached, so after the first keystroke
+    // this is synchronous and the note appears as the figure is typed.
+    loadCommitments().then(function () {
+      if (sendModal() !== m) return;                      // dialog closed or replaced mid-read
+      var cur = $('.field-amt input', m);
+      var now = cur ? parseFloat(String(cur.value).replace(/,/g, '')) : NaN;
+      if (!(now > 0)) return;
+      say(underfundNote(sendPick || a, now), 'warn');
+    });
   }
 
   // SEPARATE FROM wireSend ON PURPOSE. Wiring happens once and then marks itself done — but the
@@ -1077,69 +1212,97 @@
     });
   }
 
-  function confirmCancel(seqs, describe) {
-    var m = $('#modalCancelOrder');
-    if (!m) return;
-    var title = $('#cancelOrderTitle', m);
-    var text = $('#cancelOrderText', m);
-    var det = $('#cancelOrderDetails', m);
-    var go = $('#cancelOrderConfirm', m);
-    if (!go) return;
-
-    if (title) title.textContent = seqs.length > 1 ? ('Cancel ' + seqs.length + ' orders?') : 'Cancel order?';
-    if (text) {
-      text.textContent = seqs.length > 1
-        ? 'Each order is cancelled by its own transaction, so you will be asked to approve ' + seqs.length + ' of them.'
-        : 'This cannot be undone. Anything already filled stays in your wallet.';
-    }
-    // The else matters: this block ships as the design's mock ("921 APT", "+9.2 APT"), so leaving
-    // it alone when there is nothing to describe shows another chain's order as the one about to be
-    // cancelled. Emptied and hidden rather than left standing.
-    if (det) {
-      if (describe) { det.textContent = describe; det.style.display = ''; }
-      else { det.textContent = ''; det.style.display = 'none'; }
-    }
-    else if (det) det.style.display = 'none';
-
-    // Replaced rather than added to: this modal is reused for every order, and a listener per opening
-    // would cancel the same offer once more on each subsequent use.
-    var fresh = go.cloneNode(true);
-    go.parentNode.replaceChild(fresh, go);
-    fresh.addEventListener('click', function (e) {
-      e.preventDefault();
-      fresh.disabled = true;
-      var i = 0, done = 0;
-      (function next() {
-        if (i >= seqs.length) {
-          fresh.textContent = done + ' cancelled';
-          setTimeout(function () {
-            closeModal(m);
-            if (window.__lxxReload) window.__lxxReload();
-          }, 900);
-          return;
-        }
-        var s = seqs[i++];
-        fresh.textContent = seqs.length > 1 ? ('Confirm ' + i + ' of ' + seqs.length + '…') : 'Confirm in wallet…';
-        cancelOne(s).then(function () { done++; next(); })
-          .catch(function (err) {
-            fresh.disabled = false;
-            fresh.textContent = (err && err.message) || 'Could not cancel';
-          });
-      })();
-    });
-
-    openModal(m);
-  }
-
   // The design's modals are shown by a class its own script toggles. Both are set so this works
   // whether or not that script has run, and neither invents a new presentation.
   function openModal(m) { m.classList.add('open', 'show', 'active'); m.removeAttribute('hidden'); }
   function closeModal(m) { m.classList.remove('open', 'show', 'active'); }
 
+  // STELLAR DOES NOT ASK TWICE (RAZA 2026-11-03: "cancel order is not the same on XRPL and Stellar.
+  // I need you to make it like stellar."). On lumoscore.com the Cancel button goes straight to the
+  // wallet: it disables, reads "Signing…", and on success reads "Cancelled" while the row fades and
+  // leaves. The "Cancel order?" step that used to stand here was OURS, not the ledger's — the wallet's
+  // own approval screen is already the confirmation, so asking first made it two, and a cancelled
+  // order can simply be placed again, so there was nothing to protect.
+  //
+  // THE ONE DIFFERENCE THE LEDGER FORCES. Stellar cancels every order inside a SINGLE transaction,
+  // one operation per offer (_walletdata.js lxCancelAll), so Cancel all costs one signature. The XRP
+  // Ledger has no envelope today's wallets sign, so each offer is its own OfferCancel and the wallet
+  // asks once per order. Cancel all therefore counts out loud — "Signing 2 of 3…" — rather than
+  // letting a second prompt arrive unexplained.
+  var reloadT = 0;
+  function reloadSoon() {
+    // The row goes at once; the re-read does not. lxc.submit resolves when the transaction is SENT,
+    // and account_offers keeps listing the offer until the ledger validates a few seconds later, so
+    // reloading immediately would put the cancelled row straight back. Same 3.5s the sends above use,
+    // and debounced so cancelling three orders still costs one reload.
+    clearTimeout(reloadT);
+    reloadT = setTimeout(function () { if (window.__lxxReload) window.__lxxReload(); }, 3500);
+  }
+
+  // EVERY copy of the offer, not just the row that was clicked. The desktop and the phone order
+  // lists are both in the document at once on this page, so one data-oid can own two rows — fading
+  // only the clicked one left the second copy standing until the reload caught up.
+  function cancelFade(row) {
+    var oid = row.getAttribute('data-oid');
+    var all = /^\d+$/.test(oid || '') ? $$('[data-oid="' + oid + '"]') : [];
+    if (!all.length) all = [row];
+    all.forEach(function (r) {
+      r.style.transition = 'opacity .25s, transform .25s';
+      r.style.opacity = '0';
+      r.style.transform = 'translateX(-8px)';
+      setTimeout(function () { if (r.parentNode) r.parentNode.removeChild(r); }, 260);
+    });
+    reloadSoon();
+  }
+
+  function cancelRow(btn, row) {
+    if (btn.__lxBusy) return;
+    var seq = row.getAttribute('data-oid');
+    if (!seq) return;
+    btn.__lxBusy = 1;
+    btn.disabled = true;
+    var label = btn.textContent;
+    btn.textContent = 'Signing…';
+    cancelOne(seq).then(function () {
+      btn.textContent = 'Cancelled';
+      cancelFade(row);
+    }).catch(function (err) {
+      btn.__lxBusy = 0;
+      btn.disabled = false;
+      btn.textContent = label;
+      toastBad((err && err.message) || 'Cancel failed');
+    });
+  }
+
+  // One at a time, not Promise.all: every one of these opens the wallet, and a handset asked to
+  // approve three transactions at once shows one prompt and drops the rest.
+  function cancelAll(btn, rows) {
+    if (btn.__lxBusy) return;
+    btn.__lxBusy = 1;
+    btn.disabled = true;
+    var label = btn.textContent;
+    var i = 0;
+    function stop() { btn.__lxBusy = 0; btn.disabled = false; btn.textContent = label; }
+    (function next() {
+      if (i >= rows.length) { stop(); return; }
+      var row = rows[i++];
+      btn.textContent = rows.length > 1 ? ('Signing ' + i + ' of ' + rows.length + '…') : 'Signing…';
+      cancelOne(row.getAttribute('data-oid')).then(function () {
+        cancelFade(row);
+        next();
+      }).catch(function (err) {
+        stop();
+        toastBad((err && err.message) || 'Cancel failed');
+      });
+    })();
+  }
+
   function wireCancels() {
     if (window.__lxwCancels) return;
     window.__lxwCancels = 1;
-    document.addEventListener('click', function (e) {
+    // click AND touchend, exactly as the Stellar wallet binds them: a real handset can withhold the
+    // synthesised click. The __lxBusy flag on the button is what keeps the pair from cancelling twice.
+    var onTap = function (e) {
       var t = e.target;
       if (!t || !t.closest) return;
 
@@ -1148,20 +1311,27 @@
         var row = one.closest('[data-oid]');
         if (!row) return;
         e.preventDefault(); e.stopPropagation();
-        var pair = ($('.pair-text .name', row) || {}).textContent || '';
-        confirmCancel([row.getAttribute('data-oid')], pair ? ('Order: ' + pair) : '');
+        cancelRow(one, row);
         return;
       }
 
       var all = t.closest('button, a');
       if (all && /cancel all/i.test((all.textContent || '').trim())) {
-        var rows = $$('[data-oid]');
+        // Deduped by data-oid: desktop and mobile order rows both carry it and both can be in the
+        // document at once, which would otherwise ask the wallet to cancel each offer twice.
+        var seen = {};
+        var rows = $$('[data-oid]').filter(function (r) {
+          var id = r.getAttribute('data-oid');
+          if (!id || seen[id]) return false;
+          seen[id] = 1; return true;
+        });
         if (!rows.length) return;
         e.preventDefault(); e.stopPropagation();
-        confirmCancel(rows.map(function (r) { return r.getAttribute('data-oid'); }),
-          rows.length + ' open order' + (rows.length === 1 ? '' : 's'));
+        cancelAll(all, rows);
       }
-    }, true);
+    };
+    document.addEventListener('click', onTap, true);
+    document.addEventListener('touchend', onTap, true);
   }
 
   // ---- Swap --------------------------------------------------------------------------------------
@@ -1380,7 +1550,10 @@
         body.appendChild(box);
       }
       box.textContent = text || '';
-      box.style.color = tone === 'bad' ? '#e5484d' : (tone === 'good' ? 'var(--green,#22c55e)' : 'var(--text-muted,#9aa)');
+      // Same three-state tone as say() above; see the notes there on 'warn' and on warnColor().
+      box.style.color = tone === 'bad' ? '#e5484d'
+        : (tone === 'good' ? 'var(--green,#22c55e)'
+        : (tone === 'warn' ? warnColor() : 'var(--text-muted,#9aa)'));
       box.style.display = text ? '' : 'none';
     });
     // A finished swap says so and then gets out of the way (RAZA 2026-09-16: "just hide the message 'Swap complete' in 2
@@ -1525,7 +1698,13 @@
           + ((alt.paths_computed && alt.paths_computed.length) ? ' (routed)' : ' (direct)'));
         swapInfoRow(m, 'network fee', '~0.000012 XRP');
         swapFeeRow(m, amount);
-        swapSay('');
+        // A swap spends the FROM balance exactly as a send does, so it can un-fund an open order the
+        // same way. Hung off the finished quote because that is the one place the real input amount is
+        // settled — the typed figure is not it when the reader filled in the RECEIVE box instead.
+        //
+        // swapSay('') is what used to be here, and still is whenever there is nothing to report: this
+        // line is shared with the quote errors and must clear itself.
+        swapSay(underfundNote(swapFrom, amount), 'warn');
       }).catch(function (e) {
         if (seq !== swapSeq) return;
         swapQuote = null;

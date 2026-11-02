@@ -1827,6 +1827,125 @@
     return col;
   }
 
+  // ---- can these orders actually be honoured? ------------------------------------------------------
+  //
+  // RAZA 2026-11-03: "If all i have is 18.18M LUMOS, how do i have an open order of 20M LUMOS."
+  //
+  // Because this ledger does not reserve what an offer sells. The order was fully covered when it was
+  // placed; a payment one sequence LATER took the balance under it, and the offer carried on reporting
+  // its full size. The Stellar build never needs this — there the protocol holds the tokens and
+  // publishes `selling_liabilities`, so the balance physically cannot fall below what is promised.
+  // See xrpl-core.js, offerCommitments, for the difference in full.
+
+  // The spendable amount of whatever an offer is SELLING, out of the account read this dialog already
+  // does. null means "not known", which is not the same as zero and must not be reported as a shortfall.
+  function balanceFor(gets) {
+    if (typeof gets === 'string' || typeof gets === 'number') {       // XRP, in drops
+      var x = H.hold.filter(function (a) { return a.native; })[0];
+      // The SPENDABLE figure, not the balance: reserved XRP cannot reach a taker either.
+      return x ? x.spendable : null;
+    }
+    if (!gets || !gets.currency) return null;
+    var hit = H.lines.filter(function (a) {
+      return a.currency === gets.currency && a.issuer === gets.issuer;
+    })[0];
+    // No trust line is a real zero — the account cannot deliver a token it does not hold at all.
+    // H.lines covers every line read, including the zero-balance ones, so this is a finding not a gap.
+    return hit ? hit.spendable : 0;
+  }
+
+  // A RULE, NOT AN INLINE COLOUR. --yellow is the design's own caution colour in both themes
+  // (#d97706 light, #ffb547 dark) but it is not defined on every page this dialog reaches, and an
+  // inline fallback can only carry one of the two — which painted the light amber on a dark ground.
+  // A stylesheet lets --yellow win where it exists and each theme fall back to its own value where
+  // it does not, including after the reader toggles the theme. Not red: nothing has failed and
+  // nothing is at risk — the ledger simply cannot deliver what is not there.
+  function warnCss() {
+    if (document.getElementById('lxo-warn-css')) return;
+    var st = document.createElement('style');
+    st.id = 'lxo-warn-css';
+    st.textContent = '.lxo-warn{margin-top:9px;font-size:11.5px;font-weight:600;line-height:1.45;'
+      + 'color:var(--yellow,#d97706)}'
+      + 'html[data-theme="dark"] .lxo-warn{color:var(--yellow,#ffb547)}'
+      // The second line under a leg's figure, matching .lx-ordsub on the wallet page so the two
+      // surfaces state the same fact the same way.
+      + '.lxo-sub{margin-top:3px;font-size:10.5px;font-weight:600;line-height:1.3;'
+      + 'color:var(--yellow,#d97706)}'
+      + 'html[data-theme="dark"] .lxo-sub{color:var(--yellow,#ffb547)}';
+    document.head.appendChild(st);
+  }
+
+  // A fill figure is read, not audited: seven decimals on an eighteen-million-token number is noise,
+  // while on a fraction of one token it is the whole value. Decimals follow the magnitude.
+  function covDp(n) {
+    n = Math.abs(Number(n) || 0);
+    return n >= 1e4 ? 0 : n >= 1e2 ? 2 : n >= 1 ? 4 : 6;
+  }
+
+  // Rewrites a leg's figure (.q) and hangs a quieter second line under the whole column. floorTo
+  // before formatting, never toLocaleString's rounding: a coverage number that rounds UP claims the
+  // order delivers more than the balance holds, which is the error this line exists to prevent.
+  function subLeg(col, main, sub) {
+    if (!col) return;
+    var q = col.querySelector('.q');
+    if (q && main != null) { q.textContent = main; q.title = main; }
+    var old = col.querySelector('.lxo-sub');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    if (!sub) return;
+    var s = document.createElement('div');
+    s.className = 'lxo-sub';
+    s.textContent = sub;
+    col.appendChild(s);
+  }
+
+  function coverageNotes(list, offers, seq, stale) {
+    if (!offers.length) return;
+    // Totalled once for the whole list: two offers selling one token draw on one balance, so a row is
+    // judged against the pair of them rather than against itself.
+    var cm = lxx().offerCommitments(offers);
+    loadAccount().then(function () {
+      if (stale() || seq !== ordersSeq) return;
+      // A read that FAILED says nothing about coverage. Treating an unreadable account as empty would
+      // stamp a shortfall warning on every order on the page ([[never-cache-a-failure-as-an-answer]]).
+      if (H.failed || H.who !== addr()) return;
+      [].forEach.call(list.querySelectorAll('.lxo-o'), function (row) {
+        var o = row.__lxoffer;
+        if (!o) return;
+        var have = balanceFor(o.taker_gets);
+        if (have == null) return;
+        var cov = lxx().offerCoverage(cm[lxx().offerAssetKey(o.taker_gets)], have);
+        if (cov.funded) return;
+        var code = fromRaw(o.taker_gets).asset.code;
+        warnCss();
+
+        // THE FIGURES CARRY IT, not a sentence below them — the wallet page's rows do the same, and
+        // the two surfaces must not describe one order in two different ways. The Selling leg shows
+        // what can actually be delivered and the placed size moves to a second line beneath it.
+        var sell = fromRaw(o.taker_gets), recv = fromRaw(o.taker_pays);
+        var legs = row.querySelectorAll('.lxo-top .lxo-col');
+        if (cov.count === 1 && legs.length >= 2 && sell.value > 0) {
+          var tot = recv.value * (cov.covered / sell.value);
+          subLeg(legs[0], fmt(floorTo(cov.covered, covDp(cov.covered)), covDp(cov.covered)),
+            'of ' + fmt(sell.value, covDp(sell.value)) + ' placed');
+          subLeg(legs[1], fmt(floorTo(tot, covDp(tot)), covDp(tot)),
+            'of ' + fmt(recv.value, covDp(recv.value)) + ' ' + recv.asset.code);
+          return;
+        }
+
+        // Several orders on one token share one balance and the book picks the order they fill in, so
+        // "how much of THIS one" has no answer. The legs keep this order's own size; one line states
+        // what stays true regardless.
+        var w = document.createElement('div');
+        w.className = 'lxo-warn';
+        w.textContent = 'Your ' + cov.count + ' open ' + code + ' orders need '
+          + fmt(cov.promised, covDp(cov.promised)) + ' — you hold '
+          + fmt(floorTo(cov.covered, covDp(cov.covered)), covDp(cov.covered)) + '.';
+        var ft = row.querySelector('.lxo-ft');
+        if (ft) row.insertBefore(w, ft); else row.appendChild(w);
+      });
+    }).catch(function () { /* balances unreadable; the orders themselves are still correct */ });
+  }
+
   // RAZA hit "Orders tab taking too long to load" on STELLAR 2026-10-28, and the faults behind it are
   // shared by every fork of this dialog -- see _swapcalc.js for the Horizon measurements (the same
   // request answering in 282ms and in 21.8s). XRPL already had the important half: it goes straight to
@@ -1896,8 +2015,12 @@
         cb.textContent = 'Cancel';
         ft.appendChild(cb);
         row.appendChild(top); row.appendChild(ft);
+        row.__lxoffer = o;
         list.appendChild(row);
       });
+      // AFTER the rows, never before them: the balances are a second read, and an order list that is
+      // already correct must not wait on it.
+      coverageNotes(list, offers, seq, stale);
     }).catch(function () {
       clearTimeout(slow);
       if (stale()) return;
@@ -1912,7 +2035,7 @@
     var seq = +btn.getAttribute('data-off');
     btn.__busy = 1; btn.disabled = true;
     var label = btn.textContent;
-    btn.textContent = 'Confirm…';
+    btn.textContent = 'Signing…';   // Stellar's word for this moment; both XRPL surfaces now use it
     window.lxc.submit({ TransactionType: 'OfferCancel', Account: me, OfferSequence: seq }).then(function (hash) {
       btn.textContent = 'Cancelling…';
       return waitValidated(hash);

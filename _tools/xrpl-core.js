@@ -381,6 +381,113 @@ function readLines(lines) {
   return { held, pools, obligations };
 }
 
+// ---- what open offers have promised --------------------------------------------------------------
+//
+// THE XRP LEDGER DOES NOT RESERVE WHAT AN OFFER SELLS, AND STELLAR DOES. That one difference is the
+// whole reason these three functions exist.
+//
+// On Stellar the protocol holds the tokens: Horizon publishes `selling_liabilities`, a balance can
+// never fall below it, and every Stellar layer in the sibling repo spends `balance - liabilities`.
+// Nothing there can ever promise more than it holds, so nothing there needs to say so.
+//
+// This ledger has no such field because it has no such rule. An offer is a standing promise over a
+// balance that stays entirely spendable, so spending that balance simply leaves the offer UNFUNDED:
+// still in the book, still reporting its full size, able to deliver only what the account actually
+// holds when a taker arrives. The owner is never overdrawn — the shortfall just cannot be delivered.
+//
+// Found on RAZA's own account 2026-11-03: 18,180,172 LUMOS held against an open order for 20,000,000.
+// The order was fully covered when it was placed (balance was ~20,949,403); a 3,000,000 payment went
+// out one sequence LATER and nothing anywhere mentioned it again. Both order surfaces printed
+// `taker_gets` raw, and no write path had ever read account_offers at all.
+//
+// Pure on purpose — the pages hand in the array they already fetched, and the node tests can hold
+// these against fixtures without a transport.
+
+// Keys an offer's sold side the way the rest of this file keys a trust line: currency + issuer, or
+// the bare string 'XRP'. account_offers reports drops as a STRING for XRP and an object otherwise,
+// which is exactly the discrimination made here.
+function offerAssetKey(amount) {
+  if (amount == null) return '';
+  if (typeof amount === 'string' || typeof amount === 'number') return 'XRP';
+  if (!amount.currency) return '';
+  return amount.currency + ':' + (amount.issuer || '');
+}
+
+// Totals what every open offer is promising to DELIVER, per asset, with the number of offers behind
+// each total. `taker_gets` is what the owner gives up, and from the owner's side an offer is always a
+// sell of it — there is no buy-side offer on this ledger to mirror.
+//
+// Summed rather than reported per offer because several offers on one asset SHARE one balance: the
+// book fills them in its own order, so "how much of this particular order can fill" has no answer,
+// while "your open ORDERS promise X and you hold Y" is true however many there are.
+function offerCommitments(offers) {
+  const out = {};
+  for (const o of (offers || [])) {
+    const gets = o && o.taker_gets;
+    const key = offerAssetKey(gets);
+    if (!key) continue;
+    const v = key === 'XRP' ? Number(gets) / XRP_DROPS : Number(gets.value);
+    if (!(v > 0)) continue;
+    const e = out[key] || (out[key] = { amount: 0, count: 0 });
+    e.amount += v;
+    e.count += 1;
+  }
+  return out;
+}
+
+// How much of what the open orders promise can actually be delivered right now.
+//
+// `balance` must be the SPENDABLE figure — for XRP that is already net of the reserve, which is the
+// honest comparison: reserved XRP cannot be delivered to a taker either.
+//
+// A missing commitment is `funded: true` with everything zero, so a caller can hand in whatever
+// offerCommitments() gave it for an asset without testing for undefined first.
+function offerCoverage(commitment, balance) {
+  const promised = (commitment && Number(commitment.amount)) || 0;
+  const have = Math.max(0, Number(balance) || 0);
+  const covered = Math.min(promised, have);
+  return {
+    promised: promised,
+    covered: covered,
+    short: Math.max(0, promised - covered),
+    count: (commitment && Number(commitment.count)) || 0,
+    funded: promised <= have,
+  };
+}
+
+// Every open offer on an account, paged. Same contract as allLines() above and for the same reasons:
+// the caller injects its own rpc, the result keeps the shape a single account_offers call returns, and
+// the page cap stops a pathological account spinning here.
+//
+// 'actNotFound' is an ANSWER, not a failure — an account that exists on no ledger holds no offers — so
+// it resolves empty rather than rejecting. Anything else is left to reject, because a dropped read
+// reported as "no open orders" is the exact mistake qorders.js documents at its own account_offers
+// call: a trader who believes it places the order again.
+function allOffers(rpc, account, opts) {
+  const base = Object.assign({ account: account, limit: 200, ledger_index: 'validated' }, opts || {});
+  const out = [];
+  let pages = 0;
+
+  function next(marker) {
+    const q = Object.assign({}, base);
+    if (marker) q.marker = marker;
+    return rpc('account_offers', q).then(function (r) {
+      if (r && r.error === 'actNotFound') return { offers: [], pages: pages };
+      // A real reply always carries an offers ARRAY. rpc() resolves {} for every transport failure,
+      // so without this an outage reads as an account with nothing committed — which is the one
+      // wrong answer here, because it understates what is promised.
+      if (Object.prototype.toString.call(r && r.offers) !== '[object Array]') {
+        throw new Error('account_offers did not answer');
+      }
+      for (let i = 0; i < r.offers.length; i++) out.push(r.offers[i]);
+      pages++;
+      if (r.marker && pages < 20) return next(r.marker);
+      return { offers: out, pages: pages };
+    });
+  }
+  return next(null);
+}
+
 // ---- limit orders --------------------------------------------------------------------------------
 // An issued-token value exactly as the ledger wants it: a plain decimal string with at most 15
 // significant digits. toPrecision caps the digits but answers in EXPONENT form below 1e-6 or at
@@ -747,6 +854,7 @@ function pathFind(params, direct) {
 }
 
 const LXX = { XRP_DROPS, decodeCurrency, encodeCurrency, isLpToken, spendableXrp, readLines, allLines, isAddress,
+  offerAssetKey, offerCommitments, offerCoverage, allOffers,   // what open offers promise; this ledger reserves nothing
   ledgerPost, retryAfter, ledgerBusyNote,   // the retrying transport every browser rpc() now routes through
   pathFind,                                 // ripple_path_find via our edge; falls back to the caller's own rpc
   currentLedger,                            // where the ledger is, free, for stamping LastLedgerSequence
