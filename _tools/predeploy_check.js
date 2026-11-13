@@ -1,4 +1,6 @@
-// Runs automatically before `npm run deploy` (npm's pre<script> hook). Refuses to publish a build
+// Run it yourself with `npm run check` before handing a build to the combine. It used to fire
+// automatically as npm's pre-hook for `npm run deploy`, which no longer exists -- XRPL does not ship
+// standalone, so there is nothing here for a gate to run in front of. Refuses to publish a build
 // that would leak something. Each check exists because it is a mistake that is easy to make once and
 // impossible to take back — a deployed file is cached, indexed, and scraped within minutes.
 //

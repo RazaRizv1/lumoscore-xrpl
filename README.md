@@ -55,18 +55,17 @@ rough edge, not a design choice.
 ## Building
 
 ```bash
-npm run build     # LOCAL build  -> dist/   (runs extract_site.js with --root)
-npm run serve     # local server on :8082
-npm run idem      # idempotence check
-npm test          # core unit tests
+npm run build         # LOCAL build  -> dist/        (extract_site.js with --root)
+npm run build:deploy  # SHIPPING build -> dist/xrpl/  (non-root; what the combine reads)
+npm run serve         # local server on :8082
+npm run check         # the predeploy gate
+npm run idem          # idempotence check
+npm test              # core unit tests
 ```
 
 ⚠️ **`npm run build` is not the build that ships.** It passes `--root`, which lays the site out at the
-root for local browsing. The build that goes into the combined site is **non-root**:
-
-```bash
-node _tools/extract_site.js xrpl        # -> dist/xrpl/
-```
+root for local browsing. The build that goes into the combined site is the non-root
+`npm run build:deploy`, which writes `dist/xrpl/`.
 
 A leftover `--root` build sitting in `dist/*.html` will be served in preference to `dist/xrpl/`, which
 is a reliable way to spend an hour testing the wrong files.
@@ -93,15 +92,16 @@ are owned by the Stellar repository and synced in:
 
 ```bash
 npm run sync:functions    # pull the shared Functions from C:\LumosCore
-npm run predeploy         # among other checks, verifies the copies are in sync
+npm run check             # among other checks, verifies the copies are in sync
 ```
 
 Edit a shared Function **in the Stellar repository** and sync it here. Editing the copy means the next
 sync silently overwrites your change.
 
-`npm run deploy` in `package.json` targets a Pages project named `lumoscore-xrpl`. **That project does
-not exist.** The script is a leftover from before the combined build; it will fail, and it is not the
-release path.
+`npm run deploy` now **refuses and explains**. It used to run a wrangler deploy against a Pages
+project named `lumoscore-xrpl` — a project that does not exist, and whose name wrangler would have
+offered to *create*, producing a stray public site serving a half-built tree. XRPL has no standalone
+deploy; `npm run build:deploy` then the combine is the whole release path.
 
 ---
 
