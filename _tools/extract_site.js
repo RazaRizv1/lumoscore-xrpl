@@ -486,13 +486,24 @@ const ROUTES = [
   // THE LUMOS PAGE IS /lumos/xrpl, as Stellar's is /lumos/stellar (RAZA 2026-09-15). Bare /lumos 301s
   // here — see "1a2" in the middleware.
   ['/lumos/xrpl',                'lumoscore-lumos-token.html'],
-  // MCP IS SERVED BY THIS BUILD (RAZA 2026-09-15: "MCP page links to the main website instead of XRPL for
-  // staging"). The page is the design's own; its copy describes the Stellar MCP server.
-  // Qualified for the same reason as the block above, not dropped. Stellar serves the company's own
-  // /mcp and /list-your-token and keeps those urls; these are this build's copies of the same pages,
-  // reachable where they cannot take a url that is not theirs. If they should simply defer to the
-  // originals on lumoscore.com, deleting these two lines is the whole change.
-  ['/mcp/xrpl',                  'lumoscore-mcp.html'],
+  // THE MCP SERVER HAS ONE URL FOR EVERY NETWORK. /mcp/xrpl IS GONE — see the 301 in ALIASES.
+  //
+  // It was added 2026-09-15, when this fork was deployed ON ITS OWN and a bare /mcp did not resolve
+  // there -- RAZA then: "MCP page links to the main website instead of XRPL for staging". That
+  // premise expired when the site became one combined deploy: /mcp has resolved on every chain's
+  // pages since, so the qualified copy was a second url for a page that was never per-chain.
+  //
+  // RAZA 2026-11-15: "We never had network based page for mcp. its supposed to be just one link for
+  // all networks. lumoscore.com/mcp (valid for all 3 networks and beyond)".
+  //
+  // REMOVED FROM ALL FOUR FORKS IN ONE CHANGE, because combine.js writes ONE generic redirect block
+  // with a :chain placeholder and asserts every fork's routes are identical once its own id is
+  // substituted out ("these forks route differently from xrpl, so one generic block cannot describe
+  // them"). Dropping it here alone makes the shapes differ and the whole combined build refuses to
+  // produce. XRPL, NEAR, Arc and Hedera went together.
+  //
+  // /list-your-token/xrpl is a separate url with the same history. RAZA named only MCP, and retiring
+  // a live url is a product decision, not a tidy-up.
   ['/list-your-token/xrpl',      'lumoscore-list-token.html'],
 ];
 
@@ -508,6 +519,10 @@ const ALIASES = [
 
   // The old bare "/xrpl" entrance, and every /xrpl/<section> url, are redirected by the middleware
   // ("1a") rather than here: one table, next to the routes it points at.
+
+  // /mcp/xrpl was a real page until 2026-11-15 — see the note where its ROUTES line used to be. It
+  // 301s rather than 404ing because it was live for two months and may be linked or indexed.
+  ['/mcp/xrpl', '/mcp'],
 ];
 
 const CASE_FIXES = [

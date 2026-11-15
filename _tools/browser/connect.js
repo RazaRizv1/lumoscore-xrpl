@@ -1088,10 +1088,22 @@
       var list = document.createElement('div');
       list.className = 'lxx-list';
 
-      [
+      // THE LIST IS PATCHED BY THE COMBINER, exactly as lx-mc's ORDER is on Stellar's pages.
+      //
+      // It used to be a two-entry array literal written straight into this call, from the days when
+      // Stellar and XRP Ledger were the only networks. NEAR shipped in November and never reached it,
+      // so /trade/xrpl offered two networks while /trade and /trade/near offered three (RAZA
+      // 2026-11-15: "why here its not showing near network selection?"). combine.js skips XRPL's pages
+      // when it widens lx-mc — they carry no lx-mc at all — so nothing else was ever going to fix this.
+      //
+      // Stellar and XRP Ledger stay here as the baseline, because those are the two a standalone XRPL
+      // deployment serves. combine.js appends whatever forks the deployment actually has, and ABORTS
+      // if it cannot find this anchor. KEEP THE `var NETS = [` ... `];` SHAPE — that is the anchor.
+      var NETS = [
         { id: 'stellar', name: 'Stellar', sub: 'Connect on Stellar', logo: '/assets/networks/stellar.png' },
         { id: 'xrpl', name: 'XRP Ledger', sub: 'Connect on XRP Ledger', logo: '/assets/networks/xrpl.png' }
-      ].forEach(function (n) {
+      ];
+      NETS.forEach(function (n) {
         var b = document.createElement('button');
         b.className = 'lxx-row'; b.type = 'button';
         var ic = document.createElement('span');
@@ -1386,9 +1398,22 @@
       //
       // `home` is where the reader started sign-in, when this is a phone coming back from the Xaman
       // app. Falling back to the dashboard keeps every other entry point behaving as before.
+      // WITH NO home, STAY WHERE THE READER IS — do not fall back to the dashboard.
+      //
+      // The fallback used to be the literal '/dashboard', so connecting from /trade/xrpl threw the
+      // reader onto the dashboard and lost the page they were working on (RAZA 2026-11-15: "it
+      // shouldn't redirect to dashboard. it should just keep the user to the same page just like its
+      // happening on Near and Steller"). Stellar never did this: _connectgate.js hands its own opener
+      // location.href, so its Continue lands back on the same page.
+      //
+      // The in-page callers — ui.done(addr, '') from resume() and from the chip's open() — pass no
+      // home at all, which is precisely the case this decides. The Xaman phone round trip still
+      // passes HOME explicitly and is untouched: that one genuinely starts somewhere else.
+      var here = '/';
+      try { here = (window.location.pathname || '/') + (window.location.search || ''); } catch (e) {}
       var mount = window.__lxwDesignOpen
         || (typeof window.lxwOpenWallet === 'function' ? window.lxwOpenWallet : null);
-      if (typeof mount === 'function') { try { mount('xrpl', home || '/dashboard'); } catch (e) {} }
+      if (typeof mount === 'function') { try { mount('xrpl', home || here); } catch (e) {} }
       var scr = document.querySelectorAll('.lxw-screen');
       if (!scr.length) return false;                 // genuinely no design modal on this page
       try {
@@ -1465,11 +1490,16 @@
     trade: 1, pools: 1, bridge: 1, rewards: 1, lumos: 1, launchpad: 1
   };
   var CHAINLESS = { mcp: 1, 'list-your-token': 1 };
-  function stellarCounterpart() {
+  // The same section on ANOTHER chain. Takes the chain id so the network chooser can hand off to any
+  // network the combiner put in NETS, not only to Stellar — it was stellarCounterpart() when Stellar
+  // was the only other network, and a NEAR row added to the list would silently have gone to Stellar.
+  // The chain is still JOINED ON AT RUNTIME and never written as a whole path, for the reason given
+  // above: a transform in this build's chain rewrites literal chain paths and does it silently.
+  function counterpart(chain) {
     var seg = '';
     try { seg = (window.location.pathname || '').split('/').filter(Boolean)[0] || ''; } catch (e) {}
     if (CHAINLESS[seg]) return '/' + seg;
-    if (SECTIONS[seg]) return '/' + seg + '/' + CHAIN_S;
+    if (SECTIONS[seg]) return '/' + seg + '/' + (chain || CHAIN_S);
     return '/';
   }
 
@@ -1491,9 +1521,11 @@
       var net = row.getAttribute('data-lxn');
       if (net) {
         if (net === 'xrpl') { try { ui.pick(); } catch (e2) {} return; }
-        // Stellar owns its own wallets. Hand over at the section they are already looking at and let
-        // its flow finish on its dashboard; #connect is the signal its build reads on arrival.
-        try { window.location.href = stellarCounterpart() + '#connect'; } catch (e2) {}
+        // Every other chain owns its own wallets. Hand over at the section they are already looking
+        // at and let that build's flow finish; #connect is the signal it reads on arrival.
+        // The chain comes from the ROW, not from a constant: this used to go to Stellar whatever was
+        // clicked, which is only correct while Stellar is the one other network.
+        try { window.location.href = counterpart(net) + '#connect'; } catch (e2) {}
         return;
       }
 
