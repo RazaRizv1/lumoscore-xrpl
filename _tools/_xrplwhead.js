@@ -75,6 +75,49 @@ const RULES = [
     'xaman:"Xaman",gem:"GemWallet",gemwallet:"GemWallet",',
     'the wallet name',
   ],
+  // ---- the Launch App pill: size and position ------------------------------------------------------
+  //
+  // RAZA, 2026-11-15: "Why does XRPL have smaller button and text on header right". Measured on
+  // production, /trade/xrpl against /trade/stellar and /trade/near — the theme toggle is identical
+  // on all three (19.6x38); only the pill differs:
+  //
+  //     label  14.9px  vs  19.8px        padding  0 22px  vs  0 20px
+  //     gap     8.8px  vs   8px          order    none    vs  order:1  (toggle sits left)
+  //
+  // WHY IT DRIFTED. The pill's CSS has exactly one owner, Stellar's _wallet_header.js, and this fork
+  // owns no copy of it — connect.js says so at its chip builder: "lx-whead, which this project does
+  // not own". The container holds a FROZEN build of it, taken before Stellar's b74e221b (2026-10-30,
+  // "match the app header to the landing page") raised the label 13.5px -> 19.8px and added order:1.
+  // The frozen copy also predates that Stellar build dropping the 1.1x type scale from this block —
+  // it still carries the `/*lxts:1.1*/` marker, which is why the BOX is 10% bigger (22px, 8.8px)
+  // while the TEXT is much smaller. Two different vintages in one rule, so neither number matches.
+  //
+  // NEAR looks correct because its copy was frozen after 2026-10-30. Nothing is wrong with the fork's
+  // own code; the layer simply stopped tracking its source, and only a rewrite here re-syncs it.
+  //
+  // SAFE TO WRITE LITERAL px HERE: _xrpltypescale is deliberately absent from rebuild.js (its note at
+  // line 34 — the Stellar base already carries the 1.1x, so re-running yields 1.21x). These values are
+  // final and will not be scaled again. They are Stellar's current source values, copied exactly.
+  [
+    [
+      '.lx-topwallet.lx-tw-disc{background:var(--accent,#ea6a2c)!important;'
+        + 'border-color:var(--accent,#ea6a2c)!important;color:#fff!important;'
+        + 'justify-content:center;padding:0 22px;gap:8.8px}',
+    ],
+    '.lx-topwallet.lx-tw-disc{background:var(--accent,#ea6a2c)!important;'
+      + 'border-color:var(--accent,#ea6a2c)!important;color:#fff!important;'
+      + 'justify-content:center;padding:0 20px;gap:8px;order:1}',
+    'the launch pill box',
+  ],
+  [
+    [
+      '.lx-tw-cbtn{display:inline-flex;align-items:center;gap:8.8px;'
+        + 'font:700 14.9px/1 "Hanken Grotesk",system-ui,sans-serif;color:#fff;letter-spacing:.01em}',
+    ],
+    '.lx-tw-cbtn{display:inline-flex;align-items:center;gap:8px;'
+      + 'font:700 19.8px/1 "Hanken Grotesk",system-ui,sans-serif;color:#fff;letter-spacing:.01em}',
+    'the launch pill label',
+  ],
 ];
 
 let containers = 0, pages = 0;
