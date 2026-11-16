@@ -172,6 +172,19 @@ const CHAIN = [
   // it belongs beside it at the end. _xrplwrongchain used to do the chain half of this; it does not
   // any more, and the two must not both come back, because two writers on that node is the flash.
   '_xrplwalletlogo',
+  // LAST, AND THAT IS THE POINT. The phone's bottom bar is design markup inside each mobile page
+  // key, not a layer of its own, so ANY transform that rebuilds a page key upstream hands it back
+  // carrying the base's bar again -- Pools, and after 2026-11-16 the base's own Launch tab pointing
+  // at Stellar's launchpad. Running these two at the end means whatever the chain rebuilt is
+  // corrected afterwards rather than before.
+  //
+  // They are also the reason this pair is in the list at all. Registered the day they were written,
+  // rather than left to survive in the containers the way _xrplattrib and _xrpllumoslinks once did:
+  // a `rebuild.js --base` would have silently put Pools back on 37 pages with no error anywhere.
+  // _xrplnavlaunch re-pins the href on EVERY bar on every run, so inheriting Stellar's tab is
+  // self-correcting; _xrpllaunchbar then gives the launchpad page its own bar, Launch lit.
+  '_xrplnavlaunch',
+  '_xrpllaunchbar',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {

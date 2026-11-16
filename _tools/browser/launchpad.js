@@ -858,7 +858,11 @@
       paintCosts();
       watchCosts();
     };
-    fetch('/lxapi/xrplprices')
+    // `rate=1`, because the two fields read below are the only ones this page wants and the full
+    // answer is ~77KB of 601 token prices. RAZA, 2026-11-16, of this page on a phone: "why isn't it
+    // showing the cost" — the rate lost the eight-second race above and every cost cell became an
+    // em dash. Same numbers, same cache, a fraction of the bytes. See functions/lxapi/xrplprices.js.
+    fetch('/lxapi/xrplprices?rate=1')
       .then(function (r) { return r.json(); })
       .then(function (p) {
         if (p && p.ok && p.usd > 0) {

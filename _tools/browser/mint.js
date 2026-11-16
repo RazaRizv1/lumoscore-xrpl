@@ -625,7 +625,10 @@
       // The rate is fetched HERE rather than read from a global the form page sets. This page does
       // not run the form's layer, so that global is never set on the review step -- and a missing
       // rate would silently price the fee at zero.
-      Promise.all([rpc('server_info', {}), fetch('/lxapi/xrplprices').then(function (r) { return r.json(); })])
+      // `rate=1`: this reads `ok` and `usd` and nothing else, so it does not need the ~77KB table of
+      // 601 token prices the full answer carries. Same cache, same numbers — see the form page and
+      // functions/lxapi/xrplprices.js.
+      Promise.all([rpc('server_info', {}), fetch('/lxapi/xrplprices?rate=1').then(function (r) { return r.json(); })])
         .then(function (both) {
         var j = both[0], p = both[1];
         var rate = (p && p.ok && p.usd > 0) ? p.usd : null;
