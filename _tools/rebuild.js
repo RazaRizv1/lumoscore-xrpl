@@ -185,6 +185,27 @@ const CHAIN = [
   // self-correcting; _xrpllaunchbar then gives the launchpad page its own bar, Launch lit.
   '_xrplnavlaunch',
   '_xrpllaunchbar',
+  // Byte-identical to Stellar's _tools/_poolprefill.js, and that is deliberate: the deposit card is
+  // the same markup on both chains, so the layer that fills it from a link is the same file. It is
+  // matched to its row BY ASSET CODE rather than by reading the pair out of the path, because the two
+  // chains do not share a pool url shape -- /pools/stellar/<a>/<b> against /pools/xrpl/id/<account>.
+  //
+  // REGISTERED THE DAY IT WAS WRITTEN, for the reason spelled out above _xrplattrib: a transform that
+  // lives only in the containers is one a `rebuild.js --base` deletes with no error. It also has to
+  // be here because mcp/xrpl.js now drops its NOFILL notice for add_liquidity -- the connector claims
+  // the link prefills, so the page had better read it.
+  '_poolprefill',
+  // Byte-identical to Stellar's _tools/_bridgeprefill.js, same reasoning as _poolprefill above: the
+  // bridge is the same three-step wizard on both chains, so one file serves both.
+  //
+  // It sets the destination network on step 1 and the receiving address on step 2, and deliberately
+  // does NOT set the asset or the amount -- the asset picker lists a connected wallet's balances and
+  // opens nothing until one is connected, and step 2's amount ships as a <div>, not a field. The
+  // header of that file has the measurements. Registered the day it was written, same as the above,
+  // and for the harder reason here: mcp/xrpl.js no longer sends NOFILL for bridge, so the connector
+  // now tells people the link arrives set up. A `rebuild.js --base` that quietly dropped this layer
+  // would turn that into a lie on the one page that moves funds between chains.
+  '_bridgeprefill',
 ];
 
 if (process.argv.indexOf('--base') >= 0) {
