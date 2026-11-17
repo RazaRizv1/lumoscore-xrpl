@@ -254,9 +254,19 @@
     function nav(e) {
       var t = e.target;
       if (!t || !t.closest) return;
+      // THE PHONE HAS NO #poolsBody (RAZA 2026-11-17, phone screenshots: "when im tapping on any pool, it
+      // takes me to lumoscore.com/pools/stellar"). Its pools are a.pool-card anchors in #panelAll, and its
+      // positions a.pool-card.my-pos in #panelMine (card() here, posCard() in mypositions.js). This handler
+      // only knew the desktop table, so on a phone it returned and the design's router sent every tap to
+      // the Stellar route shape -- exactly the September bug, still open on the layout nobody re-measured.
+      // Only cards THIS layer built are claimed: the href must already be one of ours.
+      var a = null;
       var tr = t.closest('#poolsBody tr');
-      if (!tr) return;
-      var a = tr.querySelector('a.pool-pair');
+      if (tr) a = tr.querySelector('a.pool-pair');
+      if (!a) {
+        var card = t.closest('a.pool-card');
+        if (card && /^\/pools\/xrpl\/id\//.test(card.getAttribute('href') || '')) a = card;
+      }
       if (!a) return;
       if (e.button != null && e.button !== 0 && e.button !== 1) return;   // right-click: leave it alone
       e.preventDefault();

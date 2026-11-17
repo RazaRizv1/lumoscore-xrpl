@@ -1205,9 +1205,9 @@
       var nm = row.querySelector('.mp-asset-name, .mpm-asset-name');
       if (nm) { nm.setAttribute('data-logoed', '1'); nm.textContent = s.name; }
       var amtEl = row.querySelector('.mp-asset-amt, .mpm-asset-amt');
-      if (amtEl && !p.myLp) amtEl.textContent = '0';
+      if (amtEl && !p.myLp && p.myLp !== null) amtEl.textContent = '0';    // null = unread: leave the dash
     });
-    if (!p.myLp) bothPos('fee-val').forEach(function (v, i) { v.textContent = (i % 2 === 0) ? '—' : '0'; });
+    if (!p.myLp && p.myLp !== null) bothPos('fee-val').forEach(function (v, i) { v.textContent = (i % 2 === 0) ? '—' : '0'; });
   }
 
   // THE WHOLE PAGE WAS INVISIBLE, and every DOM check said it was fine.
@@ -1315,8 +1315,21 @@
   // same thing twice in two places.
   function dwOk(msg) { dwSay(''); dwToast(msg); }
 
+  // THE DEPOSIT BOX HAS NO .dw-card ON A PHONE (RAZA 2026-11-17: typing an amount on the phone did
+  // nothing -- the other side stayed 0.00, the share stayed "—"). Desktop wraps the box in .dw-card;
+  // the phone page puts the very same parts (.dw-tabs, #dwDeposit, #dwWithdraw, .dw-summary, .dw-cta)
+  // straight into a .card-body. Both callers below required .dw-card, so on a phone wireDw() returned
+  // before binding a single control -- tabs, inputs, MAX, %, Add Liquidity -- and dwSay() dropped every
+  // message. The box is whatever holds #dwDeposit; .dw-card stays first so desktop is unchanged.
+  function dwBox() {
+    var c = $('.dw-card');
+    if (c) return c;
+    var d = $('#dwDeposit');
+    return (d && d.parentElement && d.parentElement.querySelector('.dw-cta')) ? d.parentElement : null;
+  }
+
   function dwSay(text, tone) {
-    var card = $('.dw-card');
+    var card = dwBox();
     if (!card) return;
     var box = $('.lxx-dwsay', card);
     if (!box) {
@@ -1463,15 +1476,27 @@
     $$('.mp-asset-name').forEach(function (n) { n.setAttribute('data-logoed', '1'); n.textContent = '—'; });
   }
 
+  // Said wherever a figure could not be read: the panel, the MAX / % buttons, Add / Remove.
+  var READFAIL = "Couldn't read your balance. Reload to try again.";
+
   function loadPosition() {
     var me = addr(), p = window.__lxxPool;
     clearMockPosition();
     if (!me || !p) { paintPositionIdentity(); return; }
+    // A FAILED READ IS NOT A ZERO BALANCE (RAZA 2026-11-17, phone screenshots: the pool's 22% holder
+    // read "You have no liquidity in this pool", RLUSD "Balance: 0", "Pool share after 0.0001%" when
+    // account_lines failed). Every .catch below returned null, and null was then read as an empty
+    // trust-line list -- "we could not ask" and "you hold nothing" were the same value. Now a read
+    // that FAILED leaves its figures null (unknown), and only the ledger's own actNotFound -- an
+    // account that does not exist yet, which really does hold nothing -- counts as zero.
+    // Same rule as a-price-we-could-not-read-is-not-no-price.
+    function absent(e) { return !!(e && e.code === 'actNotFound'); }
     Promise.all([
-      rpc('account_info', { account: me, ledger_index: 'validated' }).catch(function () { return null; }),
-      window.lxx.allLines(rpc, me).catch(function () { return null; }),
+      rpc('account_info', { account: me, ledger_index: 'validated' }).catch(function (e) { return absent(e) ? {} : null; }),
+      window.lxx.allLines(rpc, me).catch(function (e) { return absent(e) ? { lines: [] } : null; }),
       rpc('server_info', {}).catch(function () { return null; })
     ]).then(function (r) {
+      var infoRead = r[0] !== null, linesRead = r[1] !== null;
       var info = r[0] && r[0].account_data;
       var lines = (r[1] && r[1].lines) || [];
       var si = r[2] && r[2].info && r[2].info.validated_ledger;
@@ -1479,19 +1504,21 @@
 
       function balOf(raw) {
         if (typeof raw === 'string') {
+          if (!infoRead) return null;                    // could not ask: unknown, not zero
           if (!info) return 0;
           var xrp = Number(info.Balance) / 1e6;
           var locked = base + inc * (Number(info.OwnerCount) || 0);
           return Math.max(0, xrp - locked);            // spendable, never the raw balance
         }
+        if (!linesRead) return null;                     // could not ask: unknown, not zero
         for (var i = 0; i < lines.length; i++) {
           if (lines[i].currency === raw.currency && lines[i].account === raw.issuer) return Number(lines[i].balance);
         }
         return 0;
       }
 
-      var myLp = 0;
-      if (p.lpToken) {
+      var myLp = linesRead ? 0 : null;
+      if (p.lpToken && linesRead) {
         for (var i = 0; i < lines.length; i++) {
           if (lines[i].currency === p.lpToken.currency && lines[i].account === p.lpToken.issuer) {
             myLp = Number(lines[i].balance); break;
@@ -1510,10 +1537,10 @@
         var f = fields[i];
         if (!f) return;
         var bal = f.querySelector('.balance');
-        if (bal) bal.textContent = 'Balance: ' + num(pair[0], 6);   // the asset is named in the row below, as on Stellar
+        if (bal) bal.textContent = 'Balance: ' + (pair[0] == null ? '—' : num(pair[0], 6));   // the asset is named in the row below, as on Stellar
       });
       var wbal = $('#dwWithdraw .balance');
-      if (wbal) wbal.textContent = 'Your LP: ' + (myLp > 0 && myLp < 0.000001 ? myLp.toFixed(12).replace(/0+$/, '') : num(myLp, 6));
+      if (wbal) wbal.textContent = 'Your LP: ' + (myLp == null ? '—' : (myLp > 0 && myLp < 0.000001 ? myLp.toFixed(12).replace(/0+$/, '') : num(myLp, 6)));
 
       paintMyPosition();
       liftDw();
@@ -1540,6 +1567,18 @@
   function paintMyPosition() {
     var p = window.__lxxPool;
     if (!p) return;
+    // The LP balance could not be read. Every figure in this panel is derived from it, so none is
+    // written, and the line under the figure says so instead of "You have no liquidity in this pool".
+    if (p.myLp === null) {
+      paintPositionIdentity();
+      bothPos('asset-amt').forEach(function (a) { a.textContent = '—'; });
+      bothPos('fee-val').forEach(function (v) { v.textContent = '—'; });
+      bothPos('amount').forEach(function (a) { a.textContent = '—'; });
+      bothPos('pnl').forEach(function (p2) {
+        p2.innerHTML = '<span style="color:var(--text-muted)">' + READFAIL + '</span>';
+      });
+      return;
+    }
     var share = (p.lpSupply > 0 && p.myLp > 0) ? (p.myLp / p.lpSupply) : 0;
 
     // BOTH PANELS. Every selector below used to name the desktop family only, so a real position
@@ -1627,6 +1666,7 @@
         if (out) out.textContent = num(x, 6);
       });
     }
+    if (p.myLp == null) { setSummary('pool share', '—'); return; }
     var after = (p.lpSupply > 0) ? Math.max(0, (p.myLp - v)) / Math.max(1e-9, (p.lpSupply - v)) : 0;
     setSummary('pool share', (after * 100).toFixed(4) + '%');
   }
@@ -1646,6 +1686,7 @@
       var va = parseFloat(String(i.a.value).replace(/,/g, ''));
       var vb = parseFloat(String(i.b.value).replace(/,/g, ''));
       if (!(va > 0) || !(vb > 0)) { dwSay('Enter an amount to deposit.', 'bad'); return; }
+      if (p.balA === null || p.balB === null) { dwSay(READFAIL, 'bad'); return; }
       if (va > p.balA) { dwSay('You only have ' + num(p.balA, 6) + ' ' + p.a.name + ' available.', 'bad'); return; }
       if (vb > p.balB) { dwSay('You only have ' + num(p.balB, 6) + ' ' + p.b.name + ' available.', 'bad'); return; }
       dwSay('Approve the deposit in your wallet…');
@@ -1670,6 +1711,7 @@
     var v = parseFloat(String(i.lp.value).replace(/,/g, ''));
     var withdrawAll = !!(i.lp.__lxxAll && i.lp.value === i.lp.__lxxAllVal && p.myLp > 0);
     if (!(v > 0) && !withdrawAll) { dwSay('Enter how many LP tokens to withdraw.', 'bad'); return; }
+    if (p.myLp === null) { dwSay(READFAIL, 'bad'); return; }
     if (!withdrawAll && v > p.myLp) { dwSay('You hold ' + num(p.myLp, 6) + ' LP tokens.', 'bad'); return; }
     if (!p.lpToken) { dwSay('This pool has no LP token to withdraw.', 'bad'); return; }
     // TOO SMALL FOR THE LEDGER TO RETURN (RAZA 2026-09-16: "Its not letting me withdraw the liq because the liq is too small" —
@@ -1715,7 +1757,7 @@
 
   function wireDw() {
     if (window.__lxxDwWired) return;
-    var card = $('.dw-card');
+    var card = dwBox();
     if (!card) return;
     window.__lxxDwWired = 1;
 
@@ -1748,6 +1790,7 @@
         if (!p) return;
         var ii = dwInputs();
         var bal = k === 0 ? p.balA : p.balB;
+        if (bal === null) { dwSay(READFAIL, 'bad'); return; }
         var side2 = k === 0 ? p.a : p.b;
         // XRP keeps a little back for the transaction cost; the balance shown is already
         // reserve-adjusted, so this is only the fee.
@@ -1764,6 +1807,7 @@
         var t = (btn.textContent || '').trim().toLowerCase();
         var f = t === 'max' ? 1 : (parseFloat(t) / 100);
         if (!(f > 0)) f = 1;
+        if (p.myLp === null) { dwSay(READFAIL, 'bad'); return; }
         ii.lp.value = String(+(p.myLp * f).toFixed(6));
         // MAX MEANS EVERYTHING (RAZA 2026-09-16: "When i withdrew MAX liquidity … it left behind tiny amount"): the box shows six
         // decimals, so the withdrawal is tfWithdrawAll rather than the rounded number.

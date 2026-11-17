@@ -112,36 +112,68 @@
   // FIFTEEN-MINUTE FIGURES (RAZA 2026-09-16: "load the details for pools every 15 mins so that for the user it doesn't load in
   // real time"). The last figures are kept in this browser and shown at once; they are asked for again only once they are
   // fifteen minutes old.
-  var PK = 'lumos.dash.pools', pc = null;
-  try { pc = JSON.parse(localStorage.getItem(PK) || 'null'); } catch (e) {}
-  if (pc && pc.v) { set('ppool', pc.v.ppool); set('ptvl', pc.v.ptvl); set('pvol', pc.v.pvol); }
-  if (!(pc && pc.v && Date.now() - pc.t < 15 * 60000)) {
-    var pv = {};
-    j('/lxapi/xrplpools').then(function (p) {
-      if (!p || p.ok !== true) return;
-      if (p.total != null) { pv.ppool = num(p.total); set('ppool', pv.ppool); }
-      var s = p.summary || {};
-      // The pool figures are in XRP and need the rate, which lives on the tokens endpoint.
-      return j('/lxapi/xrpltokens').then(function (t) {
-        var r = rate(t);
+  //
+  // THE TRADE CARD NOW KEEPS THE SAME FIFTEEN MINUTES (RAZA 2026-11-17, phone screenshot of both cards
+  // still grey: "why it's taking so long for these seconds to load"). Only Pools had the rule; Trade
+  // asked live on EVERY visit. And the Pools card waited for its two requests ONE AFTER THE OTHER
+  // (xrplpools, then xrpltokens for the rate) while Trade asked xrpltokens a second time on its own.
+  // Measured on lumoscore.com: xrpltokens is ~0.1s warm, 0.5-0.7s when its 2-minute edge cache is
+  // cold, and ~1.6s per request -- uncached -- while xrpl.to answers 429; on a busy phone page the same
+  // call took 1.1s. So: both endpoints are asked AT ONCE, xrpltokens ONCE, and each card shows its last
+  // figures immediately and does not ask again inside fifteen minutes. Inside the window nothing is
+  // re-fetched, so a figure never visibly swaps to a newer one (the guardrails' flash rule); a card is
+  // only cached when ALL of its figures arrived, so an unknown is never restored as an answer.
+  function cached(k) {
+    var c = null;
+    try { c = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) {}
+    return (c && c.v) ? c : null;
+  }
+  function fresh(c) { return !!(c && Date.now() - c.t < 15 * 60000); }
+  function keep(k, v) { try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), v: v })); } catch (e) {} }
+
+  var PK = 'lumos.dash.pools', pc = cached(PK);
+  var TK = 'lumos.dash.trade', tc = cached(TK);
+  if (pc) { set('ppool', pc.v.ppool); set('ptvl', pc.v.ptvl); set('pvol', pc.v.pvol); }
+  if (tc) { set('tvol', tc.v.tvol); set('tliq', tc.v.tliq); set('tmkt', tc.v.tmkt); }
+  var needPools = !fresh(pc), needTrade = !fresh(tc);
+
+  if (needPools || needTrade) {
+    // One request each, both in flight together. The tokens answer carries the XRP->USD rate that
+    // the pool figures (in XRP) also need, so both cards are served from it.
+    var tokens = j('/lxapi/xrpltokens').catch(function () { return null; });
+    var pools = needPools ? j('/lxapi/xrplpools').catch(function () { return null; }) : null;
+
+    if (needTrade) {
+      tokens.then(function (t) {
+        if (!t || t.ok !== true) return;
+        var st = t.stats || {}, r = rate(t), tv = {};
+        // MARKETS is the count of tokens actually traded in the last 24h, not the 20k that merely exist.
+        // A card headed "Markets" beside a 24h volume should be counting live ones.
+        if (st.tradedTokens24 != null) { tv.tmkt = num(st.tradedTokens24); set('tmkt', tv.tmkt); }
         if (!r) return;
+        if (st.dexVol24 > 0) { tv.tvol = usd(st.dexVol24 * r); set('tvol', tv.tvol); }
+        if (st.tvl > 0) { tv.tliq = usd(st.tvl * r); set('tliq', tv.tliq); }
+        if (tv.tmkt && tv.tvol && tv.tliq) keep(TK, tv);
+      });
+    }
+
+    if (needPools) {
+      var pv = {};
+      // The count needs nothing else, so it is painted the moment the pools answer lands.
+      pools.then(function (p) {
+        if (p && p.ok === true && p.total != null) { pv.ppool = num(p.total); set('ppool', pv.ppool); }
+      });
+      Promise.all([pools, tokens]).then(function (x) {
+        var p = x[0], r = rate(x[1]);
+        if (!p || p.ok !== true || !r) return;
+        // The pool figures are in XRP and need the rate, which lives on the tokens endpoint.
+        var s = p.summary || {};
         if (s.liquidity > 0) { pv.ptvl = usd(s.liquidity * r); set('ptvl', pv.ptvl); }
         if (s.vol24 > 0) { pv.pvol = usd(s.vol24 * r); set('pvol', pv.pvol); }
-        if (pv.ppool && pv.ptvl && pv.pvol) { try { localStorage.setItem(PK, JSON.stringify({ t: Date.now(), v: pv })); } catch (e) {} }
+        if (pv.ppool && pv.ptvl && pv.pvol) keep(PK, pv);
       });
-    }).catch(function () {});
+    }
   }
-
-  j('/lxapi/xrpltokens').then(function (t) {
-    if (!t || t.ok !== true) return;
-    var st = t.stats || {}, r = rate(t);
-    // MARKETS is the count of tokens actually traded in the last 24h, not the 20k that merely exist.
-    // A card headed "Markets" beside a 24h volume should be counting live ones.
-    if (st.tradedTokens24 != null) set('tmkt', num(st.tradedTokens24));
-    if (!r) return;
-    if (st.dexVol24 > 0) set('tvol', usd(st.dexVol24 * r));
-    if (st.tvl > 0) set('tliq', usd(st.tvl * r));
-  }).catch(function () {});
 
   // ---- Launchpad ---------------------------------------------------------------------------------
   // The toml is the launchpad's own declaration of what it minted, so it answers "how many" exactly.
