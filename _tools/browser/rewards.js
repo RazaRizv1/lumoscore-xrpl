@@ -26,20 +26,33 @@
   // Verified on mainnet: 412.5 XRP / 17,075,469 LUMOS, fee 0.625%.
   var NATIVE_POOL = 'rnPQqk3cfHyqSyvAGh3AfMtWiszK8zaF4U';
 
-  // The ten Ecosystem pools RAZA supplied, each confirmed by amm_info to be a real AMM with LUMOS
-  // on one side. Pair names are what the LEDGER reported, not what was typed.
-  var ECO = {
-    'r27TeM8xMebVAMHt4aB3BMYw5MB5fULht': '666',
-    'rM6HW3s4WUGuLYwKwRvZx2aai5wk5PR5fz': 'XDawgs',
-    'rhhBo4BXkrhvr17rLdtdwxMjEk1NnTvqUC': 'MXI',
-    'rJZftp95akgYuXXtb2yp23F1cGuHu34pMA': 'BXE',
-    'rEmgwNPCbq6ogmLKThxgee35uCSqfhB83M': 'REAL',
-    'rJnv9wSoSECHzWsNXR7E74hi8mbKX9ZnDM': 'RLUSD',
-    'rsKJxAyfL2AGdTMqz5ZMhBSyiSxqz97g3z': 'ARMY',
-    'rKsz9Dft5yYtbLS1SSG9L6u3LyhgwuWhew': 'FUZZY',
-    'rUHWxx4kodHx3P8WxtkdcjhwDXnr5p9txo': 'BEAR',
-    'rJfj7MXMt1VfBFF8mBta1CesMSzXYZELyZ': 'SOLO'
-  };
+  // THE CURRENT CYCLE, BY PAIR (RAZA 2026-11-18: update the Rewards pages to the current Ecosystem LP pools).
+  // This was ten AMM accounts of the PREVIOUS cycle (666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR,
+  // SOLO). The live programme is X_ECO in the Stellar repo's _adminrewards.js, named by counter-asset -- the
+  // same list pools.js's Rewarded tab and ltoken.js read. A wallet's LP token is issued BY the AMM account,
+  // so the check needs accounts: ecoAccounts() asks amm_info for LUMOS + each pair once, when the check runs,
+  // and a pair with no pool yet simply is not in the map.
+  var ECO_PAIRS = [
+    ['RLUSD',  '524C555344000000000000000000000000000000', 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De'],
+    ['USDC',   '5553444300000000000000000000000000000000', 'rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE'],
+    ['SHX',    'SHX', 'rfmS3zqrQrka8wVyhXifEeyTwe8AMz2Yhw'],
+    ['XPM',    'XPM', 'rXPMxBeefHGxx2K7g5qmmWq3gFsgawkoa'],
+    ['XLM',    'XLM', 'rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y'],
+    ['USDT',   '5553445400000000000000000000000000000000', 'rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq'],
+    ['XDawgs', '5844617767730000000000000000000000000000', 'raKhUVtNw6B892bKtATUT3frX35oawfsey'],
+    ['666',    '666', 'rhvf9fe6PP3GC8Bku2Ug7iQPjPDxYZfrxN'],
+    ['FLR',    'FLR', 'rcxJwVnftZzXqyH9YheB8TgeiZUhNo1Eu'],
+    ['XAH',    'XAH', 'rswh1fvyLqHizBS2awu1vs6QcmwTBd9qiv']
+  ];
+  var ECO = {}, ecoReady = null;
+  function ecoAccounts() {
+    if (ecoReady) return ecoReady;
+    ecoReady = Promise.all(ECO_PAIRS.map(function (e) {
+      return rpc('amm_info', { asset: { currency: CUR, issuer: ISS }, asset2: { currency: e[1], issuer: e[2] }, ledger_index: 'validated' })
+        .then(function (r) { var a = r && r.amm && r.amm.account; if (a) ECO[a] = e[0]; }, function () {});
+    })).then(function () { return ECO; });
+    return ecoReady;
+  }
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
 
@@ -140,7 +153,7 @@
 
     box('Reading the XRP Ledger…', 'Checking your LUMOS balance and pool positions.');
 
-    window.lxx.allLines(rpc, me).then(function (res) {
+    ecoAccounts().then(function () { return window.lxx.allLines(rpc, me); }).then(function (res) {
       if (!res || !res.lines) {
         box('Could not read that account',
           'The XRP Ledger did not return balances for ' + me.slice(0, 8) + '… — it may not be activated yet.');
@@ -295,7 +308,7 @@
     [].forEach.call(document.querySelectorAll('.pdesc'), function (p) {
       var h = p.innerHTML, o = h;
       h = h.replace(/\s*or\s*<b>LUMOS\/aBTC<\/b>\s*on the XRP Ledger/i, '');
-      h = h.replace(/LUMOS\/MESO,\s*LUMOS\/CELL/, 'LUMOS/RLUSD, LUMOS/ARMY');
+      h = h.replace(/LUMOS\/MESO,\s*LUMOS\/CELL/, 'LUMOS/RLUSD, LUMOS/USDC');   // both in the current cycle (ARMY was the previous one's)
       if (h !== o) p.innerHTML = h;
     });
   }

@@ -1,164 +1,243 @@
-// Curated listing request, on the XRP Ledger.
+// Curated listing request, on the XRP Ledger -- paid in XRP (RAZA 2026-11-17: "In their own coin").
 //
-// WHAT THIS REPLACES, and why it could not be left alone for one more day. The inherited Stellar
-// layer (lx-listtoken) was still live on this page, and on THIS host it did the following:
+// HISTORY. This layer first replaced the inherited Stellar one (which, on this host, would have taken a
+// real Stellar mainnet fee and posted the record nowhere) and deliberately took NO payment, because
+// there was nowhere to record a request. The combined site now serves /lxapi/xrpllisting, which writes
+// into the same listing_request queue as Stellar and Hedera, so this takes the payment.
 //
-//   1. asked /lxapi/listingquote for a price          -> 404, this project does not serve it
-//   2. built a payment to the STELLAR fee collector    -> GAMZFXIJ…, real money, real mainnet
-//   3. POSTed the resulting hash to /lxapi/listing     -> 404, this project does not serve it either
-//
-// So a user who got past step 1 would have paid a genuine Stellar mainnet fee from an XRP Ledger
-// page, and the record of what they paid for would have gone nowhere. Taking money and losing the
-// reason for it is the worst outcome available here, which is why the Stellar layer is stripped
-// rather than left running while this is finished.
-//
-// WHAT THIS DOES. It states the real terms — the fee in XRP at the live rate, paid to the XRP Ledger
-// collector this project actually uses — and it does NOT take payment, because there is nowhere on
-// this project to record a listing request yet. That is a provisioning decision (a KV or D1 binding
-// on lumoscore-xrpl), not something to invent. The button says so plainly instead of looking ready.
-//
-// The moment a store exists this file needs only its submit half: the quote, the collector, the
-// validation and the copy are all here and all correct.
+// THE SEQUENCE, and why each step is where it is:
+//   1. quote   GET /lxapi/xrpllisting -> the fee in XRP, the collector, the memo. The page never prices
+//              on its own: the number charged and the number the server checks against are one number.
+//   2. check   the form (code, r-address, description, logo) BEFORE any wallet prompt -- a refused form
+//              after a payment is the outcome this whole flow exists to avoid.
+//   3. pending the form is saved locally BEFORE signing, so a reload (Xaman round trip, a crash) can
+//              still attach the payment.
+//   4. pay     window.lxc.submit({Payment ... Memos:["LumosCore listing"]}) -> the hash.
+//   5. record  POST /lxapi/xrpllisting, retried while the ledger validates. A payment that cannot be
+//              recorded shows the hash and a way to support -- never a silent loss.
 (function () {
   if (window.__lxxListing) return;
   window.__lxxListing = 1;
 
-  // The same account the launchpad pays, and it is checksum-verified at BUILD time in
-  // _tools/_xrplaunchpad.js rather than trusted here: a single wrong character in a collector address
-  // sends every fee LumosCore ever takes to an account nobody holds the key to. Verified on-ledger to
-  // hold no trust lines and to carry neither RequireDestTag, DisallowXRP, DepositAuth nor GlobalFreeze
-  // — so it can receive XRP, and only XRP.
+  // Checksum-gated at BUILD time (_tools/xrpladdr.js). Must equal the server's COLLECTOR.
   var COLLECTOR = '__LX_XRPL_COLLECTOR__';
+  var API = '/lxapi/xrpllisting';
+  var PENDING_KEY = 'lumos.listing.xrpl';
+  var PENDING_MAX_AGE = 24 * 3600 * 1000;
+  var LOGO_MAX = 512 * 1024;
+  var LOGO_OK = { 'image/png': 1, 'image/jpeg': 1, 'image/webp': 1, 'image/gif': 1 };
+  var CODE_RE = /^[A-Za-z0-9?!@#$%^&*<>(){}[\]|]{3,20}$/;
+  var ADDR_RE = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/;
 
-  function $(s) { return document.querySelector(s); }
+  function $(id) { return document.getElementById(id); }
+  function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
+  function show(el, yes) { if (el) { if (yes) el.removeAttribute('hidden'); else el.setAttribute('hidden', ''); } }
+  function money(n, d) { return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: d || 2 }); }
+  function hexAscii(s) { var h = ''; for (var i = 0; i < s.length; i++) h += s.charCodeAt(i).toString(16).padStart(2, '0'); return h.toUpperCase(); }
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
-  function money(n) {
-    return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var quote = null;            // { amount, xrpUsd, memo, at, valid }
+  var logoData = '', logoName = '';
+  var busy = false;
+
+  function status(t) { var e = $('ltStatus'); if (e) e.textContent = t || ''; }
+  function formErr(t) { var e = $('ltFormErr'); if (e) { e.textContent = t || ''; show(e, !!t); } }
+  function fieldErr(id, t) {
+    var e = $(id + 'Err'), i = $(id);
+    if (e) { e.textContent = t || ''; show(e, !!t); }
+    if (i) i.classList.toggle('lt-wrong', !!t);
+  }
+  function clearErrors() { ['ltCode', 'ltIssuer', 'ltDescr', 'ltSite', 'ltLogo'].forEach(function (i) { fieldErr(i, ''); }); formErr(''); }
+
+  // ---- quote ----------------------------------------------------------------------------------
+  function paintQuote() {
+    var amt = $('ltAmt'), rate = $('ltRate'), to = $('ltTo');
+    if (to) { to.textContent = COLLECTOR; to.title = COLLECTOR; }
+    if (!quote) { if (amt) amt.textContent = '—'; if (rate) rate.textContent = 'rate unavailable'; return; }
+    if (amt) amt.textContent = money(quote.amount, 6) + ' XRP';
+    if (rate) rate.textContent = '1 XRP = $' + Number(quote.xrpUsd).toFixed(4);
+  }
+  function loadQuote() {
+    return fetch(API, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      var o = d && d.ok && d.options && d.options[0];
+      if (!o || d.collector !== COLLECTOR) throw new Error('bad quote');
+      quote = { amount: o.amount, xrpUsd: d.xrpUsd, memo: d.memo, at: Date.now(), valid: (d.validForSeconds || 900) * 1000 };
+      paintQuote();
+    }).catch(function () { quote = null; paintQuote(); });   // never a guessed price
   }
 
-  // The fee in USD is whatever the page already declares. Read from the markup rather than repeated
-  // here, so the number beside the button and the number charged cannot drift apart — the Stellar
-  // build has a comment about exactly that ("250 beside a button charging something else").
-  function usdFee() {
-    var el = $('#ltFee2') || $('#ltFee');
-    var m = el && (el.textContent || '').match(/([\d,.]+)/);
-    var v = m ? parseFloat(m[1].replace(/,/g, '')) : NaN;
-    return isFinite(v) && v > 0 ? v : null;
+  // ---- wallet / button ------------------------------------------------------------------------
+  function me() { try { return (window.lxc && window.lxc.address && window.lxc.address()) || ''; } catch (e) { return ''; } }
+  function paintButton() {
+    var t = $('ltGoT'); if (!t || busy) return;
+    t.textContent = me() ? 'Pay ' + (quote ? money(quote.amount, 6) + ' XRP ' : '') + 'and submit' : 'Connect wallet to pay';
+  }
+  function setBusy(yes) { busy = yes; var g = $('ltGo'); if (g) { g.disabled = yes; g.style.opacity = yes ? '.7' : ''; } if (!yes) paintButton(); }
+  var lastMe = null;
+  setInterval(function () { var a = me(); if (a !== lastMe) { lastMe = a; paintButton(); } }, 600);
+
+  // ---- logo -----------------------------------------------------------------------------------
+  function paintLogo() {
+    var box = $('ltDropIn'); if (!box) return;
+    if (!logoData) {
+      box.className = 'lt-drop-in';
+      box.innerHTML = '<span class="lt-drop-t">Choose a logo</span><span class="lt-drop-d">Square PNG, JPEG, WebP or GIF · 256 × 256px or larger · up to 512KB</span>';
+      return;
+    }
+    box.className = 'lt-picked';
+    box.innerHTML = '';
+    var img = document.createElement('img'); img.src = logoData; img.alt = '';
+    var txt = document.createElement('div');
+    txt.innerHTML = '<div class="lt-picked-ok"><span>Logo ready</span></div><div class="lt-picked-n"></div>';
+    txt.querySelector('.lt-picked-n').textContent = (logoName ? logoName + ' · ' : '') + 'Click to change';
+    box.appendChild(img); box.appendChild(txt);
+  }
+  function takeFile(file) {
+    fieldErr('ltLogo', '');
+    if (!file) return;
+    if (!LOGO_OK[String(file.type).toLowerCase()]) { logoData = ''; paintLogo(); return fieldErr('ltLogo', 'The logo must be a PNG, JPEG, WebP or GIF.'); }
+    if (file.size > LOGO_MAX) { logoData = ''; paintLogo(); return fieldErr('ltLogo', 'That file is ' + Math.round(file.size / 1024) + 'KB, over the 512KB limit.'); }
+    var fr = new FileReader();
+    fr.onload = function () {
+      var data = String(fr.result || ''), probe = new Image();
+      probe.onload = function () {
+        var w = probe.naturalWidth || 0, h = probe.naturalHeight || 0;
+        if (w < 256 || h < 256) { logoData = ''; paintLogo(); return fieldErr('ltLogo', 'That logo is ' + w + ' × ' + h + 'px. It needs to be 256 × 256px or larger.'); }
+        if (Math.abs(w - h) > Math.max(w, h) * 0.01) { logoData = ''; paintLogo(); return fieldErr('ltLogo', 'That logo is ' + w + ' × ' + h + 'px. It needs to be square.'); }
+        logoData = data; logoName = file.name || ''; paintLogo();
+      };
+      probe.onerror = function () { logoData = ''; paintLogo(); fieldErr('ltLogo', 'That image could not be read.'); };
+      probe.src = data;
+    };
+    fr.readAsDataURL(file);
   }
 
-  function fixCopy() {
-    // The design's own words, with the chain corrected. "charged in XLM at the rate below" and
-    // "paid separately to Stellar" are both simply false on this build.
-    //
-    // THE SELECTOR STARTED TOO NARROW. Only .lt-help and .lt-hint were swept, which left the fee
-    // facts — "Paid in XLM at the live rate", "In full, in XLM, to the account that paid" — and the
-    // stranded-payment note still quoting the wrong asset, on the page where someone decides how much
-    // to send. Found by re-sweeping the page rather than by re-reading this function.
-    //
-    // Walked as text nodes across every prose block on the page, so a sentence the design split
-    // across <strong> or <a> is corrected without touching its markup.
-    var BLOCKS = '.lt-help, .lt-hint, .lt-fact-d, .lt-stranded p, .lt-note, .lt-faq-a';
-    [].forEach.call(document.querySelectorAll(BLOCKS), function (p) {
-      if (p.__lxdone || !/XLM|Stellar/.test(p.textContent || '')) return;
-      p.__lxdone = 1;
-      var w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-      var nd;
-      while ((nd = w.nextNode())) {
-        if (!nd.nodeValue) continue;
-        nd.nodeValue = nd.nodeValue
-          .replace(/\bXLM\b/g, 'XRP')
-          .replace(/\bon Stellar\b/g, 'on the XRP Ledger')
-          .replace(/\bStellar\b/g, 'the XRP Ledger');
-      }
+  // ---- form -----------------------------------------------------------------------------------
+  function val(id) { var e = $(id); return e ? (e.value || '').trim() : ''; }
+  function readForm() {
+    return { network: 'xrpl', code: val('ltCode'), issuer: val('ltIssuer'), descr: val('ltDescr'),
+      website: val('ltSite'), twitter: val('ltX'), telegram: val('ltTg'), discord: val('ltDs'), logo: logoData };
+  }
+  function validate(f) {
+    var ok = true;
+    if (!CODE_RE.test(f.code) || f.code.toUpperCase() === 'XRP') { fieldErr('ltCode', 'The currency code, 3 to 20 characters.'); ok = false; }
+    if (!ADDR_RE.test(f.issuer)) { fieldErr('ltIssuer', 'An XRP Ledger address: r, then 24 to 34 characters.'); ok = false; }
+    if (f.descr.length < 20) { fieldErr('ltDescr', 'Say what the project is, in at least a sentence.'); ok = false; }
+    if (f.website && !/^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(f.website)) { fieldErr('ltSite', 'That does not look like a web address.'); ok = false; }
+    if (!f.logo) { fieldErr('ltLogo', 'A logo is required: a square image, 256 × 256px or larger.'); ok = false; }
+    if (!ok) formErr('Fix the fields marked above, then try again.');
+    return ok;
+  }
+
+  // ---- pending (survives a reload or a wallet round trip) --------------------------------------
+  function savePending(rec) {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(rec)); }
+    catch (e) { try { rec.f = Object.assign({}, rec.f, { logo: '' }); localStorage.setItem(PENDING_KEY, JSON.stringify(rec)); } catch (e2) {} }
+  }
+  function readPending() {
+    try {
+      var p = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+      if (!p || !p.f) return null;
+      if (Date.now() - (+p.ts || 0) > PENDING_MAX_AGE) { localStorage.removeItem(PENDING_KEY); return null; }
+      return p;
+    } catch (e) { return null; }
+  }
+  function clearPending() { try { localStorage.removeItem(PENDING_KEY); } catch (e) {} }
+
+  // ---- record ---------------------------------------------------------------------------------
+  function post(f, hash) {
+    return fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ network: 'xrpl', code: f.code, issuer: f.issuer, descr: f.descr, logo: f.logo || '',
+        txHash: hash, website: f.website || '', twitter: f.twitter || '', telegram: f.telegram || '', discord: f.discord || '' }) })
+      .then(function (r) { return r.json().then(function (d) { return { status: r.status, d: d }; }); });
+  }
+  // "not validated yet" / "not found yet" are the ledger catching up: keep asking for ~40s.
+  function record(f, hash, attempt) {
+    attempt = attempt || 1;
+    return post(f, hash).then(function (r) {
+      if (r.d && r.d.ok) return r.d;
+      var msg = (r.d && r.d.error) || 'Server error';
+      var retry = r.status >= 500 || /yet|validated/i.test(msg);
+      var e = new Error(msg); e.final = !retry; throw e;
+    }).catch(function (err) {
+      if (err.final || attempt >= 10) throw err;
+      return wait(Math.min(2000 + attempt * 1500, 6000)).then(function () { return record(f, hash, attempt + 1); });
     });
-    var to = $('#ltTo');
-    if (to) { to.textContent = COLLECTOR; to.setAttribute('title', COLLECTOR); }
-
-    // THE FORM CONTROLS ARE NOT PROSE, and the walk above only reaches text nodes inside the blocks
-    // listed in BLOCKS. So the two fields a person actually fills in were still Stellar's:
-    //
-    //   <select id="ltNet"> carried exactly ONE option, `stellar | Stellar` — the network picker on
-    //   an XRP Ledger site offering only the other chain, above a sentence saying LumosCore curates
-    //   on the XRP Ledger today.
-    //
-    //   <input id="ltIssuer" placeholder="G…"> — G is STELLAR's address prefix. XRPL issuers start
-    //   with r, so the field was prompting for an address of the wrong shape entirely, on the one
-    //   input where a wrong value cannot be recovered from later.
-    //
-    // Nothing is submitted from this page yet (see the header), so neither had reached a record --
-    // but both are read by anyone filling the form in, and the placeholder is the kind of hint people
-    // copy the shape of.
-    var net = $('#ltNet');
-    if (net && net.tagName === 'SELECT') {
-      var opts = net.options || [];
-      var hasXrpl = false;
-      for (var i = 0; i < opts.length; i++) {
-        if (String(opts[i].value).toLowerCase() === 'xrpl') { hasXrpl = true; break; }
-      }
-      if (!hasXrpl) {
-        // Rewritten in place rather than replaced: the design owns this control, and a fresh <select>
-        // would lose whatever styling and listeners it ships with.
-        for (var j = opts.length - 1; j >= 0; j--) net.remove(j);
-        var o = document.createElement('option');
-        o.value = 'xrpl';
-        o.textContent = 'XRP Ledger';
-        net.appendChild(o);
-      }
-      net.value = 'xrpl';
-    }
-    var iss = $('#ltIssuer');
-    if (iss && /^G/.test(iss.getAttribute('placeholder') || '')) {
-      iss.setAttribute('placeholder', 'r…');
-    }
+  }
+  function showDone(f, paid, hash, id) {
+    clearPending();
+    show($('ltForm'), false); show($('ltStranded'), false); show($('ltDone'), true);
+    var set = function (i, v) { var e = $(i); if (e) { e.textContent = v; e.title = v; } };
+    set('ltDoneAsset', f.code + ' · ' + f.issuer);
+    set('ltDonePaid', paid ? money(paid, 6) + ' XRP' : '—');
+    set('ltDoneTx', hash); set('ltDoneId', id || '—');
+    try { $('ltDone').scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {}
+  }
+  function showStranded(hash) {
+    show($('ltStranded'), true);
+    var e = $('ltStrandedTx'); if (e) e.textContent = hash;
+    try { $('ltStranded').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e2) {}
   }
 
-  // The live rate, from the same endpoint the rest of the build prices against, so the listing fee
-  // and every other USD figure on this site agree about what an XRP is worth.
-  function quote() {
-    var usd = usdFee();
-    var amtEl = $('#ltAmt'), rateEl = $('#ltRate');
-    if (!amtEl || usd == null) return;
-    fetch('/lxapi/xrplprices')
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        var px = j && j.ok && +j.usd;
-        if (!(px > 0)) throw new Error('no rate');
-        var xrp = usd / px;
-        // Rounded UP to whole drops so the collector is never a fraction short of the stated fee.
-        xrp = Math.ceil(xrp * 1e6) / 1e6;
-        amtEl.textContent = money(xrp) + ' XRP';
-        if (rateEl) rateEl.textContent = '1 XRP = $' + px.toFixed(4);
-      })
-      .catch(function () {
-        // Never a guessed rate: an invented number here is a price someone would be charged.
-        amtEl.textContent = '—';
-        if (rateEl) rateEl.textContent = 'rate unavailable';
+  // ---- pay ------------------------------------------------------------------------------------
+  function run(f) {
+    var addr = me();
+    if (!quote || Date.now() - quote.at > quote.valid) {
+      status('Refreshing the price…');
+      return loadQuote().then(function () { if (!quote) throw new Error('The XRP price is unavailable right now. Try again in a minute.'); return run(f); });
+    }
+    var drops = String(Math.ceil(Number(quote.amount) * 1e6));
+    savePending({ f: f, ts: Date.now(), paid: quote.amount });
+    status('Approve the payment of ' + money(quote.amount, 6) + ' XRP in your wallet…');
+    return window.lxc.submit({
+      TransactionType: 'Payment', Account: addr, Destination: COLLECTOR, Amount: drops,
+      Memos: [{ Memo: { MemoType: hexAscii('LumosCore'), MemoFormat: hexAscii('text/plain'), MemoData: hexAscii(quote.memo || 'LumosCore listing') } }]
+    }).then(function (hash) {
+      hash = String(hash || '').toUpperCase();
+      if (!/^[0-9A-F]{64}$/.test(hash)) throw new Error('The wallet did not return a transaction hash.');
+      savePending({ f: f, ts: Date.now(), paid: quote.amount, hash: hash });
+      status('Payment sent. Recording your application…');
+      return record(f, hash).then(function (d) { showDone(f, quote.amount, hash, d.id); }, function (err) {
+        formErr(err.message || 'The application could not be recorded.');
+        showStranded(hash);
       });
+    });
   }
 
-  // The button is left in place and disabled, wearing the design's own disabled treatment, with the
-  // reason on it. An enabled button that silently does nothing is the thing this avoids.
-  function holdButton() {
-    var go = $('#ltGo');
-    if (!go || go.__lxheld) return;
-    go.__lxheld = 1;
-    go.disabled = true;
-    go.style.opacity = '.6';
-    go.style.cursor = 'not-allowed';
-    var t = $('#ltGoT') || go;
-    t.textContent = 'Listing requests open with the XRP Ledger launch';
-    go.setAttribute('title',
-      'The fee and the collector are live; requests need somewhere to be recorded before payment can be taken.');
-    go.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); }, true);
+  function onSubmit(e) {
+    e.preventDefault();
+    if (busy) return;
+    clearErrors();
+    if (!window.lxc) { formErr('The wallet layer did not load. Reload the page and try again.'); return; }
+    if (!me()) { try { window.lxc.open(); } catch (e2) {} return; }
+    var f = readForm();
+    if (!validate(f)) return;
+    setBusy(true);
+    run(f).catch(function (err) { formErr(err && err.message ? err.message : 'The payment did not go through.'); })
+      .then(function () { status(''); setBusy(false); });
+  }
+
+  // A payment that went out but never got recorded (reload, crash, wallet round trip): finish it.
+  function resume() {
+    var p = readPending();
+    if (!p || !p.hash) return;
+    status('Finishing your earlier application…');
+    record(p.f, p.hash).then(function (d) { showDone(p.f, p.paid, p.hash, d.id); },
+      function (err) { status(''); formErr(err.message); showStranded(p.hash); });
   }
 
   function boot() {
-    if (!$('#ltGo') && !$('#ltAmt')) return;               // not the listing page
-    fixCopy();
-    quote();
-    holdButton();
+    if (!$('ltForm') || !$('ltGo')) return;                // not the listing page
+    on($('ltForm'), 'submit', onSubmit);
+    on($('ltLogo'), 'change', function () { takeFile(this.files && this.files[0]); });
+    var drop = $('ltDrop');
+    ['dragenter', 'dragover'].forEach(function (ev) { on(drop, ev, function (e) { e.preventDefault(); drop.classList.add('lt-over'); }); });
+    ['dragleave', 'drop'].forEach(function (ev) { on(drop, ev, function () { drop.classList.remove('lt-over'); }); });
+    on(drop, 'keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && $('ltLogo')) { e.preventDefault(); $('ltLogo').click(); } });
+    on($('ltDescr'), 'input', function () { var c = $('ltCount'); if (c) c.textContent = String(this.value.length); });
+    var to = $('ltTo'); if (to) { to.textContent = COLLECTOR; to.title = COLLECTOR; }   // the price stays 'loading…' until it arrives
+    paintLogo(); loadQuote().then(paintButton); paintButton();
+    resume();
   }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();

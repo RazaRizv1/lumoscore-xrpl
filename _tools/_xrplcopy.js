@@ -128,8 +128,14 @@ const COPY = [
   // side of every one. The pair names below are what the ledger reports, not what was typed to me --
   // the addresses arrived without names, so reading them off the ledger is the only way to get this
   // list right, and it is also what proves the list is the LUMOS set at all.
+  // Current cycle (2026-11-18, X_ECO in _adminrewards.js); both Stellar spellings and this file's previous
+  // output are anchors, since Stellar's sentence was rotated the same day.
   ['currently LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and USDC',
-   'currently 666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and SOLO'],
+   'currently RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and XAH'],
+  ['currently USDC, USDT0, EURC, SHX, AQUA, BLND, xLMNR, yXLM, XRP and PYUSD',
+   'currently RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and XAH'],
+  ['currently 666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and SOLO',
+   'currently RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and XAH'],
   ['each pairing LUMOS with one other asset', 'each pairing LUMOS with one other token'],
   // RAZA confirmed 2026-09-06 that the XRP Ledger programmes started on the same dates as the
   // Stellar ones, so the answer's dates stay exactly as they are and only the question is renamed.

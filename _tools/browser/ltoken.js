@@ -677,33 +677,45 @@
   // data-chain="stellar", on the XRP Ledger's own token page.
   //
   // Same data the count above already fetched, so this costs no extra request.
-  function poolItem(p) {
+  // THE PHONE ROW NOW SAYS WHAT THE DESKTOP TABLE SAYS (RAZA 2026-11-18: "On XRPL LUMOS token page, pools tab.
+  // Logos and details are incorrect"). It used to draw a coloured letter disc per side -- so every pool read
+  // "$" + "L" or similar -- name the pair in API order, and tag every row "XRP Ledger" + "N% fee". Now: the
+  // LUMOS mark and the paired token's real thumbnail, "LUMOS / X", the incentive pill only where there is one,
+  // and TVL / 24h in dollars once the XRP price is in -- the same row Stellar's phone list shows.
+  function poolItem(p, usd) {
     var a = el('a', 'pool-item');
     a.href = '/pools/xrpl/id/' + encodeURIComponent(p.acct);
     a.setAttribute('data-chain', 'xrpl');
+    a.setAttribute('data-lxbuilt', '1');
+    var other = (p.a1 && p.a1.i === ISS && p.a1.c === CUR) ? p.a2 : p.a1;
 
     var icons = el('div', 'pair-icons');
-    icons.style.cssText = 'width:36px;height:26px';
-    function disc(cls, nm, left) {
-      var d = el('div', cls, String(nm || '?').slice(0, 1).toUpperCase());
+    icons.setAttribute('data-paired', '1');
+    function disc(cls, src) {
+      var d = el('div', cls);
       try { d.setAttribute('data-logoed', '1'); } catch (e) {}
-      d.style.cssText = 'width:26px;height:26px;border-color:var(--surface);'
-        + 'background:' + hueOf(nm) + (left ? ';left:13px' : '');
+      d.style.cssText = 'border-color:var(--surface);background:transparent;overflow:hidden';
+      var im = document.createElement('img');
+      im.alt = '';
+      im.src = src;
+      im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;display:block';
+      d.appendChild(im);
       return d;
     }
-    var n1 = poolName(p.a1), n2 = poolName(p.a2);
-    icons.appendChild(disc('a', n1, false));
-    icons.appendChild(disc('b', n2, true));
+    icons.appendChild(disc('a', '/assets/favicon.png'));
+    icons.appendChild(disc('b', sideThumb(other)));
     a.appendChild(icons);
 
     var info = el('div', 'info');
-    info.appendChild(el('div', 'pair-name', n1 + ' / ' + n2));
-    var meta = el('div', 'meta-row');
-    var pill = el('span', 'chain-pill', 'XRP Ledger');
-    try { pill.setAttribute('data-logoed', '1'); } catch (e) {}
-    meta.appendChild(pill);
-    if (p.fee != null) meta.appendChild(el('span', 'incent-pill native', p.fee + '% fee'));
-    info.appendChild(meta);
+    info.appendChild(el('div', 'pair-name', 'LUMOS / ' + poolName(other)));
+    var inc = incentOf(p);
+    if (inc) {
+      var meta = el('div', 'meta-row');
+      var ip = el('span', 'incent-pill ' + inc[1], inc[0]);
+      try { ip.setAttribute('data-logoed', '1'); } catch (e) {}
+      meta.appendChild(ip);
+      info.appendChild(meta);
+    }
     var stats = el('div', 'stats-row');
     function st(label, v) {
       var d = document.createElement('div');
@@ -711,8 +723,8 @@
       d.appendChild(el('span', 'v', v));
       return d;
     }
-    stats.appendChild(st('TVL', amount(p.liq) + ' XRP'));
-    stats.appendChild(st('24H', amount(p.vol) + ' XRP'));
+    stats.appendChild(st('TVL', usd ? usdAbbr((+p.liq || 0) * usd) : amount(p.liq) + ' XRP'));
+    stats.appendChild(st('24H', usd ? usdAbbr((+p.vol || 0) * usd) : amount(p.vol) + ' XRP'));
     info.appendChild(stats);
     a.appendChild(info);
 
@@ -739,13 +751,39 @@
   // STELLAR'S "ALL LUMOS POOLS" (RAZA 2026-09-15: "LUMOS token page, in pools tab, its not the same as on Stellar"): the
   // design's own row — LUMOS mark and the paired token's, "LUMOS / X", TVL, 24h volume, an Incentives pill and "View pool" —
   // one per pool by TVL, with the Network column removed as lumoscore.com removes it, inside the page's scroll box.
-  var NATIVE_LP = 'rnPQqk3cfHyqSyvAGh3AfMtWiszK8zaF4U';
-  var ECO_LP = {
-    r27TeM8xMebVAMHt4aB3BMYw5MB5fULht: 1, rM6HW3s4WUGuLYwKwRvZx2aai5wk5PR5fz: 1, rhhBo4BXkrhvr17rLdtdwxMjEk1NnTvqUC: 1,
-    rJZftp95akgYuXXtb2yp23F1cGuHu34pMA: 1, rEmgwNPCbq6ogmLKThxgee35uCSqfhB83M: 1, rJnv9wSoSECHzWsNXR7E74hi8mbKX9ZnDM: 1,
-    rsKJxAyfL2AGdTMqz5ZMhBSyiSxqz97g3z: 1, rKsz9Dft5yYtbLS1SSG9L6u3LyhgwuWhew: 1, rUHWxx4kodHx3P8WxtkdcjhwDXnr5p9txo: 1,
-    rJfj7MXMt1VfBFF8mBta1CesMSzXYZELyZ: 1
-  };
+  // INCENTIVE TAGS FOLLOW THE CURRENT CYCLE, BY PAIR (RAZA 2026-11-18: "you still havent updated the Incentives
+  // tag"). This used to be ten hardcoded AMM accounts from the PREVIOUS cycle (666, XDawgs, MXI, BXE, REAL, RLUSD,
+  // ARMY, FUZZY, BEAR, SOLO). The live programme is X_ECO in the Stellar repo's _adminrewards.js, named by
+  // counter-asset rather than by AMM account -- the same list pools.js's Rewarded tab reads -- so a pool is
+  // tagged by what it pairs LUMOS with, and a pool created later is tagged without a code change.
+  var RW_ECO = [
+    ['524C555344000000000000000000000000000000', 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De'],   // RLUSD
+    ['5553444300000000000000000000000000000000', 'rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE'],   // USDC
+    ['SHX', 'rfmS3zqrQrka8wVyhXifEeyTwe8AMz2Yhw'],
+    ['XPM', 'rXPMxBeefHGxx2K7g5qmmWq3gFsgawkoa'],
+    ['XLM', 'rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y'],
+    ['5553445400000000000000000000000000000000', 'rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq'],   // USDT (GateHub)
+    ['5844617767730000000000000000000000000000', 'raKhUVtNw6B892bKtATUT3frX35oawfsey'],   // XDawgs
+    ['666', 'rhvf9fe6PP3GC8Bku2Ug7iQPjPDxYZfrxN'],
+    ['FLR', 'rcxJwVnftZzXqyH9YheB8TgeiZUhNo1Eu'],
+    ['XAH', 'rswh1fvyLqHizBS2awu1vs6QcmwTBd9qiv']
+  ];
+  function rwCur(c) {          // 'SHX' and its padded hex are the same currency
+    c = String(c || '');
+    if (!/^[0-9A-Fa-f]{40}$/.test(c)) return c;
+    var s = '';
+    for (var i = 0; i < 40; i += 2) { var b = parseInt(c.substr(i, 2), 16); if (b) s += String.fromCharCode(b); }
+    return s;
+  }
+  function incentOf(p) {
+    var other = (p.a1 && p.a1.i === ISS && p.a1.c === CUR) ? p.a2 : p.a1;
+    if (!other) return null;
+    if (other.c === 'XRP' && !other.i) return ['Native LP', 'native'];
+    for (var k = 0; k < RW_ECO.length; k++) {
+      if (rwCur(other.c) === rwCur(RW_ECO[k][0]) && (other.i || '') === RW_ECO[k][1]) return ['Ecosystem', 'eco'];
+    }
+    return null;
+  }
   var POOL_TPL = null;
   function usdAbbr(v) {
     if (!(v > 0)) return '$0';
@@ -803,8 +841,8 @@
       var inc = row.querySelector('.incent-pill');
       if (inc) {
         inc.setAttribute('data-logoed', '1');
-        if (p.acct === NATIVE_LP) { inc.textContent = 'Native LP'; inc.className = 'incent-pill native'; }
-        else if (ECO_LP[p.acct]) { inc.textContent = 'Ecosystem'; inc.className = 'incent-pill eco'; }
+        var tg = incentOf(p);
+        if (tg) { inc.textContent = tg[0]; inc.className = 'incent-pill ' + tg[1]; }
         else inc.style.display = 'none';
       }
       var link = row.querySelector('a');
@@ -830,9 +868,10 @@
     }
   }
 
-  function paintPoolList(rows) {
+  function paintPoolList(rows, usd) {
     var host = $('#poolList');
     if (!host) return;                                  // desktop renders a table instead
+    rows = rows.slice().sort(function (a, b) { return (+b.liq || 0) - (+a.liq || 0); });
     host.innerHTML = '';
     if (!rows.length) {
       var d = el('div', null, 'No LUMOS pools found on the XRP Ledger.');
@@ -840,7 +879,7 @@
       host.appendChild(d);
       return;
     }
-    for (var i = 0; i < Math.min(rows.length, 10); i++) host.appendChild(poolItem(rows[i]));
+    for (var i = 0; i < Math.min(rows.length, 10); i++) host.appendChild(poolItem(rows[i], usd));
   }
 
   // RETURNS ITS PROMISE so load() can wait for it. Without that the pool count and the token payload
@@ -858,7 +897,7 @@
         paintPoolList(d.rows || []);
         fetch('/lxapi/xrpltokens?n=1').then(function (r) { return r.json(); })
           .then(function (t) { return (t && t.ok && +t.usd > 0) ? +t.usd : null; }, function () { return null; })
-          .then(function (usd) { buildPoolsTable(d.rows || [], usd); });
+          .then(function (usd) { if (usd) paintPoolList(d.rows || [], usd); buildPoolsTable(d.rows || [], usd); });
       })
       .catch(function () { /* the card stays dashed, which is the honest default */ });
   }
@@ -944,7 +983,14 @@
     if (!list) return;
     var total = list.length;
 
-    $$('.h-head .meta').forEach(function (e) { e.textContent = total.toLocaleString('en-US') + ' total'; });
+    // "N total" belongs to the BREAKDOWN card only. Written to every .h-head it also replaced the top-holders
+    // subtitle ("both chains") with the holder count; that one now reads "Ranked by balance", as on Stellar.
+    $$('.h-head').forEach(function (hd) {
+      var m = hd.querySelector('.meta'), h3 = hd.querySelector('h3');
+      if (!m) return;
+      if (/breakdown/i.test((h3 && h3.textContent) || '')) m.textContent = total.toLocaleString('en-US') + ' total';
+      else if (/both chains/i.test(m.textContent || '')) m.textContent = 'Ranked by balance';
+    });
 
     var rows = $$('.wsize-row');
     // Disjoint tiers, top row first — see bucketRange.
@@ -973,7 +1019,9 @@
     var issued = 0;
     for (var k = 0; k < list.length; k++) issued += list[k].bal;
     var top = list.slice().sort(function (a, b) { return b.bal - a.bal; });
-    $$('.top-holders .holder-row').forEach(function (row, i) {
+    // The PHONE's holder rows sit in a plain .h-card -- no .top-holders wrapper -- so asking for
+    // '.top-holders .holder-row' found nothing there and every row stayed a skeleton over the mock's dollars.
+    $$('.holder-row').forEach(function (row, i) {
       var h = top[i];
       var info = row.querySelector('.info');
       var chain = row.querySelector('.chain');

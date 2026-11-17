@@ -176,10 +176,21 @@ const FACTS = [
   // confirmed against amm_info — so the docs and the page cannot name different pools. Both the
   // wrapped and unwrapped forms are listed because the source is hard-wrapped and a re-run over an
   // already-fixed container must still match.
+  // THE CURRENT CYCLE (2026-11-18): X_ECO in the Stellar repo's _adminrewards.js. Stellar's own sentence was
+  // rotated the same day, so BOTH Stellar spellings (previous and current cycle) are anchors, plus this file's
+  // own previous output, so a re-run over an already-fixed container still lands on the current list.
   ['LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and USDC',
-    '666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and SOLO'],
+    'RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and XAH'],
   ['LMNR, yXLM, sages, AQUA, SSLX, SHX, TKG, LIBERATOR, KALE and\r\n  USDC',
-    '666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and\r\n  SOLO'],
+    'RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and\r\n  XAH'],
+  ['USDC, USDT0, EURC, SHX, AQUA, BLND, xLMNR, yXLM, XRP and PYUSD',
+    'RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and XAH'],
+  ['USDC, USDT0, EURC, SHX, AQUA, BLND, xLMNR, yXLM, XRP and\r\n  PYUSD',
+    'RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and\r\n  XAH'],
+  ['666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and SOLO',
+    'RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and XAH'],
+  ['666, XDawgs, MXI, BXE, REAL, RLUSD, ARMY, FUZZY, BEAR and\r\n  SOLO',
+    'RLUSD, USDC, SHX, XPM, XLM, USDT, XDawgs, 666, FLR and\r\n  XAH'],
 
   // Claims about what is live. The Stellar build's launch date is not this build's.
   ['LumosCore has been live on Stellar mainnet since 1 August 2026.',
