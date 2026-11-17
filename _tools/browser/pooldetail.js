@@ -1502,6 +1502,8 @@
       p.balA = balOf(p.rawA);
       p.balB = balOf(p.rawB);
       p.myLp = myLp;
+      // A deposit typed (or prefilled) while this was in flight showed "—"; give it its figure now.
+      if (mode() === 'deposit') previewDeposit();
 
       var fields = $$('#dwDeposit .dw-field');
       [[p.balA, p.a], [p.balB, p.b]].forEach(function (pair, i) {
@@ -1593,9 +1595,21 @@
     if (!p || !i.a) return;
     var va = parseFloat(String(i.a.value).replace(/,/g, ''));
     if (!(va > 0) || !(p.a.amount > 0) || !(p.lpSupply > 0)) { setSummary('pool share', '—'); return; }
+    // "POOL SHARE AFTER: NaN%" on every pool, 2026-11-17. p.myLp is only written by loadPosition(),
+    // which returns early with no wallet -- so a signed-out visitor (and every MCP add_liquidity link,
+    // whose prefill types before balances exist) computed undefined + minted. Two different unknowns:
+    //   - no wallet: the visitor holds none of this pool, so 0 is a FACT and the figure is real.
+    //   - wallet connected, balances not read yet: 0 would UNDERSTATE an existing position on the
+    //     card someone approves a deposit from. Say nothing until it is read; loadPosition() calls
+    //     back here once it is.
+    var mine = p.myLp;
+    if (typeof mine !== 'number' || !isFinite(mine)) {
+      if (addr()) { setSummary('pool share', '—'); return; }
+      mine = 0;
+    }
     // New LP tokens are minted in proportion to what the deposit adds to the reserves.
     var minted = p.lpSupply * (va / p.a.amount);
-    var after = (p.myLp + minted) / (p.lpSupply + minted);
+    var after = (mine + minted) / (p.lpSupply + minted);
     setSummary('pool share', (after * 100).toFixed(4) + '%');
   }
 
