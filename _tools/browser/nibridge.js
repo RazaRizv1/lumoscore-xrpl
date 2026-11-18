@@ -1326,6 +1326,10 @@
     var cur = destChain();
     if (cur && reach[cur]) return;                    // chosen, mapped, reachable — leave it alone
     nm.textContent = 'Select Network';
+    // THE BADGE GOES WITH THE NAME (2026-11-19): the chip kept the cleared network's mark -- a green
+    // "NEAR" disc beside "Select Network". The page's own empty chip has an empty .br-ic.
+    var tic = trg.querySelector('.br-ic');
+    if (tic && tic.innerHTML) tic.innerHTML = '';
     trg.classList.add('is-empty');
     trg.removeAttribute('data-net');
     document.documentElement.removeAttribute('data-destnet');
@@ -1589,7 +1593,20 @@
 
   function paintDestAsset(dst) {
     var key = destChain(), as = ensureDestRow(dst);
-    if (!as || !key) return;
+    if (!as) return;
+    // NO DESTINATION, NO DELIVERED ASSET (2026-11-19). This returned early and left the last one
+    // painted: pick NEAR, then a source that cannot reach it (held USDC), and "To" said "Choose
+    // network" over a wNEAR with its logo and picker caret. Every write is guarded, because a
+    // MutationObserver (lx-xbrstep2) watches this card.
+    if (!key) {
+      var nm0 = as.querySelector('.nm');
+      if (nm0 && nm0.textContent !== '—') nm0.textContent = '—';
+      var ic0 = as.querySelector('.br-ic');
+      if (ic0 && ic0.innerHTML) ic0.innerHTML = '';
+      if (as.style.cursor) as.style.cursor = '';
+      if (as.getAttribute('data-lxfull') !== '') as.setAttribute('data-lxfull', '');
+      return;
+    }
     // CHOOSING A DESTINATION ASSET IS A NEAR INTENTS IDEA. Only that route swaps, so only it has a
     // list of things you could come out as. Axelar delivers the SAME asset it was handed, so the
     // picker stands down and names that asset instead of offering choices that cannot apply.

@@ -81,6 +81,10 @@ const CSS = '<style id="' + ID + '">'
   + '}'
   + '@media (max-width:720px){.lx-brwrap > .lx-brroute .lx-brr-opts{grid-template-columns:1fr}}'
   + '.lx-brroute{display:block !important;max-width:860px !important;margin-left:auto !important;margin-right:auto !important}'
+  // paintRoutePanel() sets `hidden` when no destination is chosen, and the rule above overrode it: the old
+  // route (wNEAR via NEAR Intents, fee, time) stayed on screen after the destination was cleared (2026-11-19).
+  // More specific, so it wins over the !important above.
+  + '.lx-brroute[hidden]{display:none !important}'
   + '.lx-brroute .hd{grid-column:auto;grid-row:auto;margin-bottom:12px}'
   // A lone route filled half the row and left the other half empty. :only-child makes it span instead, so the panel
   // is symmetrical whether a destination has one route or two -- no JS, no second layout to keep in step.
