@@ -1622,7 +1622,10 @@
       b.style.opacity = EX_MINE ? '1' : '.6';
       b.style.textDecoration = EX_MINE ? 'underline' : '';
       b.style.textUnderlineOffset = '5px';
-      var bd = document.getElementById('dxaExTable');
+      // THE PHONE HAS NO #dxaExTable (RAZA 2026-11-18: "My Trades on trade-asset page is not opening", phone). This
+      // looked the desktop id up alone and returned on null, so the tap only restyled the button -- the same layout
+      // gap the size filters had on 2026-10-17, which exHost() was written for and this handler never used.
+      var bd = exHost();
       if (!bd) return;
       // Back to the Exchanges tab, where the rows are.
       var extab = document.querySelector('.tabs-bar .tab[data-tab="exchanges"]');
@@ -1651,6 +1654,14 @@
   }
   function mtNote(body, text) {
     body.innerHTML = '';
+    if (body.tagName !== 'TBODY') {                        // the phone's list is a div of cards
+      var nd = el('div', null, text);
+      nd.setAttribute('data-lxnote', '1');
+      nd.style.cssText = 'padding:26px 12px;text-align:center;opacity:.7';
+      body.appendChild(nd);
+      body.classList.add('lxda');
+      return;
+    }
     var tr = document.createElement('tr');
     tr.setAttribute('data-lxnote', '1');
     var td = el('td', null, text);
@@ -1660,8 +1671,56 @@
     body.appendChild(tr);
     body.classList.add('lxda');
   }
+  // One of the wallet's own trades as the PHONE's card (.ex-row): the same parts paintExchanges fills there --
+  // identicon, address linked to the account page, Buy/Sell badge, price with both legs under it, age, and the
+  // explorer link -- so a My Trades card reads exactly like a Recent Exchanges card.
+  function myPhoneCard(row, h, me, otherXrp, asset) {
+    var nm = row.querySelector('.nm');
+    if (nm) {
+      if (nm.tagName !== 'A' && nm.parentNode) {
+        var a = document.createElement('a');
+        a.className = nm.className; a.style.color = 'inherit'; a.style.textDecoration = 'none';
+        nm.parentNode.replaceChild(a, nm); nm = a;
+      }
+      nm.href = '/account/xrpl/' + encodeURIComponent(me);
+      nm.textContent = shortAddr(me);
+    }
+    var ic = row.querySelector('.ex-ident');
+    if (ic) ic.innerHTML = identSvg(me, 28);
+    var bdg = row.querySelector('.type-badge');
+    if (bdg) { bdg.className = 'type-badge ' + (h.bought ? 'buy' : 'sell'); bdg.textContent = h.bought ? '▲ Buy' : '▼ Sell'; }
+    exRowCss();
+    row.setAttribute('data-lxex', '');
+    var num = row.querySelector('.ex-num');
+    if (num) {
+      var sub = num.querySelector('.sub');
+      var pxEl = num.querySelector('.lx-px');
+      if (!pxEl) { pxEl = document.createElement('span'); pxEl.className = 'lx-px'; num.insertBefore(pxEl, num.firstChild); }
+      [].slice.call(num.childNodes).forEach(function (n) { if (n.nodeType === 3 && n.nodeValue.trim()) num.removeChild(n); });
+      var unit = otherXrp != null ? ' XRP' : (' ' + curName(h.other.c));
+      pxEl.innerHTML = pxHtml(h.other.v / h.mine.v) + pxEsc(unit);
+      if (sub) sub.textContent = (tradeNum(h.other.v) + ' ' + (otherXrp != null ? 'XRP' : curName(h.other.c)))
+        + ' → ' + tradeNum(h.mine.v) + ' ' + asset.code;
+    }
+    var mt = row.querySelector('.ex-time');
+    if (mt) mt.textContent = ago(h.t);
+    if (h.hash && !row.querySelector('.lx-exlink')) {
+      var lk = document.createElement('a');
+      lk.className = 'lx-exlink';
+      lk.href = 'https://bithomp.com/explorer/' + encodeURIComponent(h.hash);
+      lk.target = '_blank'; lk.rel = 'noopener nofollow';
+      lk.setAttribute('aria-label', 'View this trade on Bithomp');
+      lk.style.opacity = '.75';
+      lk.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+        + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'
+        + '<polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+      row.appendChild(lk);
+    }
+    return row;
+  }
   function loadMyTrades(asset) {
-    var body = document.getElementById('dxaExTable');
+    var body = exHost();                                   // desktop <tbody> or the phone's card list
     if (!body || !asset) return;
     var me = myAddr();
     if (!me) { mtNote(body, 'Connect a wallet to see your own trades in this asset.'); return; }
@@ -1695,6 +1754,7 @@
         });
         if (!out.length) { mtNote(body, 'No trades in ' + asset.code + ' from this wallet.'); return; }
         body.innerHTML = '';
+        var phone = body.tagName !== 'TBODY';
         out.forEach(function (h) {
           var row = EX_TPL ? EX_TPL.cloneNode(true) : null;
           if (!row) return;
@@ -1703,6 +1763,7 @@
           row.style.display = '';
           var otherXrp = h.other.c === 'XRP' ? h.other.v : null;
           if (otherXrp != null) row.setAttribute('data-lxxrp', String(otherXrp));
+          if (phone) { body.appendChild(myPhoneCard(row, h, me, otherXrp, asset)); return; }
           var td = row.children;
           var wa = td[0] && td[0].querySelector('.wa');
           if (wa) wa.textContent = shortAddr(me);

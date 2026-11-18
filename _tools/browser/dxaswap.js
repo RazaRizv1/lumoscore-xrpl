@@ -1063,7 +1063,11 @@
         stop((feeD && !batched) ? (why + ' The platform fee was already paid.') : why, 'bad');
         return;
       }
-      stop('Swap complete ✓', 'good');
+      // FORCED, because a balance read that failed while the wallet app was in front leaves a "could not
+      // read your balance" note that say() otherwise refuses to replace -- so a finished swap said nothing
+      // (RAZA 2026-11-18, phone: "After the swap completes, it doesn't show the message like it does on Stellar").
+      say.force = true;
+      try { stop('Swap complete ✓', 'good'); } finally { say.force = false; }
       // THE CONFIRMATION LANDS WHERE STELLAR'S DOES (RAZA 2026-10-06: "When buying / selling asset on
       // Trade-asset page, its not showing the message at the bottom like it does on Stellar").
       //
@@ -1076,7 +1080,10 @@
       // below the fold, so unlike the pool card there is nothing to move — this adds the half that was
       // missing, at the place the eye goes after a wallet sheet closes.
       try {
-        if (typeof window.lxToast === 'function' && quote && quote.out > 0) {
+        // THE QUOTE THIS SWAP WAS SIGNED FOR (`q`), NOT THE PANE'S CURRENT ONE. `quote` is module-wide and
+        // the minutes spent in the wallet for two signatures are long enough for a requote or a cleared box
+        // to replace or null it -- after which this toast silently never fired (RAZA 2026-11-18, phone).
+        if (typeof window.lxToast === 'function' && q && q.out > 0) {
           // THE VERB AND THE AMOUNT HAVE TO BE ABOUT THE SAME ASSET.
           //
           // RAZA 2026-10-19, from the Stellar side but the same line exists here: selling USDC for
@@ -1088,13 +1095,18 @@
           // says ("Bought USDC ✓" / "Sold USDC ✓"): on a buy that is what arrived, on a sell it is
           // what went out. The two lines can no longer disagree about which side they describe.
           window.lxToast(side(p) === 'buy'
-            ? ('Bought ' + fmt(quote.out, 6) + ' ' + s.get.code)
-            : ('Sold ' + fmt(quote.amt, 6) + ' ' + s.pay.code));
+            ? ('Bought ' + fmt(q.out, 6) + ' ' + s.get.code)
+            : ('Sold ' + fmt(q.amt, 6) + ' ' + s.pay.code));
         }
       } catch (e) {}
     }).then(function () {
       var i = input(fields(p)[0]);
       if (i) i.value = '';
+      // BOTH BOXES, as Stellar resets them. clearQuote() leaves "You receive" alone while it has focus --
+      // right while someone is typing a decimal into it, wrong once the swap is done -- and on a phone the
+      // box typed into keeps focus through the wallet round trip, so the "1" stayed. Blur it, then empty it.
+      var rv = input(fields(p)[1]);
+      if (rv) { if (document.activeElement === rv) { try { rv.blur(); } catch (e) {} } rv.value = ''; }
       clearQuote(p);
       loadAcct(true).then(function () { paintStatic(p); });
       try { if (window.__lxxBookReload) window.__lxxBookReload(); } catch (e) {}
