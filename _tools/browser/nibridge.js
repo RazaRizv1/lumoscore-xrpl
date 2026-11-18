@@ -748,7 +748,18 @@
     if (!me) return Promise.resolve();
     return rpcB('account_lines', { account: me, ledger_index: 'validated', limit: 400 })
       .then(function (d) {
-        var lines = (d && d.result && d.result.lines) || [];
+        // A THROTTLE ARRIVES RESOLVED, NOT REJECTED (2026-11-18). Once ledgerPost's own retries are spent,
+        // or the ledger quotes a wait over its cap, it hands back the envelope -- result.error "rate limit:
+        // units quota ... exhausted" -- as the answer. Read as `lines || []` that was a wallet holding
+        // nothing, so the catch below never ran and USDC stayed out of the picker for the whole visit
+        // (1 load in 3 on staging). No `lines` is a failed read and goes to the retry; only an
+        // unfunded account genuinely holds nothing.
+        var res = d && d.result;
+        if (!res || !Array.isArray(res.lines)) {
+          if (res && res.error === 'actNotFound') return;
+          throw new Error(String((res && (res.error_message || res.error)) || 'account_lines: no answer'));
+        }
+        var lines = res.lines;
         LINES = [];
         lines.forEach(function (l) {
           var bal = parseFloat(l.balance);
@@ -756,9 +767,27 @@
           HOLD[holdKey(l.currency, l.account)] = bal;
           LINES.push({ currency: l.currency, issuer: l.account, balance: bal });
         });
+        HOLD_RETRY = 0;
       })
-      .catch(function () {});
+      // RETRIED, NOT SWALLOWED (2026-11-18). The ledger client's own rate limiter refuses a read with
+      // "units quota exhausted, retry in ~16469ms", and this catch used to drop it: HOLD stayed empty
+      // for the life of the page, every token the wallet held vanished from the picker, and the
+      // source chip stopped being clickable -- measured twice in four staging loads. It now waits the
+      // time the limiter names (or a growing default) and reads again, up to four times, then
+      // repaints what depends on the holdings.
+      .catch(function (e) {
+        if (HOLD_RETRY >= 4) return;
+        HOLD_RETRY++;
+        var m = /retry in ~(\d+)ms/.exec(String((e && e.message) || e || ''));
+        var wait = Math.min(30000, m ? (+m[1] + 250) : 2500 * HOLD_RETRY);
+        setTimeout(function () {
+          loadHoldings().then(function () {
+            try { paintSourceAsset(); refreshDestinations(); paintSteps(); setCta(); } catch (_) {}
+          });
+        }, wait);
+      });
   }
+  var HOLD_RETRY = 0;
 
   // XRP first, then every registered asset the wallet holds.
   // What a route can be handed AS IT STANDS: XRP, and the interchain assets the wallet holds.
