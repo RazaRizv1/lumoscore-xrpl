@@ -1544,6 +1544,7 @@
 
       paintMyPosition();
       liftDw();
+      try { wDim(); } catch (e) {}   // the LP read just landed (N14)
     });
   }
 
@@ -1719,7 +1720,19 @@
     }
     if (p.myLp == null) { setSummary('pool share', '—'); return; }
     var after = (p.lpSupply > 0) ? Math.max(0, (p.myLp - v)) / Math.max(1e-9, (p.lpSupply - v)) : 0;
-    setSummary('pool share', (after * 100).toFixed(4) + '%');
+    setSummary('pool share', over ? '—' : (after * 100).toFixed(4) + '%');   // no share after a withdrawal you cannot make (N14)
+    wDim();
+  }
+  // NO LP, NOTHING TO WITHDRAW (N14, 2026-11-19): Stellar dims Withdraw (.lx-dwoff) whenever the position holds no LP
+  // shares; this button stayed bright. Only the Withdraw tab, only a read that came back 0, never the Connect wallet state.
+  function wDim() {
+    var cta = $('.dw-cta'), p = window.__lxxPool;
+    if (!cta) return;
+    var off = mode() === 'withdraw' && !!p && p.myLp === 0 && !/connect/i.test(cta.textContent || '');
+    if (cta.classList.contains('lx-dwoff') !== off) cta.classList.toggle('lx-dwoff', off);
+    if ((cta.getAttribute('aria-disabled') === 'true') !== off) { if (off) cta.setAttribute('aria-disabled', 'true'); else cta.removeAttribute('aria-disabled'); }
+    var why = off ? 'You have no LP tokens in this pool to withdraw.' : '';
+    if ((cta.getAttribute('title') || '') !== why) { if (why) cta.setAttribute('title', why); else cta.removeAttribute('title'); }
   }
 
   function mode() {
@@ -1826,6 +1839,7 @@
             if (nd.nodeType === 3 && nd.nodeValue.trim()) nd.nodeValue = w ? ' Remove Liquidity ' : ' Add Liquidity ';
           });
         }
+        wDim();   // dimmed only on the Withdraw tab (N14)
         dwSay('');
       });
     });
