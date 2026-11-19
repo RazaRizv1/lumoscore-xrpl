@@ -445,7 +445,7 @@
     // previously showed "$4.62M / 3.42M XRP", one side doubled, beside a volume carrying an XRP
     // sub-line the reference does not have.
     stats.appendChild(stat('Liquidity', usdText(p.liq), composition(p)));
-    stats.appendChild(stat('Vol (today)', usdText(p.vol)));   // main's phone label, as the note above records
+    stats.appendChild(stat('Vol (24h)', usdText(p.vol)));   /* rolling 24h, as the figure is (S43) */   // main's phone label, as the note above records
     stats.appendChild(stat('Members', count(p.holders)));
     a.appendChild(stats);
     return a;
@@ -1013,7 +1013,7 @@
       // high to low just like im able to sort Trade main page columns"). The arrow marks the column in force and its
       // direction; the four figure columns take a click, and # and Pair stay inert as they are on lumoscore.com.
       var WANT = [['#', null, null], ['Pair', null, null], ['Liquidity ', '↓', 'liq'],
-                  ['VOL (TODAY)', '', 'vol'], ['FEES (TODAY)', '', 'fees'], ['Participants ', '', 'holders']];
+                  ['VOL (24H)', '', 'vol'], ['FEES (24H)', '', 'fees'],   /* rolling 24h: S43, 2026-11-19 */ ['Participants ', '', 'holders']];
       var ths = head.querySelectorAll('th');
       for (var i = 0; i < ths.length && i < WANT.length; i++) {
         var th = ths[i];
