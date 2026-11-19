@@ -814,19 +814,33 @@
         return;
       }
       var drops = Number(res.account_data.Balance);
-      var xrp = drops / 1e6;
-      if (balEl) balEl.textContent = xrp.toFixed(2) + ' XRP';
+      var xrp = drops / 1e6, owners = Number(res.account_data.OwnerCount) || 0;
+      // SPENDABLE, NOT THE TOTAL (S80, RAZA 2026-11-20 "Yes, spendable"), as Stellar's Swap and NEAR's launchpad. The
+      // ledger holds back its base reserve plus an increment per object the account owns; that XRP cannot pay for a
+      // launch, and runLaunch already compares the cost with exactly this figure before the first prompt.
+      return rpc('server_info', {}).then(function (si) {
+        var v = si && si.result && si.result.info && si.result.info.validated_ledger;
+        var base = (v && Number(v.reserve_base_xrp)) || 1, inc = (v && Number(v.reserve_inc_xrp)) || 0.2;
+        var held = base + owners * inc, spend = Math.max(0, xrp - held);
+        if (balEl) { balEl.textContent = spend.toFixed(2) + ' XRP'; balEl.title = xrp.toFixed(2) + ' XRP held, ' + held.toFixed(2) + ' XRP held back as the ledger reserve'; }
 
-      // A launch cannot be part-paid. Warn before the first prompt rather than after two
-      // transactions have already gone through.
-      var need = Number(window.__lxxLaunchTotalXrp || 0);
-      if (need > 0 && xrp < need) {
-        var warn = document.createElement('div');
-        warn.style.cssText = 'margin-top:8px;font-size:12px;color:#e5484d';
-        warn.textContent = 'This launch needs about ' + need.toFixed(2)
-          + ' XRP and this wallet holds ' + xrp.toFixed(2) + '.';
-        panel.appendChild(warn);
-      }
+        // A launch cannot be part-paid. Warn before the first prompt rather than after two
+        // transactions have already gone through -- and DIM the button, as Stellar's review does (S80): the note used
+        // to sit squeezed beside the balance with Confirm & Launch still bright.
+        var need = Number(window.__lxxLaunchTotalXrp || 0);
+        var go = $$('a, button').filter(function (e) { return /confirm\s*&\s*launch/i.test(e.textContent || ''); })[0];
+        var old = document.getElementById('lxx-lp-short'); if (old && old.parentNode) old.parentNode.removeChild(old);
+        if (need > 0 && spend < need) {
+          var warn = document.createElement('div');
+          warn.id = 'lxx-lp-short';
+          warn.style.cssText = 'color:#e5484d;font-size:12.5px;font-weight:600;line-height:1.5;text-align:center;width:100%;box-sizing:border-box;margin:12px 0 0;padding:10px 12px;border:1px solid rgba(229,72,77,.35);border-radius:10px;background:rgba(229,72,77,.08)';
+          warn.textContent = 'Not enough XRP to launch. It needs about ' + need.toFixed(2) + ' XRP and this account can spend '
+            + spend.toFixed(2) + ' (' + held.toFixed(2) + ' XRP is held as the ledger\u2019s reserve). Add funds and try again.';
+          var row = go ? (go.closest('.actions-row') || go.parentNode) : null;
+          if (row && row.parentNode) row.parentNode.insertBefore(warn, row.nextSibling); else panel.appendChild(warn);
+          if (go) { go.style.setProperty('opacity', '0.45', 'important'); go.style.setProperty('filter', 'grayscale(0.4)', 'important'); go.style.pointerEvents = 'none'; go.style.cursor = 'not-allowed'; go.setAttribute('aria-disabled', 'true'); }
+        }
+      });
     }).catch(function () { if (balEl) balEl.textContent = '—'; });
   }
 
