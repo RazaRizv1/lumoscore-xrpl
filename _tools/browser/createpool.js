@@ -173,6 +173,7 @@
     if (!who) { S.hold = []; S.who = ''; return Promise.resolve(); }
     if (!force && S.who === who && S.hold) return Promise.resolve();
     if (S.loading && !force) return S.loading;
+    S.failed = false;                         // describes the most recent attempt only (bug X23)
     S.loading = Promise.all([
       rpc('account_info', { account: who, ledger_index: 'validated' }),
       rpc('server_info', {}),
@@ -181,6 +182,10 @@
       var si = ((r[1] && r[1].info) || {}).validated_ledger || {};
       S.reserve = { base: +si.reserve_base_xrp > 0 ? +si.reserve_base_xrp : 1, inc: +si.reserve_inc_xrp > 0 ? +si.reserve_inc_xrp : 0.2 };
       var info = r[0] && r[0].account_data;
+      // actNotFound is an ANSWER (the account is not on the ledger yet); no account_data for any other reason is a
+      // failed read and must not be reported as an empty wallet (bug X23, as qorders.js).
+      S.unfunded = !!(r[0] && r[0].error === 'actNotFound');
+      S.failed = !info && !S.unfunded;
       var list = [];
       if (info) {
         var sp = lxx().spendableXrp(info.Balance, info.OwnerCount, S.reserve);
@@ -193,9 +198,9 @@
         list.push({ code: t.display, currency: t.currency, issuer: t.issuer, balance: t.balance, spendable: t.balance });
       });
       S.hold = list;
-      S.who = who;
+      S.who = S.failed ? '' : who;              // a failed read is not cached: the next open reads again
       S.loading = null;
-    }).catch(function () { S.loading = null; S.hold = S.hold || []; });
+    }).catch(function () { S.loading = null; S.failed = true; S.who = ''; S.hold = S.hold || []; });
     return S.loading;
   }
 
@@ -263,7 +268,10 @@
       var none = document.createElement('div');
       none.className = 'ad-item lx-cpitem';
       none.style.cssText = 'cursor:default;opacity:.7;justify-content:center';
-      none.textContent = S.hold && S.hold.length ? 'No matching assets' : 'No assets in this wallet yet';
+      none.textContent = S.hold && S.hold.length ? 'No matching assets'
+        : (S.loading || S.hold === null) ? 'Loading your assets…'
+        : S.failed ? 'Could not read this wallet — close and reopen to try again'
+        : S.unfunded ? 'This wallet is not funded yet' : 'No assets in this wallet yet';
       list.appendChild(none);
       return;
     }

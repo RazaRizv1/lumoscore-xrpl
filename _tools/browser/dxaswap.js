@@ -648,6 +648,13 @@
     if (!p || !asset()) return;
     paintStatic(p);
     var amt = num(input(fields(p)[0]) && input(fields(p)[0]).value);
+    // SAY WHY, NOT JUST DIM (bug X30, 2026-11-19): a typed 0, and XRP past its 6 decimals, were quoted as nothing or as
+    // "$0.0000" with no word on what was wrong. These two notes clear themselves on the next amount.
+    var rawIn = String((input(fields(p)[0]) || {}).value || '').trim(), mineN = ['Enter an amount greater than 0.', 'XRP has at most 6 decimal places.'];
+    var nn = p.querySelector('.lxx-limit-note');
+    if (nn && mineN.indexOf((nn.textContent || '').trim()) >= 0) say(p, '');
+    if (rawIn !== '' && !(amt > 0)) { clearQuote(p); setDis(p, true); say(p, mineN[0], 'bad'); return; }
+    if (sides(p).pay.currency === 'XRP' && (rawIn.split('.')[1] || '').length > 6) { clearQuote(p); setDis(p, true); say(p, mineN[1], 'bad'); return; }
     if (!(amt > 0)) { clearQuote(p); say(p, ''); return; }
     var s = sides(p), me = addr(), my = ++seq;
     var d = window.__lxxAssetData;

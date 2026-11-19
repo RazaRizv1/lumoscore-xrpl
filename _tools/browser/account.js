@@ -49,7 +49,8 @@
     return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   function short(a) { return a && a.length > 12 ? a.slice(0, 6) + '…' + a.slice(-4) : (a || ''); }
-  function issShort(a) { return a && a.length > 10 ? a.slice(0, 4) + '—' + a.slice(-4) : (a || ''); }
+  // An ellipsis, as everywhere else on the site; the em dash read as a range (bug X29, 2026-11-19).
+  function issShort(a) { return a && a.length > 10 ? a.slice(0, 4) + '…' + a.slice(-4) : (a || ''); }
   function ago(ms) {
     if (!ms) return '';
     var s = Math.max(0, Math.round((Date.now() - ms) / 1000));

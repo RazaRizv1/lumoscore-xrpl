@@ -3097,9 +3097,10 @@
     }
 
     // The title was being rewritten at runtime to the Stellar token's. Say what this page is.
+    // ONLY A WRONG TITLE IS REWRITTEN (bug X11, 2026-11-19): the edge already serves the right one, and replacing it with
+    // different words made the tab title change a second after load.
     try {
-      document.title = asset.code + (d && d.user ? ' by ' + d.user : '')
-        + ' — price, order book and holders on the XRP Ledger | LumosCore';
+      if (!/XRP Ledger/.test(document.title || '')) document.title = asset.code + ' price, pools and holders on XRP Ledger | LumosCore';
     } catch (e) {}
 
     // THE ISSUER CARD WAS A DIFFERENT CHAIN'S ACCOUNT ENTIRELY.

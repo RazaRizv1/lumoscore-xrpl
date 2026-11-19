@@ -579,7 +579,16 @@
     // querySelectorAll, not `$$` — this file defines `$` only. Written as `$$` first, exactly as in
     // wallet.js an hour earlier; `node -c` passes it both times because it is a runtime reference.
     var strongs = document.querySelectorAll('.dex-mk-page-info strong');
-    if (strongs.length > 1) strongs[strongs.length - 1].textContent = String(total);
+    if (strongs.length > 1) {
+      var tot = strongs[strongs.length - 1];
+      tot.textContent = String(total);
+      // ONE PAIR, NOT 1 PAIRS (bugs X31 / N18 / S19, 2026-11-19): the word after the total follows it.
+      var tn = tot.nextSibling;
+      if (tn && tn.nodeType === 3) { var w = tn.nodeValue.replace(/pairs?/, total === 1 ? 'pair' : 'pairs'); if (w !== tn.nodeValue) tn.nodeValue = w; }
+    }
+    // THE PHONE FILTER BOX IS 105 PX WIDE (bugs X32 / N19 / S85): Filter curated pairs was cut off as Filter curatec; Filter curated fits and keeps the scope (#10).
+    var ms = document.getElementById('mdxMkSearch');
+    if (ms && ms.getAttribute('placeholder') !== 'Filter curated') ms.setAttribute('placeholder', 'Filter curated');
   }
 
   function buildPager(h, d, pages) {

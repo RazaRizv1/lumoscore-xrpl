@@ -1629,8 +1629,35 @@
     previewDeposit();
   }
 
+  // A quiet line under a deposit field, created once and placed right after it. Diff-guarded.
+  function hintUnder(field, cls, text) {
+    var n = $('#dwDeposit .' + cls);
+    if (!text) { if (n && n.style.display !== 'none') n.style.display = 'none'; return; }
+    if (!field || !field.parentNode) return;
+    if (!n) { n = el('div', cls); n.style.cssText = 'font-size:12px;line-height:1.4;color:#e5484d;margin:6px 2px 14px'; }
+    if (n.previousSibling !== field) field.parentNode.insertBefore(n, field.nextSibling);
+    if (n.textContent !== text) n.textContent = text;
+    if (n.style.display !== '') n.style.display = '';
+  }
+  // SAY IT WHILE TYPING (bugs X21 + X22, 2026-11-19). 500,000 XRP against 11.28 XRP showed "Pool share after
+  // 99.93%" with Add Liquidity live, and "-3" sat in the field with nothing said; both were only refused after
+  // pressing the button. A balance that was never read (null/undefined) is not "over".
+  function depositHints() {
+    var p = window.__lxxPool, i = dwInputs();
+    if (!p) return;
+    var f = $$('#dwDeposit .dw-field');
+    [[i.a, p.balA, p.a], [i.b, p.balB, p.b]].forEach(function (x, k) {
+      var raw = x[0] ? String(x[0].value).replace(/,/g, '').trim() : '';
+      var v = parseFloat(raw), t = '';
+      if (raw.charAt(0) === '-') t = "Amounts can't be negative.";
+      else if (typeof x[1] === 'number' && v > x[1] + 1e-9) t = 'More than your balance (' + num(x[1], 6) + ' ' + x[2].name + ')';
+      hintUnder(f[k], 'lxx-dhint' + k, t);
+    });
+  }
+
   function previewDeposit() {
     var p = window.__lxxPool, i = dwInputs();
+    depositHints();
     if (!p || !i.a) return;
     var va = parseFloat(String(i.a.value).replace(/,/g, ''));
     if (!(va > 0) || !(p.a.amount > 0) || !(p.lpSupply > 0)) { setSummary('pool share', '—'); return; }
@@ -1652,13 +1679,37 @@
     setSummary('pool share', (after * 100).toFixed(4) + '%');
   }
 
+  // "You receive" is a quote for an amount you have typed, so with no amount it has nothing to show. It used to sit
+  // there with the design's baked "620.30 / 1,860.90" whenever the pool could not be read (bug X20, 2026-11-19):
+  // hidden from the first paint (clearMockStats, fail) until previewWithdraw has a real amount to quote.
+  function hideRecv() {
+    var r = $$('#dwWithdraw .dw-field')[1];
+    if (r && r.style.display !== 'none') r.style.display = 'none';
+  }
+  // The quiet line under the LP field. Diff-guarded, created once, placed right after the field.
+  function wOver(field, text) {
+    var n = $('#dwWithdraw .lxx-wover');
+    if (!text) { if (n) n.style.display = 'none'; return; }
+    if (!field || !field.parentNode) return;
+    if (!n) { n = el('div', 'lxx-wover'); n.style.cssText = 'font-size:12px;line-height:1.4;color:#e5484d;margin:6px 2px 0'; }
+    if (n.previousSibling !== field) field.parentNode.insertBefore(n, field.nextSibling);
+    if (n.textContent !== text) n.textContent = text;
+    n.style.display = '';
+  }
+
   function previewWithdraw() {
     var p = window.__lxxPool, i = dwInputs();
-    if (!p || !i.lp) return;
+    if (!p || !i.lp) { hideRecv(); return; }
     var v = parseFloat(String(i.lp.value).replace(/,/g, ''));
-    var share = (p.lpSupply > 0 && v > 0) ? (v / p.lpSupply) : 0;
-    var recv = $$('#dwWithdraw .dw-field')[1];
+    // MORE THAN YOU HOLD GETS NO QUOTE (bug X19, 2026-11-19): "Your LP: 0" with 50 typed showed "You receive
+    // 0.0006742 XRP + 19.745412 LUMOS". An LP figure that was never read (null/undefined) is not "over".
+    var over = (typeof p.myLp === 'number') && v > p.myLp * (1 + 1e-9) + 1e-9;
+    var share = (p.lpSupply > 0 && v > 0 && !over) ? (v / p.lpSupply) : 0;
+    var fields = $$('#dwWithdraw .dw-field'), recv = fields[1];
+    wOver(fields[0], over ? ('More than your LP (' + num(p.myLp, 6) + ')') : '');
     if (recv) {
+      var want = (v > 0 && !over) ? '' : 'none';
+      if (recv.style.display !== want) recv.style.display = want;
       var rows = recv.querySelectorAll('.row');
       [p.a.amount * share, p.b.amount * share].forEach(function (x, k) {
         if (!rows[k]) return;
@@ -1855,6 +1906,7 @@
     setStat('fees', '—', '');
     setStat('participant', '—', '');
     clearChart();
+    hideRecv();
   }
 
   // `headline` is what the page CLAIMS, and it is separate from `msg` because the two were saying
@@ -1879,6 +1931,7 @@
     setStat('vol', '—', '');
     setStat('fees', '—', '');
     setStat('participant', '—', '');
+    hideRecv();
     participants(msg);
     // The design ships this page filled with another chain's sample data, and the success path is what normally overwrites
     // it. Without this, a pool that could not be read showed "3.19M APT" across the chart and a table of invented trades
