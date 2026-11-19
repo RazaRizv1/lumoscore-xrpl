@@ -2965,6 +2965,22 @@
         f.textContent = amt ? (fmt(n.fee / 1e6, 6) + ' XRP (' + (feeRate() * 100).toFixed(1) + '%)') : '—';
       }
     }
+    // ONE FEE ROW, STELLAR'S (RAZA 2026-11-19: "i wanna keep everything aligned"). The page inherits Stellar's
+    // "Bridge fee" row (lx-bridgefee) and nothing here filled it, so it said a fixed "0.2%" beside this function's own
+    // "LumosCore fee" row: one fee, shown twice. Our row is hidden; its figure goes into Stellar's, in Stellar's format.
+    try {
+      var bfv = $('.lx-bfee .v'), bfr = bfv && bfv.closest ? bfv.closest('.r') : null, ownR = f && f.closest ? f.closest('.r') : null;
+      if (bfv) {
+        if (ownR && ownR.style.display !== 'none') ownR.style.display = 'none';
+        if (ownR && bfr && ownR.nextSibling !== bfr && ownR.parentNode === bfr.parentNode) ownR.parentNode.insertBefore(bfr, ownR.nextSibling);
+        var frt = feeRate(), pctT = (frt * 100).toFixed(2).replace(/0$/, '').replace(/\.$/, '') + '%';
+        var tokenAx = !!(AXQ && !(SRC && (SRC.native || SRC.viaSwap)));
+        var htm = tokenAx ? 'None on this route'
+          : pctT + (amt ? ' <span class="lx-bamt">· ' + fmt(n.fee / 1e6, 6) + ' XRP</span>' : '')
+            + '<span class="lx-bchip">' + (frt > 0.0015 ? '0.1% with LUMOS' : 'LUMOS holder rate') + '</span>';
+        if (bfv.innerHTML !== htm) bfv.innerHTML = htm;
+      }
+    } catch (e) {}
     // The relay row: shown with its real figure on Axelar, removed from the list entirely on the other
     // routes rather than left saying "—", which would imply a charge that was not quoted yet.
     var rl = $('[data-rv="relay"]');
