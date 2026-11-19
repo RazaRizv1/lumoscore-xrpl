@@ -3892,8 +3892,7 @@
   // ever fetched, so an empty table there genuinely means none and must not sit on "Reading…" for
   // ever. The _for check keeps a finished read from reporting itself as pending on a later repaint.
   function loadingTxs() {
-    var me = addr();
-    if (!me) return false;
+    var me = addr() || '(public)';   // signed out reads the platform list too (2026-11-19)
     return loadLedgerTxs._busy === me && loadLedgerTxs._for !== me;
   }
 
@@ -3902,8 +3901,12 @@
     // TWO guards, not one. `_for` says "this address is done" and is set only when an answer lands;
     // `_busy` says "an answer is on its way". Without the second, every repaint between the request
     // and its reply would start another one -- and paintTxs() calls this on every paint.
-    if (!me || loadLedgerTxs._for === me || loadLedgerTxs._busy === me) return;
-    loadLedgerTxs._busy = me;
+    // SIGNED OUT STILL READS THE PLATFORM'S TRANSFERS (2026-11-19). This returned at once with no wallet, so the table
+    // said "No bridge transfers yet" over a list that is not about the reader at all -- Stellar and NEAR show it
+    // signed out. Keyed '(public)' then; connecting changes the key and re-reads with the wallet's own rows.
+    var key = me || '(public)';
+    if (loadLedgerTxs._for === key || loadLedgerTxs._busy === key) return;
+    loadLedgerTxs._busy = key;
     // TWO HUNDRED, NOT EIGHTY. Measured against the three wallets that have actually bridged: at 80
     // every one of them returned zero marked fees, because a bridge is a handful of transactions in
     // an account that also swaps and adds liquidity, and the history RAZA wanted to see was already
@@ -3968,7 +3971,7 @@
           var rows = [];
           lists.forEach(function (l) { rows = rows.concat(l); });
           LEDGER_TXS = rows;
-          loadLedgerTxs._for = me;
+          loadLedgerTxs._for = key;
           loadLedgerTxs._busy = null;
           // Painted twice on purpose: once with what the ledger gave us, so the table is not held
           // behind a second round trip, and again when the NEAR rows have been resolved.
