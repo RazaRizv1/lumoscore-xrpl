@@ -610,7 +610,15 @@
         sumRow(p, 'min received', '—');
         sumRow(p, 'price impact', '—');     // a number here would be answering the wrong question
         impactTone(p, '');
-        say(p, SAT_MSG, 'bad');
+        // NO RECEIVE FIGURE BESIDE THE REFUSAL EITHER (X9, 2026-11-19): Stellar blanks it (S29); this left
+        // "You receive 19,439,519 LUMOS ≈ $664.68" under "Not enough liquidity".
+        var recvI = input(f[1]);
+        if (recvI && document.activeElement !== recvI) recvI.value = '';
+        mark(frowMono(f[1]), usdTxt(0));
+        // BALANCE FIRST (RAZA 2026-11-19 "balance first, all 3"): over your balance AND too big for the pool keeps the
+        // "Not enough XRP" sentence — what you hold is the thing to fix first.
+        var shortNow = (addr() && acct.at && !acct.failed) ? shortMsg(p, amt) : '';
+        say(p, shortNow || SAT_MSG, 'bad');
         setDis(p, true);
       });
     }
@@ -763,7 +771,7 @@
     // The button stays pressable, but the order is refused with the same sentence already on screen.
     // This pane has no disabled state of its own, so refusing here is its equivalent of the
     // data-lxdis Stellar sets on its CTA.
-    if (quote.unfillable) return SAT_MSG;
+    if (quote.unfillable) return (acct.key != null && !acct.failed && shortMsg(p, amt)) || SAT_MSG;   // balance first (X9)
     if (acct.key == null) return 'Reading your balance — try again in a moment.';
     var s = sides(p);
     if (s.pay.currency === 'XRP') {
