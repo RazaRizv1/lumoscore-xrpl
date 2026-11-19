@@ -299,7 +299,7 @@
   // letting it continue as though a transaction had been submitted.
   function gemSubmit(tx) {
     return gemInstalled().then(function (ok) {
-      if (!ok) throw new Error('GemWallet is not installed in this browser.');
+      if (!ok) throw missingWallet('GemWallet');
       return gemSend('REQUEST_SUBMIT_TRANSACTION/V3', {
         transaction: tx,
         url: window.location.origin, title: document.title, favicon: favicon()
@@ -334,7 +334,7 @@
 
   function gemConnect() {
     return gemInstalled().then(function (ok) {
-      if (!ok) throw new Error('GemWallet is not installed in this browser.');
+      if (!ok) throw missingWallet('GemWallet');
       return gemSend('REQUEST_GET_ADDRESS/V3', {
         url: window.location.origin, title: document.title, favicon: favicon()
       });
@@ -854,11 +854,20 @@
   // UNTESTED AGAINST THE EXTENSION, exactly as GemWallet's path was when it was written: there is no Crossmark in the
   // browser this was built in. Both response shapes the SDK has used are read, and anything else is reported as a refusal
   // rather than treated as a success — a wallet layer must never claim a signature it cannot show a hash for.
+  // A WALLET EXTENSION THAT IS NOT IN THIS BROWSER (RAZA 2026-11-19): tagged, so the connect flow can show the one
+  // wording every network uses (window.lxWalletMissingText, identical in Stellar's _wallet_realconnect.js and NEAR's
+  // nearconnect.js) instead of a bare "not installed". The message text itself is unchanged for every other reader.
+  window.lxWalletMissingText=window.lxWalletMissingText||function(name,phoneAlt){var phone=/Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent||'');return phone?{title:name+' is a desktop browser extension',text:'On a phone, connect with '+phoneAlt+' instead.'}:{title:name+' isn’t available here',text:'Opened from ChatGPT, another AI assistant, or an app like Telegram or X? Their built-in browsers can block wallet extensions, even ones you’ve installed. Open this link in your usual browser.'};};
+  function missingWallet(name) {
+    var e = new Error(name + ' is not installed in this browser.');
+    e.code = 'NOT_INSTALLED';
+    return e;
+  }
   function crossApi() { return (typeof window !== 'undefined' && window.crossmark) || null; }
   function crossInstalled() { return !!crossApi(); }
   function crossCall(name, arg) {
     var api = crossApi();
-    if (!api) return Promise.reject(new Error('Crossmark is not installed in this browser.'));
+    if (!api) return Promise.reject(missingWallet('Crossmark'));
     var fn = (api.async && api.async[name]) || api[name];
     if (typeof fn !== 'function') return Promise.reject(new Error('This version of Crossmark cannot ' + name + '.'));
     try { return Promise.resolve(fn.call(api.async || api, arg)); } catch (e) { return Promise.reject(e); }
@@ -1338,13 +1347,13 @@
       return close;
     }
 
-    function fail(w, msg) {
+    function fail(w, msg, title) {
       build();
       body.innerHTML = '';
       body.appendChild(head('Could not connect', ''));
       var s = document.createElement('div');
       s.className = 'lxx-state';
-      var h4 = document.createElement('h4'); h4.className = 'lxx-err'; h4.textContent = w.name;
+      var h4 = document.createElement('h4'); h4.className = 'lxx-err'; h4.textContent = title || w.name;
       var p = document.createElement('p'); p.textContent = msg;
       var again = document.createElement('button');
       again.className = 'lxx-btn'; again.type = 'button'; again.textContent = 'Try another wallet';
@@ -1565,7 +1574,10 @@
       });
     }).catch(function (e) {
       xamanWaiting = null;
-      ui.fail(w, (e && e.message) || 'Something went wrong.');
+      if (e && e.code === 'NOT_INSTALLED' && window.lxWalletMissingText) {
+        var mw = window.lxWalletMissingText(w.name, 'Xaman');
+        ui.fail(w, mw.text, mw.title);
+      } else ui.fail(w, (e && e.message) || 'Something went wrong.');
     });
   }
 
