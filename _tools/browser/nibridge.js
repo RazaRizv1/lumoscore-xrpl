@@ -3856,6 +3856,18 @@
   // The chain name comes from the SAME token list the destination picker is built from, looked up
   // by assetId -- not by parsing '43114' out of a NEP-245 id. One request per unresolved row, and
   // only for rows that have no chain yet, so a locally recorded transfer costs nothing.
+  // HOT BRIDGE IDS THAT NEAR INTENTS NO LONGER LISTS (2026-11-19). nep245:v2_1.omni.hot.tg:<chainId>_<base58 contract>.
+  // Named only from what the id itself proves: the chain id, the native coin (all '1's = zero address), or a contract
+  // verified by decoding. Anything else returns the place without a symbol, and the row keeps its dash for the asset.
+  var HOT_CHAIN = { '1': ['Ethereum', 'ETH'], '10': ['Optimism', 'ETH'], '56': ['BNB Chain', 'BNB'], '137': ['Polygon', 'POL'],
+    '8453': ['Base', 'ETH'], '42161': ['Arbitrum', 'ETH'], '43114': ['Avalanche', 'AVAX'] };
+  var HOT_TOKEN = { '43114_3atVJH3r5c4GqiSYmg9fECvjc47o': 'USDC', '43114_372BeH7ENZieCaabwkbWkBiTTgXp': 'USDT' };
+  function hotAsset(id) {
+    var m = /^nep245:v2_1\.omni\.hot\.tg:(\d+)_([1-9A-HJ-NP-Za-km-z]+)$/.exec(String(id || ''));
+    if (!m || !HOT_CHAIN[m[1]]) return null;
+    var c = HOT_CHAIN[m[1]], sym = /^1+$/.test(m[2]) ? c[1] : (HOT_TOKEN[m[1] + '_' + m[2]] || '');
+    return { place: c[0], sym: sym };
+  }
   function enrichNi(rows, done) {
     var pend = (rows || []).filter(function (r) { return r.route === 'ni' && !r.place && r.to; });
     if (!pend.length) { done(); return; }
@@ -3877,6 +3889,12 @@
             if (q && q.amountOutFormatted != null && isFinite(Number(q.amountOutFormatted))) {
               r.recv = Number(q.amountOutFormatted);
               r.recvSym = tok.symbol || '';
+            }
+          } else {
+            var hk = hotAsset(qr.destinationAsset);   // a HOT id NEAR Intents has stopped listing (2026-11-19)
+            if (hk) {
+              r.place = hk.place;
+              if (hk.sym && q && q.amountOutFormatted != null && isFinite(Number(q.amountOutFormatted))) { r.recv = Number(q.amountOutFormatted); r.recvSym = hk.sym; }
             }
           }
           if (qr.recipient) r.to = String(qr.recipient);
