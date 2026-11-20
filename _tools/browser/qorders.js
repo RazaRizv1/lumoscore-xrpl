@@ -333,7 +333,8 @@
       // Anything else that leaves us without account_data is a failed read, and must not be reported
       // as an empty wallet.
       H.unfunded = !!(r[0] && r[0].error === 'actNotFound');
-      H.failed = !info && !H.unfunded;
+      // AN INCOMPLETE TRUST-LINE LIST IS A FAILED READ TOO (2026-11-20): a page that did not answer is not "no RLUSD line".
+      H.failed = (!info && !H.unfunded) || !!(r[2] && r[2].incomplete);
       var hold = [], lines = [];
       if (info) {
         var sp = lxx().spendableXrp(info.Balance, info.OwnerCount, H.reserve);
@@ -370,6 +371,14 @@
   // [[absent-has-many-causes]] — loading / failed / empty are three states and need three tests, not
   // two strings behind one.
   function loaded() { return !H.loading && (H.who === addr() || H.failed); }
+  // A FAILED BALANCE READ IS NOT "YOU HAVE 0" (2026-11-20). quoteSwap() asks again on its own -- 1.5s, 4s, 9s -- then quotes
+  // again; the reader is told it is still reading, and only after the third miss that it could not.
+  var qrN = 0, qrT = null;
+  function qRetry() {
+    if (qrT || qrN >= 3) return;
+    qrN++;
+    qrT = setTimeout(function () { qrT = null; loadAccount(true).then(function () { if (!H.failed) qrN = 0; try { paintSwap(); } catch (e) {} quoteSwap(); }); }, [1500, 4000, 9000][qrN - 1]);
+  }
 
   function emptyWhy() {
     if (!loaded()) return 'Loading your assets…';
@@ -1177,6 +1186,7 @@
       feeInXrp(amt).then(function (x) {
         detail('fee', x > 0 ? (fmt(x, 6) + ' XRP') : 'not charged (no XRP route)');
       });
+      if (H.failed || !loaded()) { qRetry(); swapSay(qrN >= 3 && H.failed && !qrT ? 'Could not read your balance from the XRP Ledger — close and reopen to try again.' : 'Reading your balance from the XRP Ledger…'); setGo(false, 'Swap'); return; }   // never '0' from a failed read (2026-11-20)
       var hNew = heldOf(sw.from);
       if (!hNew || amt > hNew.spendable + 1e-12) {
         swapSay('You only have ' + fmt(hNew ? hNew.spendable : 0, 6) + ' ' + sw.from.code + ' available.');
@@ -1232,6 +1242,7 @@
         if (seq !== sw.seq) return;
         detail('fee', x > 0 ? (fmt(x, 6) + ' XRP') : 'not charged (no XRP route)');
       });
+      if (H.failed || !loaded()) { qRetry(); swapSay(qrN >= 3 && H.failed && !qrT ? 'Could not read your balance from the XRP Ledger — close and reopen to try again.' : 'Reading your balance from the XRP Ledger…'); setGo(false, 'Swap'); return; }   // never '0' from a failed read (2026-11-20)
       var h = heldOf(sw.from);
       if (!h || amt > h.spendable + 1e-12) {
         swapSay('You only have ' + fmt(h ? h.spendable : 0, 6) + ' ' + sw.from.code + ' available.');
