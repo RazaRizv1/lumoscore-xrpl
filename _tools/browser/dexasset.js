@@ -1601,6 +1601,16 @@
   // "MY TRADES" AT THE RIGHT OF THE TAB BAR (RAZA 2026-09-16: "Add My trades on the right side of recent activity on Trade-Asset
   // page. This is not specific to LumosCore but if that particular wallet address has trades that particular asset, it will be
   // shown here"). It is a filter over the same rows, so it needs no second feed: every row carries both counterparties.
+  // MY TRADES READS AS ITS OWN VIEW (S35, 2026-11-20). While it is on and the Exchanges panel is showing: the panel heading
+  // says "My Trades" and the Exchanges tab gives up its highlight (.lx-mtview); otherwise both are put back.
+  function lxMtView(on){ try{
+    var bar=document.querySelector(".tabs-bar"); if(!bar)return;
+    var ex=bar.querySelector('.tab[data-tab="exchanges"]');
+    var show=!!on&&!!ex&&ex.classList.contains("active");
+    if(!document.getElementById("lx-mtview-css")){ var st=document.createElement("style"); st.id="lx-mtview-css"; st.textContent=".tabs-bar.lx-mtview .tab.active{color:var(--text-muted,#8a8fa3)!important;border-bottom-color:transparent!important}.tabs-bar.lx-mtview .tab.active .count{background:transparent!important;color:inherit!important}"; (document.head||document.documentElement).appendChild(st); }
+    if(bar.classList.contains("lx-mtview")!==show)bar.classList.toggle("lx-mtview",show);
+    [].slice.call(document.querySelectorAll(".panel-head h3")).forEach(function(h){ var t=(h.textContent||"").trim(); if(t!=="Recent Exchanges"&&t!=="My Trades")return; var w=show?"My Trades":"Recent Exchanges"; if(t!==w)h.textContent=w; });
+  }catch(_){} }
   function ensureMyTrades() {
     var bar = document.querySelector('.tabs-bar');
     if (!bar || bar.querySelector('.lx-mytrades')) return;
@@ -1613,6 +1623,17 @@
   }
   if (!window.__lxxMyTrades) {
     window.__lxxMyTrades = 1;
+    // THE EXCHANGES TAB LEAVES MY TRADES, as on NEAR (S35, 2026-11-20); any other tab click re-states the view.
+    window.addEventListener('click', function (e) {
+      var tab = e.target && e.target.closest ? e.target.closest('.tabs-bar .tab') : null;
+      if (!tab) return;
+      if (!window.__lxMtAuto && EX_MINE && /exchanges/i.test(tab.getAttribute('data-tab') || '')) {
+        var mt = document.querySelector('.lx-mytrades');
+        if (mt) setTimeout(function () { mt.click(); }, 0);
+        return;
+      }
+      setTimeout(function () { lxMtView(EX_MINE); }, 0);
+    }, true);
     window.addEventListener('click', function (e) {
       var b = e.target && e.target.closest && e.target.closest('.lx-mytrades');
       if (!b) return;
@@ -1622,6 +1643,7 @@
       b.style.opacity = EX_MINE ? '1' : '.6';
       b.style.textDecoration = EX_MINE ? 'underline' : '';
       b.style.textUnderlineOffset = '5px';
+      lxMtView(EX_MINE);                                  // heading + tab highlight (S35)
       // THE PHONE HAS NO #dxaExTable (RAZA 2026-11-18: "My Trades on trade-asset page is not opening", phone). This
       // looked the desktop id up alone and returned on null, so the tap only restyled the button -- the same layout
       // gap the size filters had on 2026-10-17, which exHost() was written for and this handler never used.
@@ -1629,7 +1651,7 @@
       if (!bd) return;
       // Back to the Exchanges tab, where the rows are.
       var extab = document.querySelector('.tabs-bar .tab[data-tab="exchanges"]');
-      if (extab && !extab.classList.contains('active')) extab.click();
+      if (extab && !extab.classList.contains('active')) { window.__lxMtAuto = 1; try { extab.click(); } finally { window.__lxMtAuto = 0; } }
       var mb = document.querySelector('.lx-exmore');
       if (mb) mb.style.display = EX_MINE ? 'none' : '';
       if (EX_MINE) {
@@ -1752,7 +1774,12 @@
             hash: t.hash || e.hash || ''
           });
         });
-        if (!out.length) { mtNote(body, 'No trades in ' + asset.code + ' from this wallet.'); return; }
+        if (!out.length) {
+          mtNote(body, 'No trades in ' + asset.code + ' from this wallet.');
+          // The footer still counted the token's feed under this line (S35): it says what the panel now holds.
+          [].forEach.call(document.querySelectorAll('#dxaPanelInfo'), function (fi) { fi.textContent = 'Showing 0 trades from this wallet'; });
+          return;
+        }
         body.innerHTML = '';
         var phone = body.tagName !== 'TBODY';
         out.forEach(function (h) {
@@ -2045,7 +2072,7 @@
     var info = foot.querySelector('.info');
     // STELLAR'S WORDING, including the size filter it was read under: "Showing 1-4 of 4 recent trades · ≥ 100 XLM".
     if (info) {
-      var what = noun === 'exchanges' ? 'recent trades' : noun;
+      var what = noun === 'exchanges' ? (EX_MINE ? 'trades from this wallet' : 'recent trades') : noun;   // S35
       var suffix = (noun === 'exchanges' && EX_MIN > 0) ? (' · ≥ ' + EX_MIN + ' XRP') : '';
       info.textContent = n
         ? ('Showing ' + ((page - 1) * PAGE_PER + 1) + '–' + Math.min(n, page * PAGE_PER) + ' of ' + n + ' ' + what + suffix)
