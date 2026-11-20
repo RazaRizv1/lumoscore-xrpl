@@ -4411,6 +4411,46 @@
   // ctaButton() could never have done this: it finds its target by TEXT, matching confirm/bridge/swap,
   // and this button says "Review transfer" — so step 2's control sat outside every gate in this file
   // while step 3's sat inside them.
+  // THE FEE TIER IS CONFIRMED BEFORE REVIEW (RAZA 2026-11-20: "Yes, wait then say"). Until the wallet's LUMOS balance is
+  // known the fee is the 0.2% default, so a 250,000+ holder whose read failed was shown -- and charged -- 0.2% with no
+  // reason given. "Review transfer" now waits for the tier (up to 8s, the button saying so); if it still cannot be
+  // confirmed, Review says so under the fee. A tier that lands while Review is open removes the note and redraws the fee.
+  var TIER_WAIT_MS = 8000;
+  function tierKnown() { return !addr() || window.__lxLumosBal != null; }
+  function tierNote() {
+    var s3 = $('.br-step[data-step="3"]');
+    if (!s3) return;
+    var n = s3.querySelector('.lx-tiernote');
+    if (tierKnown()) { if (n && n.parentNode) n.parentNode.removeChild(n); return; }
+    if (n) return;
+    var fv = s3.querySelector('.lx-bfee') || s3.querySelector('[data-rv="fee"]');
+    var row = fv && fv.closest ? (fv.closest('.r') || fv) : null;
+    n = document.createElement('div');
+    n.className = 'lx-tiernote';
+    n.textContent = 'Couldn’t confirm your LUMOS balance — the standard 0.2% fee applies.';
+    n.style.cssText = 'font-size:12.5px;line-height:1.35;color:var(--text-muted,#8a8a93);margin:2px 0 6px;text-align:right';
+    if (row && row.parentNode) row.parentNode.insertBefore(n, row.nextSibling); else s3.appendChild(n);
+  }
+  window.addEventListener('lx:feetier', function () { tierNote(); try { paintReview(QUOTE, ''); } catch (e) {} });
+  window.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest && e.target.closest('.br-step[data-step="2"] .br-next');
+    if (!b || b.disabled || b.__lxTierPass) return;
+    if (tierKnown()) { setTimeout(tierNote, 0); return; }
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (b.__lxTierWait) return;
+    b.__lxTierWait = 1;
+    var label = b.innerHTML;
+    b.textContent = 'Checking your LUMOS fee tier…';
+    try { if (window.__lxFeeTierRefresh) window.__lxFeeTierRefresh(); } catch (er) {}
+    var t0 = Date.now();
+    (function poll() {
+      if (!tierKnown() && Date.now() - t0 < TIER_WAIT_MS) { setTimeout(poll, 300); return; }
+      b.innerHTML = label; b.__lxTierWait = 0;
+      b.__lxTierPass = 1;
+      try { b.click(); } finally { b.__lxTierPass = 0; }
+      setTimeout(tierNote, 0);
+    })();
+  }, true);
   function gateReview() {
     var s2 = $('.br-step[data-step="2"]');
     var b = s2 && s2.querySelector('.br-next');
