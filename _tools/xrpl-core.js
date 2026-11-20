@@ -351,7 +351,11 @@ function allLines(rpc, account, opts) {
     const q = Object.assign({}, base);
     if (marker) q.marker = marker;
     return rpc('account_lines', q).then(function (r) {
-      const lines = (r && r.lines) || [];
+      // A PAGE THAT DID NOT ANSWER IS NOT AN EMPTY PAGE (2026-11-20). A throttled or failed read reached here as null and
+      // became lines: [] -- 'this account holds nothing' -- and the fee tier charged a 434K-LUMOS holder 0.2%. Stop and
+      // say so; callers that ignore `incomplete` see exactly what they saw before.
+      if (!r || r.error || !Array.isArray(r.lines)) return { lines: out, pages: pages, incomplete: true };
+      const lines = r.lines;
       for (let i = 0; i < lines.length; i++) out.push(lines[i]);
       pages++;
       if (r && r.marker && pages < 20) return next(r.marker);

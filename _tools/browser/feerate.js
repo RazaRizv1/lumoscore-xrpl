@@ -118,6 +118,16 @@
     });
   }
 
+  // Up to three more asks after a read that did not complete -- 1.5s, 4s, 9s -- for as long as the same wallet is connected.
+  var frTries = {};
+  function frRetry(me) {
+    var n = frTries[me] = (frTries[me] || 0) + 1;
+    if (n > 3) return;
+    setTimeout(function () {
+      var cur = ''; try { cur = localStorage.getItem('lumos.address') || ''; } catch (e) {}
+      if (cur === me) resolve(true);
+    }, [1500, 4000, 9000][n - 1]);
+  }
   function resolve(force) {
     var me = '';
     try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
@@ -132,7 +142,9 @@
     if (force) { try { delete linesP[me]; } catch (e) {} }
 
     lines(me).then(function (res) {
-      if (!res || !res.lines) { window.__lxFrFor = ''; return; }
+      // AN INCOMPLETE READ IS NOT 'HOLDS NOTHING' (2026-11-20): publish nothing, keep the tier unknown, ask again.
+      if (!res || !res.lines || res.incomplete) { window.__lxFrFor = ''; try { delete linesP[me]; } catch (e) {} frRetry(me); return; }
+      frTries[me] = 0;
       var rows = res.lines;
 
       var held = 0;
