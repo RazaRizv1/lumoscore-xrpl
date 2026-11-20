@@ -179,7 +179,10 @@
       // RAZA 2026-09-16: "Why's my XRP balance not showin up in the swap box" — server_info is only needed for the reserve,
       // and one failed call used to fail the whole read and leave "Balance: —" for good.
       rpc('server_info', {}).catch(function () { return null; }),
-      lxx().allLines(rpc, who, { peer: a.issuer }).catch(function () { return { lines: [] }; })
+      lxx().allLines(rpc, who, { peer: a.issuer }).catch(function (e) {   // a failed read is not "no trust lines" (2026-11-20)
+        if (/actNotFound|not found/i.test(String(e && e.message))) return { lines: [] };   // not on the ledger yet: really none
+        throw e;
+      })
     ]).then(function (r) {
       var info = r[0] && r[0].account_data;
       var vl = ((r[1] || {}).info || {}).validated_ledger || {};
