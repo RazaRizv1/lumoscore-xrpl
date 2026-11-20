@@ -1071,6 +1071,48 @@
     if (slug === 'xrplevm') slug = 'xrpl';
     return '/assets/networks/' + slug + '.png';
   }
+  // WHERE A NEAR INTENTS TRANSFER WENT (X5, 2026-11-20). See bridgeOf() and loadActivity(): the deposit address is
+  // per-quote, so 1Click's status for it names the destination asset, and the asset names the chain. Names are
+  // nibridge.js's own (NI_CHAIN, HOT_CHAIN), so the feed and the bridge page say the same thing.
+  var NI_PLACE = {
+    eth: 'Ethereum', arb: 'Arbitrum', base: 'Base', op: 'Optimism', pol: 'Polygon',
+    avax: 'Avalanche', bsc: 'BNB Chain', scroll: 'Scroll', gnosis: 'Gnosis', bera: 'Berachain',
+    monad: 'Monad', plasma: 'Plasma', xlayer: 'X Layer', abs: 'Abstract', hood: 'Robinhood',
+    hypercore: 'Hyperliquid', sol: 'Solana', near: 'Near', sui: 'Sui', starknet: 'Starknet',
+    aptos: 'Aptos', movement: 'Movement', ton: 'TON', tron: 'Tron', cardano: 'Cardano',
+    btc: 'Bitcoin', ltc: 'Litecoin', doge: 'Dogecoin', bch: 'Bitcoin Cash', dash: 'Dash',
+    zec: 'Zcash', aleo: 'Aleo', fogo: 'Fogo', adi: 'ADI', stellar: 'Stellar'
+  };
+  var NI_HOT = { '1': 'Ethereum', '10': 'Optimism', '56': 'BNB Chain', '137': 'Polygon', '8453': 'Base', '42161': 'Arbitrum', '43114': 'Avalanche' };
+  var NI_KEY = 'lumos.niDest.xrpl';
+  var NI_DEST = (function () { try { var o = JSON.parse(localStorage.getItem(NI_KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; } catch (_) { return {}; } })();
+  var NI_TOKS = null, NI_ASK = {};
+  function niDest(dep) {
+    if (NI_DEST[dep]) return Promise.resolve(NI_DEST[dep]);
+    if (NI_ASK[dep]) return NI_ASK[dep];
+    var api = '/lxapi/xrploneclick';
+    NI_ASK[dep] = fetch(api + '?op=status&depositAddress=' + encodeURIComponent(dep))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var qr = j && j.quoteResponse && j.quoteResponse.quoteRequest, id = String((qr && qr.destinationAsset) || '');
+        if (!id) return '';
+        var h = /^nep245:v2_1\.omni\.hot\.tg:(\d+)_/.exec(id);   // a HOT id NEAR Intents no longer lists
+        if (h) return NI_HOT[h[1]] || '';
+        if (!NI_TOKS) NI_TOKS = fetch(api + '?op=tokens').then(function (r) { return r.ok ? r.json() : null; }).then(function (t) { if (!t || !t.tokens) NI_TOKS = null; return (t && t.tokens) || []; }, function () { NI_TOKS = null; return []; });
+        return NI_TOKS.then(function (L) {
+          for (var i = 0; i < L.length; i++) if (L[i] && L[i].assetId === id) return NI_PLACE[L[i].blockchain] || '';
+          return '';
+        });
+      })
+      .then(function (place) {
+        delete NI_ASK[dep];
+        if (!place) return '';                    // an unknown answer is not kept: the next visit asks again
+        NI_DEST[dep] = place;
+        try { var ks = Object.keys(NI_DEST); if (ks.length > 300) ks.slice(0, ks.length - 300).forEach(function (k) { delete NI_DEST[k]; }); localStorage.setItem(NI_KEY, JSON.stringify(NI_DEST)); } catch (_) {}
+        return place;
+      }, function () { delete NI_ASK[dep]; return ''; });
+    return NI_ASK[dep];
+  }
   var VIA_LOGO = {
     'Axelar': '/assets/networks/axelar.png',
     'THORChain': '/assets/networks/thorchain.png',
@@ -1109,7 +1151,11 @@
     // NEAR Intents sends a plain payment to a per-quote deposit address with NO memo of ours on it,
     // so there is nothing here to test -- the evidence is the lx:ni fee beside it, and the pairing
     // below is what finds the pair. Checked first because the two tests underneath would both miss.
-    if (tx.__lxRoute) return tx.__lxRoute;
+    if (tx.__lxRoute) {
+      // ITS CHAIN, ONCE KNOWN (X5): niDest() found it from the deposit address; until then the row says only the route.
+      var nd = (tx.__lxRoute.via === 'NEAR Intents' && !tx.__lxRoute.chain && tx.Destination) ? NI_DEST[tx.Destination] : '';
+      return nd ? { via: 'NEAR Intents', chain: nd } : tx.__lxRoute;
+    }
     if (!tx.Destination || tx.Destination === tx.Account) return null;   // a self-payment is a swap
     var ms = tx.Memos || [];
     var byType = {}, datas = [];
@@ -1314,13 +1360,22 @@
       rows = rows.slice(0, 50);
       if (!rows.length) { note('No recent activity.'); return; }
       host.innerHTML = '';
-      rows.forEach(function (r) {
+      var mkRow = function (r) {
         var el = activityRow(r.entry);
         if (r.label) {
           var v = el.querySelector('.lx-actverb');
           if (v) v.textContent = r.label;
         }
+        return el;
+      };
+      rows.forEach(function (r) {
+        var el = mkRow(r);
         host.appendChild(el);
+        // A NEAR INTENTS ROW WITH NO CHAIN YET (X5): look it up, and redraw only this row when the name lands.
+        var t = (r.entry && (r.entry.tx || r.entry.tx_json)) || {}, b = bridgeOf(t);
+        if (b && b.via === 'NEAR Intents' && !b.chain && t.Destination) {
+          niDest(t.Destination).then(function (place) { if (place && el.parentNode === host) host.replaceChild(mkRow(r), el); });
+        }
       });
       ready();
       paint24(host);

@@ -232,7 +232,10 @@
       var dated = rows.filter(function (x) { return x.ms; });
       if (!dated.length) return;
       dated.sort(function (a, b) { return b.ms - a.ms; });
-      set('lnew', dated[0].code);
+      // AN AGE, AS STELLAR (X7, 2026-11-20): "16d", not the ticker -- same thresholds as Stellar's _dashboxes.js.
+      var sec = Math.max(0, Math.floor((Date.now() - dated[0].ms) / 1000));
+      set('lnew', sec < 3600 ? Math.max(1, Math.round(sec / 60)) + 'm' : sec < 86400 ? Math.round(sec / 3600) + 'h'
+        : sec < 2592000 ? Math.round(sec / 86400) + 'd' : Math.round(sec / 2592000) + 'mo');
       var cut = Date.now() - 24 * 3600 * 1000;
       set('lmint', num(dated.filter(function (x) { return x.ms >= cut; }).length));
     });
