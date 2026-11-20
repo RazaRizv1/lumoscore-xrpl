@@ -1205,9 +1205,9 @@
       var nm = row.querySelector('.mp-asset-name, .mpm-asset-name');
       if (nm) { nm.setAttribute('data-logoed', '1'); nm.textContent = s.name; }
       var amtEl = row.querySelector('.mp-asset-amt, .mpm-asset-amt');
-      if (amtEl && !p.myLp && p.myLp !== null) amtEl.textContent = '0';    // null = unread: leave the dash
+      if (amtEl && addr() && !p.myLp && p.myLp !== null) amtEl.textContent = '0';    // null = unread, signed out = not asked (RAZA 2026-11-20): leave the dash
     });
-    if (!p.myLp && p.myLp !== null) bothPos('fee-val').forEach(function (v, i) { v.textContent = (i % 2 === 0) ? '—' : '0'; });
+    if (addr() && !p.myLp && p.myLp !== null) bothPos('fee-val').forEach(function (v, i) { v.textContent = (i % 2 === 0) ? '—' : '0'; });
   }
 
   // THE WHOLE PAGE WAS INVISIBLE, and every DOM check said it was fine.
