@@ -624,6 +624,19 @@
       var reserve = { base: v.reserve_base_xrp, inc: v.reserve_inc_xrp };
       var ad = (r[1] && r[1].account_data) || {};
       var xrp = window.lxx.spendableXrp(ad.Balance, ad.OwnerCount, reserve);
+      // A FAILED trust-line read is not "holds nothing" (2026-11-21): show the XRP that was read, dash the rest, say so.
+      if (!r[2] || r[2].incomplete) {
+        var noRead = "Couldn't read this account's tokens and pools. Reload to try again.";
+        tableNote($('#accAssetsTbl'), noRead);
+        tableNote($('#accPoolsTbl'), noRead);
+        var an0 = $('#accAssetsN'); if (an0) an0.textContent = '—';
+        var pn0 = $('#accPoolsN'); if (pn0) pn0.textContent = '—';
+        setStat('xrp balance', xrp ? bal(xrp.balance) + ' XRP' : '—', '');
+        setStat('assets held', '—', "Couldn't read");
+        setStat('pool positions', '—', "Couldn't read");
+        setStat('portfolio value', '—', "Couldn't read");
+        return;
+      }
       var split = window.lxx.readLines((r[2] && r[2].lines) || []);
       // A position is LP tokens held. Lines left at zero after withdrawing (many, on an active account) are not
       // positions, and their AMMs are often deleted, so they showed as unnamed "AMM pool … 0 LP" rows.

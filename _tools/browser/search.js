@@ -558,7 +558,7 @@
     var me = '';
     try { me = localStorage.getItem('lumos.address') || ''; } catch (e) {}
     if (!me || !window.lxx || !window.lxx.allLines) return Promise.resolve([]);
-    LINES = window.lxx.allLines(rpcS, me).then(function (r) { return (r && r.lines) || []; }, function () { return []; });
+    LINES = window.lxx.allLines(rpcS, me).then(function (r) { if (!r || r.incomplete) LINES = null; return (r && r.lines) || []; }, function () { LINES = null; return []; });
     return LINES;
   }
   function extras(list, q, d, mine) {

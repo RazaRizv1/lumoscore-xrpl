@@ -362,11 +362,13 @@
     // \`result\`. This file's rpc resolves the whole JSON-RPC envelope, so every page read as empty and My Pools
     // said "No liquidity positions" for an account holding three. Unwrapped here rather than changing rpc, which
     // the amm_info calls below read as the envelope.
-    window.lxx.allLines(function (m, q) { return rpc(m, q).then(function (j) { return (j && j.result) || j; }); }, me)
+    window.lxx.allLines(function (m, q) { return rpc(m, q).then(function (j) { var x = (j && j.result) || j; return x && x.error === 'actNotFound' ? { lines: [] } : x; }); }, me)
       .then(function (r) {
         // allLines() returns { lines } — the shape wallet.js reads. Reading r.result.lines found nothing on every
         // account, which is why My Pools said "No liquidity positions" beside a wallet listing three
         // (RAZA 2026-09-15: "I do have a pool. Its showing up on Wallet page but not on Pools main page").
+        // A FAILED read is not "no positions" (2026-11-21): allLines() flags a page that did not answer `incomplete`.
+        if (!r || r.incomplete) { note("Couldn't read your positions. Reload to try again."); setCount('—'); return; }
         var lines = (r && (r.lines || (r.result && r.result.lines))) || [];
         var lp = lines.filter(function (l) {
           return window.lxx.isLpToken(l.currency) && Number(l.balance) > 0;

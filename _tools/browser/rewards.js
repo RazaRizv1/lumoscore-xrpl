@@ -153,7 +153,20 @@
 
     box('Reading the XRP Ledger…', 'Checking your LUMOS balance and pool positions.');
 
-    ecoAccounts().then(function () { return window.lxx.allLines(rpc, me); }).then(function (res) {
+    ecoAccounts().then(function () {
+      // actNotFound = a new account that genuinely holds nothing; any other failure stays a failure (incomplete).
+      return window.lxx.allLines(function (m, q) {
+        return lxpost(RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ method: m, params: [q || {}] }) })
+          .then(function (j) { var x = j && j.result; return x && x.error === 'actNotFound' ? { lines: [] } : x; })
+          .catch(function () { return null; });
+      }, me);
+    }).then(function (res) {
+      // A FAILED read is not "0 LUMOS, no position" (2026-11-21).
+      if (res && res.incomplete) {
+        box("Couldn't read your balances",
+          "The XRP Ledger didn't answer for your LUMOS balance and pool positions. Reload to try again.");
+        return;
+      }
       if (!res || !res.lines) {
         box('Could not read that account',
           'The XRP Ledger did not return balances for ' + me.slice(0, 8) + '… — it may not be activated yet.');
