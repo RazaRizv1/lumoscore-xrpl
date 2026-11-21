@@ -143,6 +143,30 @@
     });
   }
 
+  // B09 (2026-11-21): the LP tokens team wallets hold in a pool, left out of the denominator as the admin round does.
+  // The holders of an AMM's LP token are the trust lines on the AMM account in that token's currency.
+  var TEAMLP = {};
+  function teamLp(amm, lpcur) {
+    if (TEAMLP[amm]) return TEAMLP[amm];
+    var sum = 0, n = 0;
+    function page(marker) {
+      var q = { account: amm, ledger_index: 'validated', limit: 400 };
+      if (marker) q.marker = marker;
+      return rpc('account_lines', q).then(function (r) {
+        if (!r || !r.lines) throw new Error('unread');
+        r.lines.forEach(function (l) {
+          if (lpcur && l.currency !== lpcur) return;
+          var tm = false; try { tm = window.lxx.isTeamWallet(l.account); } catch (e) {}
+          if (tm) sum += Math.abs(Number(l.balance)) || 0;
+        });
+        if (r.marker && ++n < 20) return page(r.marker);
+      });
+    }
+    var p = page(null).then(function () { return sum; }, function () { delete TEAMLP[amm]; return 0; });
+    TEAMLP[amm] = p;
+    return p;
+  }
+
   function eligibility() {
     var me = addr();
     if (!me) {
@@ -219,10 +243,14 @@
       // of the round — Native LP 1,000,000 LUMOS by pool share, Ecosystem 100,000 LUMOS per pool by pool share, Whale Holder
       // 1,000,000 LUMOS by whale shares (one per 5M, team wallets and pools excluded) — then the total.
       var shares = Math.floor(lumos / 5e6);
+      // B09: a pool's total less the team wallets' LP tokens (0 when that read fails).
       var lpTotal = function (r) { return Number(r && r.amm && r.amm.lp_token && r.amm.lp_token.value) || 0; };
+      var lpReal = function (acct) { return rpc('amm_info', { amm_account: acct }).then(function (r) {
+        var t = lpTotal(r); if (!(t > 0)) return r;
+        return teamLp(acct, r.amm.lp_token.currency).then(function (ex) { r.amm.lp_token.value = String(Math.max(0, t - ex)); return r; }); }); };
       Promise.all([
-        nativeLp > 0 ? rpc('amm_info', { amm_account: NATIVE_POOL }) : Promise.resolve(null),
-        Promise.all(ecoHits.map(function (e) { return rpc('amm_info', { amm_account: e.acct }).then(function (r) { return { e: e, r: r }; }); })),
+        nativeLp > 0 ? lpReal(NATIVE_POOL) : Promise.resolve(null),
+        Promise.all(ecoHits.map(function (e) { return lpReal(e.acct).then(function (r) { return { e: e, r: r }; }); })),
         shares > 0 ? fetch('/lxapi/xrplrichlist?iss=' + ISS + '&cur=' + CUR + '&n=50').then(function (x) { return x.json(); }).catch(function () { return null; }) : Promise.resolve(null)
       ]).then(function (res) {
         var nTot = lpTotal(res[0]), nShare = nTot > 0 ? nativeLp / nTot : 0, nRew = 1e6 * nShare;
