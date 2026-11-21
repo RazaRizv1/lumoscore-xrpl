@@ -289,7 +289,7 @@
     rows.innerHTML = '';
     var r = el('div', 'rr');
     r.style.cssText = 'justify-content:center;opacity:.7;padding:22px 8px;text-align:center';
-    r.textContent = 'No distribution has run on the XRP Ledger yet. Recipients will be listed here once one has.';
+    r.textContent = 'Recipient lists for XRP Ledger rounds will appear here once they are published.';
     rows.appendChild(r);
 
     var c = $('#repCount');
@@ -300,9 +300,9 @@
       if (shown && shown.tagName === 'B' && shown.textContent !== '0') shown.textContent = '0';
     }
     var t = $('#repTitle');
-    if (t) t.textContent = 'No rounds yet';
+    if (t) t.textContent = 'Round report not published yet';
     var s = $('#repSub');
-    if (s) s.textContent = 'This table lists real recipients once a distribution has run.';
+    if (s) s.textContent = 'Rewards on the XRP Ledger have been paid every round since 15 December 2025.';
     var p = $('#psum');
     if (p) p.textContent = 'Ten Ecosystem pools · LUMOS/XRP native pool · holder rewards';
   }
