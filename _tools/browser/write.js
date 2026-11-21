@@ -1080,18 +1080,100 @@
     // say('') rather than a stale notice when there is nothing to report: this shares the status line
     // with the error messages, and a cleared field must clear the sentence with it.
     amtIn.addEventListener('input', sendWarn);
+    // The recipient is half of the gate above, so it has to re-judge on its own keystrokes — otherwise
+    // pasting a valid address into a form whose amount was already typed leaves the button dimmed until
+    // the amount is touched again. Same listener, so the two fields can never disagree about the state.
+    var toW = $('.field-input.mono', m) || $('input.mono', m);
+    if (toW && !toW.__lxsw) { toW.__lxsw = 1; toW.addEventListener('input', sendWarn); toW.addEventListener('change', sendWarn); }
     go.addEventListener('click', function (e) { e.preventDefault(); doSend(); });
   }
 
   // The live notice under the Send amount. Deliberately quiet about everything except this one thing:
   // the real errors are doSend()'s to report when the button is pressed.
+  // THE BUTTON GOES WITH THE SENTENCE. Stellar's validateSend() disables Review & Send the moment the
+  // amount is over the balance and dims it with .lx-btn-off, which this fork already ships. A button
+  // the wrong-chain layer owns is left alone — it re-asserts `disabled` itself, and writing to it here
+  // would only fight it between the two writes.
+  function setSendDis(m, off) {
+    var go = $('.modal-foot .btn-primary', m);
+    if (!go || go.getAttribute('data-lxwc') === '1') return;
+    go.disabled = !!off;
+    if (off) go.classList.add('lx-btn-off'); else go.classList.remove('lx-btn-off');
+  }
+
+  // Stellar's wording and its rule for the reserve: named only on the native asset, where it is what
+  // makes the figure smaller than the balance on screen. Decimals follow the figure, as there.
+  function overMsg(a) {
+    var v = Number(a.spendable) || 0;
+    return 'Amount exceeds your available ' + a.code + ' balance ('
+      + fmt(v, v < 1 ? 6 : 4) + ' ' + a.code + (a.code === 'XRP' ? ' after reserve' : '') + ').';
+  }
+
+  // ALL THREE CONDITIONS, NOT JUST THE AMOUNT (RAZA 2026-11-07: the button "remains active/highlighted
+  // even when the recipient address field is completely empty or invalid, and before a valid amount
+  // within spendable limits is entered").
+  //
+  // The over-balance half shipped earlier today and was the only gate: an empty form left the button
+  // live, so the first thing a reader could do on this dialog was press the one control that cannot
+  // work yet. doSend() has always refused all three — line 824 rejects a bad destination — but a
+  // refusal after the press is the wrong moment, which is the same argument the amount gate was
+  // written on.
+  //
+  // isAddress, not a length or an "r" prefix: it is base58 WITH the checksum, so a transposed
+  // character in a pasted address is caught here rather than by the ledger. It is the same check
+  // doSend() makes, called from the one place both now read.
+  //
+  // SILENT for a missing recipient. The sentence slot under the amount is shared with the balance
+  // warning, and "enter a recipient" on a form nobody has filled in yet is noise; the dimmed button
+  // already says the form is not ready. Only a real over-balance amount gets words.
+  // Stellar's .lx-send-err line, placed after the field it is about (d = 1: the address, d = 0: the amount).
+  function sendFieldErr(m, inp, d, text) {
+    var box = $(d ? '.lx-send-errd' : '.lx-send-err:not(.lx-send-errd)', m);
+    if (!box && !text) return;
+    if (!box && inp) {
+      box = document.createElement('div');
+      box.className = d ? 'lx-send-err lx-send-errd' : 'lx-send-err';
+      var f = inp.closest('.field') || inp.parentNode;
+      if (f && f.parentNode) f.parentNode.insertBefore(box, f.nextSibling);
+    }
+    if (!box) return;
+    box.textContent = text || '';
+    box.style.display = text ? '' : 'none';
+  }
+  /* SEND AMOUNT FILTERS AS YOU TYPE, like Swap and Bridge (RAZA 2026-11-20) */
+  (function(){if(window.__lxSendKeys)return;window.__lxSendKeys=1;window.addEventListener("input",function(e){var t=e.target;if(!t||t.tagName!=="INPUT"||!t.closest)return;if(!(t.getAttribute("placeholder")==="0.00"||t.closest(".field-amt")))return;var m=t.closest(".modal-overlay");if(!m)return;if(![].some.call(m.querySelectorAll("button"),function(b){return /Review.{0,3}Send/i.test(b.textContent||"");}))return;var v=t.value,pos=t.selectionStart==null?v.length:t.selectionStart,out="",kept=0,dot=false;for(var i=0;i<v.length;i++){var c=v.charAt(i),ok=false;if(c>="0"&&c<="9")ok=true;else if(c==="."&&!dot){ok=true;dot=true;}if(ok){out+=c;if(i<pos)kept++;}}if(out!==v){t.value=out;try{t.setSelectionRange(kept,kept);}catch(_){}}},true);})();
   function sendWarn() {
     var m = sendModal();
     if (!m) return;
     var amtIn = $('.field-amt input', m);
+    var toIn = $('.field-input.mono', m) || $('input.mono', m);
     var a = sendPick || held()[0];
     var amount = amtIn ? parseFloat(String(amtIn.value).replace(/,/g, '')) : NaN;
-    if (!a || !(amount > 0)) { say(''); return; }
+    var to = toIn ? String(toIn.value || '').trim() : '';
+    var toOk = !!(to && window.lxx && window.lxx.isAddress(to));
+    // SAID UNDER THE FIELD IT IS ABOUT, AS STELLAR DOES (X26, 2026-11-19). The button used to dim with no words for a
+    // wrong address or a 0 / negative / lettered amount. Empty fields stay silent: a blank form is not a mistake.
+    var rawA = amtIn ? String(amtIn.value || '').trim().replace(/,/g, '') : '', aMsg = '', dMsg = '';
+    if (rawA !== '') {
+      if (rawA.charAt(0) === '-' && !/[^0-9.]/.test(rawA.slice(1))) aMsg = 'Amounts can’t be negative.';
+      else if (/[^0-9.]/.test(rawA)) aMsg = 'Enter a number — letters aren’t allowed in the amount.';
+      else if (!(amount > 0)) aMsg = 'Enter an amount greater than 0.';
+      else if (a && amount > a.spendable) aMsg = overMsg(a);
+    }
+    if (to && !toOk) dMsg = to.charAt(0) === 'X'
+      ? 'X-addresses are not supported yet. Use the classic r… address and put its tag in the Destination tag field.'
+      : 'That doesn’t look like a valid XRP Ledger address (should start with r and be 25 to 35 characters).';
+    else if (toOk && to === addr()) dMsg = 'That is your own address.';
+    sendFieldErr(m, amtIn, 0, aMsg);
+    sendFieldErr(m, toIn, 1, dMsg);
+    if (aMsg || dMsg) { say(''); setSendDis(m, true); return; }
+    if (!a || !(amount > 0) || !toOk) { say(''); setSendDis(m, true); return; }
+    // SAID AS IT IS TYPED. doSend() has refused this since it was written, but only after the click —
+    // RAZA 2026-11-07: 0.2 XRP over a 0.14253 balance, no inline error, Review & Send still live.
+    // Checked before the commitments read below, because this one is synchronous and outranks it: an
+    // amount that cannot be sent at all does not need a note about what it would leave an order short.
+    if (amount > a.spendable) { say(overMsg(a), 'bad'); setSendDis(m, true); return; }
+    setSendDis(m, false);
     // Fire-and-forget: the offers are read once per account and cached, so after the first keystroke
     // this is synchronous and the note appears as the figure is typed.
     loadCommitments().then(function () {

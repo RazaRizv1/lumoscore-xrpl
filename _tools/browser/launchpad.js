@@ -305,8 +305,8 @@
   }
 
   // Read from the ledger, with the same defaults the launch itself uses if server_info is
-  // unreachable. `+ 0.5` matches the issuer funding in buildLaunchPlan — if one changes, so must
-  // the other, or the quote stops matching the transaction.
+  // unreachable. The per-account figures below match the issuer and pool funding in buildLaunchPlan —
+  // if one changes, so must the other, or the quote stops matching the transaction.
   var ledger = { base: 1, owner: 0.2 };
   // WHAT THE LEDGER ITSELF TAKES, counted the way browser/mint.js actually spends it.
   //
@@ -314,21 +314,22 @@
   // funds TWO throwaway accounts, and both are funded to the drop because a pool account a fraction
   // under its own reserve dies on the last step:
   //
-  //   issuer   base + 0.02          mint.js:196 — measured, three live issuers each took 1.02
+  //   issuer   base + 0.05          mint.js — 0.02 until 2026-11-03, when the open ledger fee hit 5,020
+  //                                 drops and 0.02 stopped covering the issuer's four transactions
   //   pool     base + 0.85          mint.js:233 — base 1.00 + two trust lines 0.40 + AMMCreate 0.20
   //                                 + 0.25 margin; the lpXrp on top of it is the liquidity row, so
   //                                 it is NOT counted here or it would be charged twice
   //   + owner                       the launcher's own trust line for the new token
-  //   + 0.01                        transaction fees
+  //   + 0.05                        transaction fees — 0.01 until 2026-11-03; see mint.js FEE_BUDGET
   //
-  // = 2 x base + 0.88 + owner, which is 3.08 against today's reserve schedule.
+  // = 2 x base + 0.95 + owner, which is 3.15 against today's reserve schedule.
   //
   // THE QUOTE WAS UNDER-REPORTING BY 45%. The panel said "Total Cost 3.04 XRP" and the pre-flight
   // check in mint.js — which sums the REAL plan — refused the same launch saying it needs 4.42.
   // Someone reading the page would fund 3.5 XRP and be turned away by the product's own arithmetic.
   // Both numbers are now computed from the same constants, so they can only disagree if one of these
   // files changes without the other.
-  function ledgerXrp() { return (2 * ledger.base) + 0.88 + ledger.owner; }
+  function ledgerXrp() { return (2 * ledger.base) + 0.95 + ledger.owner; }
 
   // The reserve, said out loud and kept out of the total. It is the XRP Ledger's charge, not ours, so
   // it does not belong in a figure labelled "total launch cost" — but the wallet still has to hold it,
@@ -349,9 +350,31 @@
       row.parentNode.insertBefore(note, row.nextSibling);
     }
     var usd = xrp * rate;
-    note.textContent = '+ ' + xrp.toFixed(2) + ' XRP XRP Ledger reserve (≈ $'
+    // WRITE ONLY WHEN THE VALUE IS ACTUALLY WRONG — the same rule setCost() states above, and for the
+    // same reason, which this function was simply not following.
+    //
+    // THIS FROZE THE PAGE. watchCosts() observes this element's container with
+    // {childList, characterData, subtree} and calls paintCosts on every mutation; paintCosts calls
+    // reserveNote; and `note.textContent = …` replaces the text node whether or not the string
+    // changed, so it mutates every time. Observer -> paint -> mutate -> observer, as microtasks, which
+    // never yield to the event loop. Measured on the deployed build and on a local one: the XRPL
+    // launchpad stops responding to anything about four seconds after load — the moment
+    // /lxapi/xrplprices answers and the first paint runs — and stays dead. Stellar's launchpad is
+    // unaffected; it has no reserve line.
+    //
+    // RAZA 2026-11-07 reported this as "'How it works' isn't linked to anything". The link is wired
+    // (a window-capture listener in launchhiw.js) and the dialog is on the page. Nothing is unbound:
+    // by the time anyone reaches that link the renderer has been spinning for seconds, so every
+    // click on the page is dropped, not just that one.
+    //
+    // setCost's note explains why a `writing = true` flag cannot fix this and comparing against the
+    // DOM can. One sentence covers the whole element here, so one comparison is enough.
+    var txt = '+ ' + xrp.toFixed(2) + ' XRP reserve on the XRP Ledger (≈ $'
       + (usd % 1 === 0 ? Math.round(usd).toLocaleString('en-US') : usd.toFixed(2))
       + '), held by the network — not a LumosCore fee.';
+    // "XRP XRP Ledger reserve" while I was here: the unit and the ledger's name ran together, and the
+    // line is read by someone deciding how much to fund.
+    if (note.textContent !== txt) note.textContent = txt;
   }
 
   // The design's recalcCost() lives inside an IIFE, so it cannot be called or replaced -- and it
@@ -517,25 +540,40 @@
 
   // ---- validation ------------------------------------------------------------------------------
 
-  // The three social inputs carry NO id and no name -- only a placeholder. Matching on that is
-  // fragile-looking but it is the only handle the markup offers, and without it the review page
-  // shows the design's own accounts (t.me/solarflare) beside the user's token.
+  // The three social inputs used to carry NO id and no name -- only a placeholder, and matching on
+  // that was the only handle the markup offered. Without it the review page shows the design's own
+  // accounts (t.me/solarflare) beside the user's token.
+  //
+  // `_xrplcopy2.js` now stamps `data-lxlpsoc="tg|x|web"` on each of them, for two reasons. The
+  // placeholder copy changed -- it asked for "x.com/yourproject", which is the input that made a
+  // Stellar mint link to a doubled host on 2026-11-05
+  // ([[social-links-stored-a-url-in-a-handle-field]]) -- and a placeholder that is BOTH the copy and
+  // the selector cannot be corrected without breaking the read. The two social boxes now share the
+  // placeholder "@yourproject" and no longer identify themselves at all.
+  //
+  // The regex is kept as a FALLBACK for a container the stamp has not reached. Do not drop it on the
+  // strength of "the attribute is there now": an unmatched read returns "" and an empty social link
+  // is indistinguishable from a minter who left the field blank.
+  //
   // Selected as `input` and filtered on the PROPERTY, not as `input[type=text]`: these fields carry
   // no type attribute at all, so the attribute selector matches none of them and every social link
   // came back empty while looking like it had been read.
-  function byPlaceholder(re) {
-    var f = $$('input').filter(function (i) {
-      return i.type === 'text' && re.test(i.placeholder || '');
-    })[0];
+  function bySoc(key, re) {
+    var f = $$('input').filter(function (i) { return i.getAttribute('data-lxlpsoc') === key; })[0];
+    if (!f) {
+      f = $$('input').filter(function (i) {
+        return i.type === 'text' && re.test(i.placeholder || '');
+      })[0];
+    }
     return f ? String(f.value || '').trim() : '';
   }
 
   function readForm() {
     var num = function (s) { return Number(String(s || '').replace(/[, ]/g, '')); };
     return {
-      telegram: byPlaceholder(/t\.me/i),
-      twitter: byPlaceholder(/x\.com|twitter/i),
-      website: byPlaceholder(/yourproject\.com|https?:\/\//i),
+      telegram: bySoc('tg', /t\.me/i),
+      twitter: bySoc('x', /x\.com|twitter/i),
+      website: bySoc('web', /yourproject\.com|https?:\/\//i),
       name: ($('#tokenName') || {}).value || '',
       ticker: ($('#tokenTicker') || {}).value || '',
       // No project type. Meme/Utility was removed from the Stellar site, and the field is removed

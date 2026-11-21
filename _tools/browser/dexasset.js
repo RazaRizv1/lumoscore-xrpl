@@ -353,6 +353,62 @@
       + '.mdxa-tab-extra.mdxa-holders:not(.lxda) .mdxa-hl-list,'
       + '.mdxa-tab-extra.mdxa-holders:not(.lxda) .mdxa-hl-stat .val,'
       + '.mdxa-tab-extra.mdxa-holders:not(.lxda) .mdxa-hl-pgn{visibility:hidden}'
+      // A GATED PANEL LOOKS BROKEN, NOT BUSY (RAZA 2026-11-06, reporting the Pools/Holders tabs as
+      // not working at all). Measured on production: the Pools pane sits gated for ~1.5s on RLUSD --
+      // the gate above is doing its job, but `visibility:hidden` leaves an empty frame with no cue,
+      // so a slow ledger read is indistinguishable from a dead tab. He asked for a loading state.
+      //
+      // WHY THIS IS PURE CSS KEYED OFF THE EXISTING `.lxda`, with no nodes injected and no JS.
+      // The pane is ONE element that the design re-classes per tab (`dxa-tab-extra dxa-pools` ->
+      // `... dxa-holders`) and rewrites on every switch, so any skeleton markup we inserted would be
+      // wiped by the design's own rebuild and would need a second writer to put it back -- exactly
+      // the shape that caused [[lumoscore-second-writer-listeners]]. Keying off the class that
+      // already exists means the gate owns the loading state too: whoever adds `.lxda` ends it, and
+      // there is nothing to tear down and nothing to race.
+      //
+      // The mechanism is that `visibility:visible` on a descendant overrides a hidden ancestor, so
+      // the shimmer pseudo-elements show THROUGH the hidden table while every mock value stays
+      // hidden. Verified on the live page before it was written here: table `hidden`, row text
+      // `hidden`, `::after` `visible`, and the only text left on screen was the real column headers
+      // and stat labels. Because `visibility` (unlike `display`) keeps the box, the mock rows go on
+      // reserving their exact geometry -- table height was 3373px gated and 3373px lifted, so the
+      // panel does not jump when the data lands. The mock is the row template again, as in
+      // [[the-mock-was-the-row-template]]; here it is the skeleton's template too.
+      + '@keyframes lxdaSh{0%{background-position:120% 0}100%{background-position:-20% 0}}'
+      // Column headers and stat LABELS read the same in the mock and in the real data, so showing
+      // them is not a leak -- it is what turns a blank frame into a panel that is visibly loading.
+      // Pools needs this re-reveal because its gate hides `.dxa-pl-head` whole; Holders gates only
+      // `.val`, so its labels are already up. Both panes nest `.dxa-hl-stat > .lbl + .val`.
+      + '.dxa-tab-extra:not(.lxda) table thead,.dxa-tab-extra:not(.lxda) table thead th,'
+      + '.dxa-tab-extra:not(.lxda) .dxa-hl-stat,.dxa-tab-extra:not(.lxda) .dxa-hl-stat .lbl{visibility:visible}'
+      + '.dxa-tab-extra:not(.lxda) table tbody td,.dxa-tab-extra:not(.lxda) .dxa-hl-stat .val{position:relative}'
+      + '.dxa-tab-extra:not(.lxda) table tbody td::after{content:"";visibility:visible;position:absolute;'
+      + 'left:0;right:18%;top:50%;transform:translateY(-50%);height:12px;border-radius:6px;'
+      + 'background:linear-gradient(90deg,rgba(140,145,165,.10) 0%,rgba(140,145,165,.10) 38%,rgba(234,106,44,.20) 50%,rgba(140,145,165,.10) 62%,rgba(140,145,165,.10) 100%);'
+      + 'background-size:220% 100%;animation:lxdaSh 1.3s linear infinite}'
+      + '.dxa-tab-extra:not(.lxda) .dxa-hl-stat .val::after{content:"";visibility:visible;position:absolute;'
+      + 'left:0;top:50%;transform:translateY(-50%);width:72px;height:14px;border-radius:7px;'
+      + 'background:linear-gradient(90deg,rgba(140,145,165,.10) 0%,rgba(140,145,165,.10) 38%,rgba(234,106,44,.20) 50%,rgba(140,145,165,.10) 62%,rgba(140,145,165,.10) 100%);'
+      + 'background-size:220% 100%;animation:lxdaSh 1.3s linear infinite}'
+      // The phone renders list rows, not table rows, so it needs its own selectors for the same
+      // reason the gate above does -- the desktop classes match nothing here.
+      + '.mdxa-tab-extra:not(.lxda) .mdxa-hl-stat,.mdxa-tab-extra:not(.lxda) .mdxa-hl-stat .lbl{visibility:visible}'
+      + '.mdxa-tab-extra:not(.lxda) .mdxa-pl-list>*,.mdxa-tab-extra:not(.lxda) .mdxa-hl-list>*,'
+      + '.mdxa-tab-extra:not(.lxda) .mdxa-hl-stat .val{position:relative}'
+      + '.mdxa-tab-extra:not(.lxda) .mdxa-pl-list>*::after,.mdxa-tab-extra:not(.lxda) .mdxa-hl-list>*::after{'
+      + 'content:"";visibility:visible;position:absolute;left:4%;right:4%;top:50%;transform:translateY(-50%);'
+      + 'height:14px;border-radius:7px;'
+      + 'background:linear-gradient(90deg,rgba(140,145,165,.10) 0%,rgba(140,145,165,.10) 38%,rgba(234,106,44,.20) 50%,rgba(140,145,165,.10) 62%,rgba(140,145,165,.10) 100%);'
+      + 'background-size:220% 100%;animation:lxdaSh 1.3s linear infinite}'
+      + '.mdxa-tab-extra:not(.lxda) .mdxa-hl-stat .val::after{content:"";visibility:visible;position:absolute;'
+      + 'left:0;top:50%;transform:translateY(-50%);width:64px;height:13px;border-radius:7px;'
+      + 'background:linear-gradient(90deg,rgba(140,145,165,.10) 0%,rgba(140,145,165,.10) 38%,rgba(234,106,44,.20) 50%,rgba(140,145,165,.10) 62%,rgba(140,145,165,.10) 100%);'
+      + 'background-size:220% 100%;animation:lxdaSh 1.3s linear infinite}'
+      // A shimmer is a moving gradient, which is the one thing reduced-motion asks us not to ship.
+      // The bars stay -- only the sweep stops, so the panel still reads as loading.
+      + '@media (prefers-reduced-motion:reduce){.dxa-tab-extra:not(.lxda) table tbody td::after,'
+      + '.dxa-tab-extra:not(.lxda) .dxa-hl-stat .val::after,.mdxa-tab-extra:not(.lxda) .mdxa-pl-list>*::after,'
+      + '.mdxa-tab-extra:not(.lxda) .mdxa-hl-list>*::after,.mdxa-tab-extra:not(.lxda) .mdxa-hl-stat .val::after{animation:none}}'
       // The snapshot camera is removed from the chart controls (RAZA 2026-09-16: "Remove the camera icon for screenshot").
       + '.lxda-snap{display:none!important}';
     (document.head || document.documentElement).appendChild(st);
@@ -2944,6 +3000,23 @@
           ? String(d.total) : (mine.length + '+');
       }
       var more = capped ? '+' : '';
+
+      // Published for the phone's "More info" sheet below, and published HERE rather than beside the
+      // filter, because `mine.length` is NOT the pool count. The fetch asks for 100 and RLUSD has 343:
+      // the raw length is a page size, and a sheet quoting it would have read "Pools 100" directly
+      // under a tab reading 343 ([[a-partial-fetch-presented-as-complete]]). `label` and `more` are
+      // the cap-aware strings this tab is about to paint -- "343" when the total is trustworthy,
+      // "100+" when it is not, and "$4.04M+" for a liquidity sum that only covers the page fetched.
+      //
+      // Both go across as the FINISHED strings, not numbers to be re-formatted, so the sheet cannot
+      // drift from the tab above it. The token payload carries its own `tvl` in a different unit, and
+      // two writers answering "how much liquidity" in two units is exactly how a figure ends up
+      // contradicting the one beside it ([[a-unitless-comparison-picked-the-wrong-route]]).
+      try {
+        window.__lxxPoolSummary = { count: label, text: money2(tvl) + more };
+        window.dispatchEvent(new CustomEvent('lxx:poolsummary'));
+      } catch (e) {}
+
       setTabCount(/pools/i, label);
       setHlStat(/^(active\s+)?pools/i, label);
       setHlStat(/^(combined\s+)?tvl/i, money2(tvl) + more);
@@ -3370,11 +3443,34 @@
     var code = asset.code;
 
     // Buy / Sell buttons name the token being traded, not the quote asset. Substring selector for
-    // the same reason as the chips below: the phone's are `.mdxa-side-btn`.
-    $$('[class*="dxa-side-btn"]').forEach(function (b) {
-      var sell = b.classList.contains('sell');
+    // the same reason as the chips below: the phone's are `.mdxa-side-btn`, and `[class*="dxa-..."]`
+    // catches both spellings.
+    //
+    // SWAP NAMES THE TOKEN; LIMIT DOES NOT. That is what Stellar does, and this time it was checked
+    // by BEHAVIOUR rather than by reading the file (RAZA 2026-11-06, with both panels side by side:
+    // "the buy and sell buttons will also show the asset name. its just the limit tab that only
+    // shows Buy and Sell buttons").
+    //
+    // The previous round here stripped the code from EVERY side button, on the stated grounds that
+    // bare labels were "what Stellar's markup has always carried, verified in both built pages".
+    // That reading was of the LIMIT pane. Measured in the built HTML of both chains, desktop and
+    // mobile: the SWAP pane ships "Buy USDC"/"Sell USDC" (the design's mock asset) and the LIMIT
+    // pane ships bare "Buy"/"Sell" -- identical markup on Stellar and XRPL. Stellar's
+    // _dexassetdata.js then rewrites the swap pair to "Buy "+CODE at runtime and never touches the
+    // limit pair, so the RENDERED Stellar page has always said "Buy LUMOS" on Swap. Grepping the
+    // markup produced the exact opposite of the truth, because the markup is not what ships to the
+    // eye -- see [[verify-by-behaviour-not-grep]].
+    //
+    // The original complaint behind all of this is still fixed: the design's mock said "Buy USDC",
+    // naming an asset that is not the one on screen. Naming the REAL code fixes that the same way
+    // Stellar does, and keeps the two chains saying the same thing.
+    //
+    // The limit pair is left ALONE rather than written with a bare label: its markup already reads
+    // "Buy"/"Sell" in all four built pages, so there is nothing to correct, and a writer whose value
+    // always equals what is already there is indistinguishable from one that has stopped working.
+    $$('[class*="dxa-pane-swap"] [class*="dxa-side-btn"]').forEach(function (b) {
       // Written as a text node so the button keeps whatever the design put inside it.
-      var t = (sell ? 'Sell ' : 'Buy ') + code;
+      var t = (b.classList.contains('sell') ? 'Sell ' : 'Buy ') + code;
       if (b.textContent.trim() !== t) b.textContent = t;
     });
 
@@ -3829,4 +3925,250 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
   window.__lxxAssetReload = load;
+})();
+
+// ---- "More info" on a phone --------------------------------------------------------------------
+// RAZA 2026-11-14, on /trade/xrpl/<token> on a handset: "More info is not there ... like we have for
+// stellar." Stellar's lx-dxadata builds a link under the stat row and an "About <token>" sheet; this
+// fork REPLACES that layer, so neither ever came. NEAR hit the same gap and ported it the same day.
+//
+// THE SUPPLY TILE IS HIDDEN ON A PHONE AND THIS IS THE ONLY WAY BACK TO IT. Measured on staging
+// 81b928d0 at 375px: .stat-row computes to three columns and the Supply cell to display:none, so the
+// issued figure exists on the page and cannot be read. That is what the sheet is for -- the other
+// rows are identity, which the desktop layout shows in its meta line.
+//
+// A SEPARATE IIFE, not an edit inside the one above: everything it needs is already a global
+// (__lxxAssetData, the lxx:assetdata event, __lxxPoolSummary), so nothing in the 3,800 lines above
+// has to be touched to add it.
+(function () {
+  'use strict';
+
+  // THE BUTTON'S STYLING IS MISSING FROM THIS FORK AND THE SHEET'S IS NOT. Measured on the same
+  // build: .lxda-sheet has 8 rules and .lxda-srow 5 -- inherited from Stellar -- while .lxda-morebtn
+  // has ZERO and .lxda-moreline has only its `display:none` default. The containers were forked
+  // before Stellar's mobile block landed ([[xrpl-inherits-a-frozen-stellar-build]]), so the sheet
+  // would have opened unstyled-but-fine behind an invisible link.
+  //
+  // Only the two missing rules are added, at Stellar's own breakpoint and with Stellar's own values,
+  // so nothing that IS inherited is overridden. Injected at runtime beside the button it styles, so
+  // the rule cannot arrive after the paint it governs ([[a-rule-that-arrives-after-the-paint-it-governs]]).
+  var CSS_ID = 'lx-xdamore-css';
+  function css() {
+    try {
+      if (document.getElementById(CSS_ID)) return;
+      var st = document.createElement('style');
+      st.id = CSS_ID;
+      st.textContent = '@media(max-width:760px){'
+        + '.lxda-moreline{grid-column:1/-1;display:flex;justify-content:center;margin-top:2px}'
+        + '.lxda-morebtn{border:0;background:transparent;padding:6px 4px;cursor:pointer;'
+        + 'font-weight:800;font-size:12px;line-height:1;color:var(--accent,#ea6a2c);letter-spacing:.01em}'
+        + '.lxda-morebtn::after{content:"›";margin-left:5px;font-weight:700}'
+        + '}';
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) {}
+  }
+
+  var CP = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>';
+  var OK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+  function num(v) {
+    v = Number(v);
+    return (v >= 0 && isFinite(v)) ? Math.round(v).toLocaleString('en-US') : null;
+  }
+
+  // READ THE CARDS THE PAGE HAS ALREADY PAINTED, not the payload, for anything that also appears on
+  // screen. Stellar's version says why in as many words: "whatever is in the sheet then matches what
+  // the row said, including its formatting, and cannot drift from it." It also means a figure the
+  // feed could not supply is simply absent here rather than written as a zero.
+  function cell(name) {
+    var cs = document.querySelectorAll('.stat-cell');
+    for (var i = 0; i < cs.length; i++) {
+      var l = cs[i].querySelector('.lbl');
+      if (l && new RegExp('^\\s*' + name + '\\s*$', 'i').test(l.textContent || '')) {
+        var v = cs[i].querySelector('.val'), sub = cs[i].querySelector('.sub');
+        return { v: v ? (v.textContent || '').trim() : '', s: sub ? (sub.textContent || '').trim() : '' };
+      }
+    }
+    return null;
+  }
+
+  function rows() {
+    var d = window.__lxxAssetData || {};
+    var out = [];
+
+    // The tile a phone cannot see. Written first as value + sub on the assumption that the tile split
+    // them as "762.82M" and "RLUSD issued". It does not: the VALUE is "762.82M RLUSD" and the sub is
+    // "RLUSD issued", so joining them shipped "762.82M RLUSD RLUSD issued" to the sheet. The tile was
+    // guessed at instead of read -- the same mistake as every hand-written gate that matched nothing.
+    //
+    // So the sub rides along only when it ADDS something: if the value already contains the sub's
+    // first word (the asset code, here), the sub is restating the value and is dropped. A sub like
+    // "of 1B max" survives, because the value contains no "of".
+    var sup = cell('Supply');
+    if (sup && sup.v) {
+      var sw = (sup.s || '').split(/\s+/)[0];
+      var keep = sw && sup.v.toLowerCase().indexOf(sw.toLowerCase()) < 0;
+      out.push(['Circulating supply', sup.v + (keep ? (' ' + sup.s) : '')]);
+    }
+
+    var mc = cell('Market Cap');
+    if (mc && mc.s) out.push(['Fully diluted', mc.s.replace(/^FDV\s*/i, '')]);
+
+    // BOTH NUMBERS, because they answer different questions: a trustline is permission to hold, not
+    // evidence of holding. Stellar's sheet pairs them the same way and for the same reason. Shown as
+    // one row only when they actually differ -- for a token where every trustline is funded, two
+    // identical figures under a slashed label is noise.
+    var tl = num(d.trustlines), hl = num(d.holders);
+    if (tl && hl && tl !== hl) out.push(['Trustlines | Holders', tl + ' | ' + hl]);
+    else if (hl) out.push(['Holders', hl]);
+    else if (tl) out.push(['Trustlines', tl]);
+
+    // Printed verbatim. These arrive already formatted by the Pools tab, cap and all ("343", "100+",
+    // "$4.04M+"), and re-formatting them here is how the sheet would start disagreeing with the tab:
+    // isFinite("100+") is false, so a numeric guard would have DROPPED the row in exactly the case
+    // where the count is interesting.
+    var ps = window.__lxxPoolSummary;
+    if (ps && ps.count) out.push(['Pools', String(ps.count)]);
+    if (ps && ps.text) out.push(['Pool liquidity', ps.text]);
+
+    if (d.issuer) out.push(['Issuer', d.issuer]);
+    if (d.domain) out.push(['Home domain', String(d.domain).replace(/^https?:\/\//, '').replace(/\/$/, '')]);
+
+    // The code from the URL, which is what the reader clicked, rather than the payload's display
+    // name -- those differ for a hex-encoded currency and the code is the identifier that matters.
+    var code = codeFromUrl();
+    if (code) out.push(['Asset code', code]);
+    return out;
+  }
+
+  function codeFromUrl() {
+    try {
+      var parts = window.location.pathname.replace(/\/+$/, '').split('/');
+      var raw = decodeURIComponent(parts[parts.length - 1] || '');
+      var cut = raw.lastIndexOf('-');
+      return cut < 1 ? '' : raw.slice(0, cut);
+    } catch (e) { return ''; }
+  }
+
+  function title() {
+    var d = window.__lxxAssetData || {};
+    var code = codeFromUrl();
+    var nm = (d.name || '').trim();
+    // "About RLUSD" tells you the ticker you already clicked, so a display name is only used when it
+    // actually says something the code does not. Same rule as Stellar's dxaSheetIco path.
+    if (nm && nm.toUpperCase() !== code.toUpperCase()) return 'About ' + nm;
+    return 'About ' + (code || nm || 'this token');
+  }
+
+  function open_() {
+    var d = window.__lxxAssetData;
+    if (!d) return;
+    var sh = document.querySelector('.lxda-sheet');
+    if (!sh) {
+      sh = document.createElement('div');
+      sh.className = 'lxda-sheet';
+      sh.innerHTML = '<div class="lxda-sheet-card"><div class="lxda-sheet-head"><h3></h3>'
+        + '<button type="button" class="lxda-sheet-x" aria-label="Close">&times;</button></div>'
+        + '<div class="lxda-sbody"></div></div>';
+      document.body.appendChild(sh);
+      // The sheet sits outside whatever region this page's own copy delegation covers, so it carries
+      // its own -- the same reason Stellar's and NEAR's copies do.
+      sh.addEventListener('click', function (e) {
+        var cp = e.target && e.target.closest ? e.target.closest('[data-xdacopy]') : null;
+        if (cp) {
+          e.preventDefault(); e.stopPropagation();
+          var v = cp.getAttribute('data-xdacopy') || '', ok = false;
+          // writeText needs a secure context and can reject; this must not fail quietly.
+          try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(v); ok = true; } } catch (x) {}
+          if (!ok) {
+            try {
+              var ta = document.createElement('textarea');
+              ta.value = v; ta.style.position = 'fixed'; ta.style.opacity = '0';
+              document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+              document.body.removeChild(ta);
+            } catch (x) {}
+          }
+          cp.innerHTML = OK;
+          setTimeout(function () { cp.innerHTML = CP; }, 1200);
+          return;
+        }
+        if (e.target === sh || (e.target.closest && e.target.closest('.lxda-sheet-x'))) {
+          e.preventDefault();
+          sh.classList.remove('open');
+          try { document.body.style.overflow = sh.__ovf || ''; } catch (x) {}
+        }
+      });
+    }
+    var h3 = sh.querySelector('h3');
+    if (h3) h3.textContent = title();
+    var body = sh.querySelector('.lxda-sbody');
+    if (body) {
+      body.innerHTML = '';
+      rows().forEach(function (r) {
+        var row = document.createElement('div'); row.className = 'lxda-srow';
+        var k = document.createElement('span'); k.className = 'k'; k.textContent = r[0];
+        var v = document.createElement('span'); v.className = 'v';
+        if (r[0] === 'Issuer') {
+          // Truncated for the cell, full in the title and on the clipboard. An r-address is 25-35
+          // characters and would otherwise wrap the row onto three lines on a 375px screen.
+          var sp = document.createElement('span'); sp.className = 'mono lxda-issh';
+          sp.textContent = r[1].length > 22 ? (r[1].slice(0, 10) + '…' + r[1].slice(-8)) : r[1];
+          sp.title = r[1];
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'lxda-isscp';
+          b.setAttribute('aria-label', 'Copy issuer'); b.title = 'Copy issuer';
+          b.setAttribute('data-xdacopy', r[1]);
+          b.innerHTML = CP;
+          v.appendChild(sp); v.appendChild(b);
+        } else if (r[0] === 'Home domain') {
+          var a = document.createElement('a');
+          a.href = 'https://' + r[1];
+          a.target = '_blank'; a.rel = 'noopener nofollow';
+          a.textContent = r[1];
+          a.style.color = 'var(--accent,#ea6a2c)';
+          a.style.textDecoration = 'none';
+          v.appendChild(a);
+        } else v.textContent = r[1];
+        row.appendChild(k); row.appendChild(v); body.appendChild(row);
+      });
+    }
+    // SAVE ONLY ON A REAL OPEN. This used to save unconditionally, so opening the sheet while it was
+    // already open captured the lock's OWN value -- __ovf became "hidden", and the next close restored
+    // the page to overflow:hidden permanently. It hid here because <html> still scrolls in the pane;
+    // on a phone, where body is the scroller, it is a frozen page
+    // ([[a-dead-link-meant-a-frozen-page]]). One owner, one save, one restore.
+    try {
+      if (!sh.classList.contains('open')) sh.__ovf = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    } catch (x) {}
+    sh.classList.add('open');
+  }
+
+  function button() {
+    var row = document.querySelector('.stat-row');
+    if (!row || row.querySelector('.lxda-moreline')) return;
+    css();
+    var line = document.createElement('div'); line.className = 'lxda-moreline';
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'lxda-morebtn';
+    // data-logo opts the element out of the logo healer, which repaints anything holding a few
+    // characters -- see the note on the wallet rows in connect.js.
+    b.setAttribute('data-logo', '');
+    b.textContent = 'More info';
+    line.appendChild(b);
+    row.appendChild(line);
+    // Capture, like the wallet rows: an inherited capture-phase handler on this page would otherwise
+    // eat the click before a plain listener on the button ever saw it.
+    b.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); open_(); }, true);
+  }
+
+  if (!window.__lxxMoreInfo) {
+    window.__lxxMoreInfo = 1;
+    // Built once the asset payload lands, and again when the pools tab publishes its summary, so the
+    // Pools rows appear as soon as they are known rather than only on a second open.
+    try { window.addEventListener('lxx:assetdata', button); } catch (e) {}
+    try { window.addEventListener('lxx:poolsummary', button); } catch (e) {}
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', button);
+    else button();
+  }
 })();

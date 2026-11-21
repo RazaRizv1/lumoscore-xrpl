@@ -563,19 +563,13 @@
     }
     if (type === 'AMMBid') return { cls: 'lp', tag: 'Auction bid', type: 'Auction slot bid', meta: 'LUMOS/XRP pool' };
     if (type === 'AMMVote') return { cls: 'lp', tag: 'Fee vote', type: 'Trading-fee vote', meta: 'LUMOS/XRP pool' };
-    if (type === 'OfferCreate') {
-      var pays = amountOf(tx.TakerPays), gets = amountOf(tx.TakerGets);
-      return {
-        cls: 'order', tag: 'Order placed', type: 'DEX offer',
-        meta: (pays && gets) ? (amtStr(gets) + ' → ' + amtStr(pays)) : '',
-        parts: (pays && gets) ? [{ a: gets }, ' → ', { a: pays }] : [],
-      };
-    }
-    // Both skipped, as on Stellar. Neither carries an amount or a trade: a cancellation is an offer
-    // withdrawn and a trust line is an account declaring which asset it is willing to hold. They name
-    // an account and nothing else, and one wallet opening five trust lines fills the card with five
-    // identical rows. "Order placed" above keeps its row, because that one has a real size.
-    if (type === 'OfferCancel') return { cls: 'order', tag: 'Order cancelled', type: 'DEX offer cancelled', meta: '', skip: 1 };
+    // Orders are not shown at all, matching Stellar. `always` makes the skip outrank the label
+    // exemption below, so the hide does not rest on XRPL limit orders happening to pay no fee.
+    if (type === 'OfferCreate') return { cls: 'order', tag: 'Order placed', type: 'DEX offer', meta: '', skip: 1, always: 1 };
+    // A cancellation carries no amount and no trade -- an offer withdrawn, naming an account and
+    // nothing else. A trust line is an account declaring which asset it is willing to hold, and one
+    // wallet opening five of them fills the card with five identical rows.
+    if (type === 'OfferCancel') return { cls: 'order', tag: 'Order cancelled', type: 'DEX offer cancelled', meta: '', skip: 1, always: 1 };
     if (type === 'TrustSet') return { cls: '', tag: 'Trust line', type: 'Trust line set', meta: '', skip: 1 };
     return { cls: '', tag: (type || 'Ledger').replace(/([a-z])([A-Z])/g, '$1 $2'), type: type || 'Ledger transaction', meta: '' };
   }
@@ -842,9 +836,17 @@
   // once and everyone behind them is served from cache, off their own IP.
   //
   // Falls back to the direct call, so a missing or unhappy endpoint behaves exactly as before.
-  function txOf(account, limit) {
+  // lo/hi are optional ledger bounds. Without them this is the unchanged "last `limit`" read; with
+  // them it asks for one bounded slice instead, which is how a fee older than its payer's window is
+  // rescued below. Both forms go through the edge and cache there.
+  function txOf(account, limit, lo, hi) {
+    var bounded = lo > 0 && hi >= lo;
     var direct = function () {
-      return rpc('account_tx', { account: account, limit: limit, binary: false, ledger_index_min: -1, ledger_index_max: -1 });
+      return rpc('account_tx', {
+        account: account, limit: limit, binary: false,
+        ledger_index_min: bounded ? lo : -1,
+        ledger_index_max: bounded ? hi : -1,
+      });
     };
     var ctl = null, timer = null, o = {};
     try {
@@ -852,7 +854,8 @@
       timer = setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 9000);
     } catch (e) {}
     var done = function () { if (timer) { clearTimeout(timer); timer = null; } };
-    return fetch('/lxapi/xrpltx?a=' + encodeURIComponent(account) + '&n=' + limit, o).then(function (r) {
+    return fetch('/lxapi/xrpltx?a=' + encodeURIComponent(account) + '&n=' + limit
+      + (bounded ? '&lo=' + lo + '&hi=' + hi : ''), o).then(function (r) {
       done();
       if (!r.ok) return direct();
       return r.json().then(function (j) {
@@ -866,7 +869,13 @@
   function platformSwaps() {
     // Filled from the same per-account windows the swap pairing already reads — see the note there.
     var pools = [];
-    return txOf(COLLECTOR_ACCT, 20)
+    // 200, NOT 20. The "SIXTY, NOT EIGHT" change below raised the fee SLICE to 60 but left this
+    // fetch at 20, so the feed could only ever see the collector's last 20 transactions and the
+    // slice had nothing past 20 to cut. The two numbers have to agree or the larger one is fiction.
+    // Measured 2026-11-05: 20 reaches back 16.5 days and 200 reaches 59.9, for 88 fees against 20 —
+    // so the cap was not biting yet, but it was one busy week from doing so silently.
+    // Still one request, still cached at the edge for every reader.
+    return txOf(COLLECTOR_ACCT, 200)
       .then(function (j) {
         // A LEDGER THAT DID NOT ANSWER IS NOT A PLATFORM WITH NO ACTIVITY. Without this the card
         // read "No recent activity." whenever this first call failed -- the same sentence it shows
@@ -933,6 +942,50 @@
             }, function () { byAcct[a] = []; });
         }));
 
+        // THE 200-TX WINDOW DOES NOT REACH EVERY FEE, and pairing in memory silently assumed it did.
+        //
+        // RAZA 2026-11-05: "on XRPL the platform activity is not correct on dashboard... i see some
+        // trxs from a wallet in my revenue section but on Dashboard it shows the last trx from 6 days
+        // ago". Measured: rsw2…BeDz does ~110 tx/day, so its last 200 transactions span 1.7 DAYS,
+        // floor L108083785. Its two 11-02 fees sit at L108066351 and L108066274 — below the floor.
+        // The swap each belongs to was never in the list, so the loop below found nothing and both
+        // rows were dropped. The fee was visible the whole time; only its partner was out of reach.
+        //
+        // Raising the per-account limit is not the fix: covering a month of that account needs ~3,300
+        // transactions, and the limit is capped at 200. So rescue only the fees that actually fall
+        // short, with ONE bounded read each over exactly the ±window the pairing uses. Today that is
+        // two extra reads, not thirteen — the 2026-10-18 cost win is kept.
+        //
+        // Capped at six so a day of heavy trading cannot turn this into a request per fee, which is
+        // the shape that change was made to remove.
+        var rescue = function () {
+          var floors = {};
+          Object.keys(byAcct).forEach(function (a) {
+            var lo = 0;
+            (byAcct[a] || []).forEach(function (x) {
+              var li = x.ledger_index || (x.tx || x.tx_json || {}).ledger_index || 0;
+              if (li && (!lo || li < lo)) lo = li;
+            });
+            floors[a] = lo;
+          });
+          var misses = [];
+          fees.forEach(function (e) {
+            var t = e.tx || e.tx_json || {}, fl = floors[t.Account];
+            var L = e.ledger_index || t.ledger_index;
+            // A floor of 0 means that account was never scanned at all (beyond the twelve, or its
+            // read failed); that case already resolves to no row and is not this bug.
+            if (L && fl && L + 30 < fl && misses.length < 6) misses.push(e);
+          });
+          return Promise.all(misses.map(function (e) {
+            var t = e.tx || e.tx_json || {};
+            var L = e.ledger_index || t.ledger_index;
+            return txOf(t.Account, 60, L - 10, L + 30).then(function (jr) {
+              var l = (jr && jr.result && jr.result.transactions) || [];
+              byAcct[t.Account] = (byAcct[t.Account] || []).concat(l);
+            }, function () {});
+          }));
+        };
+
         // PAIRED IN MEMORY, from the lists freeScan already fetched. The matching rule is unchanged
         // -- a self-payment by the same account nearest the fee's ledger, those after it winning ties
         // -- only the source of the transactions is. The ±window stays: it is what makes the match a
@@ -940,7 +993,7 @@
         //
         // A fee whose account was not scanned (beyond the 12) simply finds nothing and is skipped,
         // which is the same outcome the old code had for a request that failed.
-        return freeScan.then(function () {
+        return freeScan.then(rescue).then(function () {
           var used = {};
           return fees.map(function (e) {
             var t = e.tx || e.tx_json || {};
@@ -1347,9 +1400,12 @@
       // transaction once it has matched it to a LumosCore platform fee -- that is a swap on this site
       // whatever `describe` made of the payment on its own, and those are the rows the card exists for.
       rows = rows.filter(function (r) {
-        if (r.label) return true;
         var e = r.entry || {};
         var d = describe(e.tx || e.tx_json || {}, e.meta || e.metaData);
+        // A deliberate hide outranks the label. The exemption below rescues rows describe() misread
+        // (a swap that looks like a bare Payment); an OfferCreate names itself, so nothing to rescue.
+        if (d && d.skip && d.always) return false;
+        if (r.label) return true;
         return !(d && d.skip);
       });
       rows.sort(function (a, b) { return timeOf(b.entry) - timeOf(a.entry); });

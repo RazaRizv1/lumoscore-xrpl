@@ -49,11 +49,30 @@ export async function onRequest(context) {
   const n = Math.min(200, Math.max(1, parseInt(url.searchParams.get('n') || '20', 10) || 20));
   if (!ACCT.test(acct)) return json({ ok: false, error: 'bad account' }, 0, 400);
 
+  // LEDGER BOUNDS, for the one case a plain "last n" window cannot answer: a fee paid by a
+  // high-frequency account. dashboard.js reads each fee-payer's last 200 transactions and pairs the
+  // fee to the swap beside it — but an account trading all day fits 200 transactions into under two
+  // days, so a fee older than that sits BELOW the window and its swap is unreachable.
+  //
+  // Measured 2026-11-05 (RAZA: "I see some trxs from a wallet in my revenue section but on Dashboard
+  // it shows the last trx from 6 days ago"): rsw2…BeDz does ~110 tx/day, its 200-tx window spanned
+  // 1.7 days with floor L108083785, and both of its 11-02 fees (L108066351, L108066274) fell below
+  // it. Neither swap could ever be drawn. Raising the limit does not fix it — covering a month of
+  // that account needs ~3,300 transactions.
+  //
+  // Bounded, so the rescue is one small read rather than paging a whole history, and the bounds are
+  // part of the cache key, so two readers rescuing the same fee share one answer. Unbounded callers
+  // are unaffected: absent lo/hi this is the unchanged "last n" read.
+  const lo = parseInt(url.searchParams.get('lo') || '-1', 10);
+  const hi = parseInt(url.searchParams.get('hi') || '-1', 10);
+  const bounded = Number.isFinite(lo) && Number.isFinite(hi) && lo > 0 && hi >= lo;
+
   // Guarded the way _issuerdomain.js guards it: the Cache API is a runtime feature, and the endpoint
   // must still answer correctly where it is absent rather than throw before reaching the ledger.
   let cache = null;
   try { cache = caches.default; } catch (e) { cache = null; }
-  const key = new Request(url.origin + url.pathname + '?a=' + acct + '&n=' + n);
+  const key = new Request(url.origin + url.pathname + '?a=' + acct + '&n=' + n
+    + (bounded ? '&lo=' + lo + '&hi=' + hi : ''));
   if (cache) {
     const hit = await cache.match(key).catch(() => null);
     if (hit) return hit;
@@ -68,7 +87,11 @@ export async function onRequest(context) {
         headers: { 'content-type': 'application/json', 'user-agent': 'LumosCore/1.0 (+https://lumoscore.com)' },
         body: JSON.stringify({
           method: 'account_tx',
-          params: [{ account: acct, limit: n, binary: false, ledger_index_min: -1, ledger_index_max: -1 }],
+          params: [{
+            account: acct, limit: n, binary: false,
+            ledger_index_min: bounded ? lo : -1,
+            ledger_index_max: bounded ? hi : -1,
+          }],
         }),
       });
     } catch (e) { last = 'ledger unreachable'; continue; }

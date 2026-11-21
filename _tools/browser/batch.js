@@ -131,21 +131,57 @@
     }).then(function (j) { return (j && j.result) || null; });
   }
 
-  // The account's sequence, and the network's base fee. Both are read rather than assumed: a hardcoded
-  // 10-drop base fee is wrong the moment the network escalates, and an underpaid Batch is simply
-  // rejected.
+  // WHAT THE LEDGER COSTS RIGHT NOW, not what it costs when it is quiet.
+  //
+  // This read `server_info.validated_ledger.base_fee_xrp` and called it "the network's base fee",
+  // under a comment saying a hardcoded 10 drops would be wrong the moment the network escalates. The
+  // value it read IS a hardcoded 10: `base_fee_xrp` is the REFERENCE fee and it does not move however
+  // busy the ledger gets ([[reference-fee-is-not-the-fee]]). The load-scaled price lives in the `fee`
+  // command — `drops.open_ledger_fee`, which sat at 5,020 on 2026-11-03, 502x the reference.
+  //
+  // And underpaying here is worse than being refused: a Batch below the open ledger fee is not
+  // rejected, it is QUEUED, and it expires a minute or so later. It looks like it went through, and
+  // every inner transaction it carried simply did not happen. mint.js was fixed for this on
+  // 2026-11-03; this file was left because wallets still block Batch ([[xrpl-batch-wallet-support]]),
+  // so it is the same arithmetic landing before the feature does, not a live failure.
+  //
+  // The floor, the budget and the refusal are mint.js's, deliberately — same ledger, same question,
+  // and two different answers in one fork is how one of them silently rots.
+  var FEE_FLOOR = 20;        // a quiet ledger
+  var FEE_BUDGET = 12500;    // per unit of fee, as mint.js funds per transaction
+
+  // NOTE the envelope: this file's rpc() already unwraps to `j.result`, so `drops` is one level up
+  // from where mint.js reads it (`feeRes.result.drops` there, `feeRes.drops` here).
+  function unitFee(feeRes) {
+    var d = (feeRes && feeRes.drops) || {};
+    var open = Number(d.open_ledger_fee);
+    var min = Number(d.minimum_fee);
+    var got = Math.max(isFinite(open) && open > 0 ? open : 0, isFinite(min) && min > 0 ? min : 0);
+    // A FEE WE COULD NOT READ IS NOT A FEE OF 20. rpc() resolves null on a malformed answer rather
+    // than throwing, so without this a failed read falls through to the floor and submits — which is
+    // the queue-then-expire failure above, reached by a different door
+    // ([[never-cache-a-failure-as-an-answer]]). FEE_FLOOR floors a reading, it does not replace one.
+    if (!(got > 0)) throw new Error('Could not read the current XRP Ledger fee — nothing has been submitted.');
+    var want = Math.max(got, FEE_FLOOR);
+    if (want > FEE_BUDGET) {
+      throw new Error('The XRP Ledger is unusually busy right now — ' + want + ' drops per transaction, '
+        + 'against ' + FEE_FLOOR + ' normally. This has not been submitted; please try again in a few minutes.');
+    }
+    return want;
+  }
+
+  // The account's sequence, and what a transaction costs at this moment. Both are read rather than
+  // assumed.
   function state(me) {
     return Promise.all([
       rpc('account_info', { account: me, ledger_index: 'validated' }),
-      rpc('server_info', {})
+      rpc('fee', {})
     ]).then(function (z) {
-      var ai = z[0], si = z[1];
+      var ai = z[0], fr = z[1];
       if (!ai || ai.error || !ai.account_data) {
         throw new Error('Could not read the account (' + ((ai && ai.error) || 'no answer') + ')');
       }
-      var base = Number((((si || {}).info || {}).validated_ledger || {}).base_fee_xrp);
-      var baseDrops = isFinite(base) && base > 0 ? Math.ceil(base * 1e6) : 10;
-      return { seq: ai.account_data.Sequence, base: baseDrops };
+      return { seq: ai.account_data.Sequence, base: unitFee(fr) };
     });
   }
 
@@ -192,9 +228,14 @@
           return { RawTransaction: inner };
         });
 
-        // (signatures + 2) x base fee. For a single-signer Batch that is 2 x base; the inner count is
-        // added as headroom rather than as a requirement, which costs tens of drops and removes a
-        // whole class of underpayment rejection.
+        // (signatures + 2) x the unit fee. For a single-signer Batch that is 2 x unit; the inner count
+        // is added as headroom rather than as a requirement, which removes a whole class of
+        // underpayment rejection.
+        //
+        // THE HEADROOM IS NO LONGER FREE, now that the unit is the live fee rather than a flat 10. On
+        // a quiet ledger a full 8-inner Batch is 20 x 10 = 200 drops; at the FEE_BUDGET ceiling it is
+        // 20 x 12,500 = 0.25 XRP, and unitFee() has already refused anything past that. Kept, because
+        // a Batch is all-or-nothing and a queued one is the failure this whole file exists to avoid.
         var fee = String(st.base * (2 + raws.length));
 
         var tx = {

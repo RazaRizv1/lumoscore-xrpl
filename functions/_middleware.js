@@ -79,11 +79,6 @@ const ROUTES = [
     null
   ],
   [
-    "/mcp/xrpl",
-    "/xrpl/lumoscore-mcp",
-    null
-  ],
-  [
     "/list-your-token/xrpl",
     "/xrpl/lumoscore-list-token",
     null

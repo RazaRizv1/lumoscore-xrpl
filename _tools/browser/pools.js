@@ -1423,6 +1423,361 @@
     }).catch(function () { noteHost(h, 'Pool data is unavailable right now.'); });
   }
 
+  // ---- Rewarded Pools tab ----------------------------------------------------------------------
+  //
+  // RAZA 2026-11-13: "add Rewarded Pool tab on Pools main page ... this tab will contain all pools
+  // from ecosystem lp rewards", tabs reading All Pools | Rewarded Pools | My Pools. Same tab on the
+  // Stellar build, each chain's own ten.
+  //
+  // THE TEN ARE THE CYCLE THE PROGRAMME ACTUALLY PAYS, and they are the same ten the reward engine
+  // in Stellar's _adminrewards.js carries as X_ECO. Three different "eco" lists exist across this
+  // codebase and they disagree; RAZA confirmed on 2026-11-13 that the admin panel's is the live one.
+  // Rotate this array and X_ECO together or the tab starts lying.
+  //
+  // Matched by ISSUER AND CURRENCY, never by ticker. A ticker is not an identity on this ledger --
+  // USDC alone had two candidate issuers, and the wrong one is how LUMOS/USDT sat funded and
+  // unrewarded for a cycle (see the note beside X_ECO). The issuers below are that file's, verified
+  // there against each issuing account's own published domain.
+  //
+  // THE NATIVE POOL LEADS, and it is a different programme from the ten under it: LUMOS/XRP takes the
+  // 1,000,000 LUMOS native pot, each eco pool 100,000 (NATIVE_POOL / ECO_PER_POOL in the Stellar repo's
+  // _adminrewards.js, which runs both chains). RAZA 2026-11-13: "add LUMOS / native pool at the top
+  // (from native LP rewards)". The reward engine already builds its list native-first, so this tab now
+  // reads in the same order as the panel that pays it. Its spec is X_NATIVE's, from the same file.
+  //
+  // Native XRP has an EMPTY issuer, which is why the matcher below compares `other.i || ''` rather than
+  // testing truthiness: an issuerless leg is a real match here, not a missing one.
+  var RWI = 'rsPqeamjpr3Bxu4LhtCgvJEAQusYRRg6Ha';        // LUMOS issuer
+  var RW = [
+    { code: 'XRP',    cur: 'XRP',    iss: '' },
+    { code: 'RLUSD',  cur: '524C555344000000000000000000000000000000', iss: 'rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De' },
+    { code: 'USDC',   cur: '5553444300000000000000000000000000000000', iss: 'rGm7WCVp9gb4jZHWTEtGUr4dd74z2XuWhE' },
+    { code: 'SHX',    cur: 'SHX',    iss: 'rfmS3zqrQrka8wVyhXifEeyTwe8AMz2Yhw' },
+    { code: 'XPM',    cur: 'XPM',    iss: 'rXPMxBeefHGxx2K7g5qmmWq3gFsgawkoa' },
+    { code: 'XLM',    cur: 'XLM',    iss: 'rKiCet8SdvWxPXnAgYarFUXMh1zCPz432Y' },
+    { code: 'USDT',   cur: '5553445400000000000000000000000000000000', iss: 'rcvxE9PS9YBwxtGg1qNeewV6ZB3wGubZq' },
+    { code: 'XDawgs', cur: '5844617767730000000000000000000000000000', iss: 'raKhUVtNw6B892bKtATUT3frX35oawfsey' },
+    { code: '666',    cur: '666',    iss: 'rhvf9fe6PP3GC8Bku2Ug7iQPjPDxYZfrxN' },
+    { code: 'FLR',    cur: 'FLR',    iss: 'rcxJwVnftZzXqyH9YheB8TgeiZUhNo1Eu' },
+    { code: 'XAH',    cur: 'XAH',    iss: 'rswh1fvyLqHizBS2awu1vs6QcmwTBd9qiv' }
+  ];
+  var RWROWS = null, RWSTATE = 'idle', RWTRIES = 0;      // idle | loading | done | error
+  // PATIENCE, NOT ATTEMPTS. Four tries off the 1.2s tick spent the whole budget inside the first five
+  // seconds of page load -- precisely when this page is bursting requests and the upstream is at its
+  // least likely to answer. Measured on staging: it gave up, and the very next reload loaded all
+  // eleven. The budget has to outlast a slow upstream, so the attempts are spaced instead of counted.
+  var RWMAXTRY = 8, RWNEXT = 0;
+  function rwBackoff() { return RWTRIES < 2 ? 2500 : (RWTRIES < 4 ? 6000 : 12000); }   // ~65s in all
+
+  // A currency is either a 3-char code or 40 hex characters. Compared decoded, so 'SHX' and its
+  // padded hex form are the same asset whichever way the upstream happens to send it.
+  function curName(c) {
+    c = String(c || '');
+    if (!/^[0-9A-Fa-f]{40}$/.test(c)) return c;
+    var s = '';
+    for (var i = 0; i < 40; i += 2) { var b = parseInt(c.substr(i, 2), 16); if (b) s += String.fromCharCode(b); }
+    return s;
+  }
+  function isLumos(leg) { return leg && leg.i === RWI && curName(leg.c) === 'LUMOS'; }
+
+  // One request, not ten. /lxapi/xrplpools?issuer= returns every pool holding an asset from that
+  // issuer -- 27 LUMOS pools -- with liq, vol, fees and holders already computed by the same code
+  // the All Pools tab reads, so the two tabs cannot disagree about the same pool. Measured
+  // 2026-11-13: all ten exist on the ledger (the note beside X_ECO was written when six did not).
+  function loadRewardedX() {
+    if (RWSTATE === 'loading' || RWSTATE === 'done') return;
+    if (RWTRIES >= RWMAXTRY) return;
+    var now = Date.now();
+    if (now < RWNEXT) return;                            // still inside this attempt's back-off
+    RWNEXT = now + rwBackoff();
+    RWSTATE = 'loading'; paintRewardedX();
+    // CACHE-BUSTER ON RETRIES. A retry that the cache answers is not a retry; it replays the same
+    // bad read and the backoff just burns the attempts.
+    var url = '/lxapi/xrplpools?issuer=' + encodeURIComponent(RWI) + '&n=100'
+            + (RWTRIES ? '&_=' + Date.now() : '');
+    RWTRIES++;
+    fetch(url)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        // AN EMPTY ARRAY IS NOT AN ANSWER. `!d.rows` lets `rows: []` through, because [] is truthy --
+        // and this endpoint does come back 200 with an empty list on a transient upstream miss. That
+        // read then matched none of the ten, latched as "done", and the tab sat on
+        // "zero rewarded pools" for the rest of the session with no way to recover.
+        //
+        // Ten pools are nominated and all ten exist on the ledger, so zero matches means WE FAILED TO
+        // READ, not that the programme rewards nothing. Say so, and try again.
+        if (!d || !Array.isArray(d.rows) || !d.rows.length) { RWSTATE = 'error'; paintRewardedX(); return; }
+        var out = [];
+        // Programme order, not ledger order: this list is a statement about what we reward.
+        RW.forEach(function (spec) {
+          for (var i = 0; i < d.rows.length; i++) {
+            var p = d.rows[i], a = p.a1, b = p.a2;
+            if (!isLumos(a) && !isLumos(b)) continue;
+            var other = isLumos(a) ? b : a;
+            if ((other.i || '') === spec.iss && curName(other.c) === curName(spec.cur)) { out.push(p); return; }
+          }
+          // A pool nobody has created yet is simply absent -- it pays nothing and claims nothing.
+        });
+        if (!out.length) { RWSTATE = 'error'; paintRewardedX(); return; }
+        // A SHORT read is shown, not hidden -- those rows are real. But it is not final either: keep
+        // the attempt budget open so a later tick can fill the gap, and only stop asking once the
+        // full ten are in hand or the budget runs out.
+        RWROWS = out;
+        RWSTATE = (out.length === RW.length || RWTRIES >= RWMAXTRY) ? 'done' : 'error';
+        paintRewardedX();
+      })
+      .catch(function () { RWSTATE = 'error'; paintRewardedX(); });
+  }
+
+  // The panel is a CLONE of the All Pools one, emptied. Cloning rather than hand-building the markup
+  // is what keeps the two tables identical when the design's columns change -- and it carries the
+  // card variant on the phone for free. Every descendant id is dropped first: a clone of
+  // #panelAllPools contains #poolsBody, and a duplicate id would hand the whole page's queries the
+  // wrong tbody.
+  // RAZA 2026-11-13: "the description doest look attractive. also its too tiny." Rebuilt as a banner
+  // carrying the tab's own accent -- soft-tinted card, solid accent rail, the same medal mark the tab
+  // button uses, a 15px lead line and the detail under it. Tokens only, so both themes hold.
+  // A stylesheet rather than inline styles because the phone needs different margins and inline styles
+  // cannot carry a media query. Injected once, guarded by id; the panel is built on demand, long after
+  // first paint, so a late stylesheet costs nothing here.
+  function rwNoteCssX() {
+    if ($('#lx-rwnote-css')) return;
+    var s = el('style'); s.id = 'lx-rwnote-css';
+    // RAZA 2026-11-13: "make this section more attractive. it looks too bad" -- kept byte-for-byte in
+    // step with Stellar's rwNoteCss(). Icon badge for an anchor, a warm gradient instead of flat grey,
+    // and the payout cadence moved into a stat block on the right so the empty right half carries the
+    // sentence's own content. --text-soft was rendering the description nearly invisible.
+    s.textContent = '.lx-rwnote{display:flex;gap:15px;align-items:center;margin:18px 20px 10px;'
+      + 'padding:16px 18px;border:1px solid var(--border);border-radius:14px;'
+      + 'background:linear-gradient(90deg,var(--accent-soft) 0%,transparent 46%),var(--surface-2)}'
+      + '.lx-rwnote-ic{flex:0 0 auto;width:40px;height:40px;border-radius:12px;display:flex;'
+      + 'align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent)}'
+      + '.lx-rwnote-ic svg{width:21px;height:21px}'
+      + '.lx-rwnote-tx{flex:1 1 auto;min-width:0}'
+      + '.lx-rwnote-t{font-size:15.5px;font-weight:700;color:var(--text);letter-spacing:-.15px;line-height:1.4}'
+      + '.lx-rwnote-d{margin-top:4px;font-size:13.5px;line-height:1.55;color:var(--text-muted)}'
+      + '.lx-rwnote-st{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;gap:3px;'
+      + 'padding-left:18px;border-left:1px solid var(--border)}'
+      + '.lx-rwnote-sl{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;'
+      + 'color:var(--text-muted)}'
+      + '.lx-rwnote-sv{font-size:15px;font-weight:700;color:var(--accent);white-space:nowrap}'
+      + '@media(max-width:760px){.lx-rwnote{margin:14px 0 12px;padding:14px;gap:12px;flex-wrap:wrap}'
+      + '.lx-rwnote-ic{width:34px;height:34px;border-radius:10px}.lx-rwnote-ic svg{width:18px;height:18px}'
+      + '.lx-rwnote-t{font-size:14.5px}.lx-rwnote-d{font-size:13px}'
+      + '.lx-rwnote-st{width:100%;flex-direction:row;align-items:center;justify-content:space-between;'
+      + 'gap:10px;padding:10px 0 0;margin-top:2px;border-left:0;border-top:1px solid var(--border)}}'
+      // RAZA 2026-11-13: "why is everything so large on rewarded pools tab unlike all pools tab".
+      // The inherited lx-amm-css sizes pool rows through a LIST OF PANEL IDS -- `#poolsBody td,
+      // #lx-mypanel td` and four more -- and #lx-rwpanel is in none of them, so these rows fell through
+      // to the design's base sizes (pair-name 17.6 vs 15.5, td 15.4 vs 15, row 125px vs 109px).
+      // Stellar fixes this by adding #lx-rwpanel to those rules at build time. THAT FIX CANNOT REACH
+      // THIS BUILD: the fork carries a frozen COPY of Stellar's built sheet, so the rules here still
+      // say what they said when the base was taken. Restated against this panel instead -- the same
+      // reason mypositions.js had to restate ten of them ([[lumoscore-stripped-layer-css]]).
+      // Values are copied from lx-amm-css deliberately; if Stellar's ever change, these must follow.
+      + '#lx-rwpanel td{font-family:"JetBrains Mono",monospace!important;font-size:15px!important}'
+      + '#lx-rwpanel .pair-name{font-family:"Hanken Grotesk",sans-serif!important;font-size:15.5px!important;font-weight:700!important}'
+      + '#lx-rwpanel .pair-sub{font-size:12.5px!important}'
+      + '#lx-rwpanel td div:not(.pair-name):not(.pair-sub){font-size:15px!important}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  var RWNOTE = '<div class="lx-rwnote">'
+    + '<div class="lx-rwnote-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + '<circle cx="12" cy="9.1" r="6.1"></circle><path d="M8.4 14.3 7 21.4l5-2.7 5 2.7-1.4-7.1"></path>'
+    + '</svg></div>'
+    + '<div class="lx-rwnote-tx">'
+    + '<div class="lx-rwnote-t">These pools are part of the LumosCore Native LP and Ecosystem LP '
+    + 'reward programs.</div><div class="lx-rwnote-d">Liquidity providers share each round in proportion '
+    + 'to the liquidity they provide.</div></div>'
+    + '<div class="lx-rwnote-st"><span class="lx-rwnote-sl">Payouts</span>'
+    + '<span class="lx-rwnote-sv">1st &amp; 15th</span></div></div>';
+
+  function buildRwPanelX() {
+    rwNoteCssX();
+    var p = $('#lx-rwpanel'); if (p) return p;
+    var ap = $('#panelAllPools') || $('#panelAll'); if (!ap) return null;
+    p = ap.cloneNode(true);
+    $$('[id]', p).forEach(function (n) { n.removeAttribute('id'); });
+    p.id = 'lx-rwpanel';
+    $$('.lx-netpag-host, #paginationAll, .pagination, .page-controls', p).forEach(function (n) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+    });
+    var tb = p.querySelector('tbody'); if (tb) tb.innerHTML = ''; else p.innerHTML = '';
+    // RAZA 2026-11-13: two lines above the table saying what this tab is. The cadence is quoted from
+    // what the site already states -- the rewards page and the FAQ both say the 1st and 15th -- not
+    // restated from memory, because a payout schedule written twice must read the same both times.
+    //
+    // Deliberately NOT inside the node paintRewardedX() repaints. On the phone there is no tbody, so
+    // that node is the panel itself and innerHTML would erase the note on the next repaint -- which
+    // is every tick while the tab is open. The cards get their own child to be rewritten instead.
+    if (tb) {
+      p.insertAdjacentHTML('afterbegin', RWNOTE);
+    } else {
+      p.innerHTML = RWNOTE + '<div id="lx-rwcards"></div>';
+    }
+    p.style.display = 'none';
+    ap.parentNode.insertBefore(p, ap.nextSibling);
+    return p;
+  }
+  // The design holds these panels at opacity 0 behind its fade-in gate and releases them with these
+  // classes; a panel built by script is never released, so it lays out full height and paints
+  // nothing. Same recipe mypositions.js already uses on #panelMyPositions, for the same reason.
+  function revealRwX(pn) {
+    pn.setAttribute('data-lcm-done', '1');
+    pn.classList.add('lcm-on'); pn.classList.add('lcmu-in');
+    pn.style.setProperty('opacity', '1', 'important');
+    pn.style.setProperty('transform', 'none', 'important');
+    pn.style.setProperty('visibility', 'visible', 'important');
+  }
+  function paintRewardedX() {
+    var host = buildRwPanelX(); if (!host) return;
+    var tb = host.querySelector('tbody');
+    var h = { node: tb || host.querySelector('#lx-rwcards') || host, kind: tb ? 'table' : 'cards' };
+    var node = h.node, kind = h.kind;
+    // USD is in the signature because row() prices through it: when the rate lands late the rows
+    // have to be redrawn, or the tab keeps the em dashes it was built with.
+    var sig = RWSTATE + ':' + (RWROWS ? RWROWS.length : 0) + ':' + (USD || 0);
+    if (host.getAttribute('data-lxrwsig') === sig) return;
+    // Rows we have are rows we show, even mid-retry: a short list of real pools beats a spinner.
+    if (RWROWS && RWROWS.length) {
+      node.innerHTML = '';
+      var make = kind === 'table' ? row : card;
+      for (var i = 0; i < RWROWS.length; i++) node.appendChild(make(RWROWS[i], i + 1));
+    } else if (RWSTATE === 'error' && RWTRIES >= RWMAXTRY) {
+      noteHost(h, 'Could not load the rewarded pools just now.');
+    } else {
+      // Still inside the attempt budget: this is a read in progress, not a failure, and saying
+      // "could not load" between two tries would be the page lying about its own state.
+      noteHost(h, 'Loading the rewarded pools…');
+    }
+    // The badge counts what is LISTED, not what the programme nominates. If a nominated pool has no
+    // AMM on the ledger yet the tab says 9, and 9 is what the reader can see.
+    var bdg = $('#poolTabs button[data-tab="rewarded"] .count');
+    if (bdg && RWROWS && RWROWS.length) bdg.textContent = String(RWROWS.length);
+    host.setAttribute('data-lxrwsig', sig);
+    revealRwX(host);
+    if (kind === 'table') rwMirrorColsX(host);
+    try { fillParticipants(); } catch (e) {}
+  }
+
+  // MIRROR THE ALL POOLS COLUMNS INSTEAD OF RESTATING THEM.
+  //
+  // RAZA 2026-11-13 on the Stellar tab: "the count isn't under participants column. its misalligned".
+  // The Participants header ships an inline text-align:right, but in the rendered All Pools table both
+  // that header and the cells under it settle to something else after load. This panel is cloned
+  // BEFORE that settles, so it keeps the raw inline right over left-default cells.
+  //
+  // Copy what the live table is ACTUALLY using, per column, rather than hard-coding a value: whatever
+  // settles those columns settles this panel too, and a design change follows without an edit here.
+  function rwMirrorColsX(host) {
+    var srcRow = $('#poolsBody tr'), srcHead = $('#panelAllPools thead tr');
+    function copy(s, d) {
+      if (!s || !d) return;
+      var sc = s.children, dc = d.children;
+      for (var i = 0; i < dc.length && i < sc.length; i++) {
+        var cs = getComputedStyle(sc[i]);
+        dc[i].style.textAlign = cs.textAlign;
+        dc[i].style.paddingRight = cs.paddingRight;
+      }
+    }
+    copy(srcHead, host.querySelector('thead tr'));
+    // Only a REAL row carries the settled cell alignment; a one-cell notice row would teach every
+    // column the first one's value.
+    if (srcRow && srcRow.children.length > 1) {
+      $$('tbody tr', host).forEach(function (tr) { if (tr.children.length > 1) copy(srcRow, tr); });
+    }
+  }
+
+  // The third button, between All Pools and My Pools. Built rather than cloned so it cannot inherit
+  // the All tab's .count -- and inserted AFTER the All button on purpose: load() reads
+  // $("#poolTabs .count") positionally for the network total, so putting anything before All would
+  // write 10 into the All Pools badge. That exact class of bug is the warning in mypositions.js.
+  function addRwTabX() {
+    var bar = $('#poolTabs'); if (!bar) return;
+    if ($('#poolTabs button[data-tab="rewarded"]')) return;
+    var mine = $('#poolTabs button[data-tab="mine"]') || $('#poolTabs [data-tab="mine"]');
+    if (!mine) return;
+    var b = el('button');
+    b.setAttribute('data-tab', 'rewarded');
+    b.innerHTML = '<span class="lx-tabic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" '
+      + 'stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'
+      + '<circle cx="12" cy="9.1" r="6.1"></circle><path d="M8.4 14.3 7 21.4l5-2.7 5 2.7-1.4-7.1"></path></svg></span>'
+      + 'Rewarded Pools <span class="count" data-logoed="1">' + RW.length + '</span>';
+    mine.parentNode.insertBefore(b, mine);
+  }
+
+  // The design's tab handler knows two buttons, so the third's panel and highlight are ours to hold.
+  // Re-asserted on a timer for the same reason every other layer on this page is: the design
+  // re-renders this region and a re-render puts its own state back.
+  function applyRwX() {
+    var rwActive = !!window.__lxxRw;
+    // The retry lives on this tick, not on a timer of its own: a read that came back short or empty
+    // is asked again while the tab is open, up to the attempt budget, and stops the moment it is full.
+    if (rwActive && RWSTATE === 'error') loadRewardedX();
+    var rw = $('#lx-rwpanel');
+    if (rwActive && !rw) { paintRewardedX(); rw = $('#lx-rwpanel'); }
+    if (rw) {
+      rw.style.setProperty('display', rwActive ? 'block' : 'none', 'important');
+      if (rwActive) { revealRwX(rw); paintRewardedX(); }
+    }
+    // Only the All Pools panel is ours to hide. My Positions is left alone on purpose: the design's
+    // lx-tabfix already sets it to display:none for any tab that is not "mine", and on the phone its
+    // display:none is written in the MARKUP -- clearing that on the way out would reveal the mock
+    // positions the design ships. Hide only what the design does not already hide.
+    var ap = $('#panelAllPools') || $('#panelAll');
+    if (rwActive) {
+      if (ap) ap.style.setProperty('display', 'none', 'important');
+      // The pager and the search box describe the ALL POOLS list; "Showing 1-50 of 32,436" under a
+      // fixed ten answers a question nobody asked. Taken only while this tab is up, and handed back
+      // on exit so the layer that owns them keeps owning them.
+      $$('.lx-netpag-host, #paginationAll, .search-box.inline-filter').forEach(function (n) {
+        n.style.setProperty('display', 'none', 'important');
+      });
+      window.__lxxRwHid = 1;
+    } else if (window.__lxxRwHid) {
+      if (ap) ap.style.removeProperty('display');
+      $$('.lx-netpag-host, #paginationAll, .search-box.inline-filter').forEach(function (n) {
+        n.style.removeProperty('display');
+      });
+      window.__lxxRwHid = 0;
+    }
+    $$('#poolTabs button[data-tab]').forEach(function (btn) {
+      var t = btn.getAttribute('data-tab');
+      var on = (t === 'rewarded') ? rwActive : (rwActive ? false : btn.classList.contains('active'));
+      if (t === 'rewarded' && btn.classList.contains('active') !== on) btn.classList.toggle('active', on);
+      if (t !== 'rewarded' && rwActive && btn.classList.contains('active')) btn.classList.remove('active');
+    });
+  }
+  // Capture phase, so this runs before the design's own handler can stop the event.
+  window.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest && e.target.closest('#poolTabs button[data-tab], #poolTabs [data-tab]');
+    if (!b) return;
+    window.__lxxRw = (b.getAttribute('data-tab') === 'rewarded');
+    if (window.__lxxRw) loadRewardedX();
+    setTimeout(applyRwX, 0); setTimeout(applyRwX, 90);
+  }, true);
+  function bootRwX() { try { addRwTabX(); applyRwX(); } catch (e) {} }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootRwX);
+  else bootRwX();
+  setInterval(bootRwX, 1200);
+  // DEEP LINK INTO THE REWARDED TAB. The LUMOS token page's Ecosystem card points here; landing on
+  // All Pools after clicking "View Rewarded Pools" would make the link look broken.
+  // Both forms are accepted because they do not survive the same things: the design's router rewrites
+  // this page's path and takes a query string with it, while a hash survives that but can be clobbered
+  // by a stray anchor. Testing both costs one regex. Mirrors Stellar's lx-ammdata.
+  try {
+    if (/(^|[?&])tab=rewarded|#rewarded/.test((location.search || '') + ' ' + (location.hash || ''))) {
+      window.__lxxRw = true;
+      loadRewardedX(); applyRwX();
+      setTimeout(applyRwX, 90); setTimeout(applyRwX, 600);
+      // Hand over from the head gate (lx-rwgate). It was holding the All Pools panel down with a blunt
+      // class rule until this ran; applyRwX has now hidden it for real, so the rule can go.
+      try { document.documentElement.classList.remove('lx-rwpending'); } catch (e2) {}
+    }
+  } catch (e) {}
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load);
   else load();
   window.__lxxPoolsReload = load;

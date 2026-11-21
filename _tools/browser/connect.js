@@ -57,6 +57,11 @@
 
   var XUMM_SRC = '/assets/vendor/xumm-oauth2-pkce-2.8.7.min.js';
 
+  // The beginner's guide behind "New to wallets?" in the connect sheet's footer. Stellar links the
+  // same post from its own modal (see _walletdocslink.js there); the post is written to be
+  // network-agnostic, so every chain points at this one URL rather than each keeping its own.
+  var WALLET_GUIDE_URL = 'https://lumoscore.com/blog/new-to-wallets-a-beginner-s-guide-to-stellar-wallets';
+
   // WHERE XAMAN SENDS THE USER BACK. It must be a page that runs THIS file: the library finishes a
   // sign-in only on the page it returns to -- in the desktop popup it posts the result to the opener,
   // on a phone it picks the session up after the app hands back. It used to be origin + '/', which on
@@ -125,6 +130,45 @@
     return '';
   }
   function noop() {}
+
+  // Resolves TRUE only when the text really reached the clipboard.
+  //
+  // navigator.clipboard existing is not permission to use it: it is present and still throws on an
+  // insecure origin, in a background tab, and wherever the permission is denied -- so the fallback
+  // runs on a REJECTED promise, not merely on a missing API. Reporting a copy that did not happen
+  // leaves someone pasting the last thing they copied into their wallet.
+  function copyText(str) {
+    return new Promise(function (res) {
+      var done = false;
+      function fallback() {
+        if (done) { return; } done = true;
+        var ok = false;
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = str;
+          // Off-screen rather than hidden: display:none and visibility:hidden are both unselectable,
+          // so execCommand would copy nothing and still report success in some browsers.
+          ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, str.length);
+          ok = !!document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (e) { ok = false; }
+        res(ok);
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(str).then(function () {
+            if (done) { return; } done = true; res(true);
+          }, fallback);
+          return;
+        }
+      } catch (e) {}
+      fallback();
+    });
+  }
 
   // THE FADE-IN GATE THAT NEVER OPENED (RAZA 2026-09-16: "[Still not showing - WTF, this has been going on since yesterday]" —
   // My Pools; and "Sometimes Pools-pool page is taking forever to load"). The design fades sections in with
@@ -211,6 +255,9 @@
     // there is no XAMAN_BACK marker to announce it. Pressing Disconnect and then reloading would
     // simply undo the disconnect.
     xamanForget();
+    // Same reasoning one line up, for the other transport that keeps state outside our own keys:
+    // a WalletConnect session left live on the relay is re-adopted on the next connect.
+    joeyForget();
     cookieChain('');
     emit();
   }
@@ -306,8 +353,14 @@
       });
     }).then(function (d) {
       if (d && d.error) {
-        var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
-        throw new Error(/reject|denied|cancel/i.test(m) ? 'Rejected in GemWallet.' : m);
+        // String(d.error) WAS "[object Object]" WAITING TO HAPPEN -- the same defect RAZA hit on
+        // Stellar/Rabet (2026-11-03). An Error crossing the extension boundary is structured-cloned and
+        // Error.prototype.message is non-enumerable, so what arrives can be {}: no message, no name, and
+        // String({}) is "[object Object]". Read every key it might use, accept a bare string, and treat
+        // a silent failure IN THE SIGNING STEP as a refusal -- an extension that fails for a reason of
+        // its own says so, and the only other thing that ends this step quietly is the person closing it.
+        var m = (d.error && (d.error.message || d.error.name || d.error.description)) || (typeof d.error === 'string' ? d.error : '');
+        throw new Error(!m || /reject|denied|cancel/i.test(m) ? 'Cancelled by the user.' : m);
       }
       // A REFUSAL IS ANNOUNCED AT WHICHEVER LEVEL THE EXTENSION PUTS IT (RAZA 2026-09-17: "if i initiate the send but i
       // cancel the wallet confirmation. on Stellar it shows an error, on XRP it doesnt"). @gemwallet/api answers a
@@ -315,8 +368,8 @@
       // fell through to the missing-hash error — and worse, said nothing at all when the popup was dismissed without
       // answering. All three nestings are read here.
       var r = (d && d.result) || {};
-      if (d && d.type === 'reject') throw new Error('Rejected in GemWallet.');
-      if (r.type === 'reject' || (r.result && r.result.type === 'reject')) throw new Error('Rejected in GemWallet.');
+      if (d && d.type === 'reject') throw new Error('Cancelled by the user.');
+      if (r.type === 'reject' || (r.result && r.result.type === 'reject')) throw new Error('Cancelled by the user.');
       var hash = r.hash || r.txHash || (r.result && r.result.hash);
       if (!hash) throw new Error('GemWallet did not return a transaction hash.');
       return String(hash);
@@ -340,8 +393,10 @@
       });
     }).then(function (d) {
       if (d && d.error) {
-        var m = (d.error && (d.error.message || d.error.name)) || String(d.error);
-        throw new Error(/reject|denied|cancel/i.test(m) ? 'Request rejected in GemWallet.' : m);
+        // Same structured-clone trap as gemSubmit above; this one is CONNECTING, not signing, so the
+        // wording stays specific to the step the person is actually in.
+        var m = (d.error && (d.error.message || d.error.name || d.error.description)) || (typeof d.error === 'string' ? d.error : '');
+        throw new Error(!m || /reject|denied|cancel/i.test(m) ? 'Request rejected in GemWallet.' : m);
       }
       var r = (d && d.result) || {};
       if (d && d.type === 'reject') throw new Error('Request rejected in GemWallet.');
@@ -352,12 +407,15 @@
   }
 
   // ---- Xaman -----------------------------------------------------------------------------------
-  function loadScript(src) {
+  // `what` names the library in the failure message. Defaulted to Xaman because that is who the
+  // only caller was when this was written -- a blank default would have put "Could not load the
+  // library" in front of someone with no idea which one.
+  function loadScript(src, what) {
     return new Promise(function (res, rej) {
       var s = document.createElement('script');
       s.src = src; s.async = true;
       s.onload = function () { res(); };
-      s.onerror = function () { rej(new Error('Could not load the Xaman library.')); };
+      s.onerror = function () { rej(new Error('Could not load the ' + (what || 'Xaman') + ' library.')); };
       document.head.appendChild(s);
     });
   }
@@ -577,13 +635,17 @@
   // of the two is wrong -- so the address is named here rather than left for someone to guess.
   function xamanAuthError(e) {
     var m = String((e && (e.message || e.error || e.reason)) || e || '');
-    // The window went away without an answer. Almost always the gateway refusal below, because that
-    // page is a dead end the user has to close by hand -- but it is also what cancelling looks like,
-    // so the wording has to carry both without asserting either.
+    // The window went away without an answer. That is the gateway refusal below AND an ordinary
+    // cancel, and nothing here can tell them apart.
+    //
+    // RAZA 2026-10-27, after closing the window himself: "i need you to keep this error short".
+    // It used to append the whole redirect-URL diagnosis on the chance that this was the refusal,
+    // which meant the common case -- someone changing their mind -- was answered with three lines
+    // about apps.xaman.dev. The diagnosis is not lost: when Xaman actually reports the refusal it
+    // comes back as invalid client / redirect / access_denied, and the branch below says all of it,
+    // naming the exact address. Guessing it here only taxed the people who did nothing wrong.
     if (/popup-closed/.test(m)) {
-      return new Error('The Xaman sign-in window closed before it finished. If it showed "Invalid '
-        + 'client/redirect URL", then ' + xamanRedirect() + ' is not a registered redirect '
-        + 'address for this Xaman app — add it at apps.xaman.dev and try again.');
+      return new Error('The Xaman sign-in window closed before it finished.');
     }
     if (/invalid client|redirect|access_denied/i.test(m)) {
       return new Error('Xaman would not accept a sign-in returning to ' + xamanRedirect()
@@ -754,7 +816,11 @@
         var link = created && created.next && created.next.always;
         var png = created && created.refs && created.refs.qr_png;
         var abort = null;
-        var close = ui.signing(link, isHandheld() ? '' : png, function () {
+        // isHandset, not isHandheld: on a touchscreen LAPTOP the loose test hid the QR Xaman had
+        // already generated and left a desktop signer with no way to reach their phone. Xaman has
+        // no desktop app, so the QR is the only path there. Same defect as the Joey one below, found
+        // the same day -- see isHandset.
+        var close = ui.signing(link, isHandset() ? '' : png, function () {
           if (abort) abort(new Error('Cancelled.'));
         });
 
@@ -763,13 +829,13 @@
         // the hand-off can be dropped silently. That is survivable here in a way it was not for LOBSTR:
         // the user is signed in, so Xaman PUSHES the request to their device regardless, and the dialog
         // behind this carries an Open button that is a fresh tap.
-        if (isHandheld() && link) { try { window.location.href = link; } catch (e) {} }
+        if (isHandset() && link) { try { window.location.href = link; } catch (e) {} }
 
         var v = xamanVerdict(sdk, sub, uuid);
         abort = v.abort;
         return v.promise.then(function (d) {
           close();
-          if (!d || !d.signed) throw new Error('Rejected in Xaman.');
+          if (!d || !d.signed) throw new Error('Cancelled by the user.');
           return d.txid ? String(d.txid) : xamanHash(sdk, uuid);
         }, function (e) { close(); throw e; });
       });
@@ -839,10 +905,33 @@
     });
   }
 
-  function isHandheld() {
-    try { if (window.matchMedia('(pointer:coarse)').matches) return true; } catch (e) {}
-    try { if ((navigator.maxTouchPoints || 0) > 0) return true; } catch (e) {}
-    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  // THERE USED TO BE AN isHandheld() HERE and it is deliberately gone. It answered "does this
+  // device do taps" -- true on any touchscreen laptop -- and every caller actually wanted the
+  // question below. Leaving an unused function with an authoritative name beside the right one is
+  // how the next person reintroduces this bug, so it was removed rather than kept "just in case".
+  // A genuine click handler that needs tap-capability can ask matchMedia directly in one line.
+
+  // "IS THIS DEVICE ITSELF THE PHONE." The only question worth asking before handing someone a
+  // deep link into a wallet app or deciding they do not need a QR.
+  //
+  // FOUND ON RAZA'S OWN LAPTOP, 2026-10-27, by opening the Joey dialog on production right after
+  // adding the desktop QR he asked for -- and getting no QR. His machine reports
+  // `maxTouchPoints: 10` with `any-pointer: fine` (a touchscreen laptop), so isHandheld() answered
+  // TRUE, the Joey path took the handset branch, and it offered a joey:// link that Windows cannot
+  // open while suppressing both the QR and the copy link. The dialog had no way through at all.
+  //
+  // The picker's filter has been getting this right since 2026-10-17 and says so in its own note
+  // ("NOT isHandheld()"); the wallet-app paths simply never used that logic. It is named here so
+  // there is one answer instead of two, and so the next caller inherits the right one.
+  //
+  // A touch laptop has a mouse as well and fails the second test. A phone or tablet does not.
+  function isHandset() {
+    try { if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) return true; } catch (e) {}
+    try {
+      return window.matchMedia('(pointer:coarse)').matches
+        && !window.matchMedia('(any-pointer:fine)').matches;
+    } catch (e) {}
+    return false;
   }
 
   // ---- Crossmark -------------------------------------------------------------------------------
@@ -894,8 +983,494 @@
       return hash;
     }, function (e) {
       var m = (e && e.message) || '';
-      throw new Error(/reject|denied|cancel/i.test(m) ? 'Rejected in Crossmark.' : (m || 'Crossmark could not sign this transaction.'));
+      throw new Error(/reject|denied|cancel/i.test(m) ? 'Cancelled by the user.' : (m || 'Crossmark could not sign this transaction.'));
     });
+  }
+
+  // ---- Joey (WalletConnect) --------------------------------------------------------------------
+  // RAZA 2026-10-27: "on XRPL mobile, we only have Xaman wallet. There's also Joey wallet app".
+  // It is also the unfinished half of the list quoted at the head of the Crossmark section --
+  // "add: Cross mark, Joey, Wallet connect" (2026-09-16). Crossmark shipped that day; this did not.
+  //
+  // WHY THERE IS NO GEM WALLET MOBILE ROW BESIDE IT. He asked for one in the same sentence, and it
+  // cannot be built -- the limit is the wallet's, not ours. Two independent sources, both read on
+  // 2026-10-27:
+  //
+  //   * Gem's own source. core/crates/primitives/src/wallet_connect_namespace.rs on main maps
+  //     ChainType::Xrp to None for BOTH get_namespace and get_reference, and its WalletConnectCAIP2
+  //     enum has no xrpl variant at all -- only eip155, solana, cosmos, algorand, sui, ton, tron.
+  //   * The WalletConnect registry, which lists Gem Wallet on 19 chains, every one of them eip155.
+  //
+  // gemwallet.com's FAQ says you can connect XRP Ledger dApps. It is wrong, and a row built on it
+  // would hand the app a session it can only refuse as an unsupported chain. This is the same wall
+  // RAZA hit on his own phone on 2026-10-17; the scanner exists now, XRP still is not wired to it.
+  // DO NOT re-add a Gem mobile row on the strength of their marketing copy -- check that one Rust
+  // file, which is the thing that decides.
+  //
+  // Joey is registered for exactly this. The WalletConnect registry lists it on xrpl:0 / xrpl:1 /
+  // xrpl:2, iOS and Android, native scheme joey://settings, and @joey-wallet/wc-core agrees on
+  // every identifier below. We do NOT use their npm client: it is a thin wrapper over Reown, and we
+  // already self-host the very SignClient it would pull in.
+  var WC_PROJECT_ID = '8ef28ece795a0868371b0e5fd6cc76ad';
+  var WC_CHAIN = 'xrpl:0';
+  var WC_METHODS = ['xrpl_signTransaction', 'xrpl_signTransactionFor',
+    'xrpl_signTransactionBatch', 'xrpl_signTransactionFee'];
+  // The only method this build actually calls. See the note on client.connect for why asking for
+  // the other three as REQUIRED made Joey unable to approve its own session.
+  var WC_METHODS_MIN = ['xrpl_signTransaction'];
+  // ASK FOR NO EVENTS. Joey's DEFAULT_EVENTS enum is empty -- it publishes none -- and a wallet that
+  // validates a proposal strictly refuses a request for an event it never emits. The Stellar build
+  // passes events:[] for the same reason.
+  var WC_EVENTS = [];
+  // THE PATH IS PART OF THE LINK, AND GUESSING IT COSTS A FAILED CONNECT. The obvious construction
+  // -- scheme + 'wc?uri=' + encodeURIComponent(uri), which is what WalletConnect's own
+  // formatNativeUrl would emit -- is what we shipped first, and Joey answered "Invalid Deep Link"
+  // on RAZA's phone while this page sat spinning on an approval that could never arrive.
+  //
+  // Joey's own source settles it. @joey-wallet/wc-core carries the format as a constant beside the
+  // wallet's project id:
+  //     deeplinkFormat: 'joey://settings/wc?uri='
+  //     deeplink = `${deeplinkFormat}${encodeURIComponent(uri)}`
+  // and the WalletConnect registry agrees from the other side: Joey's mobile.native is
+  // 'joey://settings', NOT 'joey://'. The pairing screen lives under settings in that app, so the
+  // path is where the link has to land -- the bare scheme is not a shorter way to say the same
+  // thing, it is a different link, and the app rejects it.
+  //
+  // Keep the whole prefix in one string. Split into a scheme plus a path assembled at the call
+  // site, this is exactly the kind of value that gets half-corrected later.
+  var JOEY_CONNECT_LINK = 'joey://settings/wc?uri=';
+  // Where to send someone for a request on a session that ALREADY exists. Different question, and
+  // the wallet answers it itself: WalletConnect carries the wallet's own
+  // session.peer.metadata.redirect, which is the authoritative target for a follow-up request. Only
+  // if a session arrives without one do we fall back to the bare scheme.
+  var JOEY_APP = 'joey://';
+
+  // OUR OWN TOPIC KEY, AND THE SUFFIX IS LOAD-BEARING. The Stellar build keeps its LOBSTR
+  // WalletConnect session under lumos.wcTopic and routes on that key's mere presence. lumos.address
+  // and friends are shared between the two builds on purpose; this one must NOT be, or a Joey
+  // session and a LOBSTR session overwrite each other and each build then tries to sign on the
+  // other's topic. Precisely the collision lumos.lastWallet.xrpl already exists to avoid -- see the
+  // note on K near the top of this file, which is the same bug caught one key earlier.
+  var K_WCTOPIC = 'lumos.wcTopic.xrpl';
+
+  var _mods = {};
+  function loadMod(u) { return _mods[u] || (_mods[u] = import(u)); }
+
+  // Bounds the HANDSHAKE only, never the approval. SignClient.init sits pending for ever when the
+  // relay is unreachable, and the picker would show "Waiting for Joey" with no error and no way out.
+  // The user reading a prompt on their phone is not a thing to put a clock on.
+  function wcTimeout(p, ms, msg) {
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () { rej(new Error(msg)); }, ms);
+      p.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
+    });
+  }
+
+  // ONE SignClient PER PAGE. _wallet_realconnect.js publishes the Stellar one as window.__lxWcClient
+  // and warns there that two would fight over the relay socket. On an XRPL page lx-realconnect is
+  // stripped and there is none, so we stand one up and publish it under the same name; on a Stellar
+  // page -- where this module runs DORMANT but its picker can still be opened from the network
+  // chooser -- theirs already exists and we borrow it instead of building a second.
+  var _wcClient = null;
+  function wcClient() {
+    try {
+      var shared = window.__lxWcClient;
+      if (shared && shared !== wcClient) return Promise.resolve(shared());
+    } catch (e) {}
+    if (_wcClient) return _wcClient;
+    // The -reqns build first, same as Stellar: it is our rebuild of 2.25.0 with the one statement
+    // that wipes requiredNamespaces turned into a no-op, so BOTH requiredNamespaces and
+    // optionalNamespaces reach the wallet. Stock 2.25.0 is the fallback, and either works for Joey.
+    _wcClient = loadMod('/assets/vendor/wc-sign-client-2.25.0-reqns.min.js')
+      .catch(function () { return loadMod('/assets/vendor/wc-sign-client-2.25.0.min.js'); })
+      .then(function (m) {
+        var SignClient = m.default || m.SignClient || m;
+        return SignClient.init({
+          projectId: WC_PROJECT_ID,
+          metadata: {
+            name: 'LumosCore',
+            description: 'Multichain DeFi',
+            url: location.origin,
+            icons: [location.origin + '/assets/favicon.png']
+          }
+        });
+      })
+      .catch(function (e) {
+        // Cleared so a retry rebuilds rather than handing back the same rejected promise for ever.
+        _wcClient = null;
+        throw new Error('Could not reach WalletConnect. Check your connection and try again.');
+      });
+    return _wcClient;
+  }
+  try { if (!window.__lxWcClient) window.__lxWcClient = wcClient; } catch (e) {}
+
+  // ---- the desktop QR --------------------------------------------------------------------------
+  // RAZA 2026-10-27: "yes add the QR for desktop". Until this, a desktop reader who picked Joey got
+  // a link to copy and carry to their phone, because Xaman hands us a PNG it hosts on the payload
+  // it created and WalletConnect has no equivalent -- the wc: URI is ours to render.
+  //
+  // THE LIBRARY IS NOT NEW CODE. /assets/vendor/qrcode-generator-arase.js is a byte-identical copy
+  // of the build's own _tools/_qrlib.js, which _walletdata.js and _accountpage.js already inline as
+  // lx-qrlib on 34 pages (sha256 recorded in the vendor PROVENANCE.md). Nothing entered the supply
+  // chain; the same code is merely reachable as a file.
+  //
+  // IT IS LOADED LAZILY, and that is the whole reason it is a file. lx-qrlib is NOT on Trade, Pools
+  // or the dashboard -- precisely where wallets get connected -- so the old comment on signing()
+  // was right that a locally drawn QR would have been blank there. Inlining 57 KB into every one of
+  // those pages to serve desktop Joey users would be the wrong trade, so it is fetched only when
+  // someone actually picks Joey on a non-handset.
+  var _qrlib = null;
+  function qrLib() {
+    if (window.qrcode) return Promise.resolve();
+    if (!_qrlib) {
+      _qrlib = loadScript('/assets/vendor/qrcode-generator-arase.js', 'QR')
+        .catch(function (e) { _qrlib = null; throw e; });
+    }
+    return _qrlib;
+  }
+
+  // The error-correction ladder from write.js, unchanged: densest levels first so the code stays
+  // small, and addData THROWS when the data will not fit the requested version -- hence walking the
+  // list rather than guessing one. typeNumber 0 lets the library size it.
+  function makeQR(txt) {
+    var lv = [[0, 'H'], [0, 'Q'], [8, 'H'], [10, 'H'], [0, 'M'], [4, 'M']];
+    for (var i = 0; i < lv.length; i++) {
+      try {
+        var q = window.qrcode(lv[i][0], lv[i][1]);
+        q.addData(txt);
+        q.make();
+        return q;
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  // Paints into `host`, or leaves it empty and lets the copy-link below carry the connection. A QR
+  // that cannot be drawn is not an error worth a dialog -- there is already a working way through.
+  function drawQR(host, text) {
+    return qrLib().then(function () {
+      var q = makeQR(text);
+      if (!q) throw new Error('QR too long');
+      var n = q.getModuleCount();
+      var NS = 'http://www.w3.org/2000/svg';
+      var svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 ' + n + ' ' + n);
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
+      svg.setAttribute('shape-rendering', 'crispEdges');
+      // POLARITY IS NOT A STYLE CHOICE. Dark modules on an explicitly white ground; inverted, it is
+      // not a low-contrast QR, it is not a QR, and it fails silently on every scanner. The white
+      // rect is drawn here rather than left to the host's background for the same reason.
+      var bg = document.createElementNS(NS, 'rect');
+      bg.setAttribute('width', n); bg.setAttribute('height', n); bg.setAttribute('fill', '#ffffff');
+      svg.appendChild(bg);
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!q.isDark(r, c)) continue;
+          var m = document.createElementNS(NS, 'rect');
+          m.setAttribute('x', c); m.setAttribute('y', r);
+          // 1.04 rather than 1, the constant write.js carries a note about: at exactly 1 the modules
+          // meet on a pixel boundary and the renderer's antialiasing leaves a pale seam between every
+          // pair, which a decoder reads as noise.
+          m.setAttribute('width', '1.04'); m.setAttribute('height', '1.04');
+          m.setAttribute('fill', '#15161c');
+          svg.appendChild(m);
+        }
+      }
+      host.innerHTML = '';
+      host.appendChild(svg);
+      return true;
+    }).catch(function () { return false; });
+  }
+
+  // The pairing topic lives in the wc: URI as wc:<topic>@2?relay-protocol=...
+  function uriTopic(uri) {
+    try { return String(uri).split('?')[0].replace(/^wc:/, '').split('@')[0]; } catch (e) { return ''; }
+  }
+
+  // SignClient THROWS for an unknown topic rather than returning undefined, so this cannot be a
+  // plain lookup. A stored topic that the SDK has since expired is a normal state, not an error.
+  //
+  // THE SECOND HALF IS THE PHONE CASE, and it is the same shape as the bug that cost Xaman a
+  // session: approving leaves the browser, and iOS is free to discard this tab while the user is in
+  // the wallet. If that happens between their approval and the line that stores the topic, the
+  // session is live on both the relay and Joey's side while THIS build has no idea of it -- so the
+  // next attempt would raise a second prompt for a connection the user already granted. SignClient
+  // persists its sessions, so when our own key is missing we look for an xrpl one it still holds and
+  // re-adopt it. Only sessions carrying the xrpl namespace qualify: the Stellar build shares this
+  // SignClient, and adopting its LOBSTR session would hand lumos.address a G-address.
+  function joeySession(client) {
+    var topic = get(K_WCTOPIC);
+    if (topic) {
+      try {
+        var s = client.session.get(topic);
+        if (s && s.topic) return s;
+      } catch (e) {}
+    }
+    var all = [];
+    try { all = client.session.getAll() || []; } catch (e) { return null; }
+    for (var i = 0; i < all.length; i++) {
+      var c = all[i];
+      if (!c || !c.topic) continue;
+      if (!joeyAddress(c)) continue;
+      set(K_WCTOPIC, c.topic);
+      return c;
+    }
+    return null;
+  }
+
+  // CAIP-10 accounts arrive as "xrpl:0:rAddress". Everything after the SECOND colon is the address --
+  // not accounts[i].split(':')[2], which silently truncates if a reference ever contains one. Every
+  // candidate still goes through validAddress, because this value ends up in the shared lumos.address.
+  function joeyAddress(session) {
+    var accts = [];
+    try {
+      accts = (session && session.namespaces && session.namespaces.xrpl
+        && session.namespaces.xrpl.accounts) || [];
+    } catch (e) {}
+    for (var i = 0; i < accts.length; i++) {
+      var p = String(accts[i]).split(':');
+      if (p.length < 3) continue;
+      var a = p.slice(2).join(':');
+      if (validAddress(a)) return a;
+    }
+    return '';
+  }
+
+  function joeyConnect() {
+    return wcTimeout(wcClient(), 20000, 'Could not reach WalletConnect. Try again.')
+      .then(function (client) {
+        // TAPPING THE ROW ALWAYS ASKS THE WALLET. This used to reuse a session the browser already
+        // held, on the reasoning that "asking again would be a prompt the user has already
+        // answered". That reasoning was wrong, and RAZA hit it twice:
+        //
+        //   2026-10-28, still happening after the forget sweep shipped: "i tested on main, still no
+        //   wallet confirmation on Joey, it just connected directly without me signing the
+        //   connection to lumoscore"
+        //
+        // By the time this function runs the PICKER is open, which means the reader is signed out
+        // and has just asked to connect. A silent reuse answers that request without the one thing
+        // they came for: seeing, in their own wallet, which account they are handing over. Xaman
+        // prompts every time and that is the behaviour being matched.
+        //
+        // Reuse also made correctness depend on the previous disconnect having worked. Sweeping in
+        // forget() was necessary but it is not sufficient, because a session can outlive this
+        // browser entirely -- cleared storage, another device, a disconnect that never reached the
+        // relay. Consent cannot rest on "nothing went wrong last time".
+        //
+        // So: drop any xrpl session this client still holds, then propose a new one. The same
+        // predicate as forget() and joeySession(), for the same reason -- a Stellar page shares its
+        // SignClient and LOBSTR's session must survive.
+        //
+        // joeySession() stays, because joeySubmit() genuinely needs to find the live session when
+        // signing. It is the CONNECT path that must not take that shortcut.
+        // The old sessions are dropped AFTER the new one is approved, not here. Two reasons, and
+        // the second is RAZA's:
+        //
+        //   1. Cancelling must cost nothing. Sweeping first meant opening the picker, tapping Joey
+        //      and changing your mind left you disconnected from a session you never asked to end.
+        //   2. 2026-10-28, scanning the desktop QR: "Failed to publish custom payload, please try
+        //      again. id:1793128963153292800 tag:undefined" -- shown on the phone while the connect
+        //      still succeeded. Sweeping first hands the wallet a session_delete at the same moment
+        //      it is working through a fresh pairing, and a publish on a topic being torn down is
+        //      exactly the shape of "tag:undefined".
+        //
+        // Nothing about the prompt depends on sweeping first: what guarantees the wallet asks is
+        // that we no longer REUSE a session, not that we destroyed one.
+        // REQUIRE ONLY WHAT WE CALL, OFFER THE REST. Listing all four signing methods as REQUIRED
+        // made Joey refuse its own approval: "Non conforming namespaces. approve() namespaces
+        // methods don't satisfy namespace methods for xrpl:0". That check runs inside the WALLET,
+        // comparing what it is about to approve against the proposal's requiredNamespaces -- so a
+        // method the wallet does not implement is not ignored, it makes the whole session
+        // unapprovable. xrpl_signTransactionBatch is the obvious candidate: XRPL Batch is the
+        // amendment no wallet has shipped support for yet ([[xrpl-batch-wallet-support]]).
+        //
+        // We only ever call xrpl_signTransaction -- joeySubmit has no other method in it -- so that
+        // is the one thing this session cannot do without. The other three move to OPTIONAL, which
+        // is what "approve these if you have them" means, and a wallet missing any of them still
+        // produces a conforming session.
+        //
+        // This matters more here than on other builds because of the SignClient we load. Stock
+        // 2.25.0 quietly folds requiredNamespaces into optional, which would have hidden this; our
+        // -reqns rebuild deliberately keeps them required so LOBSTR sees them. We ask for less
+        // instead of loading a laxer client, because the narrower ask is the honest one either way.
+        return client.connect({
+          requiredNamespaces: {
+            xrpl: { methods: WC_METHODS_MIN, chains: [WC_CHAIN], events: WC_EVENTS }
+          },
+          optionalNamespaces: {
+            xrpl: { methods: WC_METHODS, chains: [WC_CHAIN], events: WC_EVENTS }
+          }
+        }).then(function (res) {
+          var uri = res && res.uri;
+          var approval = res && res.approval;
+          if (!uri || typeof approval !== 'function') {
+            throw new Error('WalletConnect did not return a connection link.');
+          }
+          var deep = JOEY_CONNECT_LINK + encodeURIComponent(uri);
+          var hand = isHandset();
+          var close = ui.signing(hand ? deep : '', '', function () {
+            // Cancelling must drop the PROPOSAL as well as the dialog. Left alive, the pairing sits
+            // there and Joey can still approve a request this page stopped waiting for -- which
+            // would store an address nobody is expecting on a screen that has moved on.
+            var t = uriTopic(uri);
+            if (!t) return;
+            try { client.core.pairing.disconnect({ topic: t }); } catch (e) {}
+            // On a handset neither is offered: the deep link above IS the path, and a QR you would
+            // have to scan with the phone already holding the page is nonsense.
+          }, { name: 'Joey', copy: hand ? '' : uri, qr: hand ? '' : uri, connect: true });
+
+          // BEST EFFORT, exactly as in xamanSubmit. The URI has to exist before there is anything to
+          // open, so on iOS the activation that started this is often already spent and the hand-off
+          // is dropped with no error. The dialog behind it carries an Open button that IS a fresh
+          // tap, which is the path that actually works -- see the note on that button.
+          if (hand) { try { window.location.href = deep; } catch (e) {} }
+
+          return approval().then(function (session) {
+            close();
+            var a = joeyAddress(session);
+            if (!a) throw new Error('Joey did not return an XRP Ledger address.');
+            // Stored BEFORE accept() so that a session which somehow fails validAddress still leaves
+            // a topic we can disconnect, rather than an orphan on the relay.
+            set(K_WCTOPIC, session.topic);
+            // Now the earlier ones can go -- the new session is approved and recorded, so dropping
+            // them cannot strand anyone. KEEPING the topic we just stored is the whole point: a
+            // sweep without the exclusion would delete the session this call just established.
+            joeyDropSessions(client, 'Replaced by a new session', session.topic);
+            return accept(a, 'Joey', 'joey');
+          }, function (e) {
+            close();
+            var m = (e && e.message) || '';
+            throw new Error(/reject|denied|cancel/i.test(m)
+              ? 'Rejected in Joey.' : (m || 'Joey did not approve the connection.'));
+          });
+        });
+      });
+  }
+
+  // ---- Joey SIGNING ----------------------------------------------------------------------------
+  // Resolves with the transaction HASH -- the same contract gemSubmit, crossSubmit and xamanSubmit
+  // satisfy -- so every caller in write.js, pooldetail.js and mint.js works unchanged.
+  function joeySubmit(tx) {
+    return wcTimeout(wcClient(), 20000, 'Could not reach WalletConnect. Try again.')
+      .then(function (client) {
+        var session = joeySession(client);
+        // A WalletConnect session can expire while the address stays in localStorage, which would
+        // otherwise surface as a request that hangs. Say so instead, the way lxc.submit does for an
+        // empty transport: a wallet layer must never leave someone watching a button that cannot
+        // resolve.
+        if (!session) {
+          throw new Error('That Joey session has expired. Disconnect and connect again.');
+        }
+        var hand = isHandset();
+
+        // CANCEL HAS TO STOP THE WAIT, not just hide the dialog. WalletConnect gives no way to
+        // withdraw a request that is already on the wallet, so Cancel cannot un-ask it -- but a
+        // dialog that closes while the promise stays pending leaves the caller's button spinning
+        // for ever. So cancelling REJECTS, and says plainly that the request may still be sitting
+        // in Joey, which is the honest version of a cancel we cannot actually perform.
+        var cancelled = null;
+        var cancel = new Promise(function (_res, rej) {
+          cancelled = function () {
+            rej(new Error('Stopped waiting. If you approve it in Joey it will still go through.'));
+          };
+        });
+        // ASK THE SESSION WHERE TO SEND THEM. The request is already on the relay by the time this
+        // link is tapped, so all it has to do is bring Joey forward -- a different job from the
+        // connect link, which carries a pairing URI. WalletConnect has the wallet publish its own
+        // target as session.peer.metadata.redirect, so use that rather than assume a second time
+        // that the bare scheme opens this app; the connect link proved that assumption wrong.
+        var back = '';
+        try {
+          var rd = session.peer && session.peer.metadata && session.peer.metadata.redirect;
+          back = (rd && (rd.native || rd.universal)) || '';
+        } catch (e) {}
+        if (!back) back = JOEY_APP;
+        var close = ui.signing(hand ? back : '', '', function () { cancelled(); },
+          { name: 'Joey' });
+        if (hand) { try { window.location.href = back; } catch (e) {} }
+        return Promise.race([cancel, client.request({
+          topic: session.topic,
+          chainId: WC_CHAIN,
+          request: {
+            method: 'xrpl_signTransaction',
+            // autofill lets Joey fill Fee and Sequence, which is what Xaman does for us too.
+            // submit:true means the hash coming back is SUBMITTED and not merely signed -- the
+            // assumption every caller already makes. LastLedgerSequence is stamped by lxc.submit
+            // before we are reached, so autofill has nothing left to decide there.
+            params: { tx_json: tx, options: { autofill: true, submit: true } }
+          }
+        })]).then(function (r) {
+          close();
+          // @joey-wallet/wc-core types the answer as { tx_json: TransactionAndMetadata }. The flatter
+          // shapes are read too, because a wallet layer that claims a signature it cannot show a
+          // hash for is worse than one that reports a failure.
+          var j = (r && r.tx_json) || r || {};
+          var hash = j.hash || j.tx_hash || (r && r.hash) || '';
+          if (!hash) throw new Error('Joey did not return a transaction hash.');
+          return String(hash);
+        }, function (e) {
+          close();
+          var m = (e && e.message) || '';
+          throw new Error(/reject|denied|cancel/i.test(m)
+            ? 'Cancelled by the user.' : (m || 'Joey could not sign this transaction.'));
+        });
+      });
+  }
+
+  // Disconnect has to reach the RELAY too, not just our keys -- the same lesson xamanForget carries
+  // one section up. Left alone, the session stays live on Joey's side and reconnecting silently
+  // adopts it, so pressing Disconnect would not be a disconnect at all.
+  //
+  // Deliberately NOT awaited: the local keys are already gone by then, and a slow or unreachable
+  // relay must not hold up something the user has already asked for.
+  // DISCONNECT EVERY XRPL SESSION, NOT JUST THE ONE WE WROTE DOWN.
+  //
+  // RAZA 2026-10-28: "As soon as I tap joey wallet, it automatically connects to LumosCore without
+  // giving me signing confirmation on joey wallet". He had connected and disconnected several times
+  // while testing. Each approval creates its own session in the SDK's store, but K_WCTOPIC holds
+  // ONE topic -- the newest. This function dropped that one and left the rest alive, and
+  // joeySession() adopts ANY live session carrying an xrpl address, so the next tap found an
+  // earlier one and signed him straight back in.
+  //
+  // The two halves disagreed about how many sessions there can be: the forget assumed one, the
+  // lookup assumed many, and the lookup was right. Sweeping here is what makes the re-adoption in
+  // joeySession() safe to keep -- after a real disconnect there is nothing left to re-adopt, so it
+  // can only ever find the orphan it was written for (a tab killed between approval and the line
+  // that stores the topic).
+  //
+  // ONLY xrpl SESSIONS. On a Stellar page wcClient() hands back THAT build's SignClient, where
+  // LOBSTR's session lives. joeyAddress() reads namespaces.xrpl.accounts and nothing else, so a
+  // Stellar session returns '' and is skipped; disconnecting by any looser test would sign the
+  // reader out of the other chain.
+  // ONE SWEEP, TWO CALLERS. Disconnect needs it and so does connect, and writing it twice is the
+  // shape that produced three separate bugs in two days -- isHandset, and then this very session
+  // count. Both callers pass the client they already hold; neither re-enters wcClient().
+  // `keep` is a topic to spare -- the session a connect has just established. Without it the
+  // post-approval sweep would delete the very session it was called to tidy up around.
+  function joeyDropSessions(client, why, keep) {
+    var all = [];
+    try { all = client.session.getAll() || []; } catch (e) { return 0; }
+    var n = 0;
+    for (var i = 0; i < all.length; i++) {
+      var s = all[i];
+      if (!s || !s.topic || !joeyAddress(s)) continue;
+      if (keep && s.topic === keep) continue;
+      try {
+        client.disconnect({ topic: s.topic, reason: { code: 6000, message: why } });
+        n++;
+      } catch (e) {}
+    }
+    return n;
+  }
+
+  function joeyForget() {
+    del(K_WCTOPIC);
+    try {
+      wcClient().then(function (client) {
+        joeyDropSessions(client, 'User disconnected');
+      }).catch(noop);
+    } catch (e) {}
   }
 
   // ---- registry --------------------------------------------------------------------------------
@@ -928,6 +1503,18 @@
       logo: '/assets/wallets/crossmark.webp',
       connect: crossConnect,
       status: function () { return Promise.resolve(crossInstalled() ? 'Installed' : ''); }
+    },
+    {
+      id: 'joey', name: 'Joey', sub: 'Mobile app',
+      // A phone app reached over WalletConnect, so it survives the picker's handheld filter the same
+      // way Xaman does. Before this row, that filter left a handset with exactly ONE wallet.
+      mobile: true,
+      ico: '#f47421', glyph: 'J', logo: '/assets/wallets/joey.png',
+      connect: joeyConnect,
+      // Nothing to detect: there is no extension to look for and no way to ask a phone from here
+      // whether an app is installed. Claiming "Installed" on a guess would be a worse answer than
+      // none, and the row's own copy already says it is a mobile app.
+      status: function () { return Promise.resolve(''); }
     }
   ];
 
@@ -973,27 +1560,112 @@
   // have. Styles are scoped under .lxx-* and take their colours from the site's variables, with
   // fallbacks so the modal is never invisible if a page is missing a token.
   var CSS = ''
-    + '.lxx-bd{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.62);backdrop-filter:blur(4px);'
+    // THE SAME BACKDROP AS STELLAR'S .lxw-bd, to the byte. This was rgba(0,0,0,.62) -- the same
+    // opacity but pure black, where the design's is a blue-tinted near-black -- so the page behind
+    // changed tone at the moment the reader chose XRP Ledger, with the chooser still on screen.
+    // RAZA 2026-11-14: "There's a subtle background color change when we select XRP Ledger. This
+    // doesn't happen when we select stellar." Measured on staging 7024e104: .lxw-bd computes to
+    // rgba(8, 8, 12, 0.62) and this computed to rgba(0, 0, 0, 0.62).
+    + '.lxx-bd{position:fixed;inset:0;z-index:9999;background:rgba(8,8,12,.62);backdrop-filter:blur(4px);'
     + 'display:flex;align-items:center;justify-content:center;padding:18px}'
     + '.lxx-bd[hidden]{display:none}'
-    + '.lxx-m{width:100%;max-width:392px;background:var(--card,var(--bg,#131317));color:var(--text,#f6f5f3);'
-    + 'border:1px solid var(--line,rgba(255,255,255,.10));border-radius:18px;overflow:hidden;'
-    + 'box-shadow:0 24px 70px rgba(0,0,0,.5);font-family:inherit}'
-    + '.lxx-h{display:flex;align-items:center;justify-content:space-between;padding:18px 18px 12px}'
-    + '.lxx-h h3{margin:0;font-size:18px;font-weight:800;letter-spacing:-.3px}'
-    + '.lxx-h p{margin:3px 0 0;font-size:13.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
-    + '.lxx-x{background:none;border:0;color:var(--text-muted,#9b9ba4);cursor:pointer;padding:6px;'
-    + 'border-radius:8px;line-height:0}'
-    + '.lxx-x:hover{color:var(--text,#f6f5f3);background:rgba(255,255,255,.06)}'
-    + '.lxx-list{padding:6px 12px 16px;display:flex;flex-direction:column;gap:6px}'
-    + '.lxx-row{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border-radius:13px;'
-    + 'background:none;border:1px solid transparent;color:inherit;cursor:pointer;text-align:left;font-family:inherit}'
-    + '.lxx-row:hover{background:rgba(255,255,255,.055);border-color:var(--line,rgba(255,255,255,.10))}'
-    + '.lxx-ico{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;'
-    + 'justify-content:center;font-weight:800;font-size:15px;color:#fff;flex:0 0 36px}'
+    // THE CARD READ AS THE PAGE BACKGROUND, NOT AS A SURFACE ABOVE IT.
+    //
+    // RAZA 2026-11-14: "XRPL popup is significantly darker while what we have on Stellar and Near is
+    // kinda grey." He was right, and the cause is a fallback chain, not a colour choice. This was
+    // `var(--card, var(--bg, #131317))`. Measured on staging af61e6c8, BOTH trees resolve:
+    //
+    //     --card    (unset)      --line    (unset)
+    //     --bg      #0a0a0b      --surface #131317      --border #26262c
+    //
+    // `--card` and `--line` are set by NOBODY. So the chain fell through `--card` to `--bg` -- the
+    // page's own background -- and the modal painted #0a0a0b, the exact colour of the page behind it.
+    // The literal `#131317` at the end of the chain was never reached, so the fallback that looked
+    // like the safety net was dead code. Stellar names `--surface` and `--border`, which ARE set, and
+    // lands on #131317 / #26262c. Same two variables here now.
+    //
+    // A var() fallback only fires when the variable is UNSET; it cannot rescue a chain that reaches a
+    // variable which IS set to the wrong thing. Read the resolved value, never the declaration.
+    + '.lxx-m{width:100%;max-width:460px;max-height:88vh;display:flex;flex-direction:column;'
+    + 'background:var(--surface,#131317);color:var(--text,#ECECF3);'
+    + 'border:1px solid var(--border,rgba(255,255,255,.09));border-radius:18px;overflow:hidden;'
+    + 'box-shadow:0 22px 60px -8px rgba(0,0,0,.5),0 8px 24px -12px rgba(0,0,0,.5);font-family:inherit}'
+    // Stellar's header carries the rule under it that separates the title from the search. This one
+    // had none, which is why the two sheets read as different cards even at the same width.
+    + '.lxx-h{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
+    + 'padding:18px 22px 14px;border-bottom:1px solid var(--border,rgba(255,255,255,.09))}'
+    + '.lxx-h h3{margin:0 0 2px;font-size:19px;font-weight:800;letter-spacing:-.3px;'
+    + 'color:var(--text,#ECECF3)}'
+    + '.lxx-h p{margin:0;font-size:13.5px;color:var(--text-muted,#9a9aab);font-weight:500}'
+    // A bare glyph, measured 22.9x12px, against Stellar's 30x30 bordered square.
+    + '.lxx-x{width:30px;height:30px;border-radius:9px;background:transparent;'
+    + 'border:1px solid var(--border,rgba(255,255,255,.09));color:var(--text-muted,#9a9aab);'
+    + 'cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;'
+    + 'padding:0;line-height:0;transition:.15s}'
+    + '.lxx-x:hover{background:var(--surface-2,rgba(255,255,255,.05));color:var(--text,#fff)}'
+    // ---- the three pieces Stellar's sheet has and this one did not ------------------------------
+    // RAZA 2026-11-14: "Wallet popup when connecting. Its not the same as stellar. Fix it on XRPL and
+    // also near." Stellar's modal is BASE DESIGN MARKUP (.lxw-search / .lxw-section / .lxw-foot),
+    // which this fork does not inherit -- it builds its own sheet in JS -- so each piece is rebuilt
+    // here. Every value below is COPIED from the computed .lxw-* rules on staging 7024e104 rather
+    // than matched by eye, so the two sheets cannot drift apart on a padding or a grey.
+    //
+    // Geometry note: Stellar's search sits in a 22px-gutter modal and this one uses a 12px gutter on
+    // the list, so the search keeps Stellar's own 22px and the icon its 34px offset -- the pair is
+    // what positions the magnifier inside the field, and splitting them is what would look wrong.
+    + '.lxx-search{position:relative;padding:14px 22px 4px}'
+    + '.lxx-search svg{position:absolute;left:34px;top:50%;transform:translateY(-30%);'
+    + 'color:var(--text-soft,#7c7c8a);pointer-events:none}'
+    + '.lxx-search input{width:100%;padding:9px 12px 9px 34px;'
+    + 'background:var(--surface-2,rgba(255,255,255,.05));'
+    + 'border:1px solid var(--border,rgba(255,255,255,.09));border-radius:10px;font-family:inherit;'
+    + 'font-size:15px;color:var(--text,#ECECF3);font-weight:500;outline:none;box-sizing:border-box;'
+    + 'transition:border-color .15s}'
+    + '.lxx-search input:focus{border-color:var(--accent,#f7861b)}'
+    + '.lxx-search input::placeholder{color:var(--text-soft,#7c7c8a)}'
+    // Stellar's section label lives INSIDE its scrolling list, so its 10px sits on top of the list's
+    // own 14px gutter and the label lines up with the rows under it. Here the label is a SIBLING of
+    // the list, so the same 10px put it 14px to the left of every row. Same total gutter, written out.
+    + '.lxx-section{padding:6px 24px 8px;font-size:12.5px;font-weight:700;text-transform:uppercase;'
+    + 'letter-spacing:.08em;color:var(--text-soft,#7c7c8a)}'
+    + '.lxx-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;'
+    + 'padding:12px 22px;border-top:1px solid var(--border,rgba(255,255,255,.09));font-size:13.5px;'
+    + 'color:var(--text-muted,#9a9aab);font-weight:500}'
+    + '.lxx-foot-link{display:inline-flex;align-items:center;gap:5px;'
+    + 'color:var(--text-muted,#9a9aab);text-decoration:none;font-weight:600;cursor:pointer}'
+    + '.lxx-foot-link:hover{color:var(--accent,#f7861b)}'
+    // The "no wallet matches that" line. Stellar's list simply empties; saying so is better than an
+    // empty box, and it costs one rule.
+    + '.lxx-nores{padding:14px 12px 4px;font-size:13.5px;color:var(--text-muted,#9a9aab);'
+    + 'font-weight:500;text-align:center}'
+    // Geometry and greys below are Stellar's .lxw-list / .lxw-row / .lxw-ico / .lxw-name / .lxw-wsub,
+    // read off the live sheet rather than matched by eye. The list scrolls like Stellar's so a long
+    // list cannot push the footer off a short screen.
+    + '.lxx-list{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;'
+    + 'padding:8px 14px 6px;display:flex;flex-direction:column;gap:6px}'
+    + '.lxx-row{display:flex;align-items:center;gap:13px;width:100%;padding:10px;border-radius:12px;'
+    + 'background:transparent;border:1px solid transparent;color:inherit;cursor:pointer;'
+    + 'text-align:left;font-family:inherit;'
+    + 'transition:background .14s,border-color .14s,transform .14s}'
+    + '.lxx-row:hover{background:var(--surface-2,rgba(255,255,255,.05));'
+    + 'border-color:var(--border,rgba(255,255,255,.09))}'
+    + '.lxx-row:active{transform:scale(.99)}'
+    + '.lxx-ico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;'
+    + 'justify-content:center;font-weight:800;font-size:15px;color:#fff;flex:0 0 40px;'
+    + 'position:relative;overflow:hidden;'
+    + 'box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 4px 10px -4px rgba(0,0,0,.35)}'
+    // NETWORK logos in a ROUND frame with no inset ring (RAZA 2026-11-17, same fix as Stellar's chooser):
+    // the rounded tile + its white ring drew a halo round the black-circle Stellar logo. Wallet rows
+    // keep their tile; only an icon holding a /assets/networks/ logo changes. 12% larger clips rims.
+    + '.lxx-ico:has(> img[src*="/assets/networks/"]){border-radius:50%;box-shadow:none}'
+    + '.lxx-ico > img[src*="/assets/networks/"]{transform:scale(1.12)}'
     + '.lxx-nm{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}'
-    + '.lxx-nm b{font-size:14.5px;font-weight:700}'
-    + '.lxx-nm span{font-size:12.5px;color:var(--text-muted,#9b9ba4);font-weight:500}'
+    + '.lxx-nm b{font-size:16.5px;font-weight:700;letter-spacing:-.1px;color:var(--text,#ECECF3)}'
+    + '.lxx-nm span{font-size:13.5px;color:var(--text-soft,#7c7c8a);font-weight:500}'
+    // The chevron every Stellar and NEAR row ends with, and this one had on none.
+    + '.lxx-chev{color:var(--text-soft,#7c7c8a);flex-shrink:0;'
+    + 'transition:transform .15s,color .15s}'
+    + '.lxx-row:hover .lxx-chev{color:var(--accent,#f7861b);transform:translateX(2px)}'
     // THE `hidden` ATTRIBUTE DOES NOTHING HERE WITHOUT THIS RULE. The browser's own
     // `[hidden]{display:none}` is a UA-stylesheet declaration, and `.lxx-row{display:flex}` above is
     // an author CLASS rule — the class wins, so setting b.hidden marked the row and left it on screen.
@@ -1018,6 +1690,50 @@
     + 'border-top-color:var(--accent,#ff894c);animation:lxxSpin 1s linear infinite}'
     + '@keyframes lxxSpin{to{transform:rotate(360deg)}}'
     + '@media(prefers-reduced-motion:reduce){.lxx-spin{animation-duration:3s}}'
+    // THE WALLET'S OWN MARK INSIDE THE SPINNER, which is what Stellar shows while connecting --
+    // RAZA 2026-10-28: "in gem wallet, gem logo is missing inside the circle just like there is
+    // rabet logo." The bare .lxx-spin ring stays: the QR and approval screens below still use it,
+    // and there is no single wallet to name on those. Geometry and shadows are Stellar's own
+    // .lxw-cwallet / .lxw-cwallet-ico / .lxw-ring values so the two circles are the same size.
+    + '.lxx-cwallet{position:relative;width:76px;height:76px;display:flex;align-items:center;'
+    + 'justify-content:center}'
+    + '.lxx-cwallet-ico{position:relative;overflow:hidden;width:54px;height:54px;border-radius:50%;'
+    + 'display:inline-flex;align-items:center;justify-content:center;z-index:2;font-weight:800;'
+    + 'box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 6px 16px -4px rgba(0,0,0,.4)}'
+    + '.lxx-ring{position:absolute;inset:0;border:2.5px solid transparent;'
+    + 'border-top-color:var(--accent,#ff894c);border-right-color:var(--accent,#ff894c);'
+    + 'border-radius:50%;animation:lxxSpin 1.05s linear infinite}'
+    + '@media(prefers-reduced-motion:reduce){.lxx-ring{animation-duration:3s}}'
+    // THE CONNECT PROGRESS STEPS. RAZA 2026-10-28: Stellar shows "Opening wallet / Awaiting
+    // signature / Finalizing" while connecting and XRPL showed a bare spinner. These values are
+    // Stellar's own, lifted from the .lxw-step rules in its connecting screen plus the is-done
+    // override _wallet_realconnect.js layers on top, so the two screens read identically.
+    //
+    // The tick is an ELEMENT, not a ::after with content:"\2713". This file is injected verbatim,
+    // so the escape would survive -- but the house rule here is to keep backslashes out of emitted
+    // CSS and JS entirely (see String.fromCharCode(39) elsewhere), and an element cannot be eaten
+    // by a later transform the way an escape can.
+    + '.lxx-steps{display:flex;flex-direction:column;gap:6px;margin-top:2px;width:100%;'
+    + 'max-width:240px}'
+    + '.lxx-step{display:flex;align-items:center;gap:10px;padding:6px 10px;'
+    + 'background:var(--surface-2,rgba(255,255,255,.05));'
+    + 'border:1px solid var(--border,rgba(255,255,255,.09));border-radius:9px;font-size:14px;'
+    + 'color:var(--text-muted,#9a9aab);font-weight:600;text-align:left;'
+    + 'transition:background .28s ease,border-color .28s ease,color .28s ease}'
+    // NO LEADING DOT. Copying Stellar's .lxw-step rules brought its dot rules with them, and the dot
+    // then SHOWED here while Stellar's does not -- RAZA 2026-10-28: "those green dots on the left
+    // should be removed". Stellar still emits <span class="lxw-sdot">; it is hidden by a site-wide
+    // sweep that lists every status dot in the app by class
+    // (.nx-dot,.live-dot,.lxw-netdot,.lxw-sdot,...{display:none!important}). That list names
+    // .lxw-sdot and cannot name .lxx-sdot, so the same markup rendered differently on the two forks.
+    // The dot is dropped from the markup instead of added to that list: nothing then depends on a
+    // hide rule living in the Stellar base, and there is no element for a future sweep to miss.
+    + '.lxx-stick{margin-left:auto;color:#35c07f;font-weight:800;font-size:13px;line-height:1;'
+    + 'opacity:0;transition:opacity .2s ease}'
+    + '.lxx-step.is-active{color:var(--text,#fff);border-color:var(--accent,#f7861b)}'
+    + '.lxx-step.is-done{color:var(--text,#fff);border-color:rgba(52,192,127,.55);'
+    + 'background:rgba(52,192,127,.13)}'
+    + '.lxx-step.is-done .lxx-stick{opacity:1}'
     + '.lxx-addr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;'
     + 'background:rgba(255,255,255,.06);padding:9px 13px;border-radius:10px;word-break:break-all}'
     + '.lxx-btn{margin-top:4px;padding:11px 20px;border-radius:11px;border:0;cursor:pointer;'
@@ -1156,8 +1872,40 @@
       try { if (XAMAN_KEY && !window.XummPkce) loadScript(XUMM_SRC).catch(noop); } catch (e) {}
       body.innerHTML = '';
       body.appendChild(head('Connect Wallet', 'Choose a wallet to continue'));
+
+      // SEARCH, SECTION LABEL AND FOOTER LINK -- the three things Stellar's sheet has and this one
+      // did not (RAZA 2026-11-14, side-by-side screenshots). Built here rather than inherited,
+      // because Stellar's live in the design's own modal markup which this fork has no copy of.
+      var search = document.createElement('div');
+      search.className = 'lxx-search';
+      search.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" '
+        + 'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<circle cx="11" cy="11" r="8"></circle>'
+        + '<line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>';
+      var sin = document.createElement('input');
+      sin.type = 'text';
+      sin.className = 'lxx-searchin';
+      sin.setAttribute('placeholder', 'Search wallets…');
+      sin.setAttribute('autocomplete', 'off');
+      sin.setAttribute('spellcheck', 'false');
+      // 16px minimum is enforced by the stylesheet above (15px there matches Stellar, and Stellar's
+      // own zoom floor raises both on a handset) -- see _xrplzoomfloor.js, which already lists
+      // "Search wallets" as one of the fields it governs. Nothing to do here but keep the class.
+      search.appendChild(sin);
+      body.appendChild(search);
+
+      var sect = document.createElement('div');
+      sect.className = 'lxx-section';
+      sect.textContent = 'XRP Ledger Wallets';
+      body.appendChild(sect);
+
       var list = document.createElement('div');
       list.className = 'lxx-list';
+
+      var nores = document.createElement('div');
+      nores.className = 'lxx-nores';
+      nores.textContent = 'No wallet matches that name.';
+      nores.hidden = true;
 
       // A PHONE SHOULD ONLY BE OFFERED WALLETS A PHONE CAN REACH. Crossmark and GemWallet are browser
       // EXTENSIONS — tapping either on a handset can only ever end at "not installed in this browser"
@@ -1168,23 +1916,12 @@
       // it does on a laptop. So an extension-only wallet starts hidden on a handset and is revealed
       // if detection actually finds it — the one browser where it is usable keeps it, and every phone
       // where it is not loses it. Xaman is flagged mobile:true and is never filtered.
-      // NOT isHandheld(). That one answers "does this device do taps", which is the right question
-      // for a click handler and the wrong one here: it is true on any TOUCHSCREEN LAPTOP, and hiding
-      // a browser extension from a Windows laptop with a touch display would remove a wallet that
-      // works perfectly. Measured in the review pane, which reports coarse pointer at desktop size
-      // and would have had it filtering the desktop list too.
-      //
-      // The question here is "is this a device that cannot run extensions at all", so: a phone or
-      // tablet user agent, or a pointer that is coarse with no fine pointer anywhere. A touch laptop
-      // has a mouse as well and fails the second test.
-      var handheld = (function () {
-        try { if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) return true; } catch (e) {}
-        try {
-          return window.matchMedia('(pointer:coarse)').matches
-            && !window.matchMedia('(any-pointer:fine)').matches;
-        } catch (e) {}
-        return false;
-      })();
+      // The question here is "is this a device that cannot run extensions at all" — a phone or
+      // tablet, not merely something with a touchscreen. A Windows laptop with a touch display runs
+      // extensions perfectly and must keep them. That test now lives in isHandset(), which this used
+      // to carry inline; the Joey and Xaman paths were using the LOOSE one and broke on exactly the
+      // device this note predicted, so there is one answer now instead of two.
+      var handheld = isHandset();
       WALLETS.forEach(function (w) {
         var b = document.createElement('button');
         b.className = 'lxx-row'; b.type = 'button';
@@ -1218,6 +1955,23 @@
         badge.className = 'lxx-badge';
         badge.hidden = true;
         b.appendChild(badge);
+
+        // Built through createElementNS, not innerHTML: an <svg> assigned as HTML inside a transform
+        // that already ships through a JSON container is one escaping accident away from an element
+        // in the wrong namespace that renders as nothing. Geometry is Stellar's .lxw-wchev exactly
+        // (11px, viewBox 24, stroke-width 2.4, round caps), and it goes AFTER the badge, which is the
+        // order both Stellar and NEAR paint.
+        var NS = 'http://www.w3.org/2000/svg';
+        var chev = document.createElementNS(NS, 'svg');
+        chev.setAttribute('class', 'lxx-chev');
+        chev.setAttribute('width', '11'); chev.setAttribute('height', '11');
+        chev.setAttribute('viewBox', '0 0 24 24'); chev.setAttribute('fill', 'none');
+        chev.setAttribute('stroke', 'currentColor'); chev.setAttribute('stroke-width', '2.4');
+        chev.setAttribute('stroke-linecap', 'round'); chev.setAttribute('stroke-linejoin', 'round');
+        var poly = document.createElementNS(NS, 'polyline');
+        poly.setAttribute('points', '9 18 15 12 9 6');
+        chev.appendChild(poly);
+        b.appendChild(chev);
 
         // ONE TAG IN THE WHOLE LIST, AND "Last used" WINS. The Stellar build settled the per-ROW half
         // of this in _lastusedbadge: a row that is both installed and last-used showed "Installed", so
@@ -1265,7 +2019,114 @@
       });
 
       body.appendChild(list);
+      body.appendChild(nores);
+
+      // FILTERING MUST NOT UN-HIDE A ROW THE HANDHELD FILTER HID. Rows for extension-only wallets
+      // start hidden on a phone and are revealed asynchronously only if detection finds them, so the
+      // filter tracks its OWN hidden state in an attribute and leaves b.hidden to that owner --
+      // otherwise typing and clearing the box would hand a phone a Crossmark row it cannot use,
+      // which is the regression .lxx-row[hidden] was added for in the first place.
+      function applyFilter() {
+        var q = (sin.value || '').trim().toLowerCase();
+        var shown = 0;
+        [].forEach.call(list.children, function (row) {
+          var nm = row.querySelector('.lxx-nm b');
+          var name = nm ? nm.textContent.toLowerCase() : '';
+          var miss = q && name.indexOf(q) < 0;
+          if (miss) { row.setAttribute('data-lxq', '1'); row.hidden = true; }
+          else if (row.getAttribute('data-lxq') === '1') { row.removeAttribute('data-lxq'); row.hidden = false; }
+          if (!row.hidden) shown++;
+        });
+        nores.hidden = !!shown || !q;
+      }
+      try { sin.addEventListener('input', applyFilter); } catch (e) {}
+
+      // "New to wallets?" -- the same guide Stellar's footer links to, opened in a new tab for the
+      // same reason: this sheet is almost always opened mid-task and navigating away would abandon
+      // whatever the reader was part-way through. The URL is the one constant both forks share, so a
+      // slug change is a one-line edit in each.
+      var foot = document.createElement('div');
+      foot.className = 'lxx-foot';
+      var fl = document.createElement('a');
+      fl.className = 'lxx-foot-link';
+      fl.href = WALLET_GUIDE_URL;
+      fl.target = '_blank';
+      fl.rel = 'noopener noreferrer';
+      fl.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" '
+        + 'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">'
+        + '<circle cx="12" cy="12" r="10"></circle>'
+        + '<line x1="12" y1="16" x2="12" y2="12"></line>'
+        + '<line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
+      fl.appendChild(document.createTextNode('New to wallets?'));
+      foot.appendChild(fl);
+      body.appendChild(foot);
+
       open();
+    }
+
+    // The three beats Stellar plays while a wallet is being connected, in the same order and with
+    // the same words (_wallet_realconnect.js). RAZA 2026-10-28: "on XRPL it connects without
+    // showing that."
+    var STEP_LABELS = ['Opening wallet', 'Awaiting signature', 'Finalizing'];
+
+    // The connecting spinner with the wallet's mark in the middle, mirroring Stellar's
+    // .lxw-cwallet > .lxw-cwallet-ico + .lxw-ring. Stellar builds it by copying the icon node out of
+    // the picker row that was clicked (_wallet_realconnect.js:914); here the wallet object is
+    // already the argument, so the same three fields the row builder reads (logo, ico, glyph) are
+    // read again and no DOM is cloned -- one less thing to hold a stale reference to.
+    //
+    // An <img> wherever a logo exists, never the bare letter: the logo healer repaints any element
+    // holding one to five characters, and "G" and "X" both qualify. The picker rows carry the same
+    // note for the same reason. The glyph stays only as the onerror fallback.
+    function walletRing(w) {
+      var wrap = document.createElement('div');
+      wrap.className = 'lxx-cwallet';
+      var ico = document.createElement('span');
+      ico.className = 'lxx-cwallet-ico';
+      if (w && w.ico) ico.style.background = w.ico;
+      if (w && w.logo) {
+        var im = document.createElement('img');
+        im.src = w.logo; im.alt = '';
+        im.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block';
+        im.onerror = function () { ico.textContent = (w && w.glyph) || ''; };
+        ico.appendChild(im);
+      } else if (w && w.glyph) {
+        ico.textContent = w.glyph;
+      }
+      var ring = document.createElement('span');
+      ring.className = 'lxx-ring';
+      wrap.appendChild(ico);
+      wrap.appendChild(ring);
+      return wrap;
+    }
+
+    function stepsEl() {
+      var d = document.createElement('div');
+      d.className = 'lxx-steps';
+      for (var i = 0; i < STEP_LABELS.length; i++) {
+        var s = document.createElement('div');
+        s.className = 'lxx-step';
+        var tick = document.createElement('span');
+        tick.className = 'lxx-stick';
+        tick.textContent = String.fromCharCode(10003);      // a tick, with no escape to be eaten
+        s.appendChild(document.createTextNode(STEP_LABELS[i]));
+        s.appendChild(tick);
+        d.appendChild(s);
+      }
+      return d;
+    }
+
+    // Steps before i are done, step i is active. QUERIED FRESH EVERY CALL rather than captured:
+    // Xaman and Joey replace this screen with the QR as soon as there is something to scan, so by
+    // the time the wallet answers these nodes may be long gone. A live query makes that a no-op
+    // instead of a write to detached nodes. Stellar's stepEls() is written the same way.
+    function setStep(i) {
+      var s = document.querySelectorAll('.lxx-steps .lxx-step');
+      for (var k = 0; k < s.length; k++) {
+        s[k].classList.remove('is-done', 'is-active');
+        if (k < i) s[k].classList.add('is-done');
+        else if (k === i) s[k].classList.add('is-active');
+      }
     }
 
     function waiting(w) {
@@ -1274,16 +2135,36 @@
       body.appendChild(head('Connecting…', ''));
       var s = document.createElement('div');
       s.className = 'lxx-state';
-      var sp = document.createElement('div'); sp.className = 'lxx-spin';
-      var h4 = document.createElement('h4'); h4.textContent = 'Waiting for ' + w.name;
+      var sp = walletRing(w);
+      // STELLAR'S HEADING PATTERN -- RAZA 2026-10-28: "match the heading to stellar too". Stellar
+      // writes 'Confirming with ' + name into .lxw-ctitle (_wallet_realconnect.js:915) for every
+      // wallet it supports, so this screen now reads the same on both forks whichever wallet is
+      // picked. The QR screen below keeps "Waiting for your approval": Stellar has no QR screen to
+      // match it against, and that line names no wallet.
+      var h4 = document.createElement('h4'); h4.textContent = 'Confirming with ' + w.name;
       var p = document.createElement('p');
+      // STELLAR'S SENTENCE, WORD FOR WORD, for the ordinary extension case -- RAZA 2026-10-28:
+      // "the text ... fix on xrpl because it also mentioned Gem wallet". Naming the wallet here
+      // was the drift: the heading already names it one line above, so the paragraph repeated it
+      // for no gain and read differently from Stellar for no reason.
+      //
+      // Xaman and Joey keep their own wording because their screens are not this screen: Xaman
+      // hands off to a PHONE APP and Joey waits on a WalletConnect relay before any link exists.
+      // Stellar has no equivalent of either, so there is nothing to match them to, and replacing
+      // them with the generic line would delete the one thing that explains the wait.
       p.textContent = w.id === 'xaman'
         ? 'Approve the sign-in request in Xaman. On a phone this opens the app — come back here when it is done.'
-        : 'Approve the connection request in ' + w.name + ' to continue.';
+        : w.id === 'joey'
+          // The relay handshake runs before there is any link to show, and on a cold load that is a
+          // few seconds of nothing. Saying so beats a bare spinner that looks like a hang.
+          ? 'Starting a WalletConnect session — this takes a moment the first time.'
+          : 'Approve the connection request in your wallet to continue.';
       var c = document.createElement('button');
       c.className = 'lxx-btn ghost'; c.type = 'button'; c.textContent = 'Cancel';
       c.addEventListener('click', pick);
-      s.appendChild(sp); s.appendChild(h4); s.appendChild(p); s.appendChild(c);
+      s.appendChild(sp); s.appendChild(h4); s.appendChild(p);
+      s.appendChild(stepsEl());
+      s.appendChild(c);
       body.appendChild(s);
       open();
     }
@@ -1291,24 +2172,49 @@
     // The sign request, waiting on the user's phone.
     //
     // Xaman is a PHONE app with no browser extension, so a desktop signer has to be handed the request
-    // to scan -- there is nothing on their machine to prompt them. The QR is the PNG Xaman hosts on the
-    // created payload, deliberately not drawn locally: window.qrcode is the design's own generator and
-    // is NOT loaded on Trade or Pools, where signing also happens, so a locally drawn QR would be blank
-    // on exactly the pages that need it most.
+    // to scan -- there is nothing on their machine to prompt them. TWO SOURCES FOR THAT IMAGE, and
+    // which one is right depends on the wallet:
+    //
+    //   * `png` -- Xaman hosts a QR on the payload it created, so we simply show it. Still the right
+    //     answer for Xaman: it costs nothing and the image is the wallet's own.
+    //   * `w.qr` -- WalletConnect has no hosted image, so Joey's wc: URI is drawn here. The design's
+    //     own generator (window.qrcode, inlined as lx-qrlib) is NOT on Trade or Pools, where
+    //     connecting happens, which is why this used to say a local QR would be blank. drawQR now
+    //     fetches the same library from /assets/vendor on first use instead of relying on the page
+    //     to carry it -- see the note there for why it is lazy rather than inlined.
     //
     // Returns its own closer so the caller can take the dialog down the moment the socket reports a
     // verdict, whichever way it went.
-    function signing(link, png, onCancel) {
+    // `w` is optional and defaults to Xaman, which is every caller written before WalletConnect
+    // existed here -- they pass three arguments and are unchanged. Joey passes
+    // { name:'Joey', copy:<wc uri>, connect:true }.
+    function signing(link, png, onCancel, w) {
+      var nm = (w && w.name) || 'Xaman';
+      var isConn = !!(w && w.connect);
       build();
       body.innerHTML = '';
-      body.appendChild(head('Approve in Xaman', ''));
+      body.appendChild(head((isConn ? 'Connect with ' : 'Approve in ') + nm, ''));
       var s = document.createElement('div');
       s.className = 'lxx-state';
 
-      if (png) {
+      // A QR WE DRAW, for WalletConnect. Same plate and size as the hosted-PNG branch below, so the
+      // dialog does not change shape depending on which wallet is in it. Painted asynchronously --
+      // the library is fetched on first use -- and if it cannot be drawn the plate is removed and
+      // the copy-link further down is still a complete way through.
+      if (!png && w && w.qr) {
+        var plate = document.createElement('div');
+        plate.style.cssText = 'width:212px;height:212px;border-radius:14px;background:#fff;'
+          + 'padding:8px;box-sizing:border-box;display:flex;align-items:center;justify-content:center';
+        var sp0 = document.createElement('div'); sp0.className = 'lxx-spin';
+        plate.appendChild(sp0);
+        s.appendChild(plate);
+        drawQR(plate, w.qr).then(function (ok) {
+          if (!ok && plate.parentNode) plate.parentNode.removeChild(plate);
+        });
+      } else if (png) {
         var img = document.createElement('img');
         img.src = png;
-        img.alt = 'Scan this with Xaman';
+        img.alt = 'Scan this with ' + nm;
         // White plate behind it: a QR rendered onto this dark modal with no backing is unreadable to
         // every scanner, the same trap makeQR() carries a comment about in write.js.
         img.style.cssText = 'width:212px;height:212px;border-radius:14px;background:#fff;padding:8px;box-sizing:border-box';
@@ -1322,19 +2228,45 @@
       h4b.textContent = 'Waiting for your approval';
       var p2 = document.createElement('p');
       p2.textContent = png
-        ? 'Scan this with the Xaman app to review and sign. Xaman has also pushed it to your device.'
-        : 'Approve the request in Xaman, then come back here.';
+        ? 'Scan this with the ' + nm + ' app to review and sign. ' + nm + ' has also pushed it to your device.'
+        : (w && w.qr)
+          // DESKTOP, WALLETCONNECT. The copy-link stays underneath as the way through if the QR
+          // cannot be drawn, or if scanning is simply not how someone wants to do this.
+          ? 'Scan this with the ' + nm + ' app on your phone, or copy the link below.'
+          : (w && w.copy)
+            ? 'Open the link below on the phone that has ' + nm + ', then approve the request there.'
+            : (isConn
+              ? 'Approve the connection in ' + nm + ', then come back here.'
+              : 'Approve the request in ' + nm + ', then come back here.');
       s.appendChild(h4b); s.appendChild(p2);
 
       if (link) {
         var go = document.createElement('button');
-        go.className = 'lxx-btn'; go.type = 'button'; go.textContent = 'Open in Xaman';
+        go.className = 'lxx-btn'; go.type = 'button'; go.textContent = 'Open in ' + nm;
         // A FRESH TAP, and that is the whole point of this button. The payload must be created before
         // there is anything to open, which is a network round trip, so the tap that started the
         // transaction is already spent -- and iOS hands a link to an app only while the activation that
         // caused it is still live. The automatic hand-off below is therefore best-effort; this is not.
         go.addEventListener('click', function () { try { window.location.href = link; } catch (e) {} });
         s.appendChild(go);
+      }
+
+      // THE LINK SURVIVES THE QR (RAZA 2026-10-27: "yes add the QR for desktop"). It is not the
+      // fallback it started as -- drawQR can fail for reasons the reader cannot act on, and some
+      // people would rather paste a link than aim a camera at a monitor. Keeping both costs one
+      // button. When the QR does fail, its plate is removed and this is the whole path through.
+      if (w && w.copy) {
+        var cp = document.createElement('button');
+        cp.className = 'lxx-btn ghost'; cp.type = 'button'; cp.textContent = 'Copy connection link';
+        cp.addEventListener('click', function () {
+          copyText(w.copy).then(function (ok) {
+            // Says what actually happened. A button that reports "Copied" when the clipboard refused
+            // sends someone to paste something else into their wallet.
+            cp.textContent = ok ? 'Copied' : 'Could not copy — select the link manually';
+            setTimeout(function () { cp.textContent = 'Copy connection link'; }, 2500);
+          });
+        });
+        s.appendChild(cp);
       }
 
       var c2 = document.createElement('button');
@@ -1481,7 +2413,7 @@
       open();
     }
 
-    return { pick: pick, netpick: netpick, waiting: waiting, signing: signing, fail: fail, done: done, close: close, open: open };
+    return { pick: pick, netpick: netpick, waiting: waiting, setStep: setStep, signing: signing, fail: fail, done: done, close: close, open: open };
   })();
 
   // ASSEMBLED, NOT WRITTEN OUT, AND THAT IS NOT STYLE. NO BACKTICKS IN THIS COMMENT.
@@ -1545,6 +2477,8 @@
     }, true);
   })();
 
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
   function run(w) {
     ui.waiting(w);
     // A WAITING SCREEN THAT NEVER RESOLVES IS THE SAME BUG AS A SILENT RETURN.
@@ -1565,15 +2499,49 @@
           + 'and try again — or open the Xaman app, approve the request there, and return here.');
       }, 25000);
     }
+    // THE PROGRESS BEATS, in Stellar's order and with Stellar's timings (_wallet_realconnect.js).
+    // The wallet call starts immediately so the extension opens without being held up; "Awaiting
+    // signature" appears a beat later; once an address is in hand "Finalizing" plays before the
+    // connected screen. The floor stops an instant resolve from being a flash, and nothing is
+    // padded when the reader genuinely took their time approving.
+    //
+    // Finalizing is NOT a cosmetic pause here, which is the one place this differs from Stellar:
+    // the account_info lookup that decides whether to warn about an unactivated account runs
+    // inside it, against the 760ms floor rather than after it. A slow ledger makes the beat longer;
+    // it never makes it shorter, and the step on screen is telling the truth about the wait.
+    ui.setStep(0);
+    var t0 = Date.now();
+    var awaitT = setTimeout(function () { ui.setStep(1); }, 520);
+
     w.connect().then(function (addr) {
       xamanWaiting = null;
-      return ledgerState(addr).then(function (st) {
+      clearTimeout(awaitT);
+
+      // NO STEPS ON SCREEN MEANS NO CHOREOGRAPHY. Xaman and Joey swap this screen for the QR as
+      // soon as there is something to scan, so by the time they answer the steps are gone. Playing
+      // the beats anyway would add about 1.9 seconds of dead time AFTER the reader has already
+      // approved on their phone, against a screen that cannot show why -- a regression dressed up
+      // as polish. The extension wallets, which keep this screen throughout, get the full sequence.
+      var done = function (st) {
         ui.done(addr, st === 'unfunded'
           ? 'This account is not activated on the XRP Ledger yet — it needs a small XRP reserve before it can hold anything.'
           : '');
-      });
+      };
+      if (!document.querySelector('.lxx-steps')) return ledgerState(addr).then(done);
+
+      ui.setStep(1);
+      return wait(Math.max(0, 900 - (Date.now() - t0)))
+        .then(function () {
+          ui.setStep(2);
+          return Promise.all([ledgerState(addr), wait(760)]);
+        })
+        .then(function (r) {
+          ui.setStep(3);                                   // every step done
+          return wait(200).then(function () { done(r[0]); });
+        });
     }).catch(function (e) {
       xamanWaiting = null;
+      clearTimeout(awaitT);
       if (e && e.code === 'NOT_INSTALLED' && window.lxWalletMissingText) {
         var mw = window.lxWalletMissingText(w.name, 'Xaman');
         ui.fail(w, mw.text, mw.title);
@@ -1725,10 +2693,14 @@
       if (t === 'gem') return gemSubmit(tx);
       if (t === 'cross') return crossSubmit(tx);
       if (t === 'xaman') return xamanSubmit(tx);
+      if (t === 'joey') return joeySubmit(tx);
       return Promise.reject(new Error(
         'This wallet connection cannot sign. Disconnect and connect again.'));
     },
-    canSign: function () { var t = get(K.transport); return t === 'gem' || t === 'cross' || t === 'xaman'; },
+    canSign: function () {
+      var t = get(K.transport);
+      return t === 'gem' || t === 'cross' || t === 'xaman' || t === 'joey';
+    },
 
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     wallets: WALLETS.map(function (w) { return w.name; }),

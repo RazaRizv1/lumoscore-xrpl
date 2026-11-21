@@ -37,11 +37,6 @@ export const SITEMAP_ROUTES = [
     "weekly"
   ],
   [
-    "/mcp/xrpl",
-    "0.6",
-    "weekly"
-  ],
-  [
     "/list-your-token/xrpl",
     "0.6",
     "weekly"

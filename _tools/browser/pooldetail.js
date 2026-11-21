@@ -203,19 +203,36 @@
   // narrows by the token, not by rank: 56 rows came back for ARMY, one of them this pool.
   //
   // If the pool is not in the response, the honest placeholder painted above simply stays.
-  function loadStats(acct, a, b) {
+  // THREE OUTCOMES, THREE SENTENCES. "not kept by the ledger" says the figure DOES NOT EXIST, and for
+  // this pool it plainly does — /pools/xrpl lists a 24h volume for it, and so did this page on a
+  // healthy load ($25.7K). Leaving that sentence up when the read failed turns our own outage into a
+  // claim about the XRP Ledger. RAZA hit it on 2026-10-30; the note above setStat() records the same
+  // contradiction being found once before, between this page and the pools list.
+  function statsSub(text) { setStat('vol', '—', text); setStat('fees', '—', text); }
+
+  function loadStats(acct, a, b, tries) {
     var issuer = (a && a.issuer) || (b && b.issuer) || '';
-    if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(issuer)) return;   // XRP-only side has none
+    // No issued side means there is no indexer row to ask for. This is the ONE case where the dash is
+    // final and the ledger sentence is the true one.
+    if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(issuer)) { statsSub('not kept by the ledger'); return; }
+    if (tries == null) tries = 2;
 
     fetch('/lxapi/xrplpools?n=100&issuer=' + encodeURIComponent(issuer))
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        // A 200 is not success. /lxapi/ reports an upstream refusal as 200 { ok:false }, and a gateway
+        // error arrives as HTML that .json() throws on. Neither is an empty answer.
+        if (!r.ok) throw new Error('http ' + r.status);
+        return r.json();
+      })
       .then(function (d) {
-        if (!d || !d.ok || !d.rows) return;
+        if (!d || !d.ok || !d.rows) throw new Error((d && d.error) || 'no rows');
         var row = null;
         for (var i = 0; i < d.rows.length; i++) {
           if (d.rows[i].acct === acct) { row = d.rows[i]; break; }
         }
-        if (!row) return;
+        // The read SUCCEEDED and this pool is not in it. "We have no figure for this pool" — neither a
+        // failure nor a fact about the ledger.
+        if (!row) { statsSub('no 24h data for this pool'); return; }
         // Both figures are quoted in XRP by the upstream, the same unit the liquidity row above uses.
         // The sub-line is cleared rather than filled: the labels already read "24h Volume" and
         // "Fees Collected (24h)", so a "last 24 hours" underneath them said the same thing twice.
@@ -223,7 +240,11 @@
         usdRate().then(function (usd) {
           [['vol', row.vol], ['fees', row.fees]].forEach(function (x) {
             var cell = statCell(x[0]);
-            if (!cell || x[1] == null) return;
+            if (!cell) return;
+            // A null is the indexer having no figure for this pool, NOT a zero and NOT a failure. It
+            // used to fall through and leave whatever the cell already said, which was the ledger
+            // sentence — the dash kept its wrong explanation even on a successful read.
+            if (x[1] == null) { setStat(x[0], '—', 'no 24h data for this pool'); return; }
             unitVal(cell.querySelector('.v'), num(x[1], 2), 'XRP');
             var s = cell.querySelector('.s');
             if (s) s.textContent = (usd && x[1] > 0) ? ('≈ ' + usdShort(x[1] * usd)) : '';
@@ -236,7 +257,14 @@
           setStat('participant', num(row.holders, 0), 'liquidity providers');
         }
       })
-      .catch(function () { /* the honest placeholders stand */ });
+      // TWO QUIET RETRIES, THEN SAY SO. No Retry control here on purpose: these are two small stat
+      // cells sitting side by side, and a button in each would be more chrome than the figure is
+      // worth. The chart below carries one because it owns the panel. Backing off 900ms then 2500ms
+      // covers the blip that actually happens without the reader seeing anything.
+      .catch(function () {
+        if (tries > 0) { setTimeout(function () { loadStats(acct, a, b, tries - 1); }, tries > 1 ? 900 : 2500); return; }
+        statsSub("couldn't load");
+      });
   }
 
   function setStat(match, value, sub) {
@@ -272,8 +300,17 @@
   // numbers that are true.
   var NSVG = 'http://www.w3.org/2000/svg';
 
+  // THE LADDER STOPPED AT M (RAZA 2026-11-06, on the Stellar side: "instead of saying 6.66B its
+  // saying 6666.70M which makes it very confusing"). The same hole is here, and it matters more on
+  // an axis: this chart is denominated in the pool's own unit, so a billion-supply token put that
+  // string on all five gridlines at once. The other helpers in this file already have the B rung.
+  //
+  // The threshold is 999995e3, not 1e9, because the branch has to be chosen on the value as it will
+  // be DISPLAYED: at 2dp, anything from 999,995,000 up already renders "1000.00M", which is the same
+  // four-digits-before-an-M complaint one rung lower.
   function axisNum(v) {
     var a = Math.abs(v);
+    if (a >= 999995e3) return (v / 1e9).toFixed(2) + 'B';
     if (a >= 1e6) return (v / 1e6).toFixed(2) + 'M';
     if (a >= 1e3) return (v / 1e3).toFixed(1) + 'K';
     if (a >= 1) return v.toFixed(2);
@@ -507,7 +544,9 @@
   // an em dash, so the result was a blank rectangle with no explanation. On a big pair like
   // XRP/RLUSD the chart draws and nothing looks wrong; on a thin pool like XRP/Laugh there is no
   // history at all, and that is the page RAZA opened. An empty panel reads as broken.
-  function chartNote(text) {
+  // onRetry, when given, adds a Retry control. The note itself stays pointer-events:none so it never
+  // eats a hover meant for the chart underneath; only the button takes pointer events back.
+  function chartNote(text, onRetry) {
     var wrap = $('.chart-svg-wrap');
     if (!wrap) return;
     var n = wrap.querySelector('.lxx-chart-note');
@@ -522,6 +561,20 @@
       wrap.appendChild(n);
     }
     n.textContent = text;
+    if (onRetry) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Retry';
+      b.style.cssText = 'margin-left:10px;pointer-events:auto;cursor:pointer;font:700 12.5px/1 inherit;'
+        + 'padding:5px 12px;border-radius:999px;background:transparent;color:inherit;'
+        + 'border:1px solid currentColor;opacity:.85';
+      b.addEventListener('click', function () {
+        b.disabled = true;
+        b.textContent = 'Retrying…';
+        onRetry();
+      });
+      n.appendChild(b);
+    }
     try { document.documentElement.classList.add('lx-chartready'); } catch (e) {}
   }
 
@@ -582,8 +635,14 @@
   // buttons are the design's own 1D…ALL, opening on 1M as the design does.
   var TVL_P = { '1D': '1d', '1W': '1w', '1M': '1m', '3M': '3m', '1Y': '1y', 'ALL': 'all' };
   var tvlGen = 0, tvlRange = '1M';
-  function loadTvl(acct, label) {
+  // `tries` is how many QUIET retries are left before the reader is told anything. A single blip at
+  // the upstream used to kill the chart until a manual page reload: the note was correct but there
+  // was no way back from it. RAZA reported the same symptom twice (2026-10-20 XRP/RLUSD, 2026-10-30
+  // XRP/WETH); both times the endpoint was healthy when checked minutes later, which is exactly the
+  // shape one retry fixes.
+  function loadTvl(acct, label, tries) {
     if (!$('.chart-svg-wrap')) return;
+    if (tries == null) tries = 4;                     // quiet retries over about a minute: see tvlFailed
     if (label) tvlRange = label;
     $$('.tf-mini button').forEach(function (b) {
       b.classList.toggle('active', (b.textContent || '').trim().toUpperCase() === tvlRange);
@@ -608,7 +667,7 @@
         //
         // Same distinction the price chart above already draws in its own catch, and the same fault as
         // the bridge table that said "No bridge transfers yet" while it was still reading.
-        if (!d || !d.ok) { chartNote('Could not load the liquidity history.'); return; }
+        if (!d || !d.ok) { tvlFailed(acct, gen, tries); return; }
         if (!d.pts || d.pts.length < 2) { chartNote('No liquidity history for this pool yet.'); return; }
         var v = d.pts.map(function (q) { return [q[0], q[1], 0, 0, 0, +q[2] || 0]; });
         if (v.length > 180) {
@@ -624,7 +683,23 @@
         TVL_LAST = v;
         renderTvl();
       })
-      .catch(function () { if (gen === tvlGen) chartNote('Could not load the liquidity history.'); });
+      .catch(function () { tvlFailed(acct, gen, tries); });
+  }
+
+  // One place decides what a failed read does, so the two failure paths above cannot drift apart —
+  // and only one of them ever reached the .catch, which is how they drifted last time.
+  function tvlFailed(acct, gen, tries) {
+    if (gen !== tvlGen) return;                        // the reader has moved to another range
+    // QUIET RETRIES THAT OUTLAST A REFUSAL (RAZA 2026-11-20, XRP/RLUSD: "i had to retry it 3 times"). xrpl.to answers a
+    // burst with 429 and retry-after: 60; the one retry 0.9s later always landed inside it. Spread over about a minute,
+    // and the reader is told it is still loading rather than shown an empty box.
+    if (tries > 0) {
+      chartNote('Loading the liquidity history\u2026');
+      var wait = ({ 4: 2000, 3: 6000, 2: 15000, 1: 25000 })[tries] || 2000;
+      setTimeout(function () { if (gen === tvlGen) loadTvl(acct, null, tries - 1); }, wait);
+      return;
+    }
+    chartNote('Could not load the liquidity history.', function () { loadTvl(acct, null, 1); });
   }
   function wireTvlRanges(acct) {
     $$('.tf-mini button').forEach(function (b) {
@@ -958,14 +1033,21 @@
     });
   }
 
-  function loadParticipants() {
+  // RETRIED QUIETLY, as the chart (2026-11-20): the list comes from the same refusing upstream, and this box had no
+  // way back from one refusal but a page reload.
+  function partFailed(tries) {
+    if (tries > 0) { participants('Reading the liquidity providers\u2026'); setTimeout(function () { loadParticipants(tries - 1); }, ({ 3: 3000, 2: 10000, 1: 25000 })[tries] || 3000); return; }
+    participants('Could not load the liquidity providers.');
+  }
+  function loadParticipants(tries) {
+    if (typeof tries !== 'number') tries = 3;
     var p = window.__lxxPool;
     if (!p || !p.lpToken) { participants('This pool has no LP token.'); return; }
     PART = { rows: [], total: 0, page: 1, per: 17, loading: true };
     participants('Reading the liquidity providers…');
     fetch(partUrl(0)).then(function (r) { return r.json(); }).then(function (d) {
       PART.loading = false;
-      if (!d || !d.ok) { participants('Could not load the liquidity providers.'); return; }
+      if (!d || !d.ok) { partFailed(tries); return; }
       PART.rows = d.rows || [];
       PART.total = d.total != null ? +d.total : PART.rows.length;
       renderParticipants();
@@ -978,7 +1060,7 @@
         renderParticipants();
         setStat('participant', n.toLocaleString('en-US'), 'liquidity providers');
       }).catch(function () { /* the upstream figure stands */ });
-    }).catch(function () { PART.loading = false; participants('Could not load the liquidity providers.'); });
+    }).catch(function () { PART.loading = false; partFailed(tries); });
   }
   function renderParticipants() {
     ['#partList', '#participantsList'].forEach(function (sel) {
@@ -1164,13 +1246,15 @@
     }
 
     var lp = amm.lp_token ? Number(amm.lp_token.value) : null;
-    // Both of these are 24h AMOUNTS the ledger does not keep, so amm_info cannot supply them and the
-    // honest placeholder goes in first. loadStats() replaces them when the indexer has the pool —
-    // which it did, and that mattered: /pools/xrpl listed this very pool with a 24h volume while its
-    // own detail page said the figure does not exist. One pool, two answers, on two pages of the
-    // same site.
-    setStat('vol', '—', 'not kept by the ledger');
-    setStat('fees', '—', 'not kept by the ledger');
+    // Both are 24h AMOUNTS the ledger does not keep, so amm_info cannot supply them; loadStats()
+    // reads them from the indexer. The placeholder says only that we are READING, never why the dash
+    // is there: "not kept by the ledger" used to go in here and it is a claim the figure does not
+    // exist, which outlived every failure and every miss. That is how /pools/xrpl came to list a 24h
+    // volume for a pool whose own detail page said the figure does not exist — one pool, two answers,
+    // two pages of the same site — and it is what RAZA saw again on 2026-10-30. loadStats() now owns
+    // all three endings: the figure, "no 24h data for this pool", or "couldn't load".
+    setStat('vol', '—', 'reading…');
+    setStat('fees', '—', 'reading…');
     loadStats(acct, a, b);
     setStat('participant', '—', 'liquidity providers');
 
@@ -1254,8 +1338,26 @@
   }
   var TF_LP_TOKEN = 0x00010000;
 
+  // `lumos.address` IS A SHARED KEY. connect.js says so twice (its own header, and the note at
+  // takeOverConnectUi): the combined site serves Stellar and XRPL off one origin, so a Stellar
+  // `G...` address sits in this exact slot while you browse an XRP Ledger pool. Read raw, it is
+  // truthy, so this page concluded "a wallet is connected" and the position panel asserted
+  // "No position" on a pool the visitor has no XRPL wallet for at all -- then sent the G-address
+  // to account_info, which the ledger rejects. RAZA 2026-11-06 screenshotted exactly that state.
+  //
+  // Every other XRPL surface already guards it (createpool.js, dexasset.js, dxaswap.js go through
+  // lxc.address() first) -- but lxc.address() is itself a bare read of the same shared key, so the
+  // guard that actually holds is the validator: isAddress() is checksummed base58 over the XRPL
+  // alphabet, and a Stellar G-address is base32, so it cannot pass. Line 158 in this file already
+  // uses it for the same purpose on a url parameter.
+  //
+  // A throw here (lxx not yet parsed) falls to '' -- "not connected", which is the safe direction:
+  // it shows the connect prompt rather than claiming a position state we cannot establish.
   function addr() {
-    try { return localStorage.getItem('lumos.address') || ''; } catch (e) { return ''; }
+    try {
+      var a = localStorage.getItem('lumos.address') || '';
+      return window.lxx.isAddress(a) ? a : '';
+    } catch (e) { return ''; }
   }
 
   // Both delegate to xrpl-core, which the node tests cover. These were a third local copy of the
@@ -1450,19 +1552,66 @@
     return $$('.my-position .mp-' + desktopSuffix + ', .my-position-m .mpm-' + (phoneSuffix || desktopSuffix));
   }
 
+  // THE PANEL'S CHROME, MATCHED TO STELLAR (RAZA 2026-11-06, with both panels side by side:
+  // "My position box on Pools-pool page, please fix on XRPL"). Stellar does all three of these in
+  // _ammdata.js pdPosition(); the markup here is the same design, class for class, so the same
+  // three apply. Written to be idempotent anyway, but note it runs ONCE per page: loadPosition() has
+  // exactly one caller (the pool-load path) and this file registers no wallet-change listener, so
+  // connecting a wallet while already on this page does not repaint the panel. Pre-existing, wider
+  // than this box, and not touched here -- recorded so the next reader does not assume a refresh.
+  //
+  //   1. the heading reads "My Position" above an inner label that also reads "Position Value" --
+  //      Stellar renames the heading and hides the inner one, leaving the figure directly under a
+  //      heading that names it.
+  //   2. the share pill is dropped. Stellar dropped it deliberately: myFrac on that page came back
+  //      as "684030720.16% of pool" once, and a percentage that wrong sits directly above real
+  //      balances and undermines the numbers that ARE right. Here it is worse than useless -- it
+  //      reads "0%" in the empty state, i.e. it states a share for a wallet that isn't connected.
+  function normalizePositionChrome() {
+    $$('.side-head').forEach(function (head) {
+      [].slice.call(head.querySelectorAll('h3, h4')).forEach(function (el) {
+        if (/^\s*my position\s*$/i.test(el.textContent || '')) el.textContent = 'Position Value';
+      });
+    });
+    $$('.position-share-pill, .my-position-m .mpm-share').forEach(function (s) {
+      s.style.display = 'none';
+    });
+    $$('.my-position .mp-label, .my-position-m .mpm-label').forEach(function (l) {
+      l.style.display = 'none';
+    });
+  }
+
   function clearMockPosition() {
     var connected = addr();
-    bothPos('amount').forEach(function (a) {
-      a.textContent = connected ? 'No position' : 'Connect a wallet';
-    });
+    normalizePositionChrome();
+
+    // THE VALUE SLOT HOLDS A VALUE, AND THE LINE UNDER IT EXPLAINS -- the way round Stellar has it.
+    // This had them swapped: "No position" went in the figure's slot and the explaining line got
+    // "—", so the panel asserted a verdict where a number belongs and said nothing where the
+    // guidance belongs. Worse, the verdict was wrong whenever addr() was wrong (see addr() above).
+    bothPos('amount').forEach(function (a) { a.textContent = '—'; });
 
     // Replaced wholesale: the "· all time" is a bare text node beside the span, so blanking only
-    // the span would leave the page reading "— · all time".
-    bothPos('pnl').forEach(function (p) { p.textContent = '—'; });
-    // The phone puts the delta straight into .pnl-up/.pnl-down with no .mpm-pnl wrapper.
-    $$('.my-position-m .pnl-up, .my-position-m .pnl-down').forEach(function (p) { p.textContent = '—'; });
-
-    $$('.position-share-pill, .my-position-m .mpm-share').forEach(function (s) { s.textContent = '0%'; });
+    // the span would leave the page reading "— · all time". Stellar's two sentences verbatim --
+    // one platform, one wording ([[base-copy-is-an-anchor-in-every-fork]]).
+    // NO VERDICT BEFORE THE READ (RAZA 2026-11-17: "fix the loading flash"). For a connected wallet
+    // this used to write "You have no liquidity in this pool" here -- before loadPosition() had asked
+    // the ledger anything -- so a 22% holder read "no liquidity" until the read landed and the panel
+    // swapped to their position. Stellar's pdPosition() writes that sentence only AFTER its read.
+    // Signed out is a fact at once; connected, the line keeps its height but stays invisible until
+    // paintMyPosition() writes the one sentence that is true. Nothing jumps, nothing is wrong.
+    var why = connected ? 'You have no liquidity in this pool' : 'Connect your wallet to see your position';
+    bothPos('pnl').forEach(function (p) {
+      p.innerHTML = '<span style="color:var(--text-muted)' + (connected ? ';visibility:hidden' : '') + '">' + why + '</span>';
+    });
+    // No separate .pnl-up/.pnl-down sweep: MEASURED on the built page, this one carries no mobile
+    // position panel at all -- `.my-position-m`, `.mpm-amount`, `.mpm-pnl` and `.mpm-share` occur
+    // only inside this script's own selectors, never in the markup, and `.mpm-label` occurs zero
+    // times anywhere. The single `.my-position` card reflows instead, and the innerHTML above
+    // replaces the `pnl-up` span with it. A line sweeping `.my-position-m .pnl-up` would match
+    // nothing, and a selector matching nothing looks exactly like a feature that works
+    // ([[xrpl-cancel-now-matches-stellar]]). The `.mpm-*` halves left in the sweeps below are the
+    // same inherited dead weight -- harmless, but do not read them as cover for the phone.
 
     // Amounts, fees and the asset tickers. The tickers matter as much as the numbers: leaving them
     // is how "APT" ends up labelling a row on an XRP Ledger pool.
@@ -1597,11 +1746,24 @@
     var fees = bothPos('fee-val');
     if (fees[0]) fees[0].textContent = '—';
     if (fees[1]) fees[1].textContent = num(p.myLp, 6);
+    // Still written, still hidden by normalizePositionChrome() -- same as Stellar, which also sets
+    // the pill it then hides, so the value is there if the pill is ever brought back.
     $$('.position-share-pill, .my-position-m .mpm-share').forEach(function (pill) {
       pill.textContent = share > 0 ? ((share * 100).toFixed(4) + '%') : '0%';
     });
     bothPos('amount').forEach(function (amt) {
-      amt.textContent = share > 0 ? (num(p.myLp, 4) + ' LP') : 'No position';
+      // '—' and not 'No position': with a position of zero the sentence clearMockPosition() put
+      // under this slot already says so, and in the words Stellar uses. Writing a verdict here
+      // too would put it back in the figure's slot, which is the thing being fixed.
+      amt.textContent = share > 0 ? (num(p.myLp, 4) + ' LP') : '—';
+    });
+    // clearMockPosition() ran first and left "You have no liquidity in this pool" under the figure.
+    // True while share is 0; a lie the moment a real position paints over it, so the held branch has
+    // to retire it -- Stellar's pdPosition() captions the same slot "current value".
+    // Written here, after the read, in BOTH branches: clearMockPosition() only reserved the line.
+    bothPos('pnl').forEach(function (p2) {
+      p2.innerHTML = '<span style="color:var(--text-muted)">'
+        + (share > 0 ? 'current value' : 'You have no liquidity in this pool') + '</span>';
     });
   }
 

@@ -261,6 +261,31 @@
     st.textContent =
       // The inherited fee row describes a charge a limit order does not make.
       '[class*="dxa-pane-limit"] .lx-feerow{display:none!important}'
+      // AND NEITHER DOES THE DISCOUNT BANNER OR THE TIER PROMPT (RAZA 2026-11-06: "an extra LUMOS
+      // fee discount banner is rendered above the submit button ... no promo banner is present" on
+      // Stellar). lx-feemodal appends "50% off trading fees - hold 250,000 LUMOS" (.lx-feebanner-wrap)
+      // and lx-feetier appends "Hold 250,000 LUMOS to lower your fee to 0.1%" to every trade
+      // summary. The fee row above was hidden here for exactly this reason and these two were
+      // missed -- a discount off a fee of zero is not a smaller number, it is a sentence about a
+      // charge this pane does not make. Stellar removed all three at once in _limitfree.js; this is
+      // the same removal, one layer later.
+      //
+      // SCOPED TO THE LIMIT PANE, like the row above. The SWAP pane on this same page does charge,
+      // so its banner and tier prompt are correct and must stay -- an unscoped rule would strip the
+      // discount offer off the one pane where it is true.
+      + '[class*="dxa-pane-limit"] .lx-feebanner-wrap{display:none!important}'
+      + '[class*="dxa-pane-limit"] .lx-feetier{display:none!important}'
+      // THE DIMMED CTA, DRAWN THE WAY THE SWAP PANE LEARNED TO DRAW IT. Copied deliberately from
+      // dxaswap.js's disStyle(): the design's widget writes `opacity:1!important; cursor:pointer
+      // !important` INLINE on this button, and an inline important declaration outranks every
+      // stylesheet -- so a rule naming opacity or cursor can never apply. `filter` is the one
+      // channel the widget leaves alone, and filter's opacity() function reproduces Stellar's .55
+      // dimmed ORANGE rather than a flat grey.
+      //
+      // Written into this layer rather than reusing dxaswap's #lx-dxadis sheet, because that sheet
+      // is injected lazily by its setDis() -- it may not exist yet when someone opens the Limit tab
+      // first. Scoped to the limit pane so it is strictly additive to the swap pane's own rule.
+      + '[class*="dxa-pane-limit"][data-lxunfill="1"] [class*="dxa-trade-cta"]{filter:grayscale(.25) opacity(.55)!important}'
       // The phone's chips: prefer our label and logo over lx-mobtrade's XLM.
       + '.mdxa-trade-asset.lxmt-chip[data-lxxc]::after{content:attr(data-lxxc)!important}'
       + '.mdxa-trade-asset.lxmt-chip[data-lxxc]::before{background-image:var(--lxx-logo,none)!important}'
@@ -369,6 +394,34 @@
     recalc(p);
   }
 
+  // THE BUTTON SAYS WHICH ORDER IT WILL PLACE, AND GOES DIM UNTIL IT CAN PLACE ONE.
+  //
+  // RAZA 2026-11-06: on XRPL "the bottom CTA button displays static text ('Place Limit Order') with
+  // active orange styling when form fields are empty", where on Stellar "the CTA dynamically
+  // reflects the action ('Place Buy Order' / 'Place Sell Order') with a disabled dark background
+  // when empty". Both halves were absent rather than broken -- this pane never wrote its CTA at
+  // all. The swap pane beside it has had both since 2026-10-09 (dxaswap.js swapLabel + setDis); the
+  // limit pane was passed over because its inherited label, "Place Limit Order", was not WRONG, and
+  // a label that is merely less specific than its neighbour's is easy to keep walking past.
+  //
+  // MATCHED ON THE ORDER LABELS ONLY, never on a prefix -- the same rule dxaswap.js states for this
+  // same element, and for the same reason. The connect gate writes "Connect wallet" here and
+  // place() writes a pending label while an offer is in flight; rewriting either would be a worse
+  // bug than the one being fixed. Anything that is not one of the three order labels is left alone.
+  var ORDER_LABEL = /^Place (Buy|Sell|Limit) Order$/i;
+  function ctaState(p, price, amount) {
+    var b = cta(p);
+    if (!b) return;
+    var want = side(p) === 'sell' ? 'Place Sell Order' : 'Place Buy Order';
+    var now = (b.textContent || '').trim();
+    if (ORDER_LABEL.test(now) && now !== want) b.textContent = want;
+    // An order needs BOTH a price and a size; either one missing is nothing to place. place() still
+    // answers "Enter a limit price." / "Enter an amount." for anyone who gets past the dimming, so
+    // this only withdraws the invitation -- it never becomes the only guard.
+    if (price > 0 && amount > 0) p.removeAttribute('data-lxunfill');
+    else p.setAttribute('data-lxunfill', '1');
+  }
+
   function recalc(p) {
     var f = fields(p);
     if (f.length < 2) return;
@@ -383,6 +436,11 @@
     sumRow(p, 'filled when', price > 0
       ? (isPhone(p) ? (op + ' ' + fmt(price, 8) + ' XRP') : (a.code + '/XRP ' + op + ' ' + fmt(price, 8)))
       : '—');
+    // Here rather than in paint(): recalc is the one function every path funnels through -- paint()
+    // ends with it, the side-flip handler calls paint() in a setTimeout(0) so this lands AFTER the
+    // design's own widget has relabelled the button, and the input listener calls it on every
+    // keystroke. One call site therefore covers first render, side flips and typing.
+    ctaState(p, price, amount);
     totalUsd(p);
     orderContext(p);
   }
@@ -508,6 +566,19 @@
   // Once per side, the page's live price — the design ships "4.18" in the phone's box, another chain's
   // price typed in for you. Emptied rather than guessed when there is no price yet.
   function prefill(p) {
+    // THE AMOUNT CARRIES A MOCK AS WELL, and nothing was clearing it (RAZA 2026-11-04, reported on
+    // Stellar; this pane has it identically). The design ships `value="100"` in the Amount box beside
+    // "Available: 1,250 APT", so a fresh Buy opened with a hundred of the token already ordered and a
+    // Total computed from it. Sell only looked right because reaching it goes through the side button,
+    // which clears the field on the way.
+    //
+    // ONCE, and before anything can have been typed -- 100 is an ordinary thing to type, so this can
+    // never be matched on the value itself. recalc() empties Total, which is computed from it.
+    if (!p.__lxxAmtMock) {
+      p.__lxxAmtMock = 1;
+      var ain = input(fields(p)[1]);
+      if (ain) ain.value = '';
+    }
     var pin = input(fields(p)[0]);
     if (!pin) return;
     var d = window.__lxxAssetData, px = d && Number(d.price), s = side(p);

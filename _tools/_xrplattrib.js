@@ -35,6 +35,16 @@ const CSS = '<style id="lx-xrplto-css">'
   + '.lx-xrplto{margin-top:10px;font:400 12px/1.5 "Hanken Grotesk",system-ui,sans-serif}'
   + '.lx-xrplto a{color:var(--text-muted,#8a8a93);text-decoration:none;border-bottom:1px solid transparent}'
   + '.lx-xrplto a:hover{color:var(--text,#f6f5f3);border-bottom-color:currentColor}'
+  // MOBILE: the block goes in by the other branch below -- straight before </footer>, because the
+  // phone footer has no brand paragraph to anchor to. That leaves it a bare last child of
+  // <footer class="site-footer">, inheriting start alignment while the copyright block above it
+  // centres its own text, so it read as a stray line stuck to the bottom of the page rather than
+  // part of the footer. RAZA, 2026-10-28, sent a screenshot of exactly that.
+  //
+  // Centred and 11px, which is the footer's own small print scale -- NOT smaller. The xrpl.to API
+  // policy asks for a "visible, clickable" credit, so a size chosen to stop it being read would
+  // defeat the condition while appearing to meet it. Unobtrusive is allowed; invisible is not.
+  + '@media(max-width:768px){.lx-xrplto{margin-top:4px;text-align:center;font-size:11px}}'
   + '<' + '/style>';
 
 // The footer's brand column, which every page carries: the description paragraph sits there and this
