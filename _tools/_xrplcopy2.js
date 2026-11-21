@@ -321,6 +321,31 @@ const PHRASES = [
   // side with Stellar is exactly the class of bug this build keeps hitting. Six occurrences across
   // the amm page keys, all the same caption.
   ['Across all pools', 'Across all XRPL pools'],
+
+  // THE RECEIVE DIALOG'S BAKED ADDRESS, which on this fork is a STELLAR one — a G-address sitting
+  // under "Your XRP Ledger address" (the label two blocks up already corrects), with a data-copy
+  // carrying a different fabricated address again, an Aptos 0x. 35 desktop + 3 mobile.
+  //
+  // Parity with the Stellar build, fixed there the same day (RAZA 2026-10-27, "use em-dash
+  // placeholders"): a privacy- or honesty-shaped call is platform-wide, and leaving one fork
+  // publishing what the other just stopped is how these diverge.
+  //
+  // NOT user-reachable, and that is checked rather than assumed: opening Receive on /wallet with
+  // lx_chain=xrpl showed the real connected r-address in both the text and data-copy, so the layer
+  // replaces this element wherever the dialog can actually be opened. Everywhere else the overlay is
+  // an orphan with no trigger, which makes this markup read only by a crawler — this file's remit.
+  //
+  // BARE, NOT TAG-ANCHORED, which is the difference between this file and Stellar's _chaincopy.js and
+  // cost a build to learn: rewriteText() below applies these to the TEXT BETWEEN TAGS only — "never
+  // attributes, never script or style bodies" — so a '>GA7K…</div>' anchor, which is what the Stellar
+  // pair uses and which works there because that file does a plain whole-document replacement, can
+  // never match here. Written that way first; it reported no error and changed nothing, exactly the
+  // silent no-op this file's own header warns a rule must not be.
+  //
+  // Safe as a bare string: 56 characters, one value, and it occurs only as this element's text. The
+  // data-copy attribute keeps its fabricated 0x for now and rewriteText cannot reach it anyway —
+  // blanking an attribute is a behaviour change, not a copy one, and is left with Stellar's.
+  ['GA7K5N4M2X9P3R8Q1L6T2V8W4Y7Z3A5B8C2D6E1F4G7H9J2K5N4M2', '—'],
 ];
 
 // Elements whose ENTIRE text is a bare network name. Handled separately because replacing the bare
@@ -393,6 +418,13 @@ const GUARDED = [
 // box someone types a number into. The text chunk is the three letters "APT", and a phrase rule for
 // that would rewrite every APT on the site, including ones inside prose the list above handles
 // deliberately. Anchoring to the class turns an unsafe rule into an exact one.
+// The launchpad's two placeholders, shared by every rule below that touches them. Kept as constants
+// because the same two strings are the target of NINE entries spanning three base generations, and a
+// typo in one of them would silently leave one device or one base spelling behind. Identical to
+// Stellar's _launchph.js -- the two forms must read the same.
+const LAUNCH_NAME = 'placeholder="Your token' + String.fromCharCode(39) + 's name"';
+const LAUNCH_TICK = 'placeholder="ASSET"';
+
 const MARKUP_LITERALS = [
   ['class="input-suffix">APT<', 'class="input-suffix">XRP<'],
 
@@ -423,6 +455,234 @@ const MARKUP_LITERALS = [
   //
   // Anchoring to the <em> turns an unsafe rule into an exact one, which is what this list is for.
   ['<em>DEX</em> on Stellar.', '<em>DEX</em> on the XRP Ledger.'],
+
+  // THE CREATE POOL TRADING FEE (RAZA 2026-10-27, "fix the 0.5% pool fee" -- reported on Stellar,
+  // found in both containers: 5 desktop + 3 mobile each, byte-identical rows).
+  //
+  // THE TEXT ALONE IS THE DANGEROUS KIND, which is why it is here. The row is
+  //   <span>Trading fee</span><strong>0.5%</strong>
+  // so its only text node is "0.5%" -- and 0.5% is also the swap panes' default SLIPPAGE, which is
+  // correct and must not move. A PHRASES entry would have rewritten both. Anchoring the whole row is
+  // what makes this exact, the same reason `class="input-suffix">APT<` sits in this list.
+  //
+  // 0.2%, NOT STELLAR'S 0.3%. On Stellar the pool fee is fixed by the protocol; here the creator
+  // chooses it, and browser/createpool.js submits TradingFee 200 and writes (TRADING_FEE/1000)+'%'
+  // into this very row at runtime. So 0.2% is not a copy decision -- it is what the ledger is asked
+  // for, and the markup now agrees with the transaction.
+  //
+  // The row still renders display:none (createpool.js: "The row stays hidden because Stellar hides
+  // it"). This changes the bytes a crawler reads, nothing a human sees.
+  ['<div class="row"><span>Trading fee</span><strong>0.5%</strong></div>',
+    '<div class="row"><span>Trading fee</span><strong>0.2%</strong></div>'],
+
+  // THE SEND DIALOG'S RECIPIENT PLACEHOLDER, which ships as Stellar's: "G... or domain.com*username".
+  // On this ledger that is an address format that cannot exist, telling the reader to type something
+  // invalid -- and the federated `domain.com*username` form is a Stellar protocol feature with no XRPL
+  // equivalent at all.
+  //
+  // browser/write.js ALREADY FIXES THIS, in wireSend(), and has done since it was written. But it
+  // fixes it at RUNTIME, so the markup the parser draws is still Stellar's and the reader sees the
+  // wrong placeholder until the layer runs -- exactly the flash GUARDRAILS section B forbids (RAZA
+  // 2026-10-31, reported together with the XLM fee unit and the "Stellar Wallet" tab title; all three
+  // turned out to be the Stellar page being served, but this one is real on the XRPL page too).
+  //
+  // THE TWO STRINGS MUST AGREE BYTE FOR BYTE with write.js's setAttribute, or fixing the flash just
+  // replaces it with a different one: markup paints "r… XRP Ledger address", the layer then writes
+  // its own wording, and the swap is visible. Same ellipsis character (U+2026), same spacing.
+  // If you change one, change the other.
+  //
+  // A MARKUP LITERAL, not a PHRASES entry: applyPhrases() walks text chunks and never sees an
+  // attribute value, which is why the label beside this field ("XRP Ledger wallet") was already
+  // right while the placeholder inside it stayed wrong.
+  ['placeholder="G... or domain.com*username"',
+    'placeholder="r… XRP Ledger address"'],
+
+  // THE SAME FIELD, SECOND BASE SPELLING. Stellar fixed its own flash on 2026-10-31 (_sendph.js)
+  // by rewriting this attribute in the aptos containers to "G... Stellar address", so a base built
+  // from that day on carries THAT string and the entry above no longer matches. Without this pair
+  // the fork would paint Stellar's wording on a ledger that has no G addresses at all -- the fix
+  // above would appear to have been reverted, with nothing in the build complaining.
+  //
+  // BOTH ARE KEPT because the fork is rebuilt from whatever base is on disk, and the frozen Stellar
+  // build it inherits is not re-cut on our schedule; either spelling may be the one it sees. They
+  // map to the identical target, so whichever matches gives the same page. Delete neither until a
+  // base containing the old string is provably gone.
+  ['placeholder="G... Stellar address"',
+    'placeholder="r… XRP Ledger address"'],
+
+  // THE LAUNCHPAD'S WORKED EXAMPLE NAMES A TOKEN THAT IS NOT ON THIS LEDGER (RAZA 2026-11-07:
+  // "'e.g. Tether' despite Tether not being natively issued on the XRP Ledger"). The first field
+  // anybody fills in on /launchpad/xrpl teaches the reader what an XRPL issuance looks like, and it
+  // was teaching them an asset that has none here. Ripple USD is issued on this ledger by Ripple,
+  // which is as native as an example gets.
+  //
+  // THE TWO FIELDS ARE ONE EXAMPLE and have to move together: the name box and the ticker box sit
+  // side by side in the same row, so "Ripple USD" beside "e.g. USDT" would read as a worse mistake
+  // than the one being fixed. The ticker input carries style="text-transform: uppercase" and a `$`
+  // prefix span, so "e.g. RLUSD" renders as "$ E.G. RLUSD" -- which is the form RAZA quoted, and the
+  // reason the literal here is lower case.
+  //
+  // DESKTOP ONLY, measured: 2 keys (launch-token and its -light twin), 1 each, and zero in the
+  // mobile container. The pair below is the phone's -- it ships "e.g. Solar Flare" / "e.g. SLR", an
+  // invented token, so it is not WRONG the way Tether is; it is changed so the same form does not
+  // teach two different examples depending on which device opened it.
+  //
+  // A MARKUP LITERAL rather than a PHRASES entry for the same reason as the send placeholder above:
+  // applyPhrases walks text chunks and never sees an attribute value.
+  // 2026-11-13: NO WORKED EXAMPLE AT ALL, AND RIPPLE USD IS THE ONE BEING REMOVED. RAZA, of the
+  // Stellar twin: "placing usdc in placeholder is not right." The same argument lands harder here --
+  // RLUSD is Ripple's own stablecoin, and suggesting it on the form where you MINT YOUR OWN token
+  // reads as though you could issue it. The Add-custom-asset modal naming a real asset is correct,
+  // because there you are entering one that exists; this form creates one, so no real name belongs
+  // in it and swapping in another invented token would only move the problem.
+  //
+  // Both boxes now describe what to type: "Your token's name" and "ASSET". Mirrors Stellar's
+  // _launchph.js exactly -- same two strings, same reasoning, written down in both places because
+  // the two forms must not drift. A STRAIGHT apostrophe, so the anchor stays ASCII across repos.
+  ['placeholder="e.g. Tether"', LAUNCH_NAME],
+  ['placeholder="e.g. USDT"', LAUNCH_TICK],
+  ['placeholder="e.g. Solar Flare"', LAUNCH_NAME],
+  ['placeholder="e.g. SLR"', LAUNCH_TICK],
+
+  // THE SAME TWO FIELDS, SECOND BASE SPELLING -- the same trap the Send placeholder above is kept in
+  // two spellings for, and the same day it was written down. Stellar fixed its own copy of this on
+  // 2026-11-07 (_launchph.js) by rewriting these attributes in the aptos containers to
+  // "e.g. USD Coin" / "e.g. USDC", so a base cut from that day on carries THOSE strings and the four
+  // entries above match nothing. Without this pair a `rebuild.js --base` would leave the XRP
+  // Ledger's launchpad suggesting a STELLAR asset -- the fix above would look reverted, and the
+  // build would report success. Both spellings are kept; delete neither until a base carrying the
+  // old ones is provably gone.
+  //
+  // ANCHORED BY id, NOT BY THE ATTRIBUTE ALONE, and that is the whole reason these two look
+  // different from the four above. `placeholder="e.g. USDC"` is not unique in Stellar's base: it
+  // appears 33 times on desktop and 27 on mobile inside a <script>, as the Asset code field of the
+  // Add-custom-asset modal that lx-walletdata builds at runtime. rewriteMarkupLiterals is a plain
+  // split/join over the whole page key, so a bare rule would rewrite that modal on every page of
+  // this fork -- a different surface, not reported, not asked for. The input's id makes the rule
+  // exact. (The old spellings need no such anchor: "e.g. Tether" and "e.g. USDT" occur only on the
+  // two launch-token keys, measured.)
+  //
+  // THE DOUBLED FORM COMES FIRST because the phone's markup carries the attribute TWICE on the name
+  // input -- `placeholder="e.g. USD Coin" placeholder="e.g. USD Coin"` -- which is the design's own
+  // duplicate, present in Stellar's base and harmless (a parser keeps the first). Listed ahead of
+  // the single form so it collapses rather than leaving a stale second copy behind.
+  ['id="tokenName" placeholder="e.g. USD Coin" placeholder="e.g. USD Coin"',
+    'id="tokenName" ' + LAUNCH_NAME],
+  ['id="tokenName" placeholder="e.g. USD Coin"',
+    'id="tokenName" ' + LAUNCH_NAME],
+  ['id="tokenTicker" placeholder="e.g. USDC"',
+    'id="tokenTicker" ' + LAUNCH_TICK],
+
+  // THIRD SPELLING: THIS FORK'S OWN PREVIOUS ANSWER. The containers here do not hold a Stellar base
+  // string at all -- they hold "e.g. Ripple USD" / "e.g. RLUSD", because the rules above already ran
+  // and baked it. Without these three entries the retarget above matches nothing and the launchpad
+  // keeps advertising RLUSD, while the build reports success. Same lesson as the LUMOS card link
+  // renamed twice in one day: a transform anchored on one generation is blind to the one it created.
+  ['id="tokenName" placeholder="e.g. Ripple USD" placeholder="e.g. Ripple USD"',
+    'id="tokenName" ' + LAUNCH_NAME],
+  ['id="tokenName" placeholder="e.g. Ripple USD"',
+    'id="tokenName" ' + LAUNCH_NAME],
+  ['id="tokenTicker" placeholder="e.g. RLUSD"',
+    'id="tokenTicker" ' + LAUNCH_TICK],
+
+  // THE SAME FIGURE ON THE POOL PAGE'S Deposit / Withdraw summary (2 desktop + 1 mobile), a different
+  // class and label from the row above -- `.r` / "Trading fee tier" -- which is why one pair cannot
+  // cover both.
+  //
+  // AN EM DASH HERE, NOT A NUMBER, and this is the one place XRPL must NOT copy Stellar. Stellar can
+  // write 0.3% because the protocol fixes it for every pool. On the XRP Ledger the creator chooses
+  // it, 0 to 1%, per pool -- wallet.js reads the real one from amm_info (`m.trading_fee / 1000`).
+  // Any constant baked here would be right for our own pools and wrong for everyone else's, so the
+  // honest markup is the placeholder this build already uses for a figure it does not know yet.
+  //
+  // RAZA has ruled on this row's VISIBLE form once already (pools.js: the "0.205% fee tier" chip,
+  // "we dont have it on stellar so why did you"); this only settles what the bytes say while it stays
+  // hidden.
+  ['<div class="r"><span>Trading fee tier</span><strong>0.5%</strong></div>',
+    '<div class="r"><span>Trading fee tier</span><strong>—</strong></div>'],
+
+  // THE PROMO CAROUSEL'S "Low fees" SLIDE (RAZA 2026-10-27, "fix the promo slide copy too").
+  //
+  // The phone Trade page ships a 4-slide promo whose third slide invents a pricing model: "Pay just
+  // 0.5% per trade", "Sign up free for the LumosCore rate. Guests pay 0.8%", CTA "Sign Up Free".
+  // There is no account on this site and the real rate is 0.2%, or 0.1% holding 250,000 LUMOS --
+  // the same figures browser/feerate.js puts in the fee banner.
+  //
+  // inject_livemarket.js replaces the banner with the Living Market hero, so the block is
+  // display:none everywhere. This fixes what the bytes say, not what anyone sees.
+  //
+  // 1 occurrence each, on lumoscore-dex-mobile.html, MOBILE container only -- identical to Stellar's,
+  // which is why the pairs are byte-for-byte the same as _chaincopy.js's. The chain's name does not
+  // appear in this slide, so unlike slides 1, 2 and 4 there is nothing per-fork about it.
+  //
+  // THE SUB IS TAGLESS and would also work as a PHRASES entry; it sits here so all three pieces of
+  // one slide stay together and cannot drift apart. rewriteMarkupLiterals is a plain split/join, so
+  // a pair without tags is handled the same way.
+  ['Pay just <span class="lumos-promo-hi">0.5%</span> per trade.',
+    'Pay just <span class="lumos-promo-hi">0.2%</span> per trade.'],
+  ['Sign up free for the LumosCore rate. Guests pay 0.8% — every other trader keeps more of every fill.',
+    '0.1% if you hold 250,000 LUMOS. No sign-up and no account — your wallet is all you need.'],
+  ['<a href="#" class="lumos-promo-cta">Sign Up Free',
+    '<a href="#" class="lumos-promo-cta">Start Trading'],
+
+  // SLIDE 2 (RAZA 2026-10-27, "yes fix that too") promised "fair-launch mechanics, transparent
+  // vesting, and on-chain verification from day one". Vesting does not exist on either fork -- the
+  // only occurrence of the word in this repo is this comment, and mint.js issues, mints and opens
+  // the pool in one run with nothing that releases supply over time -- and issuing here grants no
+  // verification mark. The Launchpad is also open to anyone, so "curated" belongs to the separate
+  // paid listing, not to a launch.
+  //
+  // Same replacement as Stellar's: only what both launchpads actually do.
+  ['Curated launches with fair-launch mechanics, transparent vesting, and on-chain verification from day one.',
+    'Every launch has a fixed supply, a live pool from day one, and its own page here with price, pool and activity.'],
+
+  // ---- The two network-fee rows PHRASES cannot reach (RAZA 2026-10-27).
+  //
+  // `['~0.00001 APT', '~0.00001 XRP']` up in PHRASES already fixes 155 of the 167 the fork
+  // inherited. Both halves of what is left are here for a reason:
+  //
+  //   * 2 are REAL MARKUP, in the Trade-Asset trade summary, and they are the one shape written
+  //     WITHOUT the leading "~": `<span class="mono">0.00001 APT</span>`. A tilde-anchored phrase
+  //     slides straight past them, which is why they survived every earlier sweep. Anchoring on
+  //     the wrapper instead of the value keeps this pair off the other 165 and off the 10 below.
+  //   * 10 are inside LAYER COMMENTS in write.js and dexasset.js that quote this very bug while
+  //     explaining it. They are not served to anyone as copy, and rewriting a comment's quoted
+  //     symptom to the fixed value destroys the only record of what was wrong. Left alone on
+  //     purpose -- so no bare `0.00001 APT` pair here, unlike Stellar, which has no such comments.
+  //
+  // XRPL's base fee is 10 drops = 0.00001 XRP, so the figure carries over and only the asset moves.
+  ['<span class="mono">0.00001 APT</span>', '<span class="mono">0.00001 XRP</span>'],
+
+  // THE LAUNCHPAD'S SOCIAL PLACEHOLDERS ASKED FOR A URL AND THE FIELD STORES A HANDLE.
+  //
+  // "t.me/yourproject" and "x.com/yourproject" are what the design asks for, while xrplmintmeta.js
+  // clips the value into a field named LIMITS.handle. On Stellar that mismatch made a mint link to
+  // "https://x.com/x.com/handle" (RAZA 2026-11-05,
+  // [[social-links-stored-a-url-in-a-handle-field]]); on this chain the same value is DROPPED by
+  // xrpltoml's safeUrl instead, so it failed silently and nobody reported it. The prefix beside each
+  // box is only an icon, so the placeholder is the whole instruction. listyourtoken.html already
+  // asks the right way -- "@yourproject" for both -- and that is the wording copied here.
+  //
+  // THE ATTRIBUTE IS THE POINT, NOT A DECORATION. `browser/launchpad.js` used to find these three
+  // inputs by matching their placeholder text, so correcting the copy on its own would have left
+  // every social read matching nothing -- and an unmatched read returns "", which downstream is
+  // indistinguishable from a minter who left the field blank. Stamping `data-lxlpsoc` in the same
+  // replacement is what makes the copy safe to change. `bySoc()` reads the attribute first and keeps
+  // the old placeholder regex as a fallback.
+  //
+  // NOT `data-lxsoc`: that name is already the asset page's social-row paint guard
+  // (`browser/dexasset.js:3150`). Different page and different element, so nothing clashed, but
+  // grepping this repo's containers for it returned 12 hits from that guard.
+  //
+  // Idempotent by construction -- each `from` is the UN-stamped tag, so a re-run finds nothing. The
+  // website box keeps its copy (a website really is a url) and is stamped only so all three are
+  // found the same way.
+  ['<input class="input with-prefix" placeholder="t.me/yourproject" />',
+    '<input class="input with-prefix" data-lxlpsoc="tg" placeholder="@yourproject" />'],
+  ['<input class="input with-prefix" placeholder="x.com/yourproject" />',
+    '<input class="input with-prefix" data-lxlpsoc="x" placeholder="@yourproject" />'],
+  ['<input class="input with-prefix" placeholder="https://yourproject.com" />',
+    '<input class="input with-prefix" data-lxlpsoc="web" placeholder="https://yourproject.com" />'],
 ];
 
 let markupFixes = 0;

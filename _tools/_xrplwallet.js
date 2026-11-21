@@ -19,14 +19,18 @@ const core = fs.readFileSync(__dirname + '/xrpl-core.js', 'utf8');
 // Explorer links, shared with the dashboard so the Bithomp base URL exists once. Before wallet.js,
 // which calls window.lxxExplorer while building each activity row.
 const xp = fs.readFileSync(__dirname + '/browser/explorer.js', 'utf8');
-const page = fs.readFileSync(__dirname + '/browser/wallet.js', 'utf8');
+// wallet.js carries the collector too, since 2026-11-14: its activity feed tells a bridge's fee leg
+// from an ordinary payment by the marker on a payment TO the collector. Read-only — this file builds
+// no transaction — but it goes through the same injector, so a missing placeholder aborts the build
+// here exactly as it does for write.js rather than shipping a literal placeholder as an address.
+const { injectCollector } = require(__dirname + '/xrpladdr.js');
+const page = injectCollector(fs.readFileSync(__dirname + '/browser/wallet.js', 'utf8'), 'wallet.js');
 // Prices fill columns the wallet layer paints, so they ship together and in this order.
 const px = fs.readFileSync(__dirname + '/browser/prices.js', 'utf8');
 // Signed transactions — Receive QR, Send, Cancel order. LAST, because it reads window.__lxxData for
 // balances and calls window.__lxxReload after a submit; both are published by wallet.js above.
 // The swap pays the platform fee to the collector, so this file carries its address — injected and
 // checksum-verified by xrpladdr.js, never written literally in a browser source.
-const { injectCollector } = require(__dirname + '/xrpladdr.js');
 const wr = injectCollector(fs.readFileSync(__dirname + '/browser/write.js', 'utf8'), 'write.js');
 
 for (const src of [core, xp, page, px, wr]) {

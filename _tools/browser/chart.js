@@ -28,12 +28,24 @@
     return e;
   }
 
+  // The hover tooltip's Price line, which used to emit e-notation under a millionth. Stellar's
+  // chart-tooltip rules (sig/usd in _assetoverview.js), NOT the wallet's -- those clamp 4..18 and use
+  // thousands separators, these clamp 2..12 and abbreviate K/M/B. Match each counterpart, don't unify.
+  function sig(v) {
+    if (v >= 1) return v.toLocaleString('en-US', { maximumFractionDigits: 4 });
+    if (v >= 0.01) return v.toFixed(4);
+    var d = Math.min(12, Math.max(2, 2 - Math.floor(Math.log(v) / Math.LN10)));
+    return v.toFixed(d).replace(/0+$/, '').replace(/\.$/, '');
+  }
   function money(v) {
     if (v == null || !isFinite(v)) return '—';
-    if (v < 0.000001) return '$' + v.toExponential(2);
-    if (v < 0.01) return '$' + v.toPrecision(4);
-    if (v < 1000) return '$' + v.toFixed(4);
-    return '$' + Math.round(v).toLocaleString('en-US');
+    if (!v) return '$0';            // zero only, as Stellar's does -- a negative still flows through
+    var a = Math.abs(v);
+    if (a >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+    if (a >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'K';
+    if (a >= 1) return '$' + v.toFixed(2);
+    return '$' + sig(v);
   }
 
   function note(host, text) {

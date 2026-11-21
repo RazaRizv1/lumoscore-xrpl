@@ -129,11 +129,15 @@ const MAP = [
 // on the combined deployment and the middleware picks the build from the lx_chain cookie — see the
 // MAP entries above that now strip the suffix rather than add it. Suffixing them here would point this
 // build's own links back at urls the combined site no longer serves.
+// NOT /mcp either, since 2026-11-15, and for the same reason as the three above: it is ONE url for
+// every network. RAZA: "We never had network based page for mcp. its supposed to be just one link for
+// all networks. lumoscore.com/mcp (valid for all 3 networks and beyond)". Suffixing it here is what
+// turned this build's own nav links into /mcp/xrpl -- which now 301s to /mcp, so leaving it would
+// have cost every reader on an XRPL page a redirect to reach a page we link to directly.
 const BARE = [
   '/lumos',
   '/bridge',
   '/rewards',
-  '/mcp',
   '/list-your-token',
 ];
 
@@ -190,7 +194,7 @@ function sharedFileUrl(name) {
   return 'https://lumoscore.com/' + name;
 }
 
-let pages = 0, total = 0, files_rewritten = 0, app_rewritten = 0;
+let pages = 0, total = 0, files_rewritten = 0, app_rewritten = 0, unqualified = 0;
 const per = {};
 
 for (const dev of ['desktop', 'mobile']) {
@@ -228,6 +232,15 @@ for (const dev of ['desktop', 'mobile']) {
     // before the bare "/launchpad" is considered. They are naturally idempotent, because
     // "/launchpad/review" is not a substring of "/launchpad/xrpl/review" — and the no-slash lookahead
     // here means this loop cannot touch them either way.
+    // UN-QUALIFY /mcp/xrpl. This is the mirror of removing "/mcp" from BARE above, and it is needed
+    // because the containers are gitignored and PERSIST between builds: dropping the rule only stops
+    // NEW links being suffixed, it cannot unwrite the ones earlier builds already baked in. Without
+    // this, every nav link on 95 XRPL pages would keep pointing at /mcp/xrpl until something happened
+    // to rewrite that markup from scratch.
+    //
+    // Idempotent in both directions: "/mcp" is no longer in BARE, so nothing re-qualifies what this
+    // undoes, and a second run finds no "/mcp/xrpl" left to match.
+    h = h.replace(/(["'`])\/mcp\/xrpl(?=["'`?#])/g, function (_, q) { unqualified++; return q + '/mcp'; });
     for (const bare of BARE) {
       const bre = new RegExp('(["\'`])' + esc(bare) + '(?=["\'`?#])', 'g');
       h = h.replace(bre, function (_, q) {
@@ -257,6 +270,7 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl routes: ' + total + ' route reference(s) and ' + files_rewritten + ' shared-page and ' + app_rewritten + ' app filename(s) rewritten across ' + pages + ' page key(s)');
+if (unqualified) console.log('   un-qualified ' + unqualified + ' /mcp/xrpl link(s) back to /mcp — one url for every network');
 for (const k of Object.keys(per).sort((a, b) => per[b] - per[a])) {
   // Wide enough for the absolute targets: at 22 the lumoscore.com URLs ran straight into the count
   // and printed "…/lumos/stellar6".

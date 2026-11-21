@@ -39,7 +39,7 @@ for (const src of [core, page, limit, swap]) {
 
 const SCRIPT = '<script id="' + ID + '">\n' + core + '\n' + page + '\n' + limit + '\n' + swap + '\n</' + 'script>';
 
-let files = 0, pages = 0, stripped = 0;
+let files = 0, pages = 0, stripped = 0, swapped = 0, appended = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data;
@@ -56,11 +56,29 @@ for (const dev of ['desktop', 'mobile']) {
     h = gone.html;
     stripped += gone.removed;
 
-    h = stripById(h, ID).html;
-
-    const bi = h.lastIndexOf('</' + 'body>');
-    if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
-    json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
+    // IN PLACE, NOT STRIP-AND-RE-APPEND. Stripping this block by id and appending it before </body>
+    // lands it LAST however early it used to sit, which moves every layer that followed it -- the
+    // trap in [[running-one-stellar-transform-reorders-layers]], and the reason this repo carried a
+    // blanket "never run an XRPL transform on its own" rule. Swapping where it already sits keeps
+    // its position ([[a-transform-that-patches-in-place-cannot-reorder]]).
+    //
+    // The strip above (lx-dxadata, the Stellar layer) is unchanged: that one is REMOVING a foreign
+    // block, not moving our own.
+    const open = '<script id="' + ID + '">';
+    const at = h.indexOf(open);
+    const close = '</' + 'script>';
+    const end = at < 0 ? -1 : h.indexOf(close, at);
+    if (at >= 0 && end > at) {
+      json[key] = h.slice(0, at) + SCRIPT + h.slice(end + close.length);
+      swapped++;
+    } else {
+      // Never carried it: append, which correctly lands last on a page seeing this for the first time.
+      h = stripById(h, ID).html;
+      const bi = h.lastIndexOf('</' + 'body>');
+      if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
+      json[key] = h.slice(0, bi) + SCRIPT + h.slice(bi);
+      appended++;
+    }
     pages++;
   }
 
@@ -69,5 +87,8 @@ for (const dev of ['desktop', 'mobile']) {
 }
 
 console.log('xrpl dex-asset: injected on ' + pages + ' page key(s) across ' + files
-  + ' container(s); stripped the Stellar layer from ' + stripped);
+  + ' container(s); stripped the Stellar layer from ' + stripped
+  // Swapped vs appended, not one total: on a tree that already carries the layer every page should
+  // SWAP. An `appended` above zero is the one outward sign a layer is about to change position.
+  + '; ' + swapped + ' swapped in place, ' + appended + ' appended');
 if (!pages) console.error('  ! no page carried the order-book ids — nothing was wired');

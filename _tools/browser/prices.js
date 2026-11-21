@@ -21,14 +21,28 @@
 
   function slug(issuer, currency) { return String(issuer || '') + '-' + String(currency || ''); }
 
-  function money(v) {
+  // One formatter for both cells printed "$3.00e-7" for a dust value and rounded SOLO's $0.011744 to
+  // "$0.01". A value that small is nothing; a price that small is the whole figure. Both rules below
+  // are Stellar's usd() and pStr from _walletdata.js, thresholds included.
+
+  // A value: to the cent under a thousand, then whole dollars, then M/B.
+  function usdVal(v) {
     if (v == null || !isFinite(v)) return '—';
-    if (v === 0) return '$0';
-    // Sub-cent tokens are the norm on this ledger; 2dp would render most of a wallet as "$0.00".
-    if (v < 0.000001) return '$' + v.toExponential(2);
-    if (v < 0.01) return '$' + v.toPrecision(3);
-    if (v < 1000) return '$' + v.toFixed(2);
-    return '$' + Math.round(v).toLocaleString('en-US');
+    var a = Math.abs(v);
+    return '$' + (a >= 1e9 ? (v / 1e9).toFixed(2) + 'B'
+      : a >= 1e6 ? (v / 1e6).toFixed(2) + 'M'
+      : a >= 1e3 ? v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+      : v.toFixed(2));
+  }
+
+  // A price: 2dp at a dollar and up, 4dp down to a cent, and below a cent written out far enough to
+  // show the figure with trailing zeros trimmed. Never exponential, however small it gets.
+  function usdPx(v) {
+    if (v == null || !isFinite(v) || !(v > 0)) return '—';
+    if (v >= 1) return '$' + v.toFixed(2);
+    if (v >= 0.01) return '$' + v.toFixed(4);
+    var d = Math.min(18, Math.max(4, 2 - Math.floor(Math.log(v) / Math.LN10)));
+    return '$' + v.toFixed(d).replace(/0+$/, '').replace(/\.$/, '');
   }
 
   function pct(v) {
@@ -117,7 +131,7 @@
         var b2 = cell.row.querySelector('.b2');
         if (b2) {
           var bal0 = item.xrp ? ((xrp && xrp.balance) || 0) : (+item.balance || 0);
-          b2.textContent = (usd != null && bal0 > 0) ? ('≈ ' + money(bal0 * usd)) : '';
+          b2.textContent = (usd != null && bal0 > 0) ? ('≈ ' + usdVal(bal0 * usd)) : '';
         }
         // Still written, though the column is hidden to match Stellar — see the note in wallet.js.
         // Costs nothing and keeps the cell honest if that column is ever brought back.
@@ -191,7 +205,7 @@
     }
 
     var sub = vs.sub;
-    if (sub) sub.textContent = '≈ ' + money(totUsd) + ' USD';
+    if (sub) sub.textContent = '≈ ' + usdVal(totUsd) + ' USD';
 
     // OPEN THE PHONE'S PORTFOLIO GATE. `html:not(.lx-pvdone)` paints .portfolio-value, .portfolio-sub
     // and .portfolio-usd in transparent ink until this class exists, and the Stellar layer that used
@@ -233,7 +247,7 @@
     var p1 = document.createElement('div');
     p1.className = 'p1 lx-p1';
     var m = document.createElement('span');
-    m.textContent = money(usd);
+    m.textContent = usdPx(usd);
     p1.appendChild(m);
     var c = document.createElement('span');
     c.className = 'lx-chg';
@@ -274,7 +288,7 @@
     var d = document.createElement('div');
     d.className = 'lxx-px';
     d.style.cssText = 'font-size:12px;font-weight:600;margin-top:2px;opacity:.85';
-    d.textContent = money(usd);
+    d.textContent = usdPx(usd);
     var s = pct(ch7);
     if (s != null) {
       var sp = document.createElement('span');

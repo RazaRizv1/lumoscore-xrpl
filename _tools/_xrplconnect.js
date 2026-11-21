@@ -149,7 +149,7 @@ function stripWalletList(h) {
   return { h: out, cut, title };
 }
 
-let files = 0, pages = 0, stripped = 0, wrows = 0, wpages = 0, titles = 0, headPages = 0;
+let files = 0, pages = 0, stripped = 0, wrows = 0, wpages = 0, titles = 0, headPages = 0, swapped = 0, appended = 0;
 for (const dev of ['desktop', 'mobile']) {
   const file = 'lumoscore-xrpl-' + dev + '.html';
   let data; try { data = read(file); } catch (e) { console.error('  ' + file + ': missing — skipped'); continue; }
@@ -163,21 +163,43 @@ for (const dev of ['desktop', 'mobile']) {
     const old = new RegExp('<script id="lx-realconnect">[\\s\\S]*?<\\/script>', 'g');
     if (old.test(h)) { h = h.replace(old, ''); stripped++; }
 
-    const mine = new RegExp('<script id="' + ID + '">[\\s\\S]*?<\\/script>', 'g');
-    h = h.replace(mine, '');
-
     const wl = stripWalletList(h);
     if (wl.cut || wl.title) { h = wl.h; wrows += wl.cut; titles += wl.title; if (wl.cut) wpages++; }
 
-    const bi = h.lastIndexOf('</' + 'body>');
-    if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
-    h = h.slice(0, bi) + SCRIPT + h.slice(bi);
+    // IN PLACE, NOT STRIP-AND-RE-APPEND. Both blocks used to be removed and put back at the end of
+    // <body> and <head>, which lands them LAST however early they used to sit -- the trap in
+    // [[running-one-stellar-transform-reorders-layers]], and the reason this file carried the "never
+    // run an XRPL transform on its own" warning. Swapping each block where it already sits keeps its
+    // position exactly, so this transform is now order-neutral
+    // ([[a-transform-that-patches-in-place-cannot-reorder]]).
+    //
+    // A page that never carried the layer still appends, and still lands last. That is correct; a
+    // layer-order gate should read it as a set difference rather than as a move.
+    const swapAt = (s, open, block) => {
+      const at = s.indexOf(open);
+      if (at < 0) return null;
+      const end = s.indexOf('</' + 'script>', at);
+      if (end < at) return null;
+      return s.slice(0, at) + block + s.slice(end + ('</' + 'script>').length);
+    };
 
-    // The paint guard goes in <head>, where it can act before the first frame. Stripped first, /g, for
-    // the same reason as the block above: one strip against two stale copies leaves a duplicate.
-    const oldRet = new RegExp('<script id="' + RETURN_ID + '">[\\s\\S]*?<\\/script>', 'g');
-    h = h.replace(oldRet, '');
-    if (h.indexOf('</head>') >= 0) { h = h.replace('</head>', RETURN_HEAD + '</head>'); headPages++; }
+    const mineOpen = '<script id="' + ID + '">';
+    const sw = swapAt(h, mineOpen, SCRIPT);
+    if (sw !== null) { h = sw; swapped++; }
+    else {
+      const bi = h.lastIndexOf('</' + 'body>');
+      if (bi < 0) { console.error('  ' + key + ': no closing body — skipped'); continue; }
+      h = h.slice(0, bi) + SCRIPT + h.slice(bi);
+      appended++;
+    }
+
+    // The paint guard goes in <head>, where it can act before the first frame.
+    const retOpen = '<script id="' + RETURN_ID + '">';
+    const rs = swapAt(h, retOpen, RETURN_HEAD);
+    if (rs !== null) { h = rs; swapped++; headPages++; }
+    else if (h.indexOf('</head>') >= 0) {
+      h = h.replace('</head>', RETURN_HEAD + '</head>'); headPages++; appended++;
+    }
 
     json[key] = h;
     pages++;
@@ -191,4 +213,7 @@ for (const dev of ['desktop', 'mobile']) {
 console.log('xrpl connect: injected on ' + pages + ' page key(s) (' + headPages + ' with the paint guard) across ' + files + ' container(s); '
   + 'stripped the Stellar flow from ' + stripped
   + '; removed ' + wrows + ' Stellar wallet row(s) from ' + wpages + ' page key(s)'
-  + ', neutralised ' + titles + ' connecting-screen placeholder(s)');
+  + ', neutralised ' + titles + ' connecting-screen placeholder(s)'
+  // Swapped vs appended, not one total: on a tree that already carries the layer every block should
+  // SWAP. An `appended` above zero is the one outward sign a layer is about to change position.
+  + '; ' + swapped + ' block(s) swapped in place, ' + appended + ' appended');
