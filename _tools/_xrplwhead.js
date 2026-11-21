@@ -35,6 +35,63 @@ const B = String.fromCharCode(92);
 const XRP_MD5 = '84e5efeb89c4eae8f68188982dc290d8';
 const XRP_LOGO = 'url("/lxapi/xrplthumb?id=' + XRP_MD5 + '&w=64")';
 
+// ---- the third chip state: connected, but on another network -------------------------------------
+//
+// This fork's container holds a FROZEN copy of Stellar's header script, so the fix made in Stellar's
+// _wallet_header.js does not arrive here on its own — it has to be re-applied as rewrites, below.
+//
+// The bug: `on` was `!!(wallet||addr)`, and localStorage is shared across every chain on the combined
+// site. A visitor connected on Stellar who opened an XRPL page got a chip showing their G… address,
+// their Freighter mark and a green connected dot, under an "XRP Ledger" label, with a copy button
+// that handed out the foreign address. Measured on staging d63cdcae in both directions.
+//
+// The chain is read from <html data-lx-wallet-chain>, which the lx-wrongchain layer in <head> has
+// already resolved. NOT from lumos.network: that key still holds the pre-multichain value "mainnet"
+// for anyone who connected before the rework and never self-heals, so comparing it to a chain name
+// would strip the chip from the oldest users. One resolver, one answer — or the chip contradicts the
+// notice three lines below it.
+const FC_HEAD = 'var wallet=ls("lumos.wallet"),addr=ls("lumos.address");'
+  + 'var LXCH={stellar:"Stellar",xrpl:"XRP Ledger",near:"NEAR",arc:"Arc",hedera:"Hedera"};'
+  + 'var fc="";try{var _d=document.documentElement;'
+  + 'if(_d.classList.contains("lx-wrongchain")&&addr){var _n=_d.getAttribute("data-lx-wallet-chain")||"";'
+  + 'fc=_n?(LXCH[_n]||_n):"";}}catch(_e){}'
+  // addr is dropped for the whole render pass, so nothing downstream writes the foreign address into
+  // .lx-tw-addr or re-points a data-copy at it.
+  + 'if(fc)addr=null;'
+  + 'var on=!!(wallet||addr)&&!fc;mobileMenu(on,addr,fc);';
+
+// Two earlier versions of this branch shipped and are no longer written out anywhere: the normalise
+// step in the page loop strips whatever is there before the rule re-applies, so no version history
+// is kept here. For the record, V1 added lx-tw-disc — the Launch App pill's class — and so rendered
+// 178x42 at 19.8px bold white. RAZA, 2026-11-14: "just look at how it messed up top right side".
+// A statement of fact had become the loudest call to action on the page.
+//
+// The current version MUTATES the existing chip rather than replacing its markup: same pill, same size, same font —
+// only the text, the copy button and the dot change. data-lxorig / data-lxdisc are still set so the
+// restore path in the if(on) branch puts the original markup back verbatim when a wallet for THIS
+// chain connects. The class is deliberately NOT added; that was the whole bug.
+const FC_RENDER = 'else if(fc){if(chip.getAttribute("data-lxorig")==null)chip.setAttribute("data-lxorig",chip.innerHTML);'
+  + 'chip.setAttribute("data-lxdisc","1");'
+  // Clear the Launch App pill state explicitly — something else puts the chip into it during load,
+  // and .lx-tw-disc carries !important background/border/colour plus padding:0 22px and centring.
+  + 'chip.classList.remove("lx-tw-disc");'
+  + 'chip.style.removeProperty("background");chip.style.removeProperty("border-color");chip.style.removeProperty("color");'
+  + 'chip.setAttribute("title","Connected on "+fc+" ' + B + 'u2014 switch wallets to use this network.");'
+  + 'var fae=chip.querySelector(".lx-tw-addr");'
+  + 'if(fae){fae.textContent="On "+fc;fae.style.setProperty("opacity",".7");}'
+  + 'else{chip.innerHTML=\'<span class="lx-tw-addr" style="opacity:.7">On \'+fc+\'</span>\';}'
+  + 'var fcp=chip.querySelector(".lx-tw-copy");if(fcp)fcp.style.setProperty("display","none","important");'
+  + 'var fcs=chip.querySelectorAll("[data-copy]");for(var fi=0;fi<fcs.length;fi++)fcs[fi].removeAttribute("data-copy");'
+  + 'var fdt=chip.querySelector(".lx-tw-dot");if(fdt)fdt.style.setProperty("background","#8a8fa3","important");}';
+
+const DISC = 'else{if(chip.getAttribute("data-lxorig")==null)chip.setAttribute("data-lxorig",chip.innerHTML);'
+  + 'chip.setAttribute("data-lxdisc","1");chip.classList.add("lx-tw-disc");'
+  + 'chip.setAttribute("title","Launch the app");'
+  + 'chip.style.setProperty("background","#ea6a2c","important");'
+  + 'chip.style.setProperty("border-color","#ea6a2c","important");'
+  + 'chip.style.setProperty("color","#fff","important");'
+  + 'chip.innerHTML=\'<span class="lx-tw-cbtn">Launch App\'+ARROW+\'</span>\';}}';
+
 // [ [ forms this may start from ], what it must become, a name for the error ]
 //
 // The first entry is what the container ships. Any further entries are forms THIS transform has
@@ -118,6 +175,52 @@ const RULES = [
       + 'font:700 19.8px/1 "Hanken Grotesk",system-ui,sans-serif;color:#fff;letter-spacing:.01em}',
     'the launch pill label',
   ],
+  // ---- REVERT of the wrong-network chip ------------------------------------------------------------
+  //
+  // RAZA, 2026-11-14: "You need to show the exact same thing that you're showing on dashboard header
+  // even when we open any other network pages." The header shows the connected wallet on every page,
+  // whatever chain the page is for. Naming the chain is the BODY NOTICE's job — lx-wrongchain already
+  // says "View only mode. You are currently connected to Stellar…" and links to the right page.
+  //
+  // These rules carry the containers back to the stock forms. The `else if(fc){…}` branch itself is
+  // removed by the normalise step in the page loop, so it needs no rule here. Do not reintroduce a
+  // connected test: NEAR's fork had one and it rendered "Launch App" at a connected visitor while
+  // hiding the Disconnect control.
+  [
+    [FC_HEAD],
+    'var wallet=ls("lumos.wallet"),addr=ls("lumos.address");var on=!!(wallet||addr);mobileMenu(on,addr);',
+    'the connected test',
+  ],
+  [
+    ['if(!chip){mobileLaunch(on||!!fc);'],
+    'if(!chip){mobileLaunch(on);',
+    'the mobile launch pill',
+  ],
+  [
+    ['function mobileMenu(on,addr,fc){try{'],
+    'function mobileMenu(on,addr){try{',
+    'the mobile menu signature',
+  ],
+  [
+    ['for(var i=0;i<los.length;i++)los[i].style.display=(on||fc)?"":"none";'],
+    'for(var i=0;i<los.length;i++)los[i].style.display=on?"":"none";',
+    'the mobile disconnect control',
+  ],
+  [
+    ['if(mn)mn.textContent=fc?"Wrong network":(on&&addr?trunc(addr):(on?"":"Not connected"));'],
+    'if(mn)mn.textContent=on&&addr?trunc(addr):(on?"":"Not connected");',
+    'the mobile account name',
+  ],
+  [
+    ['if(ms)ms.textContent=fc?("Connected on "+fc):(on?("Connected ' + B + 'u00b7 "+netLabel()):"Tap to connect a wallet");'],
+    'if(ms)ms.textContent=on?("Connected ' + B + 'u00b7 "+netLabel()):"Tap to connect a wallet";',
+    'the mobile account sub',
+  ],
+  [
+    ['if(row&&row.style)row.style.display=(on||fc)?"":"none";'],
+    'if(row&&row.style)row.style.display=on?"":"none";',
+    'the mobile account row',
+  ],
 ];
 
 let containers = 0, pages = 0;
@@ -136,6 +239,19 @@ for (const dev of ['desktop', 'mobile']) {
     if (p.indexOf('id="lx-whead"') < 0) continue;
 
     const before = p;
+
+    // NORMALISE FIRST: strip any previously-applied wrong-network branch, whatever version it is,
+    // so the rule below always rewrites from the single baseline form [DISC]. Without this, every
+    // revision of that branch has to be kept in the rule's "may start from" list for ever — and the
+    // list is exact strings, so one stale entry means the rule silently misses and ships the old
+    // markup. The branch is delimited exactly: it starts at `else if(fc){` and ends where the
+    // Launch App `else{` begins, which is a string this file already owns.
+    const fcAt = p.indexOf('else if(fc){');
+    if (fcAt >= 0) {
+      const discAt = p.indexOf('else{if(chip.getAttribute("data-lxorig")', fcAt);
+      if (discAt > fcAt) p = p.slice(0, fcAt) + p.slice(discAt);
+    }
+
     for (const [froms, to, name] of RULES) {
       // Checked BEFORE the froms: once a page is already correct there is nothing to rewrite, and a
       // rule whose output happens to contain one of its own inputs would otherwise rewrite forever.
