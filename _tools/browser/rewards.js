@@ -378,10 +378,13 @@
   // design's Aptos image; the picker stopped at the design's last sample round. Rounds close on the 1st and the 15th on the same
   // dates as Stellar (Round 23 = 1 June 2026), so the list runs to the most recent close.
   function fixRounds() {
+    // The slot (span.cc) arrives empty in the XRPL build, so the <img> is created when it is missing (2026-11-21).
+    var cc = document.querySelector('#netseg .ns .cc');
     var img = document.querySelector('#netseg .ns img');
+    if (!img && cc) { img = document.createElement('img'); img.alt = ''; img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block'; cc.appendChild(img); }
     if (img && img.getAttribute('data-lxx') !== '1') {
       img.setAttribute('data-lxx', '1');
-      img.src = '/lxapi/xrplthumb?id=84e5efeb89c4eae8f68188982dc290d8&w=48';
+      img.src = '/assets/networks/xrpl.png';
     }
     var sel = $('#roundSel');
     if (!sel || sel.__lxx) return;
