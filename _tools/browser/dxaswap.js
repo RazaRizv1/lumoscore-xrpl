@@ -31,9 +31,17 @@
   function $$(s, r) { return [].slice.call((r || document).querySelectorAll(s)); }
   function lxx() { return window.lxx; }
   function asset() { return window.__lxxAssetRef || null; }
+  // `lumos.address` IS A SHARED KEY — the trap pooldetail.js closed, still open here. A Stellar
+  // G-address sits in this slot while you browse XRPL, reads truthy, and the swap box asks the ledger
+  // about it: measured on /trade/xrpl/RLUSD, 25 doomed calls against 9 for a real XRPL wallet, because
+  // every actMalformed sends loadAcct's catch round five more times. lxc.address() is a bare read of
+  // the same key, so the guard that holds is the validator. A throw falls to '' — not connected, which
+  // is the safe direction.
   function addr() {
-    try { return (window.lxc && window.lxc.address && window.lxc.address()) || localStorage.getItem('lumos.address') || ''; }
-    catch (e) { return ''; }
+    try {
+      var a = (window.lxc && window.lxc.address && window.lxc.address()) || localStorage.getItem('lumos.address') || '';
+      return window.lxx.isAddress(a) ? a : '';
+    } catch (e) { return ''; }
   }
   // NOTHING WAITS FOREVER (RAZA 2026-09-17: RLUSD → XRP "it just stucks there" — the button sat on "Finding the best route…"
   // with a complete quote beside it). A public node can accept a request and never answer, and `fetch` has no timeout of its
@@ -126,6 +134,13 @@
     var b = cta(p);
     if (!b || !b.parentNode) return;
     var n = $('.lxx-limit-note', p);
+    // THE BALANCE FAILURE OUTRANKS EVERY OTHER MESSAGE WHILE IT STANDS, and that order is the opposite
+    // of the one this slot usually keeps. Measured: a quote landing on a broken read replaced "Could
+    // not read your balance" with "No route for that amount" — true in its own terms, useless to act
+    // on, and it took the Try again control away with it. The button is dimmed by the failed read
+    // whatever the route says, so the failed read is the honest explanation for it. sayRetry() and
+    // balanceNote() write through this guard; nothing else does, so it lifts the moment a read lands.
+    if (n && n.getAttribute('data-lxbalfail') && acct.failed && !say.force) return;
     if (!n) {
       if (!text) return;
       n = document.createElement('div');
@@ -154,12 +169,73 @@
       b.parentNode.insertBefore(n, b);
     }
     n.textContent = text || '';
+    // THE MARKER MEANS "the note on screen RIGHT NOW is the balance-failure one", so writing any other
+    // message drops it. balanceNote() reads it to decide whether the note it is looking at is safe to
+    // clear; a marker left behind would have it clearing a quote error. sayRetry() sets it back on.
+    try { n.removeAttribute('data-lxbalfail'); } catch (e) {}
     n.setAttribute('data-tone', tone || '');
     n.style.display = text ? '' : 'none';
     // SUCCESS CLEARS ITSELF (RAZA 2026-09-16: "Once the swap is completed, just hide the message 'Swap complete' in 2 seconds.
     // It just stays there"). Only the done-and-good lines go; an error stays until the next action.
     clearTimeout(say.t);
     if (text && /^swap complete/i.test(text)) say.t = setTimeout(function () { say(p, ''); }, 2000);
+  }
+
+  // A FAILED LEDGER READ IS NOT A BALANCE, AND IT HAS TO SAY SO (RAZA 2026-11-07, on a swap box showing
+  // "Balance: —" that never recovered). loadAcct() retries the read five times and then stops. Before
+  // this, that was the end of it: the dash stayed for the life of the page, nothing on screen said why,
+  // and there was no way to ask again -- a failure cached as an answer ([[never-cache-a-failure-as-an-answer]]).
+  //
+  // The sentence is the Limit pane's, in this same fork (limit.js, `ac.failed`): "Could not read your
+  // balance from the ledger." Said there on submit, because that pane re-reads when the order is placed.
+  // This pane has no such step, so the one thing added is a control.
+  // The two writers allowed past say()'s guard — see the note there.
+  function sayBal(p, text, tone) { say.force = 1; try { say(p, text, tone); } finally { say.force = 0; } }
+  function sayRetry(p) {
+    sayBal(p, 'Could not read your balance from the XRP Ledger.', 'bad');
+    var n = $('.lxx-limit-note', p);
+    if (!n) return;
+    n.setAttribute('data-lxbalfail', '1');
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lx-dxaretry';
+    b.textContent = 'Try again';
+    b.addEventListener('click', function (e) {
+      e.preventDefault();
+      b.disabled = true;
+      b.textContent = 'Reading…';
+      // A PERSON ASKING IS NOT THE SIXTH AUTOMATIC ATTEMPT. The counter is what stopped the loop; a
+      // click that did not reset it would fail once and go straight back to giving up.
+      loadAcct.tries = 0;
+      loadAcct(true).then(function () {
+        var pp = pane();
+        if (pp) paintStatic(pp);
+      });
+    });
+    n.appendChild(document.createTextNode(' '));
+    n.appendChild(b);
+  }
+  // PAINTSTATIC OWNS THIS NOTE, because it is already the function that runs on init, on every side flip
+  // and after every retry lands -- so the message appears when the read gives up and goes when it works.
+  //
+  // Only ever written over an EMPTY note or its own: a live quote error ("no route", "too small") is
+  // about the swap the reader is building and outranks a balance they are not being asked for yet.
+  function balanceNote(p) {
+    var n = $('.lxx-limit-note', p);
+    var ours = !!(n && n.getAttribute('data-lxbalfail'));
+    if (acct.failed) {
+      // Written over whatever is in the slot, which is the precedence say() now enforces. Rebuilt only
+      // when it is not already standing, so a Try again button mid-click is not replaced under the
+      // pointer by an identical one.
+      if (acct.done) { if (!(ours && n.querySelector('button.lx-dxaretry'))) sayRetry(p); return; }
+      // STILL TRYING, and the reader who pressed Try again is owed that much -- otherwise the sentence
+      // they just acted on vanishes for the fifteen seconds the retries take and then reappears. Said
+      // only to someone already told once: the first automatic attempts happen before anyone has seen
+      // a dash, and a pane that announces every read would be noise.
+      if (ours) { sayBal(p, 'Reading your balance from the XRP Ledger…', 'warn'); n.setAttribute('data-lxbalfail', '1'); }
+      return;
+    }
+    if (ours) say(p, '');
   }
 
   // ---- the account ---------------------------------------------------------------------------------
@@ -191,13 +267,19 @@
       var line = ((r[2] && r[2].lines) || []).filter(function (l) { return l.currency === cur && l.account === a.issuer; })[0];
       loadAcct.tries = 0;
       acct = {
-        key: key, at: Date.now(), spend: s ? s.spendable : 0,
+        key: key, at: Date.now(), spend: s ? s.spendable : 0, inc: reserve.inc,
         line: !!line, bal: line ? Math.max(0, Number(line.balance)) : 0, frozen: !!(line && (line.freeze || line.freeze_peer))
       };
       return acct;
     }).catch(function () {
-      acct = { key: key, at: 0 };
-      if ((loadAcct.tries = (loadAcct.tries || 0) + 1) <= 5) {
+      // `failed` SAYS WHICH KIND OF EMPTY THIS IS. An account that does not exist yet comes back from
+      // the branch above with spend 0 and line false -- a real answer. Here there is no answer at all,
+      // and the two were indistinguishable: both left acct without `spend`, so payBalance() returned
+      // null and the row printed a dash either way. `done` is set once the retries are spent, which is
+      // the moment balanceNote() is allowed to say so out loud. Named as in limit.js.
+      var tries = (loadAcct.tries = (loadAcct.tries || 0) + 1);
+      acct = { key: key, at: 0, failed: true, done: tries > 5 };
+      if (!acct.done) {
         setTimeout(function () { loadAcct(true).then(function () { var pp = pane(); if (pp) paintStatic(pp); }); }, 2500);
       }
       return acct;
@@ -218,9 +300,61 @@
     var v = lxx().iouValue(value);
     return v ? { currency: s.currency, issuer: s.issuer, value: v } : null;
   }
+  // Will this swap have to open a trust line? Only a buy receives the token, and only an account that
+  // does not already hold it pays for one.
+  function opensLine(p) { return side(p) !== 'sell' && !acct.line; }
+  function lineReserve() { return Number(acct.inc) > 0 ? Number(acct.inc) : 0.2; }
+
+  // WHAT THIS SWAP CAN ACTUALLY SPEND, which on a buy is not acct.spend.
+  //
+  // RAZA 2026-11-04, buying RLUSD against 0.1425 XRP: the box showed that as the balance, the Swap
+  // button was live, the quote drew — and the refusal only arrived at the END of the wallet flow,
+  // "Not enough XRP — holding RLUSD reserves 0.2 XRP on top of this swap."
+  //
+  // spendableXrp() is not wrong; it is answering a different question. It is handed the OwnerCount the
+  // account has NOW, and the owner this swap is about to create does not exist yet: receiving a token
+  // you do not hold opens a trust line, and the ledger locks one more reserve increment behind it for
+  // as long as the line exists. So the pending increment is taken off HERE, in the one function the
+  // Balance line, the %/MAX buttons, the open-order note and validate() all read — the same discipline
+  // as [[max-rounds-a-balance-up]]. Three callers computing their own spendable is exactly how the
+  // button stayed live over a balance that could not pay.
+  //
+  // Null, not zero, while the read is unknown: acct.spend is absent on a failed load, and 0 there would
+  // read as "you have nothing", which is a different and wronger claim ([[absent-has-many-causes]]).
   function payBalance(p) {
     if (!addr() || acct.key == null) return null;
-    return side(p) === 'sell' ? acct.bal : acct.spend;
+    if (side(p) === 'sell') return acct.bal;
+    if (acct.spend == null) return null;
+    return Math.max(0, acct.spend - (opensLine(p) ? lineReserve() : 0));
+  }
+
+  // ONE SENTENCE FOR "this does not fit in the balance", wherever it is noticed. It was written three
+  // times — on the quote, in validate(), and again inside doSwap() after the wallet step had already
+  // begun — and the three did not agree: only the last one knew about the trust line, which is why it
+  // was the only one that caught this and the worst possible moment to catch it.
+  //
+  // Returns '' when the amount fits, so a caller can tell "affordable" from "unknown" and neither is
+  // guessed. Charges the same total the swap will: amount + trading fee + the ledger's own fee.
+  function shortMsg(p, amt) {
+    var s = sides(p);
+    if (!(amt > 0)) return '';
+    if (s.pay.currency !== 'XRP') {
+      if (acct.bal == null) return '';
+      return amt > acct.bal + 1e-12 ? ('You only hold ' + fmt(acct.bal, 6) + ' ' + s.pay.code + '.') : '';
+    }
+    var sp = payBalance(p);
+    if (sp == null) return '';
+    if (amt + amt * feeRate() + 0.0001 <= sp + 1e-9) return '';
+    // The rate, not a literal 0.2% — a 250K LUMOS holder pays half that, and a swap with no fee at all
+    // must not be told it is paying one.
+    var fee = feeRate() > 0 ? (' The ' + (+(feeRate() * 100).toFixed(2)) + '% trading fee is paid on top.') : '';
+    if (!opensLine(p)) return 'Not enough XRP — ' + fmt(sp, 6) + ' is available after the reserve.' + fee;
+    // SAY WHY, because the number on screen will not add up otherwise (RAZA 2026-11-04, asking for the
+    // reserve rule to be explained). The reader is looking at a balance larger than the figure this
+    // sentence quotes, and the difference is a cost they have not met yet.
+    return 'Not enough XRP — ' + fmt(sp, 6) + ' of your balance can go into this swap. Receiving '
+      + s.get.code + ' opens a trustline, and the XRP Ledger locks ' + lineReserve()
+      + ' XRP behind every token you hold, for as long as you hold it.' + fee;
   }
 
   // ---- open orders this swap would leave short -----------------------------------------------------
@@ -301,11 +435,12 @@
     // 30ms after every side flip — the two moments the design relabels the button and the amount box
     // is emptied. Hooking the side button separately would be a second thing to keep in step.
     swapLabel(p);
-    setDis(p, !hasAmt(p));
+    setDis(p, blocked(p));
     var f = fields(p);
     var s = sides(p);
     var bal = payBalance(p);
     mark(frowMono(f[0]), addr() ? ('Balance: ' + (bal == null ? '—' : fmt(bal, 4) + ' ' + s.pay.code)) : 'Balance: —');
+    balanceNote(p);
     sumRow(p, 'slippage tolerance', (SLIP * 100).toFixed(1) + '%');
     sumRow(p, 'network fee', '0.00001 XRP');
     // TYPEABLE, LIKE STELLAR (RAZA 2026-09-16: "I should also be able to type into You receive and You pay calculates auto").
@@ -331,10 +466,20 @@
     if (/^Place (Buy|Sell) Order$/i.test((b.textContent || '').trim())) b.textContent = 'Swap';
   }
 
-  // Is there an amount to act on? Shared by the two callers below so they cannot disagree.
-  function hasAmt(p) {
+  // WHY THE BUTTON IS DIMMED, in one answer. It was `!hasAmt(p)` in both places, so paintStatic —
+  // which also runs when a retried balance read finally lands — would UNDIM a button the quote path
+  // had just dimmed over an unaffordable size, and the dimming would silently come and go while the
+  // refusal stayed on screen. The affordability check belongs in the same answer as the empty-box one.
+  function blocked(p) {
     var i = input(fields(p)[0]);
-    return num(i && i.value) > 0;
+    var amt = num(i && i.value);
+    if (!(amt > 0)) return true;
+    // A BALANCE THAT COULD NOT BE READ BLOCKS THE BUTTON TOO. `acct.at` is 0 on a failed read, so this
+    // used to fall through to "not blocked" and the button sat live over a balance nobody knew -- and
+    // shortMsg() answers '' for "affordable" AND for "unknown", so nothing downstream caught it either.
+    // The sentence and the Try again control are already on screen by then (balanceNote).
+    if (addr() && acct.failed) return true;
+    return !!(addr() && acct.at && shortMsg(p, amt));
   }
 
   function clearQuote(p) {
@@ -344,7 +489,7 @@
     // impossible order" — true of the order itself, but Stellar dims its CTA until a size is typed and
     // this pane now matches it. validate() still answers "Enter an amount." for anyone who gets past
     // the dimming, so nothing is lost if the gate is ever bypassed.
-    setDis(p, !hasAmt(p));
+    setDis(p, blocked(p));
     // A quote still in flight belongs to an amount that is gone. Without this, clearing the box (or
     // switching side) let a slow ripple_path_find land afterwards and write "You receive 17.84" under an
     // empty "You pay" (RAZA 2026-09-15).
@@ -488,10 +633,31 @@
     // name that merely contains the desktop one as a substring, so `.dxa-trade-cta` misses it entirely
     // — the first version of this rule greyed the desktop button and did nothing on the phone.
     st.textContent = '[data-lxunfill="1"] [class*="dxa-trade-cta"]{filter:grayscale(.25) opacity(.55)!important}'
-      // The margin for a note ABOVE the button — see the note on data-lxabove in say(). Matches
-      // Stellar's .lxda-swaperr{margin:0 0 9px}. Scoped to the attribute, so the Limit pane's note
-      // keeps limit.js's below-the-button spacing.
-      + '.lxx-limit-note[data-lxabove="1"]{margin:0 2px 9px!important}';
+      // A note ABOVE the button is STELLAR'S NOTE, so it is set like Stellar's — see data-lxabove in
+      // say(). RAZA 2026-11-04: "tiny, cramped text that overlaps or distorts the Swap panel layout",
+      // asking for it to "match the clean layout of Stellar and NEAR trade forms".
+      //
+      // It inherits limit.js's shared rule, which is written for a one-line status UNDER a button:
+      // centred, 13px, opacity .85. Centring is what makes a two-line sentence read as ragged, and the
+      // dimming is what makes it look tiny. Stellar's slot is
+      //   .lxda-swaperr{color:var(--red);font-size:12.5px;font-weight:600;line-height:1.4;margin:0 0 9px}
+      // — left-aligned, heavier, full strength. Those metrics, exactly, and NEAR's note reads the same.
+      //
+      // Deliberately NOT a filled banner with its own border: neither Stellar nor NEAR has one, so a
+      // banner here would make this the odd pane out, which is the opposite of what was asked for.
+      //
+      // Scoped to the attribute, so the Limit pane's note — still below its button, and the reason the
+      // shared rule is written the way it is — keeps limit.js's spacing and centring untouched.
+      + '.lxx-limit-note[data-lxabove="1"]{margin:0 2px 9px!important;text-align:left!important;'
+      + 'font-size:12.5px!important;font-weight:600!important;line-height:1.4!important;opacity:1!important}'
+      // THE TRY AGAIN CONTROL beside that note (sayRetry). Styled HERE and not borrowed: the orders
+      // panel's .lxo-retry lives in a different layer, and a button that depends on another layer being
+      // on the page is a button that ships unstyled the day it is not. Small and inline, because it
+      // sits at the end of a sentence rather than in an empty panel the way the orders one does.
+      + '.lxx-limit-note .lx-dxaretry{margin-left:8px;height:22px;padding:0 9px;border-radius:6px;'
+      + 'border:1px solid var(--border);background:transparent;color:var(--text);font:inherit;'
+      + 'font-size:11.5px;font-weight:700;line-height:1;cursor:pointer;vertical-align:middle}'
+      + '.lxx-limit-note .lx-dxaretry:hover{color:var(--accent,#7c8cff);border-color:var(--accent,#7c8cff)}';
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -520,7 +686,18 @@
     // a balance warning, which is about the account rather than the size, is left alone.
     var staleNote = $('.lxx-limit-note', p);
     if (staleNote && staleNote.textContent === SAT_MSG) say(p, '');
-    setDis(p, false);                 // a new size is innocent until the check says otherwise
+    // ASK THE CHECK HERE RATHER THAN ASSUMING A NEW SIZE IS INNOCENT. This was setDis(p, false), and
+    // the assumption behind it — that whoever knows better will dim afterwards — holds for the caller
+    // at the top of quote(), which does exactly that on the line after it calls this. It does not hold
+    // for the SIMULATED quote that same branch kicks off: that lands ~800ms later and comes back
+    // through here, so the button undimmed itself under a standing "Not enough XRP" sentence.
+    // Measured on RAZA's own account, 1000 XRP against a 0.134453 balance: dimmed for 0.8s, live from
+    // then on — the 2026-11-04 report ("preventing the swap button from enabling") returning by a
+    // different route.
+    //
+    // And a balance that could not be READ dims too, which is a check that can never arrive later:
+    // shortMsg() answers '' for "unknown" exactly as it does for "affordable".
+    setDis(p, !!(addr() && (acct.failed || (acct.at && shortMsg(p, amt)))));
     var recv = input(f[1]);
     // NOT OVER THE BOX BEING TYPED IN: the receive amount is the user's own figure while it has focus.
     if (recv && document.activeElement !== recv) recv.value = plainNum(floorTo(out, 6));
@@ -672,11 +849,15 @@
     // MORE THAN THE ACCOUNT HOLDS. ripple_path_find answers with what the balance CAN buy, not what was
     // typed, so the rate collapsed and "price impact" read 695%. Estimate at the page price instead and
     // say why the swap cannot go ahead.
-    var bal = payBalance(p);
-    if (me && acct.at && bal != null && amt > bal + 1e-12) {
+    var short = me && acct.at ? shortMsg(p, amt) : '';
+    if (short) {
       if (d && d.price > 0) applyQuote(p, amt, s.pay.currency === 'XRP' ? amt / d.price : amt * d.price, null, true);
       simQuote(p, s, amt, my);
-      say(p, 'You only have ' + fmt(bal, 6) + ' ' + s.pay.code + (s.pay.currency === 'XRP' ? ' available after the reserve.' : '.'), 'bad');
+      // AND DIM THE BUTTON (RAZA 2026-11-04: "preventing the swap button from enabling"). This has to
+      // follow applyQuote, not precede it — that call does setDis(p,false) for the new size, so a
+      // dimming set first would be cleared a line later and the button would look pressable again.
+      setDis(p, true);
+      say(p, short, 'bad');
       return;
     }
     if (!me) {
@@ -776,14 +957,13 @@
     // data-lxdis Stellar sets on its CTA.
     if (quote.unfillable) return (acct.key != null && !acct.failed && shortMsg(p, amt)) || SAT_MSG;   // balance first (X9)
     if (acct.key == null) return 'Reading your balance — try again in a moment.';
-    var s = sides(p);
-    if (s.pay.currency === 'XRP') {
-      var fee = amt * feeRate();
-      if (amt + fee + 0.0001 > acct.spend + 1e-9) return 'Not enough XRP — ' + fmt(acct.spend, 6) + ' is available after the reserve, and the 0.2% fee is paid on top.';
-    } else if (amt > acct.bal + 1e-12) {
-      return 'You only hold ' + fmt(acct.bal, 6) + ' ' + a.code + '.';
-    }
-    return '';
+    // AND REFUSE WHEN THE READ FAILED, rather than submit blind. shortMsg() cannot tell this caller
+    // apart from an affordable swap (both are ''), so without this the click went through to the wallet
+    // with no balance check at all. limit.js refuses with this sentence for the same reason.
+    if (acct.failed) return 'Could not read your balance from the XRP Ledger. Try again in a moment.';
+    // Both sides, one sum, the same wording the quote already put on screen. This used to charge the
+    // XRP side against acct.spend directly, which does not know about the trust line this swap opens.
+    return shortMsg(p, amt);
   }
 
   // "NO ROUTE" IS USUALLY TRUE AND ALMOST ALWAYS THE WRONG EXPLANATION (RAZA 2026-09-17: selling 0.000761 RIPPLEDICK,
@@ -882,10 +1062,18 @@
     var step = Promise.resolve();
     if (needLine) {
       step = rpc('server_info', {}).then(function (si) {
-        var inc = Number((((si || {}).info || {}).validated_ledger || {}).reserve_inc_xrp) || 0.2;
-        if (s.pay.currency === 'XRP' && amt * (1 + feeRate()) + inc + 0.0001 > acct.spend + 1e-9) {
-          throw new Error('Not enough XRP — holding ' + s.get.code + ' reserves ' + inc + ' XRP on top of this swap.');
-        }
+        // THE BACKSTOP, NOT THE GATE ANY MORE. This was the only check that knew a trust line costs a
+        // reserve, so it was the only one that caught an unaffordable buy — at the very end, after the
+        // quote and the click. payBalance() now takes the increment off everywhere, so by the time the
+        // reader gets here the button was dimmed and the sentence was already on screen.
+        //
+        // It still runs, because the balance behind that sentence can be up to 20 seconds old and the
+        // reserve itself can move. Refresh the increment from this read and ask the SAME function, so
+        // the two can never word it differently.
+        var inc = Number((((si || {}).info || {}).validated_ledger || {}).reserve_inc_xrp);
+        if (isFinite(inc) && inc > 0) acct.inc = inc;
+        var late = shortMsg(p, amt);
+        if (late) throw new Error(late);
         // THE TRUST LINE EXPLAINS ITSELF TOO (RAZA 2026-09-17, on the fee memo). This is the one prompt of the three with
         // nothing on it but "TrustSet, limit 1000000000" — the least recognisable transaction in the whole product.
         if (b) b.textContent = 'Approve the ' + s.get.code + ' trust line (1 of ' + steps + ')…';
