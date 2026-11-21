@@ -19,6 +19,11 @@
   window.__lxxWallet = 1;
 
   var RPC = 'https://xrplcluster.com/';
+  // The platform fee collector. Read-only here — this file never builds a payment — but it is what
+  // tells a bridge's fee leg apart from an ordinary payment, so the activity feed needs it. Injected
+  // and checksum-verified by xrpladdr.js at build time, never written literally in a browser source;
+  // that injector aborts the build if this placeholder ever goes missing from the file.
+  var BR_COLLECTOR = '__LX_XRPL_COLLECTOR__';
   var $ = function (s, r) { return (r || document).querySelector(s); };
 
   // THE DESIGN'S NUMBERS GO BEFORE THEY CAN BE READ (RAZA 2026-09-17: "there's a flash bug when i refresh. It shows that i
@@ -751,8 +756,12 @@
     m.__lxFor = btn;
     m.setAttribute('data-lxcode', code);
     m.setAttribute('data-lxiss', iss);
-    var h = '<button type="button" data-lxmi="view">' + menuSvg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>') + ' View asset</button>'
-      + '<button type="button" data-lxmi="pin">' + menuSvg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>')
+    // XRP has no asset page of its own — /trade/xrpl/<code>-<issuer> needs an issuer, so on the native
+    // row this item could only ever be a dead entry. Gated on `iss` exactly like Copy issuer address
+    // below, which has been gated that way since it was written.
+    var h = '';
+    if (iss) h += '<button type="button" data-lxmi="view">' + menuSvg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>') + ' View asset</button>';
+    h += '<button type="button" data-lxmi="pin">' + menuSvg('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>')
       + (pinnedList().indexOf(pinKey) >= 0 ? ' Unpin' : ' Pin to top') + '</button>';
     if (iss) h += '<button type="button" data-lxmi="copy">' + menuSvg('<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>') + ' Copy issuer address</button>';
     h += '<div class="divider"></div>'
@@ -1993,6 +2002,11 @@
     swap: '<path d="M7 10l-3 3 3 3M4 13h11M17 14l3-3-3-3M20 11H9"/>',
     lp: '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>',
     order: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    // Stellar's own bridge glyph, copied from its `bridge:` entry rather than drawn again — two
+    // discs joined by an arrow. `.activity-icon.bridge` was already in the inherited sheet (see the
+    // note above); it was the only kind in that list with no glyph here, so a bridge row would have
+    // fallen through to IC.swap and worn the swap mark.
+    bridge: '<circle cx="5" cy="12" r="2.4"/><circle cx="19" cy="12" r="2.4"/><line x1="7.4" y1="12" x2="16.6" y2="12"/><polyline points="14 9.6 16.6 12 14 14.4"/>',
     contract: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'
   };
   function actIcon(kind) {
@@ -2102,6 +2116,134 @@
     b.appendChild(n);
   }
 
+  // ---- Bridges -------------------------------------------------------------------------------------
+  //
+  // A BRIDGE LEFT NO TRACE ON THIS PAGE. Every row below is built from a payment's shape, and a
+  // LumosCore bridge is a payment to an address the wallet knows nothing about — so all nine bridges
+  // on the account I measured rendered as "Sent · To r…", indistinguishable from paying a stranger.
+  // Measured on rUdnku…X1tY: 18 of the 25 rows this block shows were bridge legs, and not one of
+  // them said so. lumoscore.com's wallet has had a bridge row since CCTP shipped ("Cross-chain swap
+  // · via Circle CCTP · <chain>"), so this is the XRPL side of a row Stellar already draws.
+  //
+  // THE MARKER IS ON THE FEE, NOT ON THE TRANSFER. Each send site submits TWO payments: the bridge
+  // itself, to a gateway / vault / per-quote deposit address, and a separate platform fee to the
+  // collector — and it is the FEE that carries lx:ax / lx:th / lx:ni. Reading the marked payment as
+  // the bridge would label a few drops sent to our own fee account as the user's cross-chain
+  // transfer. These rules are nibridge.js's, unchanged, because they were proved against real
+  // transfers there; this is the same evidence read on a different page, not a second opinion.
+  //
+  // THE FEE LEG KEEPS ITS OWN ROW, deliberately. Stellar's bridge charges its fee as a separate
+  // transaction too, and Stellar's wallet neither hides nor renames it — it has no knowledge of the
+  // collector at all. A wallet is a statement: money that left the account stays visible. So this
+  // identifies the TRANSFER and leaves the fee exactly as it reads today.
+  var BR_MEMO = { 'lx:ax': 'ax', 'lx:th': 'th', 'lx:ni': 'ni' };
+  var BR_LABEL = { ax: 'Axelar', th: 'THORChain', ni: 'NEAR Intents' };
+  // THORChain abbreviates the chain in its memo — an Avalanche transfer reads '=:a:0x…'. These are
+  // from THORChain's own memo-length-reduction table, not inferred; anything absent from it stays
+  // unnamed, because a row naming the wrong destination is worse than one naming none.
+  var BR_TH_ABBR = { a: 'AVAX', b: 'BTC', c: 'BCH', e: 'ETH', g: 'GAIA', s: 'BSC', d: 'DOGE', r: 'THOR' };
+  var BR_TH_NAME = { BTC: 'Bitcoin', ETH: 'Ethereum', BCH: 'Bitcoin Cash', LTC: 'Litecoin',
+    DOGE: 'Dogecoin', AVAX: 'Avalanche', BSC: 'BNB Chain', BASE: 'Base', SOL: 'Solana',
+    TRON: 'Tron', GAIA: 'Cosmos Hub', THOR: 'THORChain' };
+  var BR_AX_NAME = { 'xrpl-evm': 'XRPL EVM', hedera: 'Hedera', ethereum: 'Ethereum',
+    stellar: 'Stellar', monad: 'Monad', solana: 'Solana', polygon: 'Polygon' };
+
+  function brAscii(hx) {
+    var s = '';
+    try {
+      var h = String(hx || '');
+      for (var i = 0; i + 1 < h.length; i += 2) {
+        var c = parseInt(h.substr(i, 2), 16);
+        if (!(c >= 32 && c < 127)) return '';      // not printable ASCII: not one of ours
+        s += String.fromCharCode(c);
+      }
+    } catch (e) { return ''; }
+    return s;
+  }
+  function brMemos(tx) {
+    var ms = (tx && tx.Memos) || [], out = [];
+    for (var i = 0; i < ms.length; i++) {
+      var d = ((ms[i] && ms[i].Memo) || {}).MemoData;
+      if (!d) continue;
+      var s = brAscii(d);
+      if (s) out.push(s);
+    }
+    return out;
+  }
+  // Axelar names its destination in a TYPED memo, which is a different field from the plain data
+  // memos above: MemoType 'type' = 'interchain_transfer', MemoType 'destination_chain' = the chain.
+  function brByType(tx) {
+    var ms = (tx && tx.Memos) || [], o = {};
+    for (var i = 0; i < ms.length; i++) {
+      var m = (ms[i] && ms[i].Memo) || {};
+      if (m.MemoType) o[brAscii(m.MemoType)] = brAscii(m.MemoData || '');
+    }
+    return o;
+  }
+  // The route a transfer names for itself, or null. Axelar and THORChain both stamp their own
+  // destination into the XRPL transaction, so those resolve from this account's own history with
+  // nothing else asked for.
+  function brSelfNamed(tx) {
+    var bt = brByType(tx);
+    if (bt.type === 'interchain_transfer') {
+      var dc = bt.destination_chain || '';
+      return { route: 'ax', place: BR_AX_NAME[dc] || dc || '' };
+    }
+    var ds = brMemos(tx);
+    for (var k = 0; k < ds.length; k++) {
+      if (ds[k].indexOf('=:') !== 0) continue;
+      var seg = (ds[k].split(':')[1] || '').split('.')[0] || '';
+      var code = BR_TH_ABBR[seg.toLowerCase()] || seg.toUpperCase();
+      return { route: 'th', place: BR_TH_NAME[code] || '' };
+    }
+    return null;
+  }
+
+  // Returns { <transfer hash>: {route, place} } for every bridge visible in this account's window.
+  //
+  // NEAR Intents stamps nothing on the transfer — it is a plain payment to a per-quote deposit
+  // address — so its only evidence is the lx:ni fee beside it, and it is found by pairing. Both legs
+  // are submitted back to back, so a gap of more than five ledgers is a different action that merely
+  // happened nearby, not this bridge's partner. A fee whose partner falls outside the window pairs
+  // with nothing and the row reads exactly as it does today, which is the right way to degrade: this
+  // adds a label to rows it can prove, and never guesses one.
+  function bridgeMap(me, list) {
+    var outs = [], fees = [], found = {};
+    (list || []).forEach(function (e) {
+      var tx = e.tx || e.tx_json || {}, mm = e.meta || e.metaData || {};
+      if (tx.TransactionType !== 'Payment') return;
+      if (mm.TransactionResult !== 'tesSUCCESS') return;
+      if (tx.Account !== me || !tx.Destination) return;
+      var hash = tx.hash || e.hash || '';
+      if (!hash) return;
+      var rec = { tx: tx, hash: hash, L: e.ledger_index || tx.ledger_index || tx.inLedger || 0 };
+      var mark = null;
+      brMemos(tx).forEach(function (s) { if (BR_MEMO[s]) mark = BR_MEMO[s]; });
+      // THE MARKER IS CHECKED BEFORE THE SELF-PAYMENT RULE, and that order is load-bearing when the
+      // account being read IS the collector — which is how this gets tested. Its fee payments go
+      // from the collector to the collector, so a "self-payment is a swap" test placed first
+      // silently discards every marker on the one account that has them.
+      if (mark && tx.Destination === BR_COLLECTOR) { rec.route = mark; fees.push(rec); return; }
+      if (tx.Destination === me) return;                      // a self-payment is a swap
+      outs.push(rec);
+    });
+
+    outs.forEach(function (rec) {
+      var r = brSelfNamed(rec.tx);
+      if (r) found[rec.hash] = r;
+    });
+    fees.forEach(function (f) {
+      var best = null, gap = 1e9;
+      outs.forEach(function (rec) {
+        if (found[rec.hash] || rec.tx.Destination === BR_COLLECTOR) return;
+        var d = Math.abs((rec.L || 0) - (f.L || 0));
+        if (d <= 5 && d < gap) { gap = d; best = rec; }
+      });
+      if (best) found[best.hash] = { route: f.route, place: '' };
+    });
+    return found;
+  }
+
   function paintActivity(me) {
     var block = $('.activity-block');
     if (!block) return;
@@ -2110,6 +2252,32 @@
     if (!rowT) return;
     rowT = rowT.cloneNode(true);
     dayT = dayT ? dayT.cloneNode(true) : null;
+
+    // THE DESIGN'S MOCK ROWS ARE THIS FUNCTION'S ROW TEMPLATE, WHICH IS WHY THEY ARE STILL IN THE
+    // MARKUP. The two querySelector calls above are how the row and day-divider shapes are obtained;
+    // strip the nine invented rows out of the page and `if (!rowT) return` fires, and the wallet
+    // renders no activity at all, ever. So they cannot simply be deleted — [[lumoscore-orphaned-lookups]].
+    //
+    // But they must not be LOOKED AT either. Until account_tx resolves they sit under this account's
+    // real balances as nine fabricated rows in APT — "Sent APT", "Swap APT → USDT", "Received CELL
+    // airdrop" — i.e. the exact content the comment below calls the most dangerous on the page, just
+    // earlier in the timeline. RAZA 2026-11-06: "when wallet page is refreshed, it shows incorrect
+    // data for split seconds and then fixes". It is not a flash on this chain: account_tx is a ledger
+    // read, so the lie is on screen for as long as that round trip takes.
+    //
+    // The clones are already taken by the two lines above, so the block can be emptied RIGHT NOW,
+    // before the request goes out — nothing below needs the originals. Every path after this already
+    // rewrites the block (innerHTML='' on the rows path, activityNote on the empty and error paths),
+    // so this only moves the clear EARLIER; it does not add a second writer.
+    //
+    // Deliberately identical to Stellar's prep(): same five divs, same class, same inline style. The
+    // point is that the two chains hold the same space while loading, not that this one looks nicer.
+    block.innerHTML = '';
+    for (var sk = 0; sk < 5; sk += 1) {
+      var skel = el('div', 'lx-skel');
+      skel.style.cssText = 'height:40px;margin:11px 22px';
+      block.appendChild(skel);
+    }
 
     rpc('account_tx', { account: me, limit: 25, ledger_index_min: -1, ledger_index_max: -1 })
       .then(function (r) {
@@ -2124,6 +2292,9 @@
         if (!txs.length) { activityNote('No activity on this account yet.'); return; }
         block.innerHTML = '';
         var lastDay = '';
+        // One pass over the whole window before any row is drawn, because a NEAR Intents transfer is
+        // identified by a fee that may sit either side of it — a per-row test cannot see that.
+        var bridges = bridgeMap(me, txs);
 
         txs.forEach(function (t) {
           var tx = t.tx || t.tx_json || {};
@@ -2177,6 +2348,11 @@
           var outgoing = isPayment && !self && tx.Account === me;
           var through = isPayment && !self && !incoming && !outgoing;
           var other = incoming ? tx.Account : tx.Destination;
+          // A bridge is an outgoing payment that the pre-pass proved is one. It is still a Sent
+          // payment in every mechanical respect — the amount, the sign and the colour below are all
+          // correct for it already — so this only replaces what the row SAYS, and nothing else
+          // branches on it.
+          var bridge = bridges[tx.hash || t.hash || ''] || null;
 
           // The AMM pair, and which way it went. AMMCreate and AMMDelete are the first and last
           // deposits into a pool, so they belong with their ordinary counterparts rather than under
@@ -2216,7 +2392,8 @@
           // NOT `kind` — that name is already the row's LABEL, a few lines up, and reusing it here
           // silently renamed every pool row "lp (failed)" instead of "Added liquidity". `var` is
           // function-scoped, so the second declaration is the same binding, and nothing warns.
-          var icoKind = isLp ? 'lp'
+          var icoKind = bridge ? 'bridge'
+            : isLp ? 'lp'
             : (tt === 'OfferCreate' || tt === 'OfferCancel') ? 'order'
             : incoming ? 'received'
             : (isPayment && !through && !self) ? 'sent'
@@ -2241,9 +2418,15 @@
           var ty = row.querySelector('.type');
           if (ty) {
             var okTx = (meta.TransactionResult === 'tesSUCCESS');
-            ty.textContent = (isPayment
+            ty.textContent = (bridge ? 'Cross-chain swap' : isPayment
               ? (self ? 'Swap' : incoming ? 'Received' : through ? 'Routed through' : 'Sent')
               : kind) + (okTx ? '' : ' (failed)');
+            // "Cross-chain swap" is Stellar's wording, not a new one, so the same event reads the
+            // same way on both wallets. No branch is needed here for the asset mark: a bridge is an
+            // outgoing payment, so the `isPayment && got00` arm below already appends the asset that
+            // LEFT — which is the only one that can be named. Axelar and THORChain hand out their
+            // own asset on the far chain under a ticker this page cannot confirm, and the amount
+            // delivered is unknowable from this ledger because the relay fee comes out of it.
             if (isLp && lpA && lpB) {
               // Stellar's shape exactly: the verb, then both sides of the pool with their own marks —
               // "Added liquidity ⊗ HOLA + ⊗ CANNACOIN". The row used to be the verb and nothing else.
@@ -2289,7 +2472,21 @@
             // Built as nodes rather than innerHTML: `other` is an address off a public ledger, and this
             // file's rule is that ledger-supplied values go in through textContent.
             var addrEl = null;
-            if (!self && !through && other) {
+            // A BRIDGE'S COUNTERPARTY IS NOT WORTH NAMING, AND ITS ROUTE IS. "To rfmS3z…2Yhw" is an
+            // Axelar gateway, a THORChain vault or a deposit address that exists for one quote and
+            // is never seen again — true, and of no use to the person reading their own history.
+            // Stellar's row reads "via Circle CCTP · Base"; this is that line with the route this
+            // ledger actually carries. The chain is appended only when the transfer named one, so a
+            // NEAR Intents row (which names none on the ledger) reads "via NEAR Intents" rather
+            // than inventing a destination.
+            //
+            // Set through `who` rather than written here: the bottom of this block ends
+            // `if (addrEl) … else mt.textContent = who`, so anything written to .meta directly is
+            // overwritten a few lines later by an empty string. One writer owns this line.
+            if (bridge) {
+              who = 'via ' + (BR_LABEL[bridge.route] || 'bridge')
+                + (bridge.place ? ' · ' + bridge.place : '');
+            } else if (!self && !through && other) {
               mt.textContent = incoming ? 'From ' : 'To ';
               addrEl = document.createElement('a');
               addrEl.className = 'lx-addr-link';

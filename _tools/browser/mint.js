@@ -193,8 +193,15 @@
     // MEASURED, NOT GUESSED (2026-09-17): the three live launchpad issuers were each funded with 1.02 XRP and each still
     // holds 1.019953 — so 0.02 covers every fee the issuer ever pays. The old `+0.5` locked an extra 0.48 XRP (~$0.62) in a
     // dead account on every launch, for nothing.
+    //
+    // RAISED to 0.05 on 2026-11-03. That measurement was taken on a quiet ledger, where a transaction
+    // costs ~10 drops; it says what the issuer spent, not what it can afford. The issuer signs FOUR
+    // transactions, so 0.02 bought it 5,000 drops each — and on 2026-11-03 the open ledger fee was
+    // 5,020, which is the wrong side of that line. 0.05 funds FEE_BUDGET (12,500) per transaction, and
+    // feeDrops() refuses the launch outright rather than start one the funding cannot finish.
+    // The extra 0.03 XRP (~$0.04) is locked in the dead issuer, same as the rest.
     var base = (reserveXrp == null ? 1 : reserveXrp);
-    var fund = base + 0.02;
+    var fund = base + 0.05;
 
     // What the pool gets. The review page states a liquidity share -- 75% of supply against the XRP
     // side -- so the pool has to actually be created, or that row is a promise the launch breaks.
@@ -469,6 +476,34 @@
     });
   }
 
+  // WHAT THE LEDGER COSTS RIGHT NOW, not what it costs when it is quiet. `base_fee_xrp` from
+  // server_info is the REFERENCE fee -- 10 drops -- and it does not move however busy the ledger gets.
+  // The open ledger fee does. On 2026-11-03 it sat at 5020 drops, 502x the reference, while this file
+  // was still paying 20; the health bot caught it as four XRPL writes failing `highFee`, because
+  // rippled will not autofill past 10x the reference either.
+  //
+  // Underpaying is worse than being refused. A transaction below the open ledger fee is not rejected,
+  // it is QUEUED, and the LastLedgerSequence set below expires it about a minute later -- so it looks
+  // like success and fails halfway. For a twelve-step launch that is the one outcome this whole flow
+  // exists to prevent: a minted token, a funded issuer and no pool.
+  var FEE_FLOOR = 20;        // a quiet ledger; what this function paid before 2026-11-03
+  var FEE_BUDGET = 12500;    // per tx, and the plan funds exactly this: 0.05 XRP over the issuer's 4 txs
+
+  function feeDrops(feeRes) {
+    var d = (feeRes && feeRes.result && feeRes.result.drops) || {};
+    var open = Number(d.open_ledger_fee);
+    var min = Number(d.minimum_fee);
+    var want = Math.max(isFinite(open) ? open : 0, isFinite(min) ? min : 0, FEE_FLOOR);
+    // Past what the plan funded, stop before the first prompt instead of starting something that
+    // cannot finish. The number is quoted so the message is checkable rather than a shrug.
+    if (want > FEE_BUDGET) {
+      throw new Error('The XRP Ledger is unusually busy right now — ' + want + ' drops per transaction, '
+        + 'against ' + FEE_FLOOR + ' normally. A launch is twelve transactions and could stall part-way, '
+        + 'so it has not been started. Please try again in a few minutes.');
+    }
+    return want;
+  }
+
   // Fill in the three fields the ledger requires and the wallet does not supply for us. Sequence is
   // re-read before every issuer transaction rather than incremented locally: a locally tracked
   // sequence drifts the moment anything else touches the account, and the failure is a silent
@@ -477,15 +512,15 @@
     return Promise.all([
       rpc('account_info', { account: tx.Account, ledger_index: 'current' }),
       rpc('server_info', {}),
+      rpc('fee', {}),
     ]).then(function (r) {
       var acct = r[0] && r[0].result && r[0].result.account_data;
       if (!acct) throw new Error('That account is not on the ledger yet.');   // the issuer or the pool account
       var info = r[1] && r[1].result && r[1].result.info;
-      var base = (info && info.validated_ledger && info.validated_ledger.base_fee_xrp) || 0.00001;
       var ledger = (info && info.validated_ledger && info.validated_ledger.seq) || 0;
       var out = Object.assign({}, tx);
       out.Sequence = acct.Sequence;
-      out.Fee = String(Math.max(10, Math.round(base * 1e6 * 2)));
+      out.Fee = String(feeDrops(r[2]));
       if (ledger) out.LastLedgerSequence = ledger + 20;
       return out;
     });
@@ -661,7 +696,10 @@
           // before anything is signed.
           var needXrp = plan.reduce(function (sum, s) {
             return sum + ((s.by === 'user' && typeof s.tx.Amount === 'string') ? Number(s.tx.Amount) / 1e6 : 0);
-          }, 0) + 0.2 + 0.01;                              // + the user's own trust line reserve, + fees
+          }, 0) + 0.2 + 0.05;                              // + the user's own trust line reserve, + fees
+          // The fee allowance was 0.01 until 2026-11-03 — 2,500 drops across the user's four wallet
+          // prompts, which a busy ledger passes without noticing. 0.05 matches FEE_BUDGET per
+          // transaction, so this check and the issuer funding now assume the same ledger.
           return rpc('account_info', { account: lxc.address(), ledger_index: 'validated' }).then(function (ai) {
             var ad = ai && ai.result && ai.result.account_data;
             if (ad) {
