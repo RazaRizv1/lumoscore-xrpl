@@ -2135,11 +2135,25 @@
 
   // What the account already trusts, straight from account_lines. LP tokens are excluded the same way
   // the balance list excludes them: they are pool shares, not assets somebody chose to trust.
+  // One line in place of the list (2026-11-21): reading, signed out, or a FAILED read -- never "No trustlines yet"
+  // for a read that did not answer, and never the design's Aptos placeholder list.
+  function tlNote(text, count) {
+    $$('#tlExistingCount').forEach(function (c) { c.textContent = count || ''; });
+    $$('#tlExistingList').forEach(function (list) {
+      list.innerHTML = '';
+      var e = document.createElement('div');
+      e.className = 'tl-empty';
+      e.textContent = text;
+      list.appendChild(e);
+    });
+  }
+  function tlReadFailed() { tlNote("Couldn't read your trustlines. Reload to try again.", '—'); }
   function tlPaintExisting() {
     var me = addr();
     if (!me) return;
     return window.lxx.allLines(rpc, me)
       .then(function (r) {
+        if (!r || r.incomplete) { tlReadFailed(); return; }
         var lines = (r.lines || []).filter(function (l) {
           return !(window.lxx && window.lxx.isLpToken && window.lxx.isLpToken(l.currency));
         });
@@ -2160,7 +2174,7 @@
             lines.forEach(function (l) { list.appendChild(tlRow(l, inc)); });
           });
         });
-      }).catch(function () {});
+      }).catch(function () { tlReadFailed(); });
   }
 
   function tlRow(l, inc) {
@@ -2354,6 +2368,11 @@
     if (!window.__lxtlPainted && $('#tlExistingList') && window.__lxxData) {
       window.__lxtlPainted = 1;
       tlPaintExisting();
+    } else if (!window.__lxtlPainted && !window.__lxtlCleared && $('#tlExistingList')) {
+      // THE DESIGN'S APTOS LIST IS NEVER SHOWN AS YOURS (2026-11-21): "4 active · 2.0 APT reserved", USDC · Circle
+      // 0x0766…, with Remove buttons, stood until wallet data arrived -- forever when that read failed, and signed out.
+      window.__lxtlCleared = 1;
+      tlNote(addr() ? 'Reading your trustlines…' : 'Connect a wallet to see your trustlines.');
     }
   }
 
@@ -2461,7 +2480,11 @@
     var n = 0;
     var t = setInterval(function () {
       tick();
-      if (++n > 40) clearInterval(t);                             // ~20s
+      if (++n > 40) {
+        clearInterval(t);                                          // ~20s
+        // Wallet data never came (its read failed or is still retrying): read the trustlines directly (2026-11-21).
+        if (!window.__lxtlPainted && $('#tlExistingList') && addr()) { window.__lxtlPainted = 1; tlPaintExisting(); }
+      }
     }, 500);
     document.addEventListener('click', function (e) {
       var b = e.target && e.target.closest && e.target.closest('button, a');

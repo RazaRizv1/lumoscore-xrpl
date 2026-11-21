@@ -324,7 +324,7 @@
     H.loading = Promise.all([
       rpc('account_info', { account: who, ledger_index: 'validated' }),
       rpc('server_info', {}),
-      lxx().allLines(rpc, who).catch(function () { return { lines: [] }; })
+      lxx().allLines(rpc, who).catch(function () { return { lines: [], incomplete: true }; })
     ]).then(function (r) {
       var si = ((r[1] && r[1].info) || {}).validated_ledger || {};
       H.reserve = { base: +si.reserve_base_xrp > 0 ? +si.reserve_base_xrp : 1, inc: +si.reserve_inc_xrp > 0 ? +si.reserve_inc_xrp : 0.2 };
@@ -334,7 +334,7 @@
       // as an empty wallet.
       H.unfunded = !!(r[0] && r[0].error === 'actNotFound');
       // AN INCOMPLETE TRUST-LINE LIST IS A FAILED READ TOO (2026-11-20): a page that did not answer is not "no RLUSD line".
-      H.failed = (!info && !H.unfunded) || !!(r[2] && r[2].incomplete);
+      H.failed = (!info && !H.unfunded) || (!H.unfunded && !!(r[2] && r[2].incomplete));
       var hold = [], lines = [];
       if (info) {
         var sp = lxx().spendableXrp(info.Balance, info.OwnerCount, H.reserve);

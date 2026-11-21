@@ -177,7 +177,7 @@
     S.loading = Promise.all([
       rpc('account_info', { account: who, ledger_index: 'validated' }),
       rpc('server_info', {}),
-      lxx().allLines(rpc, who).catch(function () { return { lines: [] }; })
+      lxx().allLines(rpc, who).catch(function () { return { lines: [], incomplete: true }; })
     ]).then(function (r) {
       var si = ((r[1] && r[1].info) || {}).validated_ledger || {};
       S.reserve = { base: +si.reserve_base_xrp > 0 ? +si.reserve_base_xrp : 1, inc: +si.reserve_inc_xrp > 0 ? +si.reserve_inc_xrp : 0.2 };
@@ -185,7 +185,7 @@
       // actNotFound is an ANSWER (the account is not on the ledger yet); no account_data for any other reason is a
       // failed read and must not be reported as an empty wallet (bug X23, as qorders.js).
       S.unfunded = !!(r[0] && r[0].error === 'actNotFound');
-      S.failed = !info && !S.unfunded;
+      S.failed = (!info && !S.unfunded) || (!S.unfunded && !!(r[2] && r[2].incomplete));   // 2026-11-21: incomplete lines = failed read
       var list = [];
       if (info) {
         var sp = lxx().spendableXrp(info.Balance, info.OwnerCount, S.reserve);
@@ -274,6 +274,13 @@
         : S.unfunded ? 'This wallet is not funded yet' : 'No assets in this wallet yet';
       list.appendChild(none);
       return;
+    }
+    if (S.failed) {   // XRP was read, the tokens were not (2026-11-21): say so, rather than offer XRP as the whole wallet
+      var warn = document.createElement('div');
+      warn.className = 'ad-item lx-cpitem';
+      warn.style.cssText = 'cursor:default;opacity:.7;justify-content:center';
+      warn.textContent = "Couldn't read your tokens — close and reopen to try again";
+      list.appendChild(warn);
     }
     rows.forEach(function (a) {
       var b = document.createElement('button');
