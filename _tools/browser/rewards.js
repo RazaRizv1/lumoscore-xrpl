@@ -283,28 +283,48 @@
   // There is no source for past XRPL payouts, so this says so. The inherited version filled the same
   // table with invented Stellar recipients under an "illustrative" label; on a page about who got
   // paid, an empty state is the only honest option.
+  // RE-ASSERTED, AND SAFE TO RE-ASSERT (2026-11-21). The design redraws this card -- its invented Round 23 rows --
+  // on every tab click and round change. Those redraws only failed to show because the design threw ("reading
+  // 'nets'") on any round past its sample data, which was a console error on every click. So: the design's round
+  // change never runs (nothing to show for any round; a capture listener stops it before it reaches the select),
+  // and this re-applies from an observer on the card. Every write is guarded, so a pass that changes nothing ends
+  // the loop.
+  var RT = 'Round report not published yet',
+      RS = 'Rewards on the XRP Ledger have been paid every round since 15 December 2025.',
+      RR = 'Recipient lists for XRP Ledger rounds will appear here once they are published.',
+      RP = 'Ten Ecosystem pools · LUMOS/XRP native pool · holder rewards';
+  var repObs = 0;
   function report() {
     var rows = $('#repRows');
     if (!rows) return;
-    rows.innerHTML = '';
-    var r = el('div', 'rr');
-    r.style.cssText = 'justify-content:center;opacity:.7;padding:22px 8px;text-align:center';
-    r.textContent = 'Recipient lists for XRP Ledger rounds will appear here once they are published.';
-    rows.appendChild(r);
+    var f = rows.firstElementChild;
+    if (!(rows.children.length === 1 && f && f.getAttribute('data-lxrep') === '1')) {
+      rows.innerHTML = '';
+      var r = el('div', 'rr');
+      r.setAttribute('data-lxrep', '1');
+      r.style.cssText = 'justify-content:center;opacity:.7;padding:22px 8px;text-align:center';
+      r.textContent = RR;
+      rows.appendChild(r);
+    }
 
     var c = $('#repCount');
     if (c) {
-      c.textContent = '0';
+      if (c.textContent !== '0') c.textContent = '0';
       // The design's "Showing <b>6</b> of" kept its mock six beside a count of none.
       var shown = c.previousElementSibling;
       if (shown && shown.tagName === 'B' && shown.textContent !== '0') shown.textContent = '0';
     }
     var t = $('#repTitle');
-    if (t) t.textContent = 'Round report not published yet';
+    if (t && t.textContent !== RT) t.textContent = RT;
     var s = $('#repSub');
-    if (s) s.textContent = 'Rewards on the XRP Ledger have been paid every round since 15 December 2025.';
+    if (s && s.textContent !== RS) s.textContent = RS;
     var p = $('#psum');
-    if (p) p.textContent = 'Ten Ecosystem pools · LUMOS/XRP native pool · holder rewards';
+    if (p && p.textContent !== RP) p.textContent = RP;
+    if (!repObs) {
+      repObs = 1;
+      document.addEventListener('change', function (e) { if (e.target && e.target.id === 'roundSel') e.stopPropagation(); }, true);
+      try { new MutationObserver(function () { report(); }).observe(rows.closest('.rep') || rows.parentElement, { childList: true, subtree: true, characterData: true }); } catch (e) {}
+    }
   }
 
   // The page's prose still described the wrong chain throughout: "Based on your connected Aptos
