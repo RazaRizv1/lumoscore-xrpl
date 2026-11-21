@@ -320,6 +320,7 @@
     if (s && s.textContent !== RS) s.textContent = RS;
     var p = $('#psum');
     if (p && p.textContent !== RP) p.textContent = RP;
+    fixRounds();
     if (!repObs) {
       repObs = 1;
       document.addEventListener('change', function (e) { if (e.target && e.target.id === 'roundSel') e.stopPropagation(); }, true);
@@ -387,9 +388,16 @@
       img.src = '/assets/networks/xrpl.png';
     }
     var sel = $('#roundSel');
-    if (!sel || sel.__lxx) return;
-    sel.__lxx = 1;
-    var rounds = [], n = 20, d = new Date(2026, 3, 15), now = new Date();
+    if (!sel) return;
+    // EACH PROGRAMME COUNTS ITS OWN ROUNDS (RAZA 2026-11-21): Native LP's first round was 15 Dec 2025, whale holder's
+    // 1 Apr 2026, Ecosystem LP's 15 Apr 2026. The list follows the selected programme tab and is rebuilt when it changes
+    // (report() calls this from its observer). It used to start at the design's 'Round 20 = 15 Apr 2026' for all three.
+    var a = document.querySelector('.ptabs button.pt.active'), lab = a ? (a.textContent || '') : '';
+    var st = /whale/i.test(lab) ? [2026, 3, 1] : /eco/i.test(lab) ? [2026, 3, 15] : [2025, 11, 15];
+    var key = st.join('-');
+    if (sel.__lxx === key) return;
+    sel.__lxx = key;
+    var rounds = [], n = 1, d = new Date(st[0], st[1], st[2]), now = new Date();
     while (d <= now) {
       rounds.push([n, new Date(d.getTime())]);
       n++;
@@ -404,7 +412,6 @@
       sel.appendChild(o);
     });
     sel.value = String(rounds[0][0]);
-    sel.addEventListener('change', function () { setTimeout(report, 0); });
   }
 
   // ---- what each programme has actually paid out -----------------------------------------------------
