@@ -450,6 +450,8 @@
     var meta = el('div', 'meta');
     var nm = el('div', 'nm');
     plain(nm, name + (frozen ? ' (frozen)' : ''));
+    nm.style.cursor = 'pointer';
+    ico.style.cursor = 'pointer';
     markVerified(nm, tok);
     meta.appendChild(nm);
 
@@ -610,6 +612,17 @@
         return;
       }
 
+      // THE ASSET'S NAME AND ICON OPEN ITS PAGE (auditor 2026-11-23): the same place "Trade on DEX" goes,
+      // the asset page for a token and the market for XRP. The row's data-lxkey is "XRP" or "CODE-ISSUER".
+      var nmHit = t.closest('tr[data-lxkey] .asset-id .lx-aico, tr[data-lxkey] .asset-id .nm, .asset-row[data-lxkey] .asset-ico, .asset-row[data-lxkey] .asset-name');
+      if (nmHit) {
+        var key = nmHit.closest('[data-lxkey]').getAttribute('data-lxkey') || 'XRP';
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        window.location.href = key === 'XRP' ? '/trade/xrpl' : ('/trade/xrpl/' + encodeURIComponent(key));
+        return;
+      }
+
       var tb = t.closest('[data-lxtrade]');
       if (tb) { e.preventDefault(); e.stopImmediatePropagation(); openTradeMenu(tb); return; }
       var mb = t.closest('[data-lxmenu]');
@@ -724,7 +737,11 @@
   function rowMenuCss(m) {
     if (document.getElementById('lx-rowmenu-base-css')) return;
     var b = m.querySelector('button');
-    if (b && getComputedStyle(b).display === 'flex') return;   // the design's own rules are present
+    // THE PANEL'S OWN BACKGROUND decides it, not the button's display (auditor 2026-11-23, phone Trade menu): the
+    // Trade menu's own sheet makes its buttons flex, so on the phone build -- which has no .row-menu rules --
+    // the old test passed and the menu showed as see-through text over the next card.
+    var mbg = getComputedStyle(m).backgroundColor;
+    if (b && mbg && mbg !== 'transparent' && mbg !== 'rgba(0, 0, 0, 0)') return;   // the design's own rules are present
     var st = document.createElement('style');
     st.id = 'lx-rowmenu-base-css';
     // Scoped to .lx-rowmenu -- the class THIS file puts on the menus it builds -- so it cannot
@@ -1079,6 +1096,8 @@
     var nr = el('div', 'asset-name-row');
     var anm = el('span', 'asset-name');
     plain(anm, name + (frozen ? ' (frozen)' : ''));
+    anm.style.cursor = 'pointer';
+    ico.style.cursor = 'pointer';
     nr.appendChild(anm);
     // The phone's card carried no tick at all — not LUMOS's either — so the two renderers disagreed
     // about every holding. Same rule, same node shape, so applyTicks() reaches both.
@@ -1132,7 +1151,19 @@
       + '#assetList .asset-row .qa-row-btn.icon-only{flex:0 0 38px;width:38px;padding:8px 0}'
       // Same red trash glyph the desktop row gets, which is scoped to #assetsTable over there.
       + '#assetList .asset-row .qa-row-btn.lx-rmtrust svg{stroke:var(--red,#ea3943)}'
-      + '#assetList .asset-row .qa-row-btn svg{width:15px;height:15px;flex:0 0 auto}';
+      + '#assetList .asset-row .qa-row-btn svg{width:15px;height:15px;flex:0 0 auto}'
+      // NAME BESIDE BALANCE (auditor 2026-11-23, NEAR phone wallet): the balance block took the whole row and
+      // squeezed the name column to zero, so "SINGULARTY" ran under "63,645,074 SINGULARTY". The balance now takes at
+      // most 48% of the card and wraps between number and symbol (never inside either); the name gets the rest.
+      + '#assetList .asset-row .asset-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '#assetList .asset-row .asset-balance-block{flex:0 1 auto;min-width:min-content;max-width:48%}'
+      // RECENT ACTIVITY ON A PHONE (auditor 2026-11-23): "Received [logo] NEAR" had 100px and needed 140, so the
+      // token's symbol was clipped while the amount column never gave way. The logo drops to 18px, the label keeps
+      // its width (up to 56% of the row), and the amount wraps its symbol under the number instead.
+      + '@media (max-width:640px){.activity-row .lx-act-ilogo{width:18px;height:18px;line-height:18px;margin-left:5px;margin-right:4px;font-size:9px}'
+      + '.activity-row .activity-info{flex:1 0 auto;max-width:56%}'
+      + '.activity-row .activity-amt{flex:0 1 auto;min-width:min-content}'
+      + '.activity-row .activity-amt .a1{white-space:normal}}';
     document.head.appendChild(st);
   }
 

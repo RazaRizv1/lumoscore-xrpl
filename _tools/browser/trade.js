@@ -61,6 +61,10 @@
     return (v / 1e6).toFixed(2) + 'M';
   }
 
+  // PHONE LIST FIGURES TO THREE DIGITS (auditor 2026-11-23): "Vol $129.43K · 12,161 trades" needed 189px on a 375 phone and
+  // had 155, so "trades" wrapped to a line of its own. "Vol $129K · 12.2K trades" fits; counts under 10,000 stay exact.
+  function lxS3(s){s=String(s);var r=s.replace(/([0-9]+(?:[.][0-9]+)?)([KMB])/,function(m,n,u){var p=(+n).toPrecision(3);if(p.indexOf(".")>=0)p=p.replace(/0+$/,"").replace(/[.]$/,"");return p+u;});return r!==s?r:s.replace(/([0-9]{3,})[.][0-9]+/,"$1");}
+  function lxCnt(v){var x=+v;if(!isFinite(x))return String(v);if(x<1e4)return x.toLocaleString("en-US");var u=x>=1e6?"M":"K";return lxS3(String(x>=1e6?x/1e6:x/1e3)+u);}
   function count(v) {
     if (v == null || !isFinite(v)) return '—';
     return Math.round(v).toLocaleString('en-US');
@@ -517,8 +521,8 @@
     // `usd` was already a parameter here and was simply never used.
     var usdOn = (DEN === 'usd' && usd != null);
 
-    var vol = el('div', 'mdx-mk-vol', 'Vol ' + (usdOn ? money(t.v * usd) : (vol0(t.v) + ' XRP')));
-    if (t.x != null) vol.appendChild(el('span', 'mdx-mk-trades', count(t.x) + ' trades'));
+    var vol = el('div', 'mdx-mk-vol', 'Vol ' + lxS3(usdOn ? money(t.v * usd) : (vol0(t.v) + ' XRP')));
+    if (t.x != null) vol.appendChild(el('span', 'mdx-mk-trades', lxCnt(t.x) + ' trades'));
     meta.appendChild(vol);
     top.appendChild(meta);
 
