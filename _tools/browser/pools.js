@@ -654,6 +654,7 @@
   function setPageInfo(from, to, total) {
     var pg = $('#paginationAll');
     if (!pg) return;
+    pg.classList.add('lx-snapd');
     var strongs = pg.querySelectorAll('div:first-child strong');
     if (strongs.length > 1) {
       strongs[0].textContent = from + '–' + to;
@@ -1404,7 +1405,7 @@
       // same thing Stellar does. How many rows to serve is a separate question and a real cost
       // decision — see the note in load().
       var tabCount = $('#poolTabs .count');
-      if (tabCount && d.total != null) tabCount.textContent = count(d.total);
+      if (tabCount && d.total != null) { tabCount.textContent = count(d.total); tabCount.classList.add('lx-snapd'); }
 
       paintSummary(d.summary);
       paintOverview(d);
