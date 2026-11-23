@@ -146,7 +146,8 @@ const STYLE = '<style id="lx-xwrongchain-css">'
   + '{pointer-events:none!important;cursor:not-allowed!important;box-shadow:none!important;'
   // opacity for everything the design does not fight over; filter for the swap CTA, where an inline
   // important opacity outranks any stylesheet. Both are harmless on a button that only needs one.
-  + 'opacity:.42!important;filter:grayscale(1) opacity(.55)!important}'
+  // DIMMED ORANGE, NOT GREY (RAZA 2026-11-23): the look of an inactive Swap with the right wallet, still not pressable.
+  + 'opacity:.55!important;filter:grayscale(.25)!important}'
   // STICKY, so the warning is still on screen at the point the reader reaches a control it explains
   // (RAZA 2026-10-17: "make view only mode message as sticky upon scrolling so that its always there
   // right infront of the users"). Scrolled away, the disabled buttons further down the page have no
