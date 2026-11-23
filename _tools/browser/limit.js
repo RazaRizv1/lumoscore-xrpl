@@ -707,11 +707,116 @@
         } catch (e) {}
         setTimeout(function () { busy = false; b.textContent = label; }, 1800);
         load(true);
+        ooLoad();
         try { if (window.__lxxBookReload) window.__lxxBookReload(); } catch (e) {}
       });
     }).catch(function (err) {
       stop((err && err.message) || 'The order was not placed.', 'bad');
     });
+  }
+
+  // ---- YOUR OPEN ORDERS ON THIS ASSET, under the Limit form (RAZA's auditor 2026-11-23: "Limit order not viewable
+  // or cancellable on the Trade page") ------------------------------------------------------------------------
+  // Same panel, same look and the same rules as Stellar's (_dexassetdata.js renderOpenOffers): every limit pane on
+  // the page (desktop .dxa-pane-limit, phone .mdxa-pane-limit), hidden when there is nothing to show, five rows and
+  // then "Show all N", and Cancel goes straight to the wallet -- the wallet's own approval is the confirmation.
+  // Rows are { id, sell, amt, px, ctr, note?, btn? } with amt in THIS asset and px in ctr per one of it.
+  function ooCss() {
+    if (document.getElementById('lx-oo-css')) return;
+    var st = document.createElement('style'); st.id = 'lx-oo-css';
+    st.textContent = '.lx-oo{margin-top:14px;padding-top:12px;border-top:1px solid var(--border,rgba(255,255,255,.1))}'
+      + '.lx-oo-h{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-bottom:6px;color:var(--text,#e8e8ee)}'
+      + '.lx-oo-n{font:600 11px/1 "JetBrains Mono",monospace;padding:3px 6px;border-radius:6px;background:var(--surface-2,rgba(255,255,255,.06));color:var(--text-muted,#8b90a0)}'
+      + '.lx-oo-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border,rgba(255,255,255,.06));font-size:12.5px}'
+      + '.lx-oo-row:first-of-type{border-top:0}'
+      + '.lx-oo-side{flex:0 0 auto;font-weight:700;font-size:11px;padding:2px 7px;border-radius:5px}'
+      + '.lx-oo-side.lx-oo-b{color:var(--green,#22c55e);background:rgba(34,197,94,.12)}.lx-oo-side.lx-oo-s{color:var(--red,#ea3943);background:rgba(234,57,67,.12)}'
+      + '.lx-oo-txt{flex:1 1 auto;min-width:0;font-family:"JetBrains Mono",monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text,#e8e8ee)}'
+      + '.lx-oo-txt small{display:block;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted,#8b90a0);font-size:11px}'
+      + '.lx-oo-x{flex:0 0 auto;padding:5px 10px;border-radius:7px;border:1px solid var(--border,rgba(255,255,255,.14));background:transparent;color:var(--text,#e8e8ee);font:600 12px/1 inherit;cursor:pointer}'
+      + '.lx-oo-more{margin-top:4px;padding:4px 0;border:0;background:none;color:var(--accent,#ea6a2c);font:600 12px/1 inherit;cursor:pointer}'
+      + '.lx-oo-x:hover{border-color:var(--red,#ea3943);color:var(--red,#ea3943)}.lx-oo-x[disabled]{opacity:.6;cursor:default}';
+    document.head.appendChild(st);
+  }
+  function ooEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function ooNum(n) { if (!(n > 0)) return '0'; if (n >= 1000) return Math.round(n).toLocaleString('en-US'); if (n >= 1) return String(+n.toFixed(4)); return String(+n.toPrecision(6)); }
+  // Prices under a millionth keep the site's subscript-zero form (0.0₉3102), never "3.1e-10".
+  function ooPx(x) {
+    if (!(x > 0)) return '–';
+    if (x >= 1e-6) return String(+x.toPrecision(6));
+    var z = Math.floor(-Math.log10(x)) - 1, d = String(Math.round(x * Math.pow(10, z + 5)));
+    var sub = String(z).split('').map(function (c) { return '₀₁₂₃₄₅₆₇₈₉'.charAt(+c); }).join('');
+    return '0.0' + sub + d.replace(/0+$/, '');
+  }
+  var OO_ROWS = [];
+  function ooPaint(rows, code) {
+    OO_ROWS = rows || [];
+    ooCss();
+    $('[class*="dxa-pane-limit"]').forEach(function (p) {
+      var box = $('.lx-oo', p);
+      if (!OO_ROWS.length) { if (box) box.style.display = 'none'; return; }
+      if (!box) {
+        box = document.createElement('div'); box.className = 'lx-oo';
+        var c = $('[class*="dxa-trade-cta"]', p);
+        if (c && c.parentNode) c.parentNode.insertBefore(box, c.nextSibling); else p.appendChild(box);
+      }
+      box.style.display = '';
+      box.innerHTML = '<div class="lx-oo-h">Your open orders <span class="lx-oo-n">' + OO_ROWS.length + '</span></div>'
+        + OO_ROWS.map(function (o, i) {
+          return '<div class="lx-oo-row"' + (i >= 5 && !box.__lxAll ? ' style="display:none"' : '') + '>'
+            + '<span class="lx-oo-side ' + (o.sell ? 'lx-oo-s' : 'lx-oo-b') + '">' + (o.sell ? 'Sell' : 'Buy') + '</span>'
+            + '<span class="lx-oo-txt">' + ooNum(o.amt) + ' ' + ooEsc(code) + ' <small>@ ' + ooPx(o.px) + ' ' + ooEsc(o.ctr) + (o.note ? ' · ' + ooEsc(o.note) : '') + '</small></span>'
+            + '<button type="button" class="lx-oo-x" data-lxoo="' + ooEsc(o.id) + '" data-lxlbl="' + ooEsc(o.btn || 'Cancel') + '">' + ooEsc(o.btn || 'Cancel') + '</button></div>';
+        }).join('')
+        + (OO_ROWS.length > 5 && !box.__lxAll ? '<button type="button" class="lx-oo-more">Show all ' + OO_ROWS.length + '</button>' : '');
+    });
+    if (window.__lxOOwired) return;
+    window.__lxOOwired = 1;
+    document.addEventListener('click', function (e) {
+      var t = e.target; if (!t || !t.closest) return;
+      var mo = t.closest('.lx-oo-more');
+      if (mo) { e.preventDefault(); e.stopPropagation(); var bx = mo.closest('.lx-oo'); bx.__lxAll = 1; $('.lx-oo-row', bx).forEach(function (r) { r.style.display = ''; }); mo.remove(); return; }
+      var b = t.closest('.lx-oo-x[data-lxoo]');
+      if (!b || b.disabled) return;
+      e.preventDefault(); e.stopPropagation();
+      var id = b.getAttribute('data-lxoo');
+      b.disabled = true; b.textContent = 'Confirm in wallet…';
+      ooCancel(id, function () { b.textContent = 'Cancelling…'; }).then(function () {
+        try { if (typeof window.lxToast === 'function') window.lxToast('Order cancelled'); } catch (x) {}
+        ooPaint(OO_ROWS.filter(function (o) { return String(o.id) !== String(id); }), ooCode());
+        setTimeout(ooLoad, 4000);
+      }).catch(function (err) {
+        b.disabled = false; b.textContent = b.getAttribute('data-lxlbl') || 'Cancel';
+        try { if (typeof window.lxToast === 'function') window.lxToast('Cancel failed — ' + ((err && err.message) || 'try again')); } catch (x) {}
+      });
+    }, true);
+  }
+  // XRPL: the account's offers from account_offers; a sell gives THIS asset (taker_gets), a buy receives it
+  // (taker_pays). Cancel is one OfferCancel by sequence through lxc.submit -- the wallet page's cancelOne.
+  function ooCode() { var a = asset(); return (a && a.code) || ''; }
+  function ooAmt(x) { return typeof x === 'string' ? { v: +x / 1e6, cur: 'XRP', iss: '' } : { v: +x.value, cur: x.currency, iss: x.issuer }; }
+  function ooName(c) { if (c === 'XRP') return 'XRP'; try { if (/^[0-9A-F]{40}$/i.test(c)) return window.lxx.decodeCurrency(c).display; } catch (e) {} return c; }
+  function ooLoad() {
+    var a = asset(), who = addr();
+    if (!a || !who || !a.issuer) { ooPaint([], ooCode()); return; }
+    var cur = currencyOf(a.code);
+    rpc('account_offers', { account: who, limit: 200 }).then(function (res) {
+      var rows = [];
+      (res.offers || []).forEach(function (o) {
+        var g = ooAmt(o.taker_gets), pz = ooAmt(o.taker_pays);
+        var isMe = function (x) { return x.iss === a.issuer && (x.cur === cur || x.cur === a.code); };
+        if (isMe(g)) rows.push({ id: o.seq, sell: true, amt: g.v, px: g.v > 0 ? pz.v / g.v : 0, ctr: ooName(pz.cur) });
+        else if (isMe(pz)) rows.push({ id: o.seq, sell: false, amt: pz.v, px: pz.v > 0 ? g.v / pz.v : 0, ctr: ooName(g.cur) });
+      });
+      ooPaint(rows, ooCode());
+    }).catch(function () {});
+  }
+  function ooCancel(seq, onSigned) {
+    if (!window.lxc || !window.lxc.submit) return Promise.reject(new Error('Connect an XRPL wallet first.'));
+    return window.lxc.submit({ TransactionType: 'OfferCancel', Account: addr(), OfferSequence: +seq }).then(function (hash) {
+      onSigned();
+      return waitValidated(hash);
+    }).then(function (r) { if (r && r.ok === false) throw new Error(r.code === 'timeout' ? 'Sent, not confirmed yet — check again in a moment.' : 'The ledger refused it (' + r.code + ').'); });
   }
 
   // ---- wiring ------------------------------------------------------------------------------------
@@ -784,6 +889,7 @@
       prefill(p);
       paint();
       load(false);
+      ooLoad();
       // The price feed lands after load, so prefill again once it has.
       var n = 0;
       (function waitPrice() {
