@@ -671,8 +671,9 @@
         // THE POOL FEE IS COLLECTED (RAZA 2026-09-17). The page has always billed `create + liq + pool`, but only `create`
         // was ever sent anywhere — the $10 pool line was displayed and never charged. lumoscore.com charges
         // `createFee + poolFee` to its collector, and this now matches it.
-        var feeXrp = cfg.usd ? ((cfg.usd.create + (cfg.usd.pool || 0)) / rate) : 0;
-        var liqXrp = cfg.usd ? (cfg.usd.liq / rate) : 0;
+        // An approved test wallet pays the minimum (launchpad.js sets __lxxTestWallet from /lxapi/testwallet).
+        var feeXrp = window.__lxxTestWallet ? 0.5 : (cfg.usd ? ((cfg.usd.create + (cfg.usd.pool || 0)) / rate) : 0);
+        var liqXrp = window.__lxxTestWallet ? 0.5 : (cfg.usd ? (cfg.usd.liq / rate) : 0);
 
         var v = j && j.result && j.result.info && j.result.info.validated_ledger;
         var reserve = v ? Number(v.reserve_base_xrp) : 1;

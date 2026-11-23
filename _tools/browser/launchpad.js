@@ -234,8 +234,11 @@
     // WHAT THE TOTAL HAS TO MEAN: every drop that leaves the wallet. It previously summed the three
     // priced rows and nothing else, so it under-reported by more than half — the ledger's own costs
     // were missing entirely, and the extra liquidity was missing on the review page.
-    var createXrp = USD.create / xrpUsd;
-    var liqXrp = USD.liq / xrpUsd + extraXrp();
+    // TEST WALLETS (RAZA 2026-11-23): an approved test wallet (admin "Test wallets"; /lxapi/testwallet) launches at the
+    // minimum, 0.5 XRP minting fee and 0.5 XRP of liquidity; mint.js charges the same. The ledger's reserves still apply.
+    var TW = !!window.__lxxTestWallet;
+    var createXrp = TW ? 0.5 : USD.create / xrpUsd;
+    var liqXrp = (TW ? 0.5 : USD.liq / xrpUsd) + extraXrp();
 
     // THE $10 POOL FEE WAS QUOTED NOWHERE AND CHARGED ANYWAY. NO BACKTICKS IN THIS COMMENT.
     //
@@ -270,7 +273,7 @@
     // of sight, which was the other half of the old reasoning and the half worth keeping. It gets its
     // own line under the total, because a wallet still needs that XRP on hand and discovering it at
     // the signing step is the surprise this panel exists to prevent.
-    var poolXrp = (USD.pool || 0) / xrpUsd;
+    var poolXrp = TW ? 0 : (USD.pool || 0) / xrpUsd;
 
     setCost('create', createXrp, createXrp * xrpUsd);
     setCost('liq', liqXrp, liqXrp * xrpUsd);
@@ -868,6 +871,20 @@
     }
 
     if (isForm) { wireNext(); wireIcon(); wireNumericFields(); }
+
+    // Is the connected wallet an approved test wallet? Asked per address, again when it changes; repaints the costs.
+    (function () {
+      var asked = null;
+      function check() {
+        var a = ''; try { a = (window.lxc && window.lxc.address && window.lxc.address()) || ''; } catch (e) {}
+        if (a === asked) return; asked = a;
+        function set(v) { if (!!window.__lxxTestWallet === v) return; window.__lxxTestWallet = v; try { paintCosts(); } catch (e) {} }
+        if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a)) { set(false); return; }
+        fetch('/lxapi/testwallet?net=xrpl&a=' + encodeURIComponent(a), { cache: 'no-store' }).then(function (r) { return r.json(); })
+          .then(function (j) { if (asked === a) set(!!(j && j.test)); }).catch(function () {});
+      }
+      check(); setInterval(check, 3000);
+    })();
 
     // Loud on purpose. Reduced pricing that ships unnoticed is a launchpad that charges 50 cents
     // for a $5 service, and nothing else on the page would ever say so.

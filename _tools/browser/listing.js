@@ -69,13 +69,23 @@
     if (to) { to.textContent = COLLECTOR; to.title = COLLECTOR; }
     if (!quote) { if (amt) amt.textContent = '—'; if (rate) rate.textContent = 'rate unavailable'; return; }
     if (amt) amt.textContent = money(quote.amount, 6) + ' XRP';
-    if (rate) rate.textContent = '1 XRP = $' + Number(quote.xrpUsd).toFixed(4);
+    if (rate) rate.textContent = quote.test ? 'Test price for this wallet' : ('1 XRP = $' + Number(quote.xrpUsd).toFixed(4));
+    // The headline price is the design's own "$250" text; a test wallet's quote replaces it, and it comes back on a
+    // switch to a normal wallet.
+    ['ltFee', 'ltFee2', 'ltFee3'].forEach(function (id) { var e = $(id); if (!e) return; if (e.__lxOrig == null) e.__lxOrig = e.textContent;
+      e.textContent = quote.test ? (money(quote.amount, 6) + ' XRP') : e.__lxOrig; });
   }
+  // TEST WALLETS (RAZA 2026-11-23): the quote is asked WITH the connected wallet, so an approved test wallet sees its
+  // minimum (0.5 of the coin, labelled as a test price); the server re-checks the paying address on submit. Asked again
+  // when the wallet changes, so connecting after the page loaded is not stuck on the normal price.
+  var quoteFor = null;
+  setInterval(function () { if (quoteFor !== null && me() !== quoteFor) loadQuote(); }, 3000);
   function loadQuote() {
-    return fetch(API, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+    var qa = me(); quoteFor = qa;
+    return fetch(API + (qa ? ('?a=' + encodeURIComponent(qa)) : ''), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
       var o = d && d.ok && d.options && d.options[0];
       if (!o || d.collector !== COLLECTOR) throw new Error('bad quote');
-      quote = { amount: o.amount, xrpUsd: d.xrpUsd, memo: d.memo, at: Date.now(), valid: (d.validForSeconds || 900) * 1000 };
+      quote = { amount: o.amount, xrpUsd: d.xrpUsd, memo: d.memo, test: !!d.test, at: Date.now(), valid: (d.validForSeconds || 900) * 1000 };
       paintQuote();
     }).catch(function () { quote = null; paintQuote(); });   // never a guessed price
   }
