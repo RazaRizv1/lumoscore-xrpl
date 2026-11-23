@@ -752,7 +752,7 @@
   function ooPaint(rows, code) {
     OO_ROWS = rows || [];
     ooCss();
-    $('[class*="dxa-pane-limit"]').forEach(function (p) {
+    $$('[class*="dxa-pane-limit"]').forEach(function (p) {
       var box = $('.lx-oo', p);
       if (!OO_ROWS.length) { if (box) box.style.display = 'none'; return; }
       if (!box) {
@@ -775,7 +775,7 @@
     document.addEventListener('click', function (e) {
       var t = e.target; if (!t || !t.closest) return;
       var mo = t.closest('.lx-oo-more');
-      if (mo) { e.preventDefault(); e.stopPropagation(); var bx = mo.closest('.lx-oo'); bx.__lxAll = 1; $('.lx-oo-row', bx).forEach(function (r) { r.style.display = ''; }); mo.remove(); return; }
+      if (mo) { e.preventDefault(); e.stopPropagation(); var bx = mo.closest('.lx-oo'); bx.__lxAll = 1; $$('.lx-oo-row', bx).forEach(function (r) { r.style.display = ''; }); mo.remove(); return; }
       var b = t.closest('.lx-oo-x[data-lxoo]');
       if (!b || b.disabled) return;
       e.preventDefault(); e.stopPropagation();
