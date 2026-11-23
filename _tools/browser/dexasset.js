@@ -1667,15 +1667,30 @@
     if(bar.classList.contains("lx-mtview")!==show)bar.classList.toggle("lx-mtview",show);
     [].slice.call(document.querySelectorAll(".panel-head h3")).forEach(function(h){ var t=(h.textContent||"").trim(); if(t!=="Recent Exchanges"&&t!=="My Trades")return; var w=show?"My Trades":"Recent Exchanges"; if(t!==w)h.textContent=w; });
   }catch(_){} }
+  // MY TRADES IS AS BIG AS THE TABS (RAZA 2026-11-23, from the NEAR audit "My trades option can be a bit bigger"): it was a
+  // fixed 13.5 px beside 18.2 px / 600 tabs on desktop. It takes the tab's size, weight and padding, but only when the tab
+  // is the bigger one -- on a phone the tabs are 11 px and the button is left as it is. Same rule as Stellar's _dexassetdata.js.
+  function sizeMyTrades(bar, b) {
+    var tb = bar.querySelector('.tab');
+    if (!tb) return;
+    var tcs = getComputedStyle(tb);
+    if (parseFloat(tcs.fontSize) > parseFloat(getComputedStyle(b).fontSize) + 0.5) {
+      b.style.fontSize = tcs.fontSize; b.style.fontWeight = tcs.fontWeight; b.style.lineHeight = tcs.lineHeight;
+      b.style.padding = tcs.paddingTop + ' ' + tcs.paddingRight + ' ' + tcs.paddingBottom + ' ' + tcs.paddingLeft;
+    }
+  }
   function ensureMyTrades() {
     var bar = document.querySelector('.tabs-bar');
-    if (!bar || bar.querySelector('.lx-mytrades')) return;
+    if (!bar) return;
+    var had = bar.querySelector('.lx-mytrades');
+    if (had) { sizeMyTrades(bar, had); return; }
     var b = el('button', 'lx-mytrades');
     b.type = 'button';
     b.textContent = 'My Trades';
     b.style.cssText = 'margin-left:auto;background:none;border:0;padding:6px 2px;font:inherit;font-size:13.5px;font-weight:700;'
       + 'color:var(--text);opacity:.6;cursor:pointer';
     bar.appendChild(b);
+    sizeMyTrades(bar, b);
   }
   if (!window.__lxxMyTrades) {
     window.__lxxMyTrades = 1;
