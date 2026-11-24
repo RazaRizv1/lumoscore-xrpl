@@ -436,10 +436,10 @@
     var hl = el('div', 'dex-mk-hl');
     var r1 = el('div', 'row');
     r1.appendChild(el('span', 'lab', 'H'));
-    r1.appendChild(el('span', 'v-h', xrp(t.hi)));
+    r1.appendChild((function (c, x) { var s = el('span', c); if (DEN === 'usd' && usd != null && x > 0) s.appendChild(el('span', 'lc-money', money(x * usd))); else s.textContent = xrp(x); return s; })('v-h', t.hi));
     var r2 = el('div', 'row');
     r2.appendChild(el('span', 'lab', 'L'));
-    r2.appendChild(el('span', 'v-l', xrp(t.lo)));
+    r2.appendChild((function (c, x) { var s = el('span', c); if (DEN === 'usd' && usd != null && x > 0) s.appendChild(el('span', 'lc-money', money(x * usd))); else s.textContent = xrp(x); return s; })('v-l', t.lo));
     hl.appendChild(r1); hl.appendChild(r2);
     c6.appendChild(hl);
     tr.appendChild(c6);
@@ -1664,7 +1664,7 @@
     // Price and change follow the denomination toggle; high/low does NOT, because it does not on
     // Stellar either — its header still reads (XLM) in $ mode.
     var map = { 'th-price': 'Last Price ' + denomLabel(), 'th-change': '24h Change ' + denomLabel(),
-      'th-hl': 'Day High / Low (XRP)' };
+      'th-hl': 'Day High / Low ' + denomLabel() };   // follows the toggle now (2026-11-24)
     for (var k in map) {
       var th = $('.dex-mk-table th.' + k);
       if (!th) continue;
