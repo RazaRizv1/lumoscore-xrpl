@@ -1380,9 +1380,21 @@
   // THE FALLBACK IS ONLY SAFE BEFORE SIGNING. Once the Batch has been submitted, a failure is
   // ambiguous — it may have applied — and retrying sequentially could charge the fee twice. So
   // anything that goes wrong from submit() onwards is reported, never retried.
+  // The minter of a LumosCore Launchpad token on either side of the swap, if it can be paid -- else "" (RAZA 2026-11-24).
+  function lxMinterQ(ids, me) {
+    ids = (ids || []).filter(Boolean);
+    function one(i) {
+      if (i >= ids.length) return Promise.resolve('');
+      return fetch('/lxapi/minters?net=xrpl&id=' + encodeURIComponent(ids[i])).then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (!d || !d.minter) return one(i + 1); return (d.receivable && d.minter !== me) ? d.minter : ''; })
+        .catch(function () { return ''; });
+    }
+    return Promise.race([one(0), new Promise(function (res) { setTimeout(function () { res(''); }, 2500); })]);
+  }
+  function lxMintIds(from, to) { return [to.issuer ? (to.currency + '-' + to.issuer) : '', from.issuer ? (from.currency + '-' + from.issuer) : '']; }
   function swapViaBatch(q, from, to, me, swapTx) {
     var submitted = false;
-    return feeInXrp(q.amt).then(function (feeXrp) {
+    return Promise.all([feeInXrp(q.amt), lxMinterQ(lxMintIds(from, to), me)]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
       return rpc('account_info', { account: me, ledger_index: 'validated' }, 6000).then(function (ai) {
         var seq = ai && ai.account_data && Number(ai.account_data.Sequence);
         if (!(seq > 0)) return null;                     // cannot number the inners; fall back
@@ -1391,11 +1403,13 @@
         var s = seq + 1;
         var fd = feeDrops(feeXrp);
         if (fd) {
+          var fm = mnt ? Math.floor(+fd * 0.3) : 0;
           raw.push(innerTx({
             TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-            Amount: fd,
+            Amount: fm > 0 ? String(+fd - fm) : fd,
             Memos: [feeMemo(from.code, to.code, 1, 1)]
           }, s++));
+          if (fm > 0) raw.push(innerTx({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm), Memos: [feeMemo(from.code, to.code, 1, 1)] }, s++));
         }
         raw.push(innerTx(swapTx, s++));
         if (raw.length < 2) return null;                 // a Batch needs at least two inners
@@ -1479,16 +1493,21 @@
 
     // 1. THE FEE (RAZA 2026-09-17), with a memo naming it.
     function runSequential() {
-      return feeInXrp(q.amt).then(function (feeXrp) {
+      return Promise.all([feeInXrp(q.amt), lxMinterQ(lxMintIds(from, to), me)]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
       var fd = feeDrops(feeXrp);
       steps = (fd ? 1 : 0) + (needLine ? 1 : 0) + 1;
       if (!fd) return null;
       stepNo += 1;
       setGo(false, 'Approve the platform fee (' + stepNo + ' of ' + steps + ')…');
+      var fm = mnt ? Math.floor(+fd * 0.3) : 0;
       return window.lxc.submit({
         TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-        Amount: fd,
+        Amount: fm > 0 ? String(+fd - fm) : fd,
         Memos: [feeMemo(from.code, to.code, stepNo, steps)]
+      }).then(function (h) {
+        if (!(fm > 0)) return h;
+        setGo(false, 'Approve the minter\u2019s share\u2026');
+        return window.lxc.submit({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm), Memos: [feeMemo(from.code, to.code, stepNo, steps)] }).then(function () { return h; }, function () { return h; });
       }).catch(function (e) {
         var m = (e && e.message) || '';
         throw new Error(/reject|denied|cancel/i.test(m) ? 'The platform fee was not approved, so nothing was swapped.' : m);

@@ -1902,8 +1902,19 @@
   // But make sure to mention in memo that the first trx is for fees"). It used to run after the swap so that a rejected swap
   // could never cost anything; first means a fee can be paid for a swap that is then rejected, and the messages below say so
   // rather than leaving someone to work it out from their balance. The memo names the charge on the wallet's review screen.
+  // The minter of a LumosCore Launchpad token on either side of the swap, if it can be paid -- else "" (RAZA 2026-11-24).
+  function lxMinterW() {
+    var me = addr(), ids = [swapTo && swapTo.issuer ? (swapTo.currency + '-' + swapTo.issuer) : '', swapFrom && swapFrom.issuer ? (swapFrom.currency + '-' + swapFrom.issuer) : ''].filter(Boolean);
+    function one(i) {
+      if (i >= ids.length) return Promise.resolve('');
+      return fetch('/lxapi/minters?net=xrpl&id=' + encodeURIComponent(ids[i])).then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (!d || !d.minter) return one(i + 1); return (d.receivable && d.minter !== me) ? d.minter : ''; })
+        .catch(function () { return ''; });
+    }
+    return Promise.race([one(0), new Promise(function (res) { setTimeout(function () { res(''); }, 2500); })]);
+  }
   function collectFee(amount) {
-    return feeInXrp(amount).then(function (feeXrp) {
+    return Promise.all([feeInXrp(amount), lxMinterW()]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
       // ASKED IN DROPS, THE UNIT ACTUALLY SENT. NO BACKTICKS IN THIS COMMENT.
       //
       // feeXrp is XRP and toDrops ROUNDS, so a dust swap gives a fee under one drop: toDrops returns
@@ -1914,11 +1925,16 @@
       if (!fd || !(+fd > 0)) return;
       var of = swapSteps || 2;
       swapSay('Approve the platform fee (' + (of - 1) + ' of ' + of + ') in your wallet…');
+      var fm = mnt ? Math.floor(+fd * 0.3) : 0;
       return window.lxc.submit({
         TransactionType: 'Payment', Account: addr(),
         Destination: COLLECTOR,
-        Amount: fd,
+        Amount: fm > 0 ? String(+fd - fm) : fd,
         Memos: [feeMemo(swapFrom.code, swapTo.code, of - 1, of)]
+      }).then(function (h) {
+        if (!(fm > 0)) return h;
+        swapSay('Approve the minter\u2019s share in your wallet\u2026');
+        return window.lxc.submit({ TransactionType: 'Payment', Account: addr(), Destination: mnt, Amount: String(fm), Memos: [feeMemo(swapFrom.code, swapTo.code, of - 1, of)] }).then(function () { return h; }, function () { return h; });
       }).catch(function (e) {
         var m = (e && e.message) || '';
         throw new Error(/reject|denied|cancel/i.test(m)
