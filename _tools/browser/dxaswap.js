@@ -1166,7 +1166,7 @@
     // Decide once, in drops, and let every branch read the same answer.
     var feeD = null;
     if (feeXrp > 0) { var _d = lxx().toDrops(feeXrp); if (_d && +_d > 0) feeD = _d; }
-    var mintP = feeD ? lxMinterX([s.get.issuer ? (s.get.currency + '-' + s.get.issuer) : '', s.pay.issuer ? (s.pay.currency + '-' + s.pay.issuer) : ''], me) : Promise.resolve('');
+    var mintP = (feeD && !(feeXrp / feeRate() < 0.999999)) ? lxMinterX([s.get.issuer ? (s.get.currency + '-' + s.get.issuer) : '', s.pay.issuer ? (s.pay.currency + '-' + s.pay.issuer) : ''], me) : Promise.resolve('');
     // THE EXACT COUNT, now that the fee amount is a real number rather than a rate. doSwap had to
     // guess from feeRate() alone to label the trust line, which it signs before this quote exists; the
     // same arithmetic repeated here with feeXrp settles it, and the attribute is corrected so the fee

@@ -1904,6 +1904,9 @@
   // rather than leaving someone to work it out from their balance. The memo names the charge on the wallet's review screen.
   // The minter of a LumosCore Launchpad token on either side of the swap, if it can be paid -- else "" (RAZA 2026-11-24).
   function lxMinterW() {
+    // MINTER SHARE ONLY ON SWAPS WORTH 1+ (RAZA 2026-11-24).
+    var _xv = swapFrom && swapFrom.currency === 'XRP' ? +(swapQuote && swapQuote.inAmount) : (swapTo && swapTo.currency === 'XRP' ? +(swapQuote && swapQuote.out) : 1);
+    if (_xv < 1) return Promise.resolve('');
     var me = addr(), ids = [swapTo && swapTo.issuer ? (swapTo.currency + '-' + swapTo.issuer) : '', swapFrom && swapFrom.issuer ? (swapFrom.currency + '-' + swapFrom.issuer) : ''].filter(Boolean);
     function one(i) {
       if (i >= ids.length) return Promise.resolve('');

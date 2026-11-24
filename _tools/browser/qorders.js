@@ -1394,7 +1394,7 @@
   function lxMintIds(from, to) { return [to.issuer ? (to.currency + '-' + to.issuer) : '', from.issuer ? (from.currency + '-' + from.issuer) : '']; }
   function swapViaBatch(q, from, to, me, swapTx) {
     var submitted = false;
-    return Promise.all([feeInXrp(q.amt), lxMinterQ(lxMintIds(from, to), me)]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
+    return Promise.all([feeInXrp(q.amt), lxMinterQ(((isXrp(from) ? +q.amt : (isXrp(to) ? +q.out : 1)) < 1) ? [] : lxMintIds(from, to), me)]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
       return rpc('account_info', { account: me, ledger_index: 'validated' }, 6000).then(function (ai) {
         var seq = ai && ai.account_data && Number(ai.account_data.Sequence);
         if (!(seq > 0)) return null;                     // cannot number the inners; fall back
@@ -1493,7 +1493,7 @@
 
     // 1. THE FEE (RAZA 2026-09-17), with a memo naming it.
     function runSequential() {
-      return Promise.all([feeInXrp(q.amt), lxMinterQ(lxMintIds(from, to), me)]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
+      return Promise.all([feeInXrp(q.amt), lxMinterQ(((isXrp(from) ? +q.amt : (isXrp(to) ? +q.out : 1)) < 1) ? [] : lxMintIds(from, to), me)]).then(function (pr) { var feeXrp = pr[0], mnt = pr[1];
       var fd = feeDrops(feeXrp);
       steps = (fd ? 1 : 0) + (needLine ? 1 : 0) + 1;
       if (!fd) return null;
