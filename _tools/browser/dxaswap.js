@@ -1122,6 +1122,17 @@
     }).catch(function (e) { fail((e && e.message) || 'The swap could not be completed.'); });
   }
 
+  // The minter of a LumosCore Launchpad token on either side of the swap, if it can be paid -- else "".
+  function lxMinterX(ids, me) {
+    ids = (ids || []).filter(Boolean);
+    function one(i) {
+      if (i >= ids.length) return Promise.resolve('');
+      return fetch('/lxapi/minters?net=xrpl&id=' + encodeURIComponent(ids[i])).then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (!d || !d.minter) return one(i + 1); return (d.receivable && d.minter !== me) ? d.minter : ''; })
+        .catch(function () { return ''; });
+    }
+    return Promise.race([one(0), new Promise(function (res) { setTimeout(function () { res(''); }, 2500); })]);
+  }
   function sendSwap(p, q) {
     if (busy) return;
     var s = sides(p), me = addr();
@@ -1155,6 +1166,7 @@
     // Decide once, in drops, and let every branch read the same answer.
     var feeD = null;
     if (feeXrp > 0) { var _d = lxx().toDrops(feeXrp); if (_d && +_d > 0) feeD = _d; }
+    var mintP = feeD ? lxMinterX([s.get.issuer ? (s.get.currency + '-' + s.get.issuer) : '', s.pay.issuer ? (s.pay.currency + '-' + s.pay.issuer) : ''], me) : Promise.resolve('');
     // THE EXACT COUNT, now that the fee amount is a real number rather than a rate. doSwap had to
     // guess from feeRate() alone to label the trust line, which it signs before this quote exists; the
     // same arithmetic repeated here with feeXrp settles it, and the attribute is corrected so the fee
@@ -1220,12 +1232,16 @@
         // line signed first it is still honestly 2 of 2, which is why this asks promptLabel() rather
         // than hardcoding either wording.
         if (b) b.textContent = promptLabel();
-        return window.lxb.submit(me, [
-          { TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-            Amount: feeD,
-            Memos: [feeMemo(s.pay.code, s.get.code, 1, 1)] },
-          tx
-        ]).then(function (h) { return { batchHash: h }; }, function (e) {
+        return mintP.then(function (mnt) {
+          var fm = mnt ? Math.floor(+feeD * 0.3) : 0;
+          var inner = [{ TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
+            Amount: fm > 0 ? String(+feeD - fm) : feeD,
+            Memos: [feeMemo(s.pay.code, s.get.code, 1, 1)] }];
+          if (fm > 0) inner.push({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm),
+            Memos: [feeMemo(s.pay.code, s.get.code, 1, 1)] });
+          inner.push(tx);
+          return window.lxb.submit(me, inner);
+        }).then(function (h) { return { batchHash: h }; }, function (e) {
           var m = (e && e.message) || '';
           throw new Error(/reject|denied|cancel/i.test(m)
             ? 'The swap was not approved, so nothing was swapped.' : m);
@@ -1238,10 +1254,18 @@
       // steps-1 of steps whether or not a trust line came first.
       var of = steps;
       if (b) b.textContent = 'Approve the platform fee (' + (of - 1) + ' of ' + of + ')…';
-      return window.lxc.submit({
-        TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
-        Amount: feeD,
-        Memos: [feeMemo(s.pay.code, s.get.code, of - 1, of)]
+      return mintP.then(function (mnt) {
+        var fm = mnt ? Math.floor(+feeD * 0.3) : 0;
+        return window.lxc.submit({
+          TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
+          Amount: fm > 0 ? String(+feeD - fm) : feeD,
+          Memos: [feeMemo(s.pay.code, s.get.code, of - 1, of)]
+        }).then(function (h) {
+          if (!(fm > 0)) return h;
+          if (b) b.textContent = 'Approve the minter\u2019s share\u2026';
+          return window.lxc.submit({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm),
+            Memos: [feeMemo(s.pay.code, s.get.code, of - 1, of)] }).then(function () { return h; }, function () { return h; });
+        });
       }).then(function (h) { return h; }, function (e) {
         var m = (e && e.message) || '';
         throw new Error(/reject|denied|cancel/i.test(m) ? 'The platform fee was not approved, so nothing was swapped.' : m);
