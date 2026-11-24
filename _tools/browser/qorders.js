@@ -1386,7 +1386,7 @@
     function one(i) {
       if (i >= ids.length) return Promise.resolve('');
       return fetch('/lxapi/minters?net=xrpl&id=' + encodeURIComponent(ids[i])).then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) { if (!d || !d.minter) return one(i + 1); return (d.receivable && d.minter !== me) ? d.minter : ''; })
+        .then(function (d) { if (!d || !d.minter) return one(i + 1); return d.minter === me ? '=self' : (d.receivable ? d.minter : ''); })
         .catch(function () { return ''; });
     }
     return Promise.race([one(0), new Promise(function (res) { setTimeout(function () { res(''); }, 2500); })]);
@@ -1409,7 +1409,7 @@
             Amount: fm > 0 ? String(+fd - fm) : fd,
             Memos: [feeMemo(from.code, to.code, 1, 1)]
           }, s++));
-          if (fm > 0) raw.push(innerTx({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm), Memos: [feeMemo(from.code, to.code, 1, 1)] }, s++));
+          if (fm > 0 && mnt !== '=self') raw.push(innerTx({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm), Memos: [feeMemo(from.code, to.code, 1, 1)] }, s++));
         }
         raw.push(innerTx(swapTx, s++));
         if (raw.length < 2) return null;                 // a Batch needs at least two inners
@@ -1505,7 +1505,7 @@
         Amount: fm > 0 ? String(+fd - fm) : fd,
         Memos: [feeMemo(from.code, to.code, stepNo, steps)]
       }).then(function (h) {
-        if (!(fm > 0)) return h;
+        if (!(fm > 0) || mnt === '=self') return h;
         setGo(false, 'Approve the minter\u2019s share\u2026');
         return window.lxc.submit({ TransactionType: 'Payment', Account: me, Destination: mnt, Amount: String(fm), Memos: [feeMemo(from.code, to.code, stepNo, steps)] }).then(function () { return h; }, function () { return h; });
       }).catch(function (e) {
