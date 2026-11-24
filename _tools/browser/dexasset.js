@@ -684,6 +684,30 @@
   // price history from the same source, not a series this page lacks. Kept here so a later
   // paintPerf() (the Buy/Sell toggle re-runs it) does not blank what has already been computed.
   var LONG = {}, LASTD = null;
+  // SINCE LAUNCH (xperf 2026-11-24): see bugshots/pairs/xperf-pairs.js.
+  var LAUNCH = null, LAUNCH_ASKED = false, LCUR = null;
+  var PERF_MS = { '1h': 36e5, '24h': 864e5, '7d': 6048e5, '1m': 2592e6, '3m': 7776e6, '6m': 15552e6 };
+  function loadLaunch(asset) {
+    if (LAUNCH_ASKED || !asset || !asset.issuer) return; LAUNCH_ASKED = true;
+    rpc('amm_info', { asset: { currency: 'XRP' }, asset2: { currency: currencyOf(asset.code), issuer: asset.issuer }, ledger_index: 'validated' })
+      .then(function (r) {
+        var acct = r && r.amm && r.amm.account; if (!acct) return null;
+        return rpc('account_tx', { account: acct, forward: true, limit: 5, ledger_index_min: -1, ledger_index_max: -1 });
+      })
+      .then(function (r) {
+        var txs = (r && r.transactions) || [];
+        for (var i = 0; i < txs.length; i++) {
+          var tx = txs[i].tx || txs[i].tx_json || {};
+          if (tx.TransactionType !== 'AMMCreate') continue;
+          var a = [tx.Amount, tx.Amount2], xrp = 0, tok = 0;
+          a.forEach(function (x) { if (typeof x === 'string') xrp = Number(x) / 1e6; else if (x && x.issuer === asset.issuer) tok = Number(x.value); });
+          var date = Number(tx.date); if (!(xrp > 0 && tok > 0 && date > 0)) return;
+          LAUNCH = { t: (date + 946684800) * 1000, px: xrp / tok };
+          paintPerf(LASTD); return;
+        }
+      })
+      .catch(function () {});
+  }
 
   function paintPerf(d) {
     // `[class*="dxa-perf-cell"]` MATCHES BOTH LAYOUTS, and selecting only `.dxa-perf-cell` is why
@@ -701,11 +725,16 @@
       '1h': d ? d.p1h : null, '24h': d ? d.p24 : null, '7d': d ? d.p7 : null,
       '1m': LONG['1m'], '3m': LONG['3m'], '6m': LONG['6m'],
     };
+    if ((d && d.trades24 === 0) || LONG.quiet) { if (have['1h'] == null) have['1h'] = 0; if (have['24h'] == null) have['24h'] = 0; }
+    if (have['7d'] == null && LONG['7d'] != null) have['7d'] = LONG['7d'];
+    var SLAB = {}, cur = (LASTD && LASTD.price > 0) ? LASTD.price : LCUR;
+    if (LAUNCH && cur > 0) PERF.forEach(function (k) { if (LAUNCH.t > Date.now() - PERF_MS[k]) { have[k] = (cur / LAUNCH.px - 1) * 100; SLAB[k] = 1; } });
 
     cells.forEach(function (c, i) {
       var label = PERF[i] || (((c.querySelector('.tf') || {}).textContent) || '').trim();
       var v = Object.prototype.hasOwnProperty.call(have, label) ? have[label] : null;
       var ok = (v != null && isFinite(v));
+      try { if (SLAB[label]) c.title = 'Since launch'; else if (c.title === 'Since launch') c.removeAttribute('title'); } catch (e) {}
 
       // Rebuilt, because the healer may have emptied the cell entirely.
       var tf = c.querySelector('.tf') || c.appendChild(el('div', 'tf'));
@@ -762,7 +791,13 @@
       + '&cur=' + encodeURIComponent(currencyOf(asset.code)) + '&r=1Y&vs=XRP')
       .then(function (r) { return r.json(); })
       .then(function (d) {
+        if (!d || !d.ok || !d.pts || !d.pts.length || d.pts[0][0] > Date.now() - 15552e6) loadLaunch(asset);
         if (!d || !d.ok || !d.pts || d.pts.length < 2) return;
+        LONG['7d'] = changeOver(d.pts, 7);
+        var lp = d.pts[d.pts.length - 1], pp = d.pts[d.pts.length - 2];
+        LCUR = (lp[4] != null) ? lp[4] : lp[1];
+        // [t, open, high, low, close, volume]: today and yesterday both traded nothing = no trade in the last 24h
+        LONG.quiet = (lp[5] === 0 && pp && pp[5] === 0);
         LONG['1m'] = changeOver(d.pts, 30);
         LONG['3m'] = changeOver(d.pts, 90);
         LONG['6m'] = changeOver(d.pts, 180);
