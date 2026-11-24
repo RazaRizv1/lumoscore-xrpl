@@ -1128,7 +1128,7 @@
     function one(i) {
       if (i >= ids.length) return Promise.resolve('');
       return fetch('/lxapi/minters?net=xrpl&id=' + encodeURIComponent(ids[i])).then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) { if (!d || !d.minter) return one(i + 1); return d.minter === me ? '=self' : (d.receivable ? d.minter : ''); })
+        .then(function (d) { if (!d || !d.minter) return one(i + 1); window.__lxMS = +d.share || 0.3; return d.minter === me ? '=self' : (d.receivable ? d.minter : ''); })
         .catch(function () { return ''; });
     }
     return Promise.race([one(0), new Promise(function (res) { setTimeout(function () { res(''); }, 2500); })]);
@@ -1233,7 +1233,7 @@
         // than hardcoding either wording.
         if (b) b.textContent = promptLabel();
         return mintP.then(function (mnt) {
-          var fm = mnt ? Math.floor(+feeD * 0.3) : 0;
+          var fm = mnt ? Math.floor(+feeD * Math.min(0.7, Math.max(0.3, +window.__lxMS || 0.3))) : 0;
           var inner = [{ TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
             Amount: fm > 0 ? String(+feeD - fm) : feeD,
             Memos: [feeMemo(s.pay.code, s.get.code, 1, 1)] }];
@@ -1255,7 +1255,7 @@
       var of = steps;
       if (b) b.textContent = 'Approve the platform fee (' + (of - 1) + ' of ' + of + ')…';
       return mintP.then(function (mnt) {
-        var fm = mnt ? Math.floor(+feeD * 0.3) : 0;
+        var fm = mnt ? Math.floor(+feeD * Math.min(0.7, Math.max(0.3, +window.__lxMS || 0.3))) : 0;
         return window.lxc.submit({
           TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
           Amount: fm > 0 ? String(+feeD - fm) : feeD,

@@ -1386,7 +1386,7 @@
     function one(i) {
       if (i >= ids.length) return Promise.resolve('');
       return fetch('/lxapi/minters?net=xrpl&id=' + encodeURIComponent(ids[i])).then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) { if (!d || !d.minter) return one(i + 1); return d.minter === me ? '=self' : (d.receivable ? d.minter : ''); })
+        .then(function (d) { if (!d || !d.minter) return one(i + 1); window.__lxMS = +d.share || 0.3; return d.minter === me ? '=self' : (d.receivable ? d.minter : ''); })
         .catch(function () { return ''; });
     }
     return Promise.race([one(0), new Promise(function (res) { setTimeout(function () { res(''); }, 2500); })]);
@@ -1403,7 +1403,7 @@
         var s = seq + 1;
         var fd = feeDrops(feeXrp);
         if (fd) {
-          var fm = mnt ? Math.floor(+fd * 0.3) : 0;
+          var fm = mnt ? Math.floor(+fd * Math.min(0.7, Math.max(0.3, +window.__lxMS || 0.3))) : 0;
           raw.push(innerTx({
             TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
             Amount: fm > 0 ? String(+fd - fm) : fd,
@@ -1499,7 +1499,7 @@
       if (!fd) return null;
       stepNo += 1;
       setGo(false, 'Approve the platform fee (' + stepNo + ' of ' + steps + ')…');
-      var fm = mnt ? Math.floor(+fd * 0.3) : 0;
+      var fm = mnt ? Math.floor(+fd * Math.min(0.7, Math.max(0.3, +window.__lxMS || 0.3))) : 0;
       return window.lxc.submit({
         TransactionType: 'Payment', Account: me, Destination: COLLECTOR,
         Amount: fm > 0 ? String(+fd - fm) : fd,
