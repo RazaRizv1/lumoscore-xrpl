@@ -883,7 +883,7 @@
     }
 
     if (isForm) { var lxEd = false; try { lxEd = sessionStorage.getItem('lumos.launch.edit') === '1'; sessionStorage.removeItem('lumos.launch.edit'); } catch (e) {} if (lxEd) restoreForm(); }
-    else { $$('a.edit-btn, a.btn-back').forEach(function (a) { a.addEventListener('click', function () { try { sessionStorage.setItem('lumos.launch.edit', '1'); } catch (e) {} }); }); }
+    else { $$('a.edit-btn, a.btn-back, a.back-link').forEach(function (a) { a.addEventListener('click', function () { try { sessionStorage.setItem('lumos.launch.edit', '1'); } catch (e) {} }); }); }
     if (isForm) { wireNext(); wireIcon(); wireNumericFields(); }
 
     // Is the connected wallet an approved test wallet? Asked per address, again when it changes; repaints the costs.
