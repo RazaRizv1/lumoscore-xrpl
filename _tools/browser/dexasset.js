@@ -3846,6 +3846,14 @@
 
     var reg = window.__lxTokenRegistry || {};
     var row = a ? reg[a.code + '-' + a.issuer] : null;
+    if (a && !window.__lxxAdminAsked) {
+      window.__lxxAdminAsked = 1;
+      fetch('/lxapi/assetmeta?asset=' + encodeURIComponent(a.code + '-' + a.issuer))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { var t = (j && j.meta && typeof j.meta.description === 'string') ? j.meta.description.trim() : '';
+          if (t) { window.__lxxAdminDesc = t; show(desc, t); } })
+        .catch(function () {});
+    }
     var own = row && typeof row.desc === 'string' ? row.desc.trim() : '';
     if (own) { show(desc, own); return; }
 
@@ -3893,7 +3901,7 @@
       return a.code + ' trades on the LumosCore DEX against XRP on the XRP Ledger. Live price, order book, trades and holders are pulled directly from the XRP Ledger.';
     }
 
-    function show(el, text) { plain(el, text); el.style.display = ''; }
+    function show(el, text) { if (window.__lxxAdminDesc) text = window.__lxxAdminDesc; plain(el, text); el.style.display = ''; }
     function drop(el) { if (el.parentNode) el.parentNode.removeChild(el); }
   }
 
