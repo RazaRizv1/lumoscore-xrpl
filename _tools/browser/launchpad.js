@@ -831,6 +831,18 @@
     catch (e) { return fetch(u, o).then(function (r) { return r.json(); }); }
   }
 
+  // EDIT FROM REVIEW KEEPS THE FORM (RAZA 2026-11-24). The draft saved by Next is put back, but only when the
+  // review page Edit set the flag; a fresh visit to the launchpad still starts blank.
+  function restoreForm() {
+    var d = null; try { d = JSON.parse(localStorage.getItem(DRAFT) || 'null'); } catch (e) { d = null; }
+    if (!d || d.ledger !== 'xrpl') return;
+    var put = function (el, v) { if (el && v != null && v !== '' && !(typeof v === 'number' && !isFinite(v))) { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); } };
+    put($('#tokenName'), d.name); put($('#tokenTicker'), d.ticker); put($('#desc'), d.desc);
+    if (d.supply > 0) put($('#supply'), d.supply); if (d.share >= 0) put($('#shareNum'), d.share); if (d.extra > 0) put($('#extraLiquidity'), d.extra);
+    var soc = { tg: d.telegram, x: d.twitter, web: d.website };
+    Object.keys(soc).forEach(function (k) { put($$('input').filter(function (i) { return i.getAttribute('data-lxlpsoc') === k; })[0], soc[k]); });
+    if (d.icon) iconData = d.icon;
+  }
   function load() {
     // The cost panel exists on BOTH the form and the review step, so the guard cannot be the form's
     // ticker field -- that is what left the review page quoting 173.50 XRP.
@@ -870,6 +882,8 @@
       }
     }
 
+    if (isForm) { var lxEd = false; try { lxEd = sessionStorage.getItem('lumos.launch.edit') === '1'; sessionStorage.removeItem('lumos.launch.edit'); } catch (e) {} if (lxEd) restoreForm(); }
+    else { $$('a.edit-btn, a.btn-back').forEach(function (a) { a.addEventListener('click', function () { try { sessionStorage.setItem('lumos.launch.edit', '1'); } catch (e) {} }); }); }
     if (isForm) { wireNext(); wireIcon(); wireNumericFields(); }
 
     // Is the connected wallet an approved test wallet? Asked per address, again when it changes; repaints the costs.
