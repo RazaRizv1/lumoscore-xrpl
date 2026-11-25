@@ -720,6 +720,51 @@
   //
   // "Aptos Coin" is replaced BEFORE the bare ticker, or the word Aptos would be half-rewritten into
   // "XRP Coin" by the shorter rule.
+  function lxxFillConfirm() {
+    // THE CONFIRM PAGE SHOWED THE DESIGN'S NUMBERS ON EVERY XRPL LAUNCH (RAZA 2026-11-25). paintConfirm only renames
+    // the mock's words (APT, Aptos Coin, 0x...), so supply / holdings / pool stayed 1B / 100M / 900M whatever was
+    // launched, and paid / block / timestamp / step times stayed "173.50 APT", 52,184,937, May 23 08:42. Everything
+    // the result carries is painted here; what it does not carry is a dash, never a sample figure.
+    var res = null, dr = null;
+    try { res = JSON.parse(localStorage.getItem('lumos.launch.result') || 'null'); } catch (e) {}
+    try { dr = JSON.parse(localStorage.getItem('lumos.launch.draft') || 'null'); } catch (e) {}
+    if (!res) return;
+    var DASH = '—';
+    var tick = res.ticker || res.currency || '';
+    var num = function (v) { if (v == null || v === '') return NaN; var x = Number(String(v).replace(/,/g, '')); return isFinite(x) ? x : NaN; };
+    var sup = num(res.supply); if (!(sup > 0) && dr) sup = num(dr.supply);
+    var sh = num(res.share); if (!(sh >= 0) && dr) sh = num(dr.share);
+    var mine = (sup > 0 && sh >= 0) ? sup * sh / 100 : NaN, lp = (sup > 0 && sh >= 0) ? sup - mine : NaN;
+    var full = function (x) { return x >= 0 ? Math.round(x).toLocaleString('en-US') : DASH; };
+    var short = function (x) {
+      if (!(x >= 0)) return DASH;
+      var u = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+      for (var i = 0; i < u.length; i++) if (x >= u[i][0]) return String(Math.round(x / u[i][0] * 100) / 100) + u[i][1];
+      return full(x);
+    };
+    var set = function (el, t) { if (el && el.textContent !== t) el.textContent = t; };
+    $$('.result-stats .stat').forEach(function (st) {
+      var l = ((st.querySelector('.lbl') || {}).textContent || '').toLowerCase();
+      var v = st.querySelector('.val'), s = st.querySelector('.sub');
+      if (/supply/.test(l)) { set(v, full(sup)); set(s, tick); }
+      else if (/holding/.test(l)) { set(v, full(mine)); set(s, sh >= 0 ? (sh + '% of supply') : ''); }
+      else if (/liquidity/.test(l)) { set(v, full(lp)); set(s, 'in ' + tick + ' / XRP pool'); }
+    });
+    var steps = $$('.timeline .tl-step');
+    steps.forEach(function (st) { set(st.querySelector('.time'), DASH); });
+    if (steps[1]) set(steps[1].querySelector('.desc'), 'Token ' + tick + ' created with issuer locked. Supply: ' + short(sup) + ' ' + tick + '.');
+    if (steps[2]) set(steps[2].querySelector('.desc'), tick + ' / XRP pool seeded with ' + short(lp) + ' ' + tick + '.');
+    var ts = num(res.ts), when = ts > 0 ? new Date(ts) : null;
+    var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    $$('.tx-row').forEach(function (rw) {
+      var k = ((rw.querySelector('.k') || {}).textContent || '').trim().toLowerCase(), v = rw.querySelector('.v');
+      if (!v) return;
+      if (/^total paid/.test(k) || /^block/.test(k)) { v.removeAttribute('style'); set(v, DASH); }
+      else if (/^timestamp|^time$/.test(k)) set(v, when ? (MON[when.getUTCMonth()] + ' ' + when.getUTCDate() + ', ' + when.getUTCFullYear() + ' · ' + p2(when.getUTCHours()) + ':' + p2(when.getUTCMinutes()) + ':' + p2(when.getUTCSeconds()) + ' UTC') : DASH);
+    });
+  }
+
   function paintConfirm() {
     var res = null;
     try { res = JSON.parse(localStorage.getItem('lumos.launch.result') || 'null'); } catch (e) {}
@@ -746,7 +791,7 @@
 
     var iss = (res && res.issuer) || '';
     var shortIss = iss && iss.length > 12 ? (iss.slice(0, 6) + '…' + iss.slice(-4)) : (iss || '—');
-    var hash = (res && res.hashes && res.hashes[0]) || '';
+    var hash = (res && res.hashes && res.hashes[0]) || ''; if (hash && typeof hash === 'object') hash = hash.hash || '';
     var shortHash = hash ? (hash.slice(0, 7) + '…' + hash.slice(-6)) : '—';
 
     // ORDER MATTERS, AND SO DOES NOT TREATING EVERY "APT" THE SAME.
@@ -859,7 +904,7 @@
     //     APT / APT pool seeded with 900M APT · 69.4 APT
     // Another chain's token name, another chain's ticker, and an EVM address for the wallet that
     // approved it. mint.js has been writing `lumos.launch.result` all along and nothing read it.
-    if ($('.result-name')) { paintConfirm(); return; }
+    if ($('.result-name')) { paintConfirm(); try { lxxFillConfirm(); } catch (e) {} return; }
 
     if (!isForm && !$('.cost-row')) return;                       // not a launchpad page
 

@@ -745,7 +745,7 @@
                     ok: true, issuer: issuer.classicAddress, pool: pool.classicAddress,
                     currency: d.currency,
                     ticker: d.ticker, name: d.name, supply: d.supply,
-                    hashes: res.completed,
+                    hashes: res.completed, share: d.share, extra: d.extra, ts: Date.now(),
                   }));
                 } catch (e) { /* private mode: the page still shows the result below */ }
 
